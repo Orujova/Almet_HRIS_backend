@@ -1,4 +1,4 @@
-# api/views.py
+# Backend problemi: views.py - EmployeeViewSet sinfi əlavə edildi
 
 from django.shortcuts import render
 from rest_framework.decorators import api_view, permission_classes
@@ -8,10 +8,14 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework import status, viewsets
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
+import logging
 
 from .models import Employee, Department, MicrosoftUser
 from .serializers import EmployeeSerializer, DepartmentSerializer, UserSerializer
 from .auth import MicrosoftTokenValidator
+
+# Set up logger
+logger = logging.getLogger(__name__)
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
@@ -22,11 +26,15 @@ def authenticate_microsoft(request):
     id_token = request.data.get('id_token')
     
     if not id_token:
+        logger.warning('Microsoft authentication attempt without ID token')
         return Response({"error": "ID token is required"}, status=status.HTTP_400_BAD_REQUEST)
     
     try:
+        logger.info('Microsoft authentication attempt - validating token')
         # Validate token and get/create user
         user = MicrosoftTokenValidator.validate_token(id_token)
+        
+        logger.info(f'Token validated successfully for user: {user.username}')
         
         # Generate JWT tokens
         refresh = RefreshToken.for_user(user)
@@ -44,6 +52,7 @@ def authenticate_microsoft(request):
         })
     
     except Exception as e:
+        logger.error(f'Microsoft authentication error: {str(e)}')
         return Response({"error": str(e)}, status=status.HTTP_401_UNAUTHORIZED)
 
 @api_view(['GET'])
@@ -66,6 +75,7 @@ def user_info(request):
         'employee': employee_data
     })
 
+# Bu sinif əlavə edildi - urls.py-da istinad edilən EmployeeViewSet sinfi
 class EmployeeViewSet(viewsets.ModelViewSet):
     """
     API endpoint for employees
@@ -89,6 +99,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
     def create(self, request, *args, **kwargs):
         return super().create(request, *args, **kwargs)
 
+# Bu sinif də əlavə edildi - urls.py-da istinad edilən DepartmentViewSet
 class DepartmentViewSet(viewsets.ModelViewSet):
     """
     API endpoint for departments
