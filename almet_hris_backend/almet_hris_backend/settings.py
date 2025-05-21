@@ -121,7 +121,7 @@ SIMPLE_JWT = {
 }
 
 # Microsoft Azure App Registration settings from screenshot
-MICROSOFT_CLIENT_ID = '230458ff-ed69-4abb-8496-3888067116f6'
+MICROSOFT_CLIENT_ID = "230458ff-ed69-4abb-8496-3888067116f6"
 MICROSOFT_TENANT_ID = 'b3222ef7-242d-4724-a665-97b0a764f2d0'
 
 # CORS settings to allow frontend requests
