@@ -17,6 +17,11 @@ from .auth import MicrosoftTokenValidator
 # Set up logger
 logger = logging.getLogger(__name__)
 
+@swagger_auto_schema(
+    method='get',
+    operation_description="Health check endpoint",
+    responses={200: openapi.Response(description="API is healthy")}
+)
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def health_check(request):
@@ -29,6 +34,11 @@ def health_check(request):
         'time': str(timezone.now())
     }, status=status.HTTP_200_OK)
 
+@swagger_auto_schema(
+    methods=['get', 'post'],
+    operation_description="Test endpoint",
+    responses={200: openapi.Response(description="Test successful")}
+)
 @api_view(['GET', 'POST'])
 @permission_classes([AllowAny])
 def test_endpoint(request):
@@ -50,6 +60,32 @@ def test_endpoint(request):
             'time': str(timezone.now())
         }, status=status.HTTP_200_OK)
 
+@swagger_auto_schema(
+    method='post',
+    operation_description="Authenticate with Microsoft ID token and get JWT tokens",
+    request_body=openapi.Schema(
+        type=openapi.TYPE_OBJECT,
+        required=['id_token'],
+        properties={
+            'id_token': openapi.Schema(type=openapi.TYPE_STRING, description='Microsoft ID Token'),
+        }
+    ),
+    responses={
+        200: openapi.Response(
+            description="Authentication successful",
+            schema=openapi.Schema(
+                type=openapi.TYPE_OBJECT,
+                properties={
+                    'success': openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                    'access': openapi.Schema(type=openapi.TYPE_STRING, description='JWT Access Token'),
+                    'refresh': openapi.Schema(type=openapi.TYPE_STRING, description='JWT Refresh Token'),
+                    'user': openapi.Schema(type=openapi.TYPE_OBJECT),
+                }
+            )
+        ),
+        401: openapi.Response(description="Authentication failed")
+    }
+)
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def authenticate_microsoft(request):
@@ -113,6 +149,25 @@ def authenticate_microsoft(request):
             "details": str(e)
         }, status=status.HTTP_401_UNAUTHORIZED)
 
+@swagger_auto_schema(
+    method='get',
+    operation_description="Get current user information",
+    responses={
+        200: openapi.Response(
+            description="User information retrieved successfully",
+            schema=openapi.Schema(
+                type=openapi.TYPE_OBJECT,
+                properties={
+                    'success': openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                    'user': openapi.Schema(type=openapi.TYPE_OBJECT),
+                    'employee': openapi.Schema(type=openapi.TYPE_OBJECT),
+                }
+            )
+        ),
+        401: openapi.Response(description="Unauthorized - Invalid or missing token")
+    },
+    security=[{'Bearer': []}]  # Bu line çox vacibdir - JWT token tələb edir
+)
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def user_info(request):
@@ -154,7 +209,8 @@ class EmployeeViewSet(viewsets.ModelViewSet):
     
     @swagger_auto_schema(
         operation_description="Get list of all employees",
-        responses={200: EmployeeSerializer(many=True)}
+        responses={200: EmployeeSerializer(many=True)},
+        security=[{'Bearer': []}]  # JWT token tələb edir
     )
     def list(self, request, *args, **kwargs):
         return super().list(request, *args, **kwargs)
@@ -162,10 +218,36 @@ class EmployeeViewSet(viewsets.ModelViewSet):
     @swagger_auto_schema(
         operation_description="Create a new employee",
         request_body=EmployeeSerializer,
-        responses={201: EmployeeSerializer}
+        responses={201: EmployeeSerializer},
+        security=[{'Bearer': []}]  # JWT token tələb edir
     )
     def create(self, request, *args, **kwargs):
         return super().create(request, *args, **kwargs)
+    
+    @swagger_auto_schema(
+        operation_description="Get a specific employee",
+        responses={200: EmployeeSerializer},
+        security=[{'Bearer': []}]
+    )
+    def retrieve(self, request, *args, **kwargs):
+        return super().retrieve(request, *args, **kwargs)
+    
+    @swagger_auto_schema(
+        operation_description="Update an employee",
+        request_body=EmployeeSerializer,
+        responses={200: EmployeeSerializer},
+        security=[{'Bearer': []}]
+    )
+    def update(self, request, *args, **kwargs):
+        return super().update(request, *args, **kwargs)
+    
+    @swagger_auto_schema(
+        operation_description="Delete an employee",
+        responses={204: "Employee deleted successfully"},
+        security=[{'Bearer': []}]
+    )
+    def destroy(self, request, *args, **kwargs):
+        return super().destroy(request, *args, **kwargs)
 
 class DepartmentViewSet(viewsets.ModelViewSet):
     """
