@@ -16,6 +16,7 @@ urlpatterns = [
     # Test endpoints
     path('health/', views.health_check, name='health_check'),
     path('test/', views.test_endpoint, name='test_endpoint'),
+  
     
     # Authentication endpoints
     path('auth/microsoft/', views.authenticate_microsoft, name='auth_microsoft'),

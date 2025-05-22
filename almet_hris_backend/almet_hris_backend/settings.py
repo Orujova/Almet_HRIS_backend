@@ -66,8 +66,12 @@ WSGI_APPLICATION = 'almet_hris_backend.wsgi.application'
 # Database - SQLite istifadə edin ki, asan olsun
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': 'almet_hris',
+        'USER': 'postgres',
+        'PASSWORD': 'almet2025',  # Sizin qoyduğunuz parol
+        'HOST': 'localhost',
+        'PORT': '5432',
     }
 }
 
