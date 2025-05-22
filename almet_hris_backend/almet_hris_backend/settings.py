@@ -1,5 +1,3 @@
-
-
 import os
 from pathlib import Path
 from datetime import timedelta
@@ -13,7 +11,7 @@ SECRET_KEY = 'django-insecure-3_8*j1!u72&6_0@iv3$cyr4gis_xm5x_1ob2o!$#mxl!u97gg5
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['localhost', '127.0.0.1', '0.0.0.0']
 
 # Application definition
 INSTALLED_APPS = [
@@ -26,6 +24,7 @@ INSTALLED_APPS = [
     
     # Third-party apps
     'rest_framework',
+    'rest_framework_simplejwt',
     'drf_yasg',
     'corsheaders',
     
@@ -34,9 +33,9 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    'corsheaders.middleware.CorsMiddleware',  # CORS-u ən başa qoyun
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
-    'corsheaders.middleware.CorsMiddleware',  # Add CORS middleware
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
@@ -64,7 +63,7 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'almet_hris_backend.wsgi.application'
 
-# Database
+# Database - SQLite istifadə edin ki, asan olsun
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
@@ -120,22 +119,31 @@ SIMPLE_JWT = {
     'AUTH_HEADER_TYPES': ('Bearer',),
 }
 
-# Microsoft Azure App Registration settings from screenshot
+# Microsoft Azure App Registration settings
 MICROSOFT_CLIENT_ID = "230458ff-ed69-4abb-8496-3888067116f6"
 MICROSOFT_TENANT_ID = 'b3222ef7-242d-4724-a665-97b0a764f2d0'
 
-# CORS settings to allow frontend requests
-CORS_ALLOW_ALL_ORIGINS = True  # For development only. Use specific origins in production.
+# CORS settings - Frontend üçün
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+]
 
-# almet_hris_backend/settings.py
+CORS_ALLOW_CREDENTIALS = True
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'almet_hris',     # Yaratdığınız verilənlər bazası adı
-        'USER': 'postgres',       # PostgreSQL-ın əsas (postgres) istifadəçisi
-        'PASSWORD': 'almet2025',  # postgres istifadəçisinin şifrəsi
-        'HOST': 'localhost',      # Ekranda göstərildiyi kimi
-        'PORT': '5432',           # Ekranda göstərildiyi kimi
-    }
+CORS_ALLOW_ALL_ORIGINS = False  # Development üçün True edə bilərsiniz
+
+# Logging
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': 'INFO',
+    },
 }
