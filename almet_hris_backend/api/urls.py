@@ -3,20 +3,25 @@ from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenRefreshView
 from . import views
 
+# Create router and register viewsets
 router = DefaultRouter()
 
-# ViewSet-ləri əlavə edin
-if hasattr(views, 'EmployeeViewSet'):
-    router.register(r'employees', views.EmployeeViewSet)
+# Reference data endpoints
+router.register(r'Business function', views.BusinessFunctionViewSet, basename='businessfunction')
+router.register(r'Department', views.DepartmentViewSet, basename='department')
+router.register(r'Unit', views.UnitViewSet, basename='unit')
+router.register(r'Job function', views.JobFunctionViewSet, basename='jobfunction')
+router.register(r'Position group', views.PositionGroupViewSet, basename='positiongroup')
+router.register(r'Offices', views.OfficeViewSet, basename='office')
+router.register(r'Employee tags', views.EmployeeTagViewSet, basename='employeetag')
 
-if hasattr(views, 'DepartmentViewSet'):
-    router.register(r'departments', views.DepartmentViewSet)
+# Main employee endpoints
+router.register(r'Employees', views.EmployeeViewSet, basename='employee')
+router.register(r'Employee Documents', views.EmployeeDocumentViewSet, basename='employeedocument')
+router.register(r'Employee activities', views.EmployeeActivityViewSet, basename='employeeactivity')
 
 urlpatterns = [
-    # Test endpoints
-    path('health/', views.health_check, name='health_check'),
-    path('test/', views.test_endpoint, name='test_endpoint'),
-  
+ 
     
     # Authentication endpoints
     path('auth/microsoft/', views.authenticate_microsoft, name='auth_microsoft'),

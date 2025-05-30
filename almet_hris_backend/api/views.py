@@ -1,64 +1,44 @@
 from django.shortcuts import render
 from django.utils import timezone
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework import status, viewsets
+from django.db.models import Q, Count
+from rest_framework.decorators import api_view, permission_classes, action
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
-from rest_framework import status, viewsets
+from rest_framework import status, viewsets, filters
+from rest_framework.pagination import PageNumberPagination
+from django_filters.rest_framework import DjangoFilterBackend
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 import logging
 import traceback
 
-from .models import Employee, Department, MicrosoftUser
-from .serializers import EmployeeSerializer, DepartmentSerializer, UserSerializer
+from .models import (
+    Employee, BusinessFunction, Department, Unit, JobFunction, 
+    PositionGroup, Office, EmployeeTag, EmployeeDocument, 
+    EmployeeActivity, MicrosoftUser
+)
+from .serializers import (
+    EmployeeListSerializer, EmployeeDetailSerializer, EmployeeCreateUpdateSerializer,
+    BusinessFunctionSerializer, DepartmentSerializer, UnitSerializer,
+    JobFunctionSerializer, PositionGroupSerializer, OfficeSerializer,
+    EmployeeTagSerializer, EmployeeDocumentSerializer, EmployeeActivitySerializer,
+    UserSerializer, OrgChartNodeSerializer
+)
 from .auth import MicrosoftTokenValidator
 
 # Set up logger
 logger = logging.getLogger(__name__)
 
-@swagger_auto_schema(
-    method='get',
-    operation_description="Health check endpoint",
-    responses={200: openapi.Response(description="API is healthy")}
-)
-@api_view(['GET'])
-@permission_classes([AllowAny])
-def health_check(request):
-    """
-    Health check endpoint
-    """
-    return Response({
-        'status': 'healthy',
-        'message': 'HRIS Backend is running',
-        'time': str(timezone.now())
-    }, status=status.HTTP_200_OK)
+# Custom Pagination
+class StandardResultsSetPagination(PageNumberPagination):
+    page_size = 10
+    page_size_query_param = 'page_size'
+    max_page_size = 100
 
-@swagger_auto_schema(
-    methods=['get', 'post'],
-    operation_description="Test endpoint",
-    responses={200: openapi.Response(description="Test successful")}
-)
-@api_view(['GET', 'POST'])
-@permission_classes([AllowAny])
-def test_endpoint(request):
-    """
-    Test endpoint to check if backend is working
-    """
-    if request.method == 'GET':
-        return Response({
-            'status': 'Backend is working',
-            'method': 'GET',
-            'time': str(timezone.now())
-        }, status=status.HTTP_200_OK)
-    
-    elif request.method == 'POST':
-        return Response({
-            'status': 'Backend received POST request',
-            'data': request.data,
-            'headers': dict(request.headers),
-            'time': str(timezone.now())
-        }, status=status.HTTP_200_OK)
+
+
 
 @swagger_auto_schema(
     method='post',
@@ -199,60 +179,317 @@ def user_info(request):
             "success": False
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-class EmployeeViewSet(viewsets.ModelViewSet):
-    """
-    API endpoint for employees
-    """
-    queryset = Employee.objects.all()
-    serializer_class = EmployeeSerializer
-    permission_classes = [IsAuthenticated]
-    
-    @swagger_auto_schema(
-        operation_description="Get list of all employees",
-        responses={200: EmployeeSerializer(many=True)},
-        security=[{'Bearer': []}]  # JWT token tələb edir
-    )
-    def list(self, request, *args, **kwargs):
-        return super().list(request, *args, **kwargs)
-    
-    @swagger_auto_schema(
-        operation_description="Create a new employee",
-        request_body=EmployeeSerializer,
-        responses={201: EmployeeSerializer},
-        security=[{'Bearer': []}]  # JWT token tələb edir
-    )
-    def create(self, request, *args, **kwargs):
-        return super().create(request, *args, **kwargs)
-    
-    @swagger_auto_schema(
-        operation_description="Get a specific employee",
-        responses={200: EmployeeSerializer},
-        security=[{'Bearer': []}]
-    )
-    def retrieve(self, request, *args, **kwargs):
-        return super().retrieve(request, *args, **kwargs)
-    
-    @swagger_auto_schema(
-        operation_description="Update an employee",
-        request_body=EmployeeSerializer,
-        responses={200: EmployeeSerializer},
-        security=[{'Bearer': []}]
-    )
-    def update(self, request, *args, **kwargs):
-        return super().update(request, *args, **kwargs)
-    
-    @swagger_auto_schema(
-        operation_description="Delete an employee",
-        responses={204: "Employee deleted successfully"},
-        security=[{'Bearer': []}]
-    )
-    def destroy(self, request, *args, **kwargs):
-        return super().destroy(request, *args, **kwargs)
 
-class DepartmentViewSet(viewsets.ModelViewSet):
+
+# @swagger_auto_schema(
+#     method='get',
+#     operation_description="Get current user information",
+#     responses={200: UserSerializer},
+#     security=[{'Bearer': []}]
+# )
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def user_info(request):
+    """
+    Get current user info
+    """
+    try:
+        serializer = UserSerializer(request.user)
+        
+        # Check if user has an employee profile
+        try:
+            employee = Employee.objects.get(user=request.user)
+            employee_data = EmployeeDetailSerializer(employee).data
+        except Employee.DoesNotExist:
+            employee_data = None
+        
+        return Response({
+            'success': True,
+            'user': serializer.data,
+            'employee': employee_data
+        }, status=status.HTTP_200_OK)
+    
+    except Exception as e:
+        logger.error(f'User info error: {str(e)}')
+        return Response({
+            "error": f"Failed to get user info: {str(e)}",
+            "success": False
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+# Reference Data ViewSets
+class BusinessFunctionViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    API endpoint for business functions
+    """
+    queryset = BusinessFunction.objects.filter(is_active=True)
+    serializer_class = BusinessFunctionSerializer
+    permission_classes = [IsAuthenticated]
+
+class DepartmentViewSet(viewsets.ReadOnlyModelViewSet):
     """
     API endpoint for departments
     """
-    queryset = Department.objects.all()
+    queryset = Department.objects.filter(is_active=True)
     serializer_class = DepartmentSerializer
     permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ['business_function']
+
+class UnitViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    API endpoint for units
+    """
+    queryset = Unit.objects.filter(is_active=True)
+    serializer_class = UnitSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ['department']
+
+class JobFunctionViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    API endpoint for job functions
+    """
+    queryset = JobFunction.objects.filter(is_active=True)
+    serializer_class = JobFunctionSerializer
+    permission_classes = [IsAuthenticated]
+
+class PositionGroupViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    API endpoint for position groups
+    """
+    queryset = PositionGroup.objects.filter(is_active=True)
+    serializer_class = PositionGroupSerializer
+    permission_classes = [IsAuthenticated]
+
+class OfficeViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    API endpoint for offices
+    """
+    queryset = Office.objects.filter(is_active=True)
+    serializer_class = OfficeSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ['business_function']
+
+class EmployeeTagViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    API endpoint for employee tags
+    """
+    queryset = EmployeeTag.objects.filter(is_active=True)
+    serializer_class = EmployeeTagSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ['tag_type']
+
+# Main Employee ViewSet
+class EmployeeViewSet(viewsets.ModelViewSet):
+    """
+    API endpoint for employees with advanced filtering and search
+    """
+    queryset = Employee.objects.select_related(
+        'user', 'business_function', 'department', 'unit', 
+        'job_function', 'position_group', 'office', 'line_manager'
+    ).prefetch_related('tags')
+    permission_classes = [IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    
+    # Search fields
+    search_fields = [
+        'employee_id', 'user__first_name', 'user__last_name', 
+        'user__email', 'job_title'
+    ]
+    
+    # Filter fields
+    filterset_fields = {
+        'business_function': ['exact'],
+        'department': ['exact'],
+        'unit': ['exact'],
+        'job_function': ['exact'],
+        'position_group': ['exact'],
+        'office': ['exact'],
+        'status': ['exact'],
+        'grade': ['exact', 'gte', 'lte'],
+        'start_date': ['exact', 'gte', 'lte'],
+        'is_visible_in_org_chart': ['exact'],
+    }
+    
+    # Ordering fields
+    ordering_fields = [
+        'employee_id', 'user__first_name', 'user__last_name', 
+        'start_date', 'grade', 'created_at'
+    ]
+    ordering = ['employee_id']
+    
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return EmployeeListSerializer
+        elif self.action in ['create', 'update', 'partial_update']:
+            return EmployeeCreateUpdateSerializer
+        else:
+            return EmployeeDetailSerializer
+    
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        
+        # Advanced filtering
+        request = self.request
+        
+        # Filter by line manager
+        line_manager_id = request.query_params.get('line_manager')
+        if line_manager_id:
+            queryset = queryset.filter(line_manager_id=line_manager_id)
+        
+        # Filter by tags
+        tags = request.query_params.getlist('tags')
+        if tags:
+            queryset = queryset.filter(tags__id__in=tags).distinct()
+        
+        # Filter by business function name
+        business_function_name = request.query_params.get('business_function_name')
+        if business_function_name:
+            queryset = queryset.filter(business_function__name__icontains=business_function_name)
+        
+        # Filter by department name
+        department_name = request.query_params.get('department_name')
+        if department_name:
+            queryset = queryset.filter(department__name__icontains=department_name)
+        
+        return queryset
+    
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user)
+    
+    def perform_update(self, serializer):
+        serializer.save(updated_by=self.request.user)
+    
+    @swagger_auto_schema(
+        method='get',
+        operation_description="Get organizational chart data",
+        responses={200: OrgChartNodeSerializer(many=True)}
+    )
+    @action(detail=False, methods=['get'])
+    def org_chart(self, request):
+        """
+        Get organizational chart data starting from top-level managers
+        """
+        # Get employees with no line manager (top level)
+        top_level_employees = self.get_queryset().filter(
+            line_manager__isnull=True,
+            status='ACTIVE',
+            is_visible_in_org_chart=True
+        ).order_by('position_group__hierarchy_level', 'employee_id')
+        
+        serializer = OrgChartNodeSerializer(top_level_employees, many=True)
+        return Response(serializer.data)
+    
+    @swagger_auto_schema(
+        method='get',
+        operation_description="Get employee statistics",
+        responses={200: openapi.Response(description="Employee statistics")}
+    )
+    @action(detail=False, methods=['get'])
+    def statistics(self, request):
+        """
+        Get employee statistics for dashboard
+        """
+        queryset = self.get_queryset()
+        
+        stats = {
+            'total_employees': queryset.count(),
+            'active_employees': queryset.filter(status='ACTIVE').count(),
+            'by_business_function': queryset.values('business_function__name').annotate(count=Count('id')),
+            'by_department': queryset.values('department__name').annotate(count=Count('id')),
+            'by_position_group': queryset.values('position_group__name').annotate(count=Count('id')),
+            'by_status': queryset.values('status').annotate(count=Count('id')),
+            'by_grade': queryset.values('grade').annotate(count=Count('id')).order_by('grade'),
+        }
+        
+        return Response(stats)
+    
+    @swagger_auto_schema(
+        method='post',
+        operation_description="Bulk update employees",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'employee_ids': openapi.Schema(
+                    type=openapi.TYPE_ARRAY,
+                    items=openapi.Schema(type=openapi.TYPE_INTEGER)
+                ),
+                'updates': openapi.Schema(type=openapi.TYPE_OBJECT)
+            }
+        )
+    )
+    @action(detail=False, methods=['post'])
+    def bulk_update(self, request):
+        """
+        Bulk update multiple employees
+        """
+        employee_ids = request.data.get('employee_ids', [])
+        updates = request.data.get('updates', {})
+        
+        if not employee_ids or not updates:
+            return Response(
+                {'error': 'employee_ids and updates are required'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Validate that only allowed fields are being updated
+        allowed_fields = ['status', 'line_manager', 'office', 'is_visible_in_org_chart']
+        invalid_fields = set(updates.keys()) - set(allowed_fields)
+        if invalid_fields:
+            return Response(
+                {'error': f'Invalid fields for bulk update: {list(invalid_fields)}'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Perform bulk update
+        updated_count = Employee.objects.filter(id__in=employee_ids).update(**updates)
+        
+        # Log activities for each updated employee
+        for employee_id in employee_ids:
+            try:
+                employee = Employee.objects.get(id=employee_id)
+                EmployeeActivity.objects.create(
+                    employee=employee,
+                    activity_type='UPDATED',
+                    description=f"Bulk update performed on {employee.full_name}",
+                    performed_by=request.user,
+                    metadata={'updates': updates}
+                )
+            except Employee.DoesNotExist:
+                continue
+        
+        return Response({
+            'message': f'Successfully updated {updated_count} employees',
+            'updated_count': updated_count
+        })
+
+class EmployeeDocumentViewSet(viewsets.ModelViewSet):
+    """
+    API endpoint for employee documents
+    """
+    serializer_class = EmployeeDocumentSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ['employee', 'document_type']
+    
+    def get_queryset(self):
+        return EmployeeDocument.objects.filter(employee__in=Employee.objects.all())
+    
+    def perform_create(self, serializer):
+        serializer.save(uploaded_by=self.request.user)
+
+class EmployeeActivityViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    API endpoint for employee activities (read-only)
+    """
+    serializer_class = EmployeeActivitySerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
+    filterset_fields = ['employee', 'activity_type']
+    ordering = ['-timestamp']
+    
+    def get_queryset(self):
+        return EmployeeActivity.objects.filter(employee__in=Employee.objects.all())
