@@ -148,36 +148,6 @@ def authenticate_microsoft(request):
     },
     security=[{'Bearer': []}]  # Bu line çox vacibdir - JWT token tələb edir
 )
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-def user_info(request):
-    """
-    Get current user info
-    """
-    try:
-        logger.info(f'User info request for user: {request.user.username}')
-        
-        serializer = UserSerializer(request.user)
-        
-        # Check if user has an employee profile
-        try:
-            employee = Employee.objects.get(user=request.user)
-            employee_data = EmployeeSerializer(employee).data
-        except Employee.DoesNotExist:
-            employee_data = None
-        
-        return Response({
-            'success': True,
-            'user': serializer.data,
-            'employee': employee_data
-        }, status=status.HTTP_200_OK)
-    
-    except Exception as e:
-        logger.error(f'User info error: {str(e)}')
-        return Response({
-            "error": f"Failed to get user info: {str(e)}",
-            "success": False
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 
