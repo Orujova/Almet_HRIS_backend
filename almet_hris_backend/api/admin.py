@@ -4,8 +4,8 @@ from django.contrib import admin
 from django.utils.html import format_html
 from .models import (
     MicrosoftUser, Employee, BusinessFunction, Department, Unit, 
-    JobFunction, PositionGroup, Office, EmployeeTag, EmployeeDocument, 
-    EmployeeActivity
+    JobFunction, PositionGroup, EmployeeTag, EmployeeStatus, 
+    EmployeeDocument, EmployeeActivity
 )
 
 @admin.register(MicrosoftUser)
@@ -20,10 +20,14 @@ class MicrosoftUserAdmin(admin.ModelAdmin):
 
 @admin.register(BusinessFunction)
 class BusinessFunctionAdmin(admin.ModelAdmin):
-    list_display = ('name', 'code', 'is_active', 'created_at')
+    list_display = ('name', 'code', 'is_active', 'created_at', 'employee_count')
     list_filter = ('is_active', 'created_at')
     search_fields = ('name', 'code')
     readonly_fields = ('created_at', 'updated_at')
+    
+    def employee_count(self, obj):
+        return obj.employees.count()
+    employee_count.short_description = 'Employees'
 
 @admin.register(Department)
 class DepartmentAdmin(admin.ModelAdmin):
@@ -38,7 +42,7 @@ class DepartmentAdmin(admin.ModelAdmin):
 
 @admin.register(Unit)
 class UnitAdmin(admin.ModelAdmin):
-    list_display = ('name', 'department', 'business_function', 'is_active')
+    list_display = ('name', 'department', 'business_function', 'is_active', 'employee_count')
     list_filter = ('department__business_function', 'department', 'is_active')
     search_fields = ('name', 'department__name')
     readonly_fields = ('created_at', 'updated_at')
@@ -46,6 +50,10 @@ class UnitAdmin(admin.ModelAdmin):
     def business_function(self, obj):
         return obj.department.business_function.name
     business_function.short_description = 'Business Function'
+    
+    def employee_count(self, obj):
+        return obj.employees.count()
+    employee_count.short_description = 'Employees'
 
 @admin.register(JobFunction)
 class JobFunctionAdmin(admin.ModelAdmin):
@@ -70,17 +78,6 @@ class PositionGroupAdmin(admin.ModelAdmin):
         return obj.employees.count()
     employee_count.short_description = 'Employees'
 
-@admin.register(Office)
-class OfficeAdmin(admin.ModelAdmin):
-    list_display = ('name', 'business_function', 'is_active', 'employee_count')
-    list_filter = ('business_function', 'is_active')
-    search_fields = ('name', 'business_function__name')
-    readonly_fields = ('created_at', 'updated_at')
-    
-    def employee_count(self, obj):
-        return obj.employees.count()
-    employee_count.short_description = 'Employees'
-
 @admin.register(EmployeeTag)
 class EmployeeTagAdmin(admin.ModelAdmin):
     list_display = ('name', 'tag_type', 'color_preview', 'is_active', 'employee_count')
@@ -95,6 +92,25 @@ class EmployeeTagAdmin(admin.ModelAdmin):
             obj.color
         )
     color_preview.short_description = 'Color'
+    
+    def employee_count(self, obj):
+        return obj.employees.count()
+    employee_count.short_description = 'Employees'
+
+@admin.register(EmployeeStatus)
+class EmployeeStatusAdmin(admin.ModelAdmin):
+    list_display = ('name', 'color_preview', 'is_active', 'employee_count', 'created_at')
+    list_filter = ('is_active', 'created_at')
+    search_fields = ('name',)
+    readonly_fields = ('created_at', 'updated_at')
+    
+    def color_preview(self, obj):
+        return format_html(
+            '<span style="background-color: {}; padding: 2px 6px; border-radius: 3px; color: white;">{}</span>',
+            obj.color,
+            obj.name
+        )
+    color_preview.short_description = 'Status Color'
     
     def employee_count(self, obj):
         return obj.employees.count()
@@ -119,27 +135,27 @@ class EmployeeActivityInline(admin.TabularInline):
 @admin.register(Employee)
 class EmployeeAdmin(admin.ModelAdmin):
     list_display = (
-        'employee_id', 'get_full_name', 'department', 'position_group', 
+        'employee_id', 'get_full_name', 'gender', 'department', 'position_group', 
         'status', 'start_date', 'is_visible_in_org_chart'
     )
     list_filter = (
-        'status', 'business_function', 'department', 'position_group', 
-        'office', 'is_visible_in_org_chart', 'start_date'
+        'status', 'gender', 'business_function', 'department', 'position_group', 
+        'is_visible_in_org_chart', 'start_date'
     )
     search_fields = (
         'employee_id', 'user__first_name', 'user__last_name', 
-        'user__email', 'job_title'
+        'user__email', 'job_title', 'full_name'
     )
-    readonly_fields = ('created_at', 'updated_at', 'created_by', 'updated_by')
+    readonly_fields = ('full_name', 'created_at', 'updated_at', 'created_by', 'updated_by')
     
     fieldsets = (
         ('Basic Information', {
-            'fields': ('employee_id', 'user', 'date_of_birth', 'phone', 'address', 'emergency_contact')
+            'fields': ('employee_id', 'user', 'full_name', 'date_of_birth', 'gender', 'phone', 'address', 'emergency_contact')
         }),
         ('Job Information', {
             'fields': (
                 'business_function', 'department', 'unit', 'job_function', 
-                'job_title', 'position_group', 'grade', 'office'
+                'job_title', 'position_group', 'grade'
             )
         }),
         ('Employment', {
@@ -159,8 +175,8 @@ class EmployeeAdmin(admin.ModelAdmin):
     
     def get_full_name(self, obj):
         return obj.full_name
-    get_full_name.short_description = 'Name'
-    get_full_name.admin_order_field = 'user__first_name'
+    get_full_name.short_description = 'Full Name'
+    get_full_name.admin_order_field = 'full_name'
     
     def save_model(self, request, obj, form, change):
         if not change:  # Creating new employee

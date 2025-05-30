@@ -12,7 +12,7 @@ router.register(r'Department', views.DepartmentViewSet, basename='department')
 router.register(r'Unit', views.UnitViewSet, basename='unit')
 router.register(r'Job function', views.JobFunctionViewSet, basename='jobfunction')
 router.register(r'Position group', views.PositionGroupViewSet, basename='positiongroup')
-router.register(r'Offices', views.OfficeViewSet, basename='office')
+router.register(r'Employee statuses', views.EmployeeStatusViewSet, basename='employeestatus')
 router.register(r'Employee tags', views.EmployeeTagViewSet, basename='employeetag')
 
 # Main employee endpoints

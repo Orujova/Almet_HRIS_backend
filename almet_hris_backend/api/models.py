@@ -22,7 +22,6 @@ class MicrosoftUser(models.Model):
 # Business Functions
 class BusinessFunction(models.Model):
     name = models.CharField(max_length=100, unique=True)
-    description = models.TextField(blank=True, null=True)
     code = models.CharField(max_length=10, unique=True)  # HLD, TRD, GEO, UK
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -37,7 +36,6 @@ class BusinessFunction(models.Model):
 # Departments
 class Department(models.Model):
     name = models.CharField(max_length=100)
-    description = models.TextField(blank=True, null=True)
     business_function = models.ForeignKey(BusinessFunction, on_delete=models.CASCADE, related_name='departments')
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -53,7 +51,6 @@ class Department(models.Model):
 # Units (Sub-departments)
 class Unit(models.Model):
     name = models.CharField(max_length=100)
-    description = models.TextField(blank=True, null=True)
     department = models.ForeignKey(Department, on_delete=models.CASCADE, related_name='units')
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -69,7 +66,6 @@ class Unit(models.Model):
 # Job Functions
 class JobFunction(models.Model):
     name = models.CharField(max_length=200, unique=True)
-    description = models.TextField(blank=True, null=True)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -94,7 +90,6 @@ class PositionGroup(models.Model):
     ]
     
     name = models.CharField(max_length=50, choices=POSITION_LEVELS, unique=True)
-    description = models.TextField(blank=True, null=True)
     hierarchy_level = models.IntegerField(unique=True)  # 1=VC, 2=Director, etc.
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -105,21 +100,6 @@ class PositionGroup(models.Model):
 
     class Meta:
         ordering = ['hierarchy_level']
-
-# Offices
-class Office(models.Model):
-    name = models.CharField(max_length=100, unique=True)
-    address = models.TextField(blank=True, null=True)
-    business_function = models.ForeignKey(BusinessFunction, on_delete=models.CASCADE, related_name='offices')
-    is_active = models.BooleanField(default=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    def __str__(self):
-        return self.name
-
-    class Meta:
-        ordering = ['name']
 
 # Employee Tags
 class EmployeeTag(models.Model):
@@ -134,7 +114,6 @@ class EmployeeTag(models.Model):
     name = models.CharField(max_length=50, unique=True)
     tag_type = models.CharField(max_length=20, choices=TAG_TYPES, default='OTHER')
     color = models.CharField(max_length=7, default='#6B7280')  # Hex color
-    description = models.TextField(blank=True, null=True)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -144,6 +123,22 @@ class EmployeeTag(models.Model):
 
     class Meta:
         ordering = ['name']
+
+# Employee Status Model
+class EmployeeStatus(models.Model):
+    name = models.CharField(max_length=50, unique=True)
+    color = models.CharField(max_length=7, default='#6B7280')  # Hex color
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return self.name
+
+    class Meta:
+        ordering = ['name']
+        verbose_name = "Employee Status"
+        verbose_name_plural = "Employee Statuses"
 
 # Employee Documents
 class EmployeeDocument(models.Model):
@@ -173,21 +168,21 @@ class EmployeeDocument(models.Model):
 
 # Main Employee Model
 class Employee(models.Model):
-    STATUS_CHOICES = [
-        ('ACTIVE', 'Active'),
-        ('ON LEAVE', 'On Leave'),
-        ('PROBATION', 'Probation'),
-        ('ON BOARDING', 'On Boarding'),
-        ('TERMINATED', 'Terminated'),
-        ('SUSPENDED', 'Suspended'),
+    GENDER_CHOICES = [
+        ('MALE', 'Male'),
+        ('FEMALE', 'Female'),
     ]
     
     # Basic Information
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='employee_profile')
     employee_id = models.CharField(max_length=50, unique=True, help_text="HC Number")
     
+    # Full name field (automatically generated from first_name + last_name)
+    full_name = models.CharField(max_length=300, editable=False, help_text="Auto-generated from first and last name", default='')
+    
     # Personal Information
     date_of_birth = models.DateField(null=True, blank=True)
+    gender = models.CharField(max_length=10, choices=GENDER_CHOICES, null=True, blank=True)
     address = models.TextField(blank=True, null=True)
     phone = models.CharField(max_length=20, blank=True, null=True)
     emergency_contact = models.TextField(blank=True, null=True)
@@ -201,7 +196,6 @@ class Employee(models.Model):
     job_title = models.CharField(max_length=200)
     position_group = models.ForeignKey(PositionGroup, on_delete=models.PROTECT, related_name='employees')
     grade = models.IntegerField(validators=[MinValueValidator(1), MaxValueValidator(8)])
-    office = models.ForeignKey(Office, on_delete=models.PROTECT, related_name='employees')
     
     # Employment Dates
     start_date = models.DateField()
@@ -210,11 +204,11 @@ class Employee(models.Model):
     # Management Structure
     line_manager = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='direct_reports')
     
-    # Status and Tags
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='ACTIVE')
+    # Status and Tags - Reference to EmployeeStatus model
+    status = models.ForeignKey(EmployeeStatus, on_delete=models.PROTECT, related_name='employees')
     tags = models.ManyToManyField(EmployeeTag, blank=True, related_name='employees')
     
-    # Visibility in org chart
+    # Visibility in org chart - separate field for API control
     is_visible_in_org_chart = models.BooleanField(default=True)
     
     # Additional Information
@@ -226,9 +220,11 @@ class Employee(models.Model):
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='created_employees')
     updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='updated_employees')
 
-    @property
-    def full_name(self):
-        return f"{self.user.first_name} {self.user.last_name}".strip()
+    def save(self, *args, **kwargs):
+        # Auto-generate full_name from user's first_name and last_name
+        if self.user:
+            self.full_name = f"{self.user.first_name} {self.user.last_name}".strip()
+        super().save(*args, **kwargs)
     
     @property
     def line_manager_hc_number(self):
@@ -236,7 +232,7 @@ class Employee(models.Model):
     
     @property
     def direct_reports_count(self):
-        return self.direct_reports.filter(status='ACTIVE').count()
+        return self.direct_reports.filter(status__name='ACTIVE').count()
 
     def __str__(self):
         return f"{self.employee_id} - {self.full_name}"
@@ -256,11 +252,12 @@ class EmployeeActivity(models.Model):
         ('MANAGER_CHANGED', 'Manager Changed'),
         ('PROMOTION', 'Promotion'),
         ('TRANSFER', 'Transfer'),
+        ('ORG_CHART_VISIBILITY_CHANGED', 'Org Chart Visibility Changed'),
         ('OTHER', 'Other Activity'),
     ]
     
     employee = models.ForeignKey(Employee, on_delete=models.CASCADE, related_name='activities')
-    activity_type = models.CharField(max_length=20, choices=ACTIVITY_TYPES)
+    activity_type = models.CharField(max_length=30, choices=ACTIVITY_TYPES)
     description = models.TextField()
     performed_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
     timestamp = models.DateTimeField(auto_now_add=True)

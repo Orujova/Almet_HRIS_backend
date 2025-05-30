@@ -1,3 +1,5 @@
+# api/views.py
+
 from django.shortcuts import render
 from django.utils import timezone
 from rest_framework import status, viewsets
@@ -16,15 +18,15 @@ import traceback
 
 from .models import (
     Employee, BusinessFunction, Department, Unit, JobFunction, 
-    PositionGroup, Office, EmployeeTag, EmployeeDocument, 
+    PositionGroup, EmployeeTag, EmployeeDocument, EmployeeStatus,
     EmployeeActivity, MicrosoftUser
 )
 from .serializers import (
     EmployeeListSerializer, EmployeeDetailSerializer, EmployeeCreateUpdateSerializer,
     BusinessFunctionSerializer, DepartmentSerializer, UnitSerializer,
-    JobFunctionSerializer, PositionGroupSerializer, OfficeSerializer,
-    EmployeeTagSerializer, EmployeeDocumentSerializer, EmployeeActivitySerializer,
-    UserSerializer, OrgChartNodeSerializer
+    JobFunctionSerializer, PositionGroupSerializer, EmployeeTagSerializer,
+    EmployeeStatusSerializer, EmployeeDocumentSerializer, EmployeeActivitySerializer,
+    UserSerializer, OrgChartNodeSerializer, EmployeeOrgChartVisibilitySerializer
 )
 from .auth import MicrosoftTokenValidator
 
@@ -36,9 +38,6 @@ class StandardResultsSetPagination(PageNumberPagination):
     page_size = 10
     page_size_query_param = 'page_size'
     max_page_size = 100
-
-
-
 
 @swagger_auto_schema(
     method='post',
@@ -146,17 +145,8 @@ def authenticate_microsoft(request):
         ),
         401: openapi.Response(description="Unauthorized - Invalid or missing token")
     },
-    security=[{'Bearer': []}]  # Bu line çox vacibdir - JWT token tələb edir
+    security=[{'Bearer': []}]
 )
-
-
-
-# @swagger_auto_schema(
-#     method='get',
-#     operation_description="Get current user information",
-#     responses={200: UserSerializer},
-#     security=[{'Bearer': []}]
-# )
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def user_info(request):
@@ -186,70 +176,111 @@ def user_info(request):
             "success": False
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-# Reference Data ViewSets
-class BusinessFunctionViewSet(viewsets.ReadOnlyModelViewSet):
+# Reference Data ViewSets with Full CRUD
+class BusinessFunctionViewSet(viewsets.ModelViewSet):
     """
-    API endpoint for business functions
+    API endpoint for business functions with full CRUD operations
     """
-    queryset = BusinessFunction.objects.filter(is_active=True)
+    queryset = BusinessFunction.objects.all()
     serializer_class = BusinessFunctionSerializer
     permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ['name', 'code']
+    filterset_fields = ['is_active']
+    ordering_fields = ['name', 'code', 'created_at']
+    ordering = ['name']
 
-class DepartmentViewSet(viewsets.ReadOnlyModelViewSet):
+class DepartmentViewSet(viewsets.ModelViewSet):
     """
-    API endpoint for departments
+    API endpoint for departments with full CRUD operations
     """
-    queryset = Department.objects.filter(is_active=True)
+    queryset = Department.objects.select_related('business_function')
     serializer_class = DepartmentSerializer
     permission_classes = [IsAuthenticated]
-    filter_backends = [DjangoFilterBackend]
-    filterset_fields = ['business_function']
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ['name', 'business_function__name']
+    filterset_fields = ['business_function', 'is_active']
+    ordering_fields = ['name', 'created_at']
+    ordering = ['name']
 
-class UnitViewSet(viewsets.ReadOnlyModelViewSet):
+class UnitViewSet(viewsets.ModelViewSet):
     """
-    API endpoint for units
+    API endpoint for units with full CRUD operations
     """
-    queryset = Unit.objects.filter(is_active=True)
+    queryset = Unit.objects.select_related('department', 'department__business_function')
     serializer_class = UnitSerializer
     permission_classes = [IsAuthenticated]
-    filter_backends = [DjangoFilterBackend]
-    filterset_fields = ['department']
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ['name', 'department__name']
+    filterset_fields = ['department', 'is_active']
+    ordering_fields = ['name', 'created_at']
+    ordering = ['name']
 
-class JobFunctionViewSet(viewsets.ReadOnlyModelViewSet):
+class JobFunctionViewSet(viewsets.ModelViewSet):
     """
-    API endpoint for job functions
+    API endpoint for job functions with full CRUD operations
     """
-    queryset = JobFunction.objects.filter(is_active=True)
+    queryset = JobFunction.objects.all()
     serializer_class = JobFunctionSerializer
     permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ['name']
+    filterset_fields = ['is_active']
+    ordering_fields = ['name', 'created_at']
+    ordering = ['name']
 
-class PositionGroupViewSet(viewsets.ReadOnlyModelViewSet):
+class PositionGroupViewSet(viewsets.ModelViewSet):
     """
-    API endpoint for position groups
+    API endpoint for position groups with full CRUD operations
     """
-    queryset = PositionGroup.objects.filter(is_active=True)
+    queryset = PositionGroup.objects.all()
     serializer_class = PositionGroupSerializer
     permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ['name']
+    filterset_fields = ['is_active']
+    ordering_fields = ['hierarchy_level', 'name', 'created_at']
+    ordering = ['hierarchy_level']
+    
+    @swagger_auto_schema(
+        method='get',
+        operation_description="Get position groups ordered by hierarchy",
+        responses={200: PositionGroupSerializer(many=True)}
+    )
+    @action(detail=False, methods=['get'])
+    def by_hierarchy(self, request):
+        """
+        Get position groups ordered by hierarchy level
+        """
+        queryset = self.get_queryset().filter(is_active=True).order_by('hierarchy_level')
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
 
-class OfficeViewSet(viewsets.ReadOnlyModelViewSet):
+class EmployeeTagViewSet(viewsets.ModelViewSet):
     """
-    API endpoint for offices
+    API endpoint for employee tags with full CRUD operations
     """
-    queryset = Office.objects.filter(is_active=True)
-    serializer_class = OfficeSerializer
-    permission_classes = [IsAuthenticated]
-    filter_backends = [DjangoFilterBackend]
-    filterset_fields = ['business_function']
-
-class EmployeeTagViewSet(viewsets.ReadOnlyModelViewSet):
-    """
-    API endpoint for employee tags
-    """
-    queryset = EmployeeTag.objects.filter(is_active=True)
+    queryset = EmployeeTag.objects.all()
     serializer_class = EmployeeTagSerializer
     permission_classes = [IsAuthenticated]
-    filter_backends = [DjangoFilterBackend]
-    filterset_fields = ['tag_type']
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ['name']
+    filterset_fields = ['tag_type', 'is_active']
+    ordering_fields = ['name', 'tag_type', 'created_at']
+    ordering = ['name']
+
+class EmployeeStatusViewSet(viewsets.ModelViewSet):
+    """
+    API endpoint for employee statuses with full CRUD operations
+    """
+    queryset = EmployeeStatus.objects.all()
+    serializer_class = EmployeeStatusSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ['name']
+    filterset_fields = ['is_active']
+    ordering_fields = ['name', 'created_at']
+    ordering = ['name']
 
 # Main Employee ViewSet
 class EmployeeViewSet(viewsets.ModelViewSet):
@@ -258,7 +289,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
     """
     queryset = Employee.objects.select_related(
         'user', 'business_function', 'department', 'unit', 
-        'job_function', 'position_group', 'office', 'line_manager'
+        'job_function', 'position_group', 'status', 'line_manager'
     ).prefetch_related('tags')
     permission_classes = [IsAuthenticated]
     pagination_class = StandardResultsSetPagination
@@ -267,7 +298,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
     # Search fields
     search_fields = [
         'employee_id', 'user__first_name', 'user__last_name', 
-        'user__email', 'job_title'
+        'user__email', 'job_title', 'full_name'
     ]
     
     # Filter fields
@@ -277,11 +308,10 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         'unit': ['exact'],
         'job_function': ['exact'],
         'position_group': ['exact'],
-        'office': ['exact'],
         'status': ['exact'],
+        'gender': ['exact'],
         'grade': ['exact', 'gte', 'lte'],
         'start_date': ['exact', 'gte', 'lte'],
-        'is_visible_in_org_chart': ['exact'],
     }
     
     # Ordering fields
@@ -346,12 +376,98 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         # Get employees with no line manager (top level)
         top_level_employees = self.get_queryset().filter(
             line_manager__isnull=True,
-            status='ACTIVE',
+            status__name='ACTIVE',
             is_visible_in_org_chart=True
         ).order_by('position_group__hierarchy_level', 'employee_id')
         
         serializer = OrgChartNodeSerializer(top_level_employees, many=True)
         return Response(serializer.data)
+    
+    @swagger_auto_schema(
+        method='patch',
+        operation_description="Update org chart visibility for multiple employees",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'employee_ids': openapi.Schema(
+                    type=openapi.TYPE_ARRAY,
+                    items=openapi.Schema(type=openapi.TYPE_INTEGER)
+                ),
+                'is_visible_in_org_chart': openapi.Schema(type=openapi.TYPE_BOOLEAN)
+            }
+        )
+    )
+    @action(detail=False, methods=['patch'])
+    def update_org_chart_visibility(self, request):
+        """
+        Update org chart visibility for multiple employees
+        """
+        employee_ids = request.data.get('employee_ids', [])
+        is_visible = request.data.get('is_visible_in_org_chart')
+        
+        if not employee_ids or is_visible is None:
+            return Response(
+                {'error': 'employee_ids and is_visible_in_org_chart are required'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Update employees
+        updated_employees = []
+        for employee_id in employee_ids:
+            try:
+                employee = Employee.objects.get(id=employee_id)
+                old_visibility = employee.is_visible_in_org_chart
+                employee.is_visible_in_org_chart = is_visible
+                employee.save()
+                
+                # Log activity if visibility changed
+                if old_visibility != is_visible:
+                    EmployeeActivity.objects.create(
+                        employee=employee,
+                        activity_type='ORG_CHART_VISIBILITY_CHANGED',
+                        description=f"Org chart visibility changed from {old_visibility} to {is_visible} for {employee.full_name}",
+                        performed_by=request.user,
+                        metadata={'old_visibility': old_visibility, 'new_visibility': is_visible}
+                    )
+                
+                updated_employees.append({
+                    'id': employee.id,
+                    'employee_id': employee.employee_id,
+                    'name': employee.full_name,
+                    'is_visible_in_org_chart': employee.is_visible_in_org_chart
+                })
+                
+            except Employee.DoesNotExist:
+                continue
+        
+        return Response({
+            'message': f'Successfully updated {len(updated_employees)} employees',
+            'updated_employees': updated_employees
+        })
+    
+    @swagger_auto_schema(
+        method='patch',
+        operation_description="Update org chart visibility for a single employee",
+        request_body=EmployeeOrgChartVisibilitySerializer
+    )
+    @action(detail=True, methods=['patch'])
+    def org_chart_visibility(self, request, pk=None):
+        """
+        Update org chart visibility for a single employee
+        """
+        employee = self.get_object()
+        serializer = EmployeeOrgChartVisibilitySerializer(
+            employee, 
+            data=request.data, 
+            partial=True, 
+            context={'request': request}
+        )
+        
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
     @swagger_auto_schema(
         method='get',
@@ -367,12 +483,15 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         
         stats = {
             'total_employees': queryset.count(),
-            'active_employees': queryset.filter(status='ACTIVE').count(),
+            'active_employees': queryset.filter(status__name='ACTIVE').count(),
             'by_business_function': queryset.values('business_function__name').annotate(count=Count('id')),
             'by_department': queryset.values('department__name').annotate(count=Count('id')),
             'by_position_group': queryset.values('position_group__name').annotate(count=Count('id')),
-            'by_status': queryset.values('status').annotate(count=Count('id')),
+            'by_status': queryset.values('status__name').annotate(count=Count('id')),
+            'by_gender': queryset.values('gender').annotate(count=Count('id')),
             'by_grade': queryset.values('grade').annotate(count=Count('id')).order_by('grade'),
+            'visible_in_org_chart': queryset.filter(is_visible_in_org_chart=True).count(),
+            'hidden_from_org_chart': queryset.filter(is_visible_in_org_chart=False).count(),
         }
         
         return Response(stats)
@@ -406,7 +525,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             )
         
         # Validate that only allowed fields are being updated
-        allowed_fields = ['status', 'line_manager', 'office', 'is_visible_in_org_chart']
+        allowed_fields = ['status', 'line_manager', 'is_visible_in_org_chart']
         invalid_fields = set(updates.keys()) - set(allowed_fields)
         if invalid_fields:
             return Response(
