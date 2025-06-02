@@ -128,6 +128,8 @@ def authenticate_microsoft(request):
             "details": str(e)
         }, status=status.HTTP_401_UNAUTHORIZED)
 
+# views.py faylında user_info function-ını aşağıdakı kimi dəyişdirin:
+
 @swagger_auto_schema(
     method='get',
     operation_description="Get current user information",
@@ -154,28 +156,43 @@ def user_info(request):
     Get current user info
     """
     try:
+        logger.info(f'User info request for user: {request.user.username}')
         serializer = UserSerializer(request.user)
         
-        # Check if user has an employee profile
+        # Check if user has an employee profile with proper select_related
         try:
-            employee = Employee.objects.get(user=request.user)
+            employee = Employee.objects.select_related(
+                'user', 'business_function', 'department', 'unit', 
+                'job_function', 'position_group', 'status', 'line_manager'
+            ).prefetch_related('tags').get(user=request.user)
+            
             employee_data = EmployeeDetailSerializer(employee).data
+            logger.info(f'[{request.user.username}] Employee profile found: {employee.employee_id}')
+            
         except Employee.DoesNotExist:
+            logger.info(f'[{request.user.username}] No employee profile found')
+            employee_data = None
+        except Exception as e:
+            logger.error(f'[{request.user.username}] Error during employee profile processing for user ID {request.user.id}: {str(e)}')
+            logger.error(f'[{request.user.username}] Employee processing traceback: {traceback.format_exc()}')
             employee_data = None
         
-        return Response({
+        response_data = {
             'success': True,
             'user': serializer.data,
             'employee': employee_data
-        }, status=status.HTTP_200_OK)
+        }
+        
+        logger.info(f'[{request.user.username}] User info response prepared successfully')
+        return Response(response_data, status=status.HTTP_200_OK)
     
     except Exception as e:
-        logger.error(f'User info error: {str(e)}')
+        logger.error(f'[{request.user.username}] Unhandled error in user_info: {str(e)}')
+        logger.error(f'[{request.user.username}] Full traceback: {traceback.format_exc()}')
         return Response({
             "error": f"Failed to get user info: {str(e)}",
             "success": False
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
 # Reference Data ViewSets with Full CRUD
 class BusinessFunctionViewSet(viewsets.ModelViewSet):
     """
