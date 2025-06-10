@@ -27,9 +27,11 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt',
     'drf_yasg',
     'corsheaders',
+    'django_filters',  # Add this for filtering
     
     # Local apps
     'api',
+    'grading',  # ADD GRADING APP HERE
 ]
 
 MIDDLEWARE = [
@@ -63,7 +65,7 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'almet_hris_backend.wsgi.application'
 
-# Database - SQLite istifadə edin ki, asan olsun
+# Database - PostgreSQL Configuration
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
@@ -72,6 +74,7 @@ DATABASES = {
         'PASSWORD': 'almet2025',  # Sizin qoyduğunuz parol
         'HOST': 'localhost',
         'PORT': '5432',
+        'CONN_MAX_AGE': 60,  # Connection pooling
     }
 }
 
@@ -111,6 +114,13 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
     ],
+    'DEFAULT_FILTER_BACKENDS': [
+        'django_filters.rest_framework.DjangoFilterBackend',
+        'rest_framework.filters.SearchFilter',
+        'rest_framework.filters.OrderingFilter',
+    ],
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+    'PAGE_SIZE': 25,
 }
 
 # JWT Settings
@@ -134,16 +144,50 @@ CORS_ALLOWED_ORIGINS = [
 ]
 
 CORS_ALLOW_CREDENTIALS = True
-
 CORS_ALLOW_ALL_ORIGINS = False  # Development üçün True edə bilərsiniz
 
-# Logging əlavə et (sonuna)
+# Enhanced Logging for Grading System
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
+            'style': '{',
+        },
+        'simple': {
+            'format': '{levelname} {message}',
+            'style': '{',
+        },
+    },
     'handlers': {
         'console': {
+            'level': 'INFO',
             'class': 'logging.StreamHandler',
+            'formatter': 'simple',
+        },
+        'file': {
+            'level': 'INFO',
+            'class': 'logging.FileHandler',
+            'filename': os.path.join(BASE_DIR, 'grading_system.log'),
+            'formatter': 'verbose',
+        },
+    },
+    'loggers': {
+        'grading': {
+            'handlers': ['console', 'file'],
+            'level': 'INFO',
+            'propagate': True,
+        },
+        'api': {
+            'handlers': ['console', 'file'],
+            'level': 'INFO',
+            'propagate': True,
+        },
+        'django.db.backends': {
+            'handlers': ['console'],
+            'level': 'WARNING',  # SQL query logging
+            'propagate': False,
         },
     },
     'root': {
@@ -152,7 +196,7 @@ LOGGING = {
     },
 }
 
-# Swagger JWT Settings - BU HİSSƏNİ ƏLAVƏ EDİN
+# Swagger JWT Settings
 SWAGGER_SETTINGS = {
     'SECURITY_DEFINITIONS': {
         'Bearer': {
@@ -183,3 +227,27 @@ SWAGGER_SETTINGS = {
 REDOC_SETTINGS = {
    'LAZY_RENDERING': False,
 }
+
+# Grading System Specific Settings
+GRADING_SYSTEM_SETTINGS = {
+    'DEFAULT_BASE_CURRENCY': 'AZN',
+   
+    'MAX_SCENARIOS_PER_SYSTEM': 50,  # Limit scenarios per grading system
+    'AUTO_ARCHIVE_DAYS': 365,  # Auto archive old scenarios after 1 year
+}
+
+# Cache Configuration (for better performance with PostgreSQL)
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.db.DatabaseCache',
+        'LOCATION': 'cache_table',
+        'TIMEOUT': 300,  # 5 minutes
+        'OPTIONS': {
+            'MAX_ENTRIES': 1000,
+        }
+    }
+}
+
+# Session configuration
+SESSION_ENGINE = 'django.contrib.sessions.backends.db'
+SESSION_COOKIE_AGE = 3600  # 1 hour

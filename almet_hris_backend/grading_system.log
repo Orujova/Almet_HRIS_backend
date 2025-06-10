@@ -1,0 +1,92 @@
+INFO 2025-06-10 15:03:46,612 views 12264 1372 === Microsoft authentication request received ===
+INFO 2025-06-10 15:03:46,612 views 12264 1372 Request method: POST
+INFO 2025-06-10 15:03:46,613 views 12264 1372 Request headers: {'Content-Length': '1289', 'Content-Type': 'application/json', 'Host': 'localhost:8000', 'Connection': 'keep-alive', 'Sec-Ch-Ua-Platform': '"Windows"', 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36', 'Accept': 'application/json, text/plain, */*', 'Sec-Ch-Ua': '"Google Chrome";v="137", "Chromium";v="137", "Not/A)Brand";v="24"', 'Sec-Ch-Ua-Mobile': '?0', 'Origin': 'http://localhost:3000', 'Sec-Fetch-Site': 'same-site', 'Sec-Fetch-Mode': 'cors', 'Sec-Fetch-Dest': 'empty', 'Referer': 'http://localhost:3000/', 'Accept-Encoding': 'gzip, deflate, br, zstd', 'Accept-Language': 'en-CA,en;q=0.9,az-AZ;q=0.8,az;q=0.7,en-GB;q=0.6,en-US;q=0.5'}
+INFO 2025-06-10 15:03:46,613 views 12264 1372 Request data keys: ['id_token']
+INFO 2025-06-10 15:03:46,614 views 12264 1372 Microsoft authentication attempt - validating token
+INFO 2025-06-10 15:03:46,614 views 12264 1372 Token length: 1274
+INFO 2025-06-10 15:03:46,614 auth 12264 1372 === Starting Microsoft token validation ===
+INFO 2025-06-10 15:03:46,614 auth 12264 1372 Received token: eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiIsImtpZCI6IkNOdj...
+INFO 2025-06-10 15:03:46,614 auth 12264 1372 === Token payload ===
+INFO 2025-06-10 15:03:46,615 auth 12264 1372 {
+  "aud": "230458ff-ed69-4abb-8496-3888067116f6",
+  "iss": "https://login.microsoftonline.com/b3222ef7-242d-4724-a665-97b0a764f2d0/v2.0",
+  "iat": 1749553126,
+  "nbf": 1749553126,
+  "exp": 1749557026,
+  "email": "n.orujova@almettrading.com",
+  "name": "Narmin Orujova",
+  "nonce": "01975982-9ff2-7ea7-9b5a-9aebc8a778fb",
+  "oid": "2c74167f-d69a-43a5-a1e6-910fd8560625",
+  "preferred_username": "n.orujova@almettrading.com",
+  "rh": "1.ATkA9y4isy0kJEemZZewp2Ty0P9YBCNp7btKhJY4iAZxFvY5ABM5AA.",
+  "sid": "005023b9-f899-0bf0-952a-8ebc4e9da951",
+  "sub": "i7rUkArSkR21ADRGNhKBNmJkwt25_DaBfDeIyBhUpf4",
+  "tid": "b3222ef7-242d-4724-a665-97b0a764f2d0",
+  "uti": "oK7gKwvpC0S969reZKymAA",
+  "ver": "2.0"
+}
+INFO 2025-06-10 15:03:46,615 auth 12264 1372 Audience from token: 230458ff-ed69-4abb-8496-3888067116f6
+INFO 2025-06-10 15:03:46,615 auth 12264 1372 Expected audience: 230458ff-ed69-4abb-8496-3888067116f6
+INFO 2025-06-10 15:03:46,615 auth 12264 1372 Microsoft ID (sub): i7rUkArSkR21ADRGNhKBNmJkwt25_DaBfDeIyBhUpf4
+INFO 2025-06-10 15:03:46,615 auth 12264 1372 Full name from token: Narmin Orujova
+INFO 2025-06-10 15:03:46,615 auth 12264 1372 Extracted user info: email=n.orujova@almettrading.com, first_name=Narmin, last_name=Orujova
+INFO 2025-06-10 15:03:46,664 auth 12264 1372 Found existing Microsoft user: n.orujova
+INFO 2025-06-10 15:03:46,665 auth 12264 1372 === Token validation successful for user: n.orujova ===
+INFO 2025-06-10 15:03:46,665 views 12264 1372 Token validated successfully for user: n.orujova
+INFO 2025-06-10 15:03:46,666 views 12264 1372 JWT tokens generated for user: n.orujova
+INFO 2025-06-10 15:03:46,666 views 12264 1372 Returning successful response for user: n.orujova
+INFO 2025-06-10 15:20:49,717 views 12264 11160 === Microsoft authentication request received ===
+INFO 2025-06-10 15:20:49,718 views 12264 11160 Request method: POST
+INFO 2025-06-10 15:20:49,718 views 12264 11160 Request headers: {'Content-Length': '1289', 'Content-Type': 'application/json', 'Host': 'localhost:8000', 'Connection': 'keep-alive', 'Sec-Ch-Ua-Platform': '"Windows"', 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36', 'Accept': 'application/json, text/plain, */*', 'Sec-Ch-Ua': '"Google Chrome";v="137", "Chromium";v="137", "Not/A)Brand";v="24"', 'Sec-Ch-Ua-Mobile': '?0', 'Origin': 'http://localhost:3000', 'Sec-Fetch-Site': 'same-site', 'Sec-Fetch-Mode': 'cors', 'Sec-Fetch-Dest': 'empty', 'Referer': 'http://localhost:3000/', 'Accept-Encoding': 'gzip, deflate, br, zstd', 'Accept-Language': 'en-CA,en;q=0.9,az-AZ;q=0.8,az;q=0.7,en-GB;q=0.6,en-US;q=0.5'}
+INFO 2025-06-10 15:20:49,718 views 12264 11160 Request data keys: ['id_token']
+INFO 2025-06-10 15:20:49,718 views 12264 11160 Microsoft authentication attempt - validating token
+INFO 2025-06-10 15:20:49,718 views 12264 11160 Token length: 1274
+INFO 2025-06-10 15:20:49,719 auth 12264 11160 === Starting Microsoft token validation ===
+INFO 2025-06-10 15:20:49,719 auth 12264 11160 Received token: eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiIsImtpZCI6IkNOdj...
+INFO 2025-06-10 15:20:49,719 auth 12264 11160 === Token payload ===
+INFO 2025-06-10 15:20:49,719 auth 12264 11160 {
+  "aud": "230458ff-ed69-4abb-8496-3888067116f6",
+  "iss": "https://login.microsoftonline.com/b3222ef7-242d-4724-a665-97b0a764f2d0/v2.0",
+  "iat": 1749554149,
+  "nbf": 1749554149,
+  "exp": 1749558049,
+  "email": "n.orujova@almettrading.com",
+  "name": "Narmin Orujova",
+  "nonce": "01975992-3e24-7c2f-8434-cd7280b27636",
+  "oid": "2c74167f-d69a-43a5-a1e6-910fd8560625",
+  "preferred_username": "n.orujova@almettrading.com",
+  "rh": "1.ATkA9y4isy0kJEemZZewp2Ty0P9YBCNp7btKhJY4iAZxFvY5ABM5AA.",
+  "sid": "005023b9-f899-0bf0-952a-8ebc4e9da951",
+  "sub": "i7rUkArSkR21ADRGNhKBNmJkwt25_DaBfDeIyBhUpf4",
+  "tid": "b3222ef7-242d-4724-a665-97b0a764f2d0",
+  "uti": "eDSnRjH3y0yx16MM64FrAQ",
+  "ver": "2.0"
+}
+INFO 2025-06-10 15:20:49,719 auth 12264 11160 Audience from token: 230458ff-ed69-4abb-8496-3888067116f6
+INFO 2025-06-10 15:20:49,720 auth 12264 11160 Expected audience: 230458ff-ed69-4abb-8496-3888067116f6
+INFO 2025-06-10 15:20:49,720 auth 12264 11160 Microsoft ID (sub): i7rUkArSkR21ADRGNhKBNmJkwt25_DaBfDeIyBhUpf4
+INFO 2025-06-10 15:20:49,720 auth 12264 11160 Full name from token: Narmin Orujova
+INFO 2025-06-10 15:20:49,720 auth 12264 11160 Extracted user info: email=n.orujova@almettrading.com, first_name=Narmin, last_name=Orujova
+INFO 2025-06-10 15:20:49,753 auth 12264 11160 Found existing Microsoft user: n.orujova
+INFO 2025-06-10 15:20:49,753 auth 12264 11160 === Token validation successful for user: n.orujova ===
+INFO 2025-06-10 15:20:49,753 views 12264 11160 Token validated successfully for user: n.orujova
+INFO 2025-06-10 15:20:49,753 views 12264 11160 JWT tokens generated for user: n.orujova
+INFO 2025-06-10 15:20:49,754 views 12264 11160 Returning successful response for user: n.orujova
+INFO 2025-06-10 15:23:58,469 views 12264 11508 User info request for user: n.orujova
+INFO 2025-06-10 15:23:58,485 views 12264 11508 [n.orujova] No employee profile found
+INFO 2025-06-10 15:23:58,486 views 12264 11508 [n.orujova] User info response prepared successfully
+INFO 2025-06-10 15:24:58,257 views 12264 24828 User info request for user: n.orujova
+INFO 2025-06-10 15:24:58,301 views 12264 24828 [n.orujova] No employee profile found
+INFO 2025-06-10 15:24:58,312 views 12264 24828 [n.orujova] User info response prepared successfully
+INFO 2025-06-10 15:25:02,501 views 12264 11160 User info request for user: n.orujova
+INFO 2025-06-10 15:25:02,539 views 12264 11160 [n.orujova] No employee profile found
+INFO 2025-06-10 15:25:02,558 views 12264 11160 [n.orujova] User info response prepared successfully
+INFO 2025-06-10 15:28:15,300 views 12264 24828 User info request for user: n.orujova
+INFO 2025-06-10 15:28:15,315 views 12264 24828 [n.orujova] No employee profile found
+INFO 2025-06-10 15:28:15,316 views 12264 24828 [n.orujova] User info response prepared successfully
+INFO 2025-06-10 15:28:48,592 views 12264 25696 User info request for user: n.orujova
+INFO 2025-06-10 15:28:48,615 views 12264 25696 [n.orujova] No employee profile found
+INFO 2025-06-10 15:28:48,616 views 12264 25696 [n.orujova] User info response prepared successfully
+INFO 2025-06-10 15:28:51,670 views 12264 25696 User info request for user: n.orujova
+INFO 2025-06-10 15:28:51,683 views 12264 25696 [n.orujova] No employee profile found
+INFO 2025-06-10 15:28:51,684 views 12264 25696 [n.orujova] User info response prepared successfully
