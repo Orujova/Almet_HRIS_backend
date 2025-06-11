@@ -1,11 +1,79 @@
-# grading/serializers.py
+# grading/serializers.py - UPDATED for 4 horizontal intervals
 
 from rest_framework import serializers
-from .models import (
-    GradingSystem, SalaryGrade, GrowthRate, HorizontalRate, 
-    SalaryScenario, ScenarioHistory
-)
+from .models import GradingSystem, SalaryGrade, SalaryScenario, ScenarioHistory
 from api.models import PositionGroup
+
+# --- HELPER SERIALIZERS (Updated for 4 intervals) ---
+
+class _GradeValueSerializer(serializers.Serializer):
+    """
+    Helper serializer for a single grade's details.
+    UPDATED: Now includes horizontal_intervals structure
+    """
+    LD = serializers.CharField(allow_blank=True, required=False)
+    LQ = serializers.CharField(allow_blank=True, required=False)
+    M = serializers.CharField(allow_blank=True, required=False)
+    UQ = serializers.CharField(allow_blank=True, required=False)
+    UD = serializers.CharField(allow_blank=True, required=False)
+    
+    # The following are sometimes present in the structure
+    vertical = serializers.FloatField(required=False, allow_null=True)
+    
+    # UPDATED: 4 horizontal intervals instead of single horizontal
+    horizontal_intervals = serializers.DictField(
+        child=serializers.FloatField(min_value=0, max_value=100),
+        required=False,
+        allow_empty=True
+    )
+
+class _HorizontalIntervalsSerializer(serializers.Serializer):
+    """NEW: Helper serializer for 4 horizontal interval inputs."""
+    LD_to_LQ = serializers.FloatField(min_value=0, max_value=100, required=False, allow_null=True)
+    LQ_to_M = serializers.FloatField(min_value=0, max_value=100, required=False, allow_null=True)
+    M_to_UQ = serializers.FloatField(min_value=0, max_value=100, required=False, allow_null=True)
+    UQ_to_UD = serializers.FloatField(min_value=0, max_value=100, required=False, allow_null=True)
+
+class _RateInputSerializer(serializers.Serializer):
+    """UPDATED: Helper serializer for vertical + 4 horizontal interval inputs."""
+    vertical = serializers.FloatField(min_value=0, max_value=100, required=False, allow_null=True)
+    horizontal_intervals = _HorizontalIntervalsSerializer(required=False)
+
+# --- EXISTING SERIALIZERS (Updated where needed) ---
+
+class CurrentStructureSerializer(serializers.Serializer):
+    """Serializer for the current grade structure, matching frontend 'currentData'."""
+    id = serializers.CharField()
+    name = serializers.CharField()
+    grades = serializers.DictField(child=_GradeValueSerializer(), required=False)
+    gradeOrder = serializers.ListField(child=serializers.CharField())
+    verticalAvg = serializers.FloatField()
+    horizontalAvg = serializers.FloatField()
+    baseValue1 = serializers.FloatField()
+    status = serializers.CharField()
+    grading_system_id = serializers.IntegerField(required=False, allow_null=True)
+    grading_system_name = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+
+class DynamicCalculationRequestSerializer(serializers.Serializer):
+    """UPDATED: Serializer for validating the dynamic calculation request with 4 intervals."""
+    baseValue1 = serializers.DecimalField(max_digits=15, decimal_places=2, min_value=1)
+    grades = serializers.DictField(child=_RateInputSerializer())
+
+class DynamicCalculationResponseSerializer(serializers.Serializer):
+    """Serializer for the dynamic calculation response."""
+    calculatedOutputs = serializers.DictField(child=_GradeValueSerializer())
+    success = serializers.BooleanField(default=True)
+
+class ScenarioSaveRequestSerializer(serializers.Serializer):
+    """UPDATED: Serializer for validating the 'save draft' request with 4 intervals."""
+    name = serializers.CharField(max_length=100)
+    description = serializers.CharField(allow_blank=True, required=False)
+    baseValue1 = serializers.DecimalField(max_digits=15, decimal_places=2, min_value=1)
+    gradeOrder = serializers.ListField(child=serializers.CharField())
+    grades = serializers.DictField(child=_RateInputSerializer())
+    calculatedOutputs = serializers.DictField(child=_GradeValueSerializer())
+
+# --- EXISTING SERIALIZERS (Unchanged) ---
 
 class GradingSystemSerializer(serializers.ModelSerializer):
     salary_grades_count = serializers.SerializerMethodField()
@@ -37,162 +105,95 @@ class GradingSystemSerializer(serializers.ModelSerializer):
 class SalaryGradeSerializer(serializers.ModelSerializer):
     position_group_name = serializers.CharField(source='position_group.get_name_display', read_only=True)
     hierarchy_level = serializers.IntegerField(source='position_group.hierarchy_level', read_only=True)
-    grading_system_name = serializers.CharField(source='grading_system.name', read_only=True)
     
     class Meta:
         model = SalaryGrade
         fields = [
-            'id', 'grading_system', 'grading_system_name', 'position_group', 
-            'position_group_name', 'hierarchy_level', 'lower_decile', 
-            'lower_quartile', 'median', 'upper_quartile', 'upper_decile',
-            'created_at', 'updated_at'
+            'id', 'grading_system', 'position_group', 'position_group_name', 
+            'hierarchy_level', 'lower_decile', 'lower_quartile', 'median', 
+            'upper_quartile', 'upper_decile', 'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
 
-class GrowthRateSerializer(serializers.ModelSerializer):
-    from_position_name = serializers.CharField(source='from_position.get_name_display', read_only=True)
-    to_position_name = serializers.CharField(source='to_position.get_name_display', read_only=True)
-    from_hierarchy_level = serializers.IntegerField(source='from_position.hierarchy_level', read_only=True)
-    to_hierarchy_level = serializers.IntegerField(source='to_position.hierarchy_level', read_only=True)
-    
-    class Meta:
-        model = GrowthRate
-        fields = [
-            'id', 'grading_system', 'from_position', 'from_position_name', 
-            'from_hierarchy_level', 'to_position', 'to_position_name', 
-            'to_hierarchy_level', 'vertical_rate', 'created_at'
-        ]
-        read_only_fields = ['id', 'created_at']
-
-class HorizontalRateSerializer(serializers.ModelSerializer):
-    position_group_name = serializers.CharField(source='position_group.get_name_display', read_only=True)
-    hierarchy_level = serializers.IntegerField(source='position_group.hierarchy_level', read_only=True)
-    transition_display = serializers.CharField(source='get_transition_type_display', read_only=True)
-    
-    class Meta:
-        model = HorizontalRate
-        fields = [
-            'id', 'grading_system', 'position_group', 'position_group_name', 
-            'hierarchy_level', 'transition_type', 'transition_display', 
-            'horizontal_rate', 'created_at'
-        ]
-        read_only_fields = ['id', 'created_at']
-
-class PositionGroupSimpleSerializer(serializers.ModelSerializer):
-    """Simple serializer for position groups in dropdowns"""
-    display_name = serializers.CharField(source='get_name_display', read_only=True)
-    
-    class Meta:
-        model = PositionGroup
-        fields = ['id', 'name', 'display_name', 'hierarchy_level']
-
 class SalaryScenarioListSerializer(serializers.ModelSerializer):
+    """List serializer for draft scenarios matching frontend format"""
+    created_by_name = serializers.CharField(source='created_by.get_full_name', read_only=True)
+    is_calculated = serializers.SerializerMethodField()
+    balance_score = serializers.SerializerMethodField()
     grading_system_name = serializers.CharField(source='grading_system.name', read_only=True)
-    base_position_name = serializers.CharField(source='base_position.get_name_display', read_only=True)
+    
+    # Format data to match frontend structure
+    data = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = SalaryScenario
+        fields = [
+            'id', 'name', 'status', 'grading_system_name', 'base_value', 
+            'vertical_avg', 'horizontal_avg', 'metrics', 'data',
+            'is_calculated', 'balance_score', 'created_by_name', 
+            'created_at', 'calculation_timestamp'
+        ]
+    
+    def get_is_calculated(self, obj):
+        return bool(obj.calculated_grades and obj.calculation_timestamp)
+    
+    def get_balance_score(self, obj):
+        vertical_avg = float(obj.vertical_avg)
+        horizontal_avg = float(obj.horizontal_avg)
+        deviation = abs(vertical_avg - horizontal_avg)
+        return (vertical_avg + horizontal_avg) / (1 + deviation) if (vertical_avg + horizontal_avg) > 0 else 0
+    
+    def get_data(self, obj):
+        """Format data to match frontend structure"""
+        return {
+            'baseValue1': float(obj.base_value),
+            'gradeOrder': obj.grade_order,
+            'grades': obj.calculated_grades,
+            'verticalAvg': float(obj.vertical_avg),
+            'horizontalAvg': float(obj.horizontal_avg)
+        }
+
+class SalaryScenarioDetailSerializer(serializers.ModelSerializer):
+    """Detail serializer for scenario display"""
     created_by_name = serializers.CharField(source='created_by.get_full_name', read_only=True)
     applied_by_name = serializers.CharField(source='applied_by.get_full_name', read_only=True)
     is_calculated = serializers.SerializerMethodField()
-    completion_percentage = serializers.SerializerMethodField()
+    grading_system_name = serializers.CharField(source='grading_system.name', read_only=True)
+    
+    # Format data to match frontend structure
+    data = serializers.SerializerMethodField()
     
     class Meta:
         model = SalaryScenario
         fields = [
             'id', 'name', 'description', 'status', 'grading_system_name',
-            'base_position_name', 'base_value', 'is_calculated', 'completion_percentage',
-            'created_by_name', 'applied_by_name', 'created_at', 
-            'calculation_timestamp', 'applied_at'
+            'base_value', 'grade_order', 'input_rates', 'calculated_grades', 
+            'vertical_avg', 'horizontal_avg', 'metrics', 'data',
+            'is_calculated', 'created_by_name', 'applied_by_name',
+            'created_at', 'calculation_timestamp', 'applied_at'
         ]
     
     def get_is_calculated(self, obj):
         return bool(obj.calculated_grades and obj.calculation_timestamp)
     
-    def get_completion_percentage(self, obj):
-        """Calculate how complete the scenario configuration is"""
-        if not obj.custom_vertical_rates and not obj.custom_horizontal_rates:
-            return 0
-        
-        # Count total positions
-        total_positions = PositionGroup.objects.filter(is_active=True).count()
-        total_vertical_needed = total_positions - 1  # All except top position
-        total_horizontal_needed = total_positions * 4  # 4 transitions per position
-        
-        # Count completed rates
-        completed_vertical = len([r for r in obj.custom_vertical_rates.values() if r is not None and r != ''])
-        completed_horizontal = 0
-        for rates in obj.custom_horizontal_rates.values():
-            if isinstance(rates, dict):
-                completed_horizontal += len([r for r in rates.values() if r is not None and r != ''])
-        
-        total_completed = completed_vertical + completed_horizontal
-        total_needed = total_vertical_needed + total_horizontal_needed
-        
-        return round((total_completed / total_needed) * 100, 1) if total_needed > 0 else 0
-
-class SalaryScenarioDetailSerializer(serializers.ModelSerializer):
-    grading_system = GradingSystemSerializer(read_only=True)
-    base_position = PositionGroupSimpleSerializer(read_only=True)
-    created_by_name = serializers.CharField(source='created_by.get_full_name', read_only=True)
-    applied_by_name = serializers.CharField(source='applied_by.get_full_name', read_only=True)
-    is_calculated = serializers.SerializerMethodField()
-    available_positions = serializers.SerializerMethodField()
-    completion_stats = serializers.SerializerMethodField()
-    
-    class Meta:
-        model = SalaryScenario
-        fields = [
-            'id', 'name', 'description', 'status', 'grading_system', 
-            'base_position', 'base_value', 'custom_vertical_rates', 
-            'custom_horizontal_rates', 'calculated_grades', 'is_calculated',
-            'available_positions', 'completion_stats', 'calculation_timestamp', 
-            'created_by_name', 'applied_by_name', 'created_at', 'updated_at', 'applied_at'
-        ]
-    
-    def get_is_calculated(self, obj):
-        return bool(obj.calculated_grades and obj.calculation_timestamp)
-    
-    def get_available_positions(self, obj):
-        """Get all position groups for this scenario"""
-        positions = PositionGroup.objects.filter(is_active=True).order_by('hierarchy_level')
-        return PositionGroupSimpleSerializer(positions, many=True).data
-    
-    def get_completion_stats(self, obj):
-        """Get detailed completion statistics"""
-        positions = PositionGroup.objects.filter(is_active=True)
-        total_positions = positions.count()
-        total_vertical_needed = total_positions - 1
-        total_horizontal_needed = total_positions * 4
-        
-        # Count completed rates
-        completed_vertical = len([r for r in obj.custom_vertical_rates.values() if r is not None and r != ''])
-        completed_horizontal = 0
-        for rates in obj.custom_horizontal_rates.values():
-            if isinstance(rates, dict):
-                completed_horizontal += len([r for r in rates.values() if r is not None and r != ''])
-        
+    def get_data(self, obj):
+        """Format data to match frontend structure"""
         return {
-            'vertical_completion': {
-                'completed': completed_vertical,
-                'total': total_vertical_needed,
-                'percentage': round((completed_vertical / total_vertical_needed) * 100, 1) if total_vertical_needed > 0 else 0
-            },
-            'horizontal_completion': {
-                'completed': completed_horizontal,
-                'total': total_horizontal_needed,
-                'percentage': round((completed_horizontal / total_horizontal_needed) * 100, 1) if total_horizontal_needed > 0 else 0
-            },
-            'overall_completion': {
-                'completed': completed_vertical + completed_horizontal,
-                'total': total_vertical_needed + total_horizontal_needed,
-                'percentage': round(((completed_vertical + completed_horizontal) / (total_vertical_needed + total_horizontal_needed)) * 100, 1)
-            }
+            'baseValue1': float(obj.base_value),
+            'gradeOrder': obj.grade_order,
+            'grades': obj.calculated_grades,
+            'verticalAvg': float(obj.vertical_avg),
+            'horizontalAvg': float(obj.horizontal_avg)
         }
 
-class SalaryScenarioCreateUpdateSerializer(serializers.ModelSerializer):
+class SalaryScenarioCreateSerializer(serializers.ModelSerializer):
+    """UPDATED: Create/Update serializer for scenarios with 4 interval validation"""
+    
     class Meta:
         model = SalaryScenario
         fields = [
-            'name', 'description', 'grading_system', 'base_position', 'base_value',
-            'custom_vertical_rates', 'custom_horizontal_rates'
+            'name', 'description', 'grading_system', 'base_value', 
+            'grade_order', 'input_rates'
         ]
     
     def validate_base_value(self, value):
@@ -200,109 +201,81 @@ class SalaryScenarioCreateUpdateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Base value must be greater than 0")
         return value
     
-    def validate_custom_vertical_rates(self, value):
-        """Validate custom vertical rates format"""
+    def validate_input_rates(self, value):
+        """UPDATED: Validate input rates format with 4 intervals"""
         if not isinstance(value, dict):
-            raise serializers.ValidationError("Custom vertical rates must be a dictionary")
+            raise serializers.ValidationError("Input rates must be a dictionary")
         
-        for pos_id, rate in value.items():
-            try:
-                int(pos_id)  # Position ID should be convertible to int
-                if rate is not None and rate != '':
-                    float(rate)  # Rate should be convertible to float
-                    if float(rate) < 0:
-                        raise serializers.ValidationError(f"Vertical rate for position {pos_id} cannot be negative")
-            except (ValueError, TypeError):
-                raise serializers.ValidationError(f"Invalid vertical rate data for position {pos_id}")
-        
-        return value
-    
-    def validate_custom_horizontal_rates(self, value):
-        """Validate custom horizontal rates format"""
-        if not isinstance(value, dict):
-            raise serializers.ValidationError("Custom horizontal rates must be a dictionary")
-        
-        valid_transitions = ['LD_TO_LQ', 'LQ_TO_M', 'M_TO_UQ', 'UQ_TO_UD']
-        
-        for pos_id, rates in value.items():
-            try:
-                int(pos_id)  # Position ID should be convertible to int
-                if not isinstance(rates, dict):
-                    raise serializers.ValidationError(f"Rates for position {pos_id} must be a dictionary")
+        for grade_name, rates in value.items():
+            if not isinstance(rates, dict):
+                raise serializers.ValidationError(f"Rates for {grade_name} must be a dictionary")
+            
+            # Validate vertical rate
+            if 'vertical' in rates and rates['vertical'] is not None:
+                try:
+                    vertical_value = float(rates['vertical'])
+                    if vertical_value < 0 or vertical_value > 100:
+                        raise serializers.ValidationError(
+                            f"Vertical rate for {grade_name} must be between 0-100"
+                        )
+                except (ValueError, TypeError):
+                    raise serializers.ValidationError(
+                        f"Invalid vertical rate for {grade_name}"
+                    )
+            
+            # UPDATED: Validate 4 horizontal intervals
+            if 'horizontal_intervals' in rates and rates['horizontal_intervals']:
+                intervals = rates['horizontal_intervals']
+                if not isinstance(intervals, dict):
+                    raise serializers.ValidationError(
+                        f"Horizontal intervals for {grade_name} must be a dictionary"
+                    )
                 
-                for transition, rate in rates.items():
-                    if transition not in valid_transitions:
-                        raise serializers.ValidationError(f"Invalid transition type: {transition}")
-                    
-                    if rate is not None and rate != '':
-                        float(rate)  # Rate should be convertible to float
-                        if float(rate) < 0:
-                            raise serializers.ValidationError(f"Horizontal rate for position {pos_id}, transition {transition} cannot be negative")
-            except (ValueError, TypeError):
-                raise serializers.ValidationError(f"Invalid horizontal rate data for position {pos_id}")
+                interval_names = ['LD_to_LQ', 'LQ_to_M', 'M_to_UQ', 'UQ_to_UD']
+                for interval_name in interval_names:
+                    if interval_name in intervals and intervals[interval_name] is not None:
+                        try:
+                            interval_value = float(intervals[interval_name])
+                            if interval_value < 0 or interval_value > 100:
+                                raise serializers.ValidationError(
+                                    f"Horizontal interval {interval_name} for {grade_name} must be between 0-100"
+                                )
+                        except (ValueError, TypeError):
+                            raise serializers.ValidationError(
+                                f"Invalid horizontal interval {interval_name} for {grade_name}"
+                            )
         
         return value
     
     def create(self, validated_data):
         validated_data['created_by'] = self.context['request'].user
-        return super().create(validated_data)
+        
+        # Create scenario
+        scenario = SalaryScenario.objects.create(**validated_data)
+        
+        # Calculate averages
+        scenario.calculate_averages()
+        scenario.save()
+        
+        return scenario
 
 class ScenarioHistorySerializer(serializers.ModelSerializer):
     performed_by_name = serializers.CharField(source='performed_by.get_full_name', read_only=True)
-    previous_scenario_name = serializers.CharField(source='previous_current_scenario.name', read_only=True)
     scenario_name = serializers.CharField(source='scenario.name', read_only=True)
+    previous_scenario_name = serializers.CharField(source='previous_current_scenario.name', read_only=True)
     
     class Meta:
         model = ScenarioHistory
         fields = [
-            'id', 'scenario', 'scenario_name', 'action', 'previous_scenario_name', 
+            'id', 'scenario', 'scenario_name', 'action', 'previous_scenario_name',
             'changes_made', 'performed_by', 'performed_by_name', 'timestamp'
         ]
         read_only_fields = ['id', 'timestamp']
 
-class GradingSystemCreateSerializer(serializers.ModelSerializer):
-    """Serializer for creating grading systems with default data"""
-    class Meta:
-        model = GradingSystem
-        fields = ['name', 'description', 'base_currency']
+# Position Group serializer for dropdowns
+class PositionGroupDropdownSerializer(serializers.ModelSerializer):
+    display_name = serializers.CharField(source='get_name_display', read_only=True)
     
-    def create(self, validated_data):
-        validated_data['created_by'] = self.context['request'].user
-        return super().create(validated_data)
-
-# Dropdown serializers for frontend
-class GradingDropdownsSerializer(serializers.Serializer):
-    """Serializer for grading system dropdown data"""
-    grading_systems = GradingSystemSerializer(many=True, read_only=True)
-    position_groups = PositionGroupSimpleSerializer(many=True, read_only=True)
-    transition_types = serializers.ListField(
-        child=serializers.DictField(),
-        read_only=True
-    )
-
-# Dynamic scenario serializers
-class DynamicScenarioInitSerializer(serializers.Serializer):
-    """Serializer for dynamic scenario initialization response"""
-    base_info = serializers.DictField()
-    positions = PositionGroupSimpleSerializer(many=True)
-    vertical_rates = serializers.DictField()
-    horizontal_rates = serializers.DictField()
-
-class DynamicCalculationRequestSerializer(serializers.Serializer):
-    """Serializer for dynamic calculation request"""
-    base_position = serializers.IntegerField()
-    base_value = serializers.DecimalField(max_digits=15, decimal_places=2)
-    vertical_rates = serializers.DictField(required=False, default=dict)
-    horizontal_rates = serializers.DictField(required=False, default=dict)
-
-class CompletionStatsSerializer(serializers.Serializer):
-    """Serializer for completion statistics"""
-    vertical_completion = serializers.DictField()
-    horizontal_completion = serializers.DictField()
-    overall_completion = serializers.DictField()
-
-class DynamicCalculationResponseSerializer(serializers.Serializer):
-    """Serializer for dynamic calculation response"""
-    success = serializers.BooleanField()
-    calculated_grades = serializers.DictField()
-    completion_stats = CompletionStatsSerializer()
+    class Meta:
+        model = PositionGroup
+        fields = ['id', 'name', 'display_name', 'hierarchy_level', 'is_active']

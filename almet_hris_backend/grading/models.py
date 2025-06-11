@@ -4,8 +4,8 @@ from django.db import models
 from django.core.validators import MinValueValidator, MaxValueValidator
 from django.contrib.auth.models import User
 from django.utils import timezone
-from django.contrib.postgres.fields import JSONField  # PostgreSQL specific
-from django.contrib.postgres.indexes import GinIndex  # For JSON indexing
+from django.contrib.postgres.fields import JSONField
+from django.contrib.postgres.indexes import GinIndex
 from api.models import PositionGroup
 import uuid
 
@@ -15,6 +15,10 @@ class GradingSystem(models.Model):
     description = models.TextField(blank=True)
     is_active = models.BooleanField(default=True, db_index=True)
     base_currency = models.CharField(max_length=3, default='AZN')
+    
+    # Default initial data from Excel (matches frontend initialExcelData)
+    initial_data = models.JSONField(default=dict, help_text="Initial salary data from Excel")
+    
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     updated_at = models.DateTimeField(auto_now=True)
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
@@ -26,16 +30,13 @@ class GradingSystem(models.Model):
         verbose_name = "Grading System"
         verbose_name_plural = "Grading Systems"
         ordering = ['name']
-        indexes = [
-            models.Index(fields=['is_active', 'created_at']),
-        ]
 
 class SalaryGrade(models.Model):
-    """Salary grade structure for each position group"""
+    """Current salary grade structure (matches current situation in frontend)"""
     grading_system = models.ForeignKey(GradingSystem, on_delete=models.CASCADE, related_name='salary_grades')
     position_group = models.ForeignKey(PositionGroup, on_delete=models.CASCADE, related_name='salary_grades')
     
-    # Grade range values (5 columns) - Using NUMERIC for precision
+    # Grade range values (matches frontend: LD, LQ, M, UQ, UD)
     lower_decile = models.DecimalField(max_digits=15, decimal_places=2, help_text="LD - Lower Decile")
     lower_quartile = models.DecimalField(max_digits=15, decimal_places=2, help_text="LQ - Lower Quartile") 
     median = models.DecimalField(max_digits=15, decimal_places=2, help_text="M - Median")
@@ -52,59 +53,9 @@ class SalaryGrade(models.Model):
     class Meta:
         unique_together = ['grading_system', 'position_group']
         ordering = ['position_group__hierarchy_level']
-        indexes = [
-            models.Index(fields=['grading_system', 'position_group']),
-        ]
-
-class GrowthRate(models.Model):
-    """Growth rates for vertical calculations (level to level)"""
-    grading_system = models.ForeignKey(GradingSystem, on_delete=models.CASCADE, related_name='growth_rates')
-    
-    # Vertical growth rates (level to level)
-    from_position = models.ForeignKey(PositionGroup, on_delete=models.CASCADE, related_name='vertical_growth_from')
-    to_position = models.ForeignKey(PositionGroup, on_delete=models.CASCADE, related_name='vertical_growth_to')
-    vertical_rate = models.DecimalField(max_digits=8, decimal_places=4, help_text="Vertical growth rate as percentage")
-    
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    def __str__(self):
-        return f"{self.from_position.get_name_display()} → {self.to_position.get_name_display()}: {self.vertical_rate}%"
-
-    class Meta:
-        unique_together = ['grading_system', 'from_position', 'to_position']
-        ordering = ['from_position__hierarchy_level']
-        indexes = [
-            models.Index(fields=['grading_system', 'from_position']),
-        ]
-
-class HorizontalRate(models.Model):
-    """Horizontal growth rates (grade to grade within same level)"""
-    GRADE_TRANSITIONS = [
-        ('LD_TO_LQ', 'LD to LQ'),
-        ('LQ_TO_M', 'LQ to Median'), 
-        ('M_TO_UQ', 'Median to UQ'),
-        ('UQ_TO_UD', 'UQ to UD'),
-    ]
-    
-    grading_system = models.ForeignKey(GradingSystem, on_delete=models.CASCADE, related_name='horizontal_rates')
-    position_group = models.ForeignKey(PositionGroup, on_delete=models.CASCADE, related_name='horizontal_rates')
-    transition_type = models.CharField(max_length=10, choices=GRADE_TRANSITIONS, db_index=True)
-    horizontal_rate = models.DecimalField(max_digits=8, decimal_places=4, help_text="Horizontal growth rate as percentage")
-    
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    def __str__(self):
-        return f"{self.position_group.get_name_display()} - {self.get_transition_type_display()}: {self.horizontal_rate}%"
-
-    class Meta:
-        unique_together = ['grading_system', 'position_group', 'transition_type']
-        ordering = ['position_group__hierarchy_level', 'transition_type']
-        indexes = [
-            models.Index(fields=['grading_system', 'position_group', 'transition_type']),
-        ]
 
 class SalaryScenario(models.Model):
-    """Salary scenarios for testing different configurations"""
+    """Salary scenarios for testing different configurations (matches frontend draft scenarios)"""
     STATUS_CHOICES = [
         ('DRAFT', 'Draft'),
         ('CURRENT', 'Current'),
@@ -117,17 +68,25 @@ class SalaryScenario(models.Model):
     description = models.TextField(blank=True)
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='DRAFT', db_index=True)
     
-    # Base configuration
-    base_position = models.ForeignKey(PositionGroup, on_delete=models.CASCADE, help_text="Starting position (lowest)")
-    base_value = models.DecimalField(max_digits=15, decimal_places=2, help_text="Base minimum value")
+    # Base configuration (matches frontend scenarioInputs)
+    base_value = models.DecimalField(max_digits=15, decimal_places=2, help_text="Base minimum value (Blue Collar LD)")
     
-    # Custom growth rates for this scenario - Using PostgreSQL JSONField
-    custom_vertical_rates = models.JSONField(default=dict, help_text="Custom vertical rates: {from_pos_id: rate}")
-    custom_horizontal_rates = models.JSONField(default=dict, help_text="Custom horizontal rates: {pos_id: {transition: rate}}")
+    # Grade order (to match frontend gradeOrder)
+    grade_order = models.JSONField(default=list, help_text="Order of position groups")
     
-    # Calculated results - Using PostgreSQL JSONField with GIN index
+    # Input rates from user (matches frontend scenarioInputs.grades)
+    input_rates = models.JSONField(default=dict, help_text="User input vertical and horizontal rates")
+    
+    # Calculated results (matches frontend calculatedOutputs)
     calculated_grades = models.JSONField(default=dict, help_text="Calculated salary grades")
     calculation_timestamp = models.DateTimeField(null=True, blank=True)
+    
+    # Averages for display (matches frontend calculations)
+    vertical_avg = models.DecimalField(max_digits=5, decimal_places=4, default=0, help_text="Average vertical percentage as decimal")
+    horizontal_avg = models.DecimalField(max_digits=5, decimal_places=4, default=0, help_text="Average horizontal percentage as decimal")
+    
+    # Metrics for comparison (matches frontend metrics calculation)
+    metrics = models.JSONField(default=dict, help_text="Calculated metrics for comparison")
     
     # Metadata
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
@@ -139,23 +98,124 @@ class SalaryScenario(models.Model):
     def __str__(self):
         return f"{self.name} ({self.get_status_display()})"
 
+    def calculate_averages(self):
+        """Calculate vertical and horizontal averages from input rates - UPDATED for global intervals"""
+        if not self.input_rates or not self.grade_order:
+            return
+        
+        vertical_sum = 0
+        vertical_count = 0
+        
+        # Horizontal average calculation - UPDATED for global intervals
+        horizontal_sum = 0
+        horizontal_count = 0
+        
+        # First, try to get global horizontal intervals (if they exist)
+        global_horizontal_intervals = None
+        first_grade_name = self.grade_order[0] if self.grade_order else None
+        if first_grade_name and self.input_rates.get(first_grade_name, {}).get('horizontal_intervals'):
+            # Extract global intervals from first position (they should be same for all)
+            global_horizontal_intervals = self.input_rates[first_grade_name]['horizontal_intervals']
+        
+        for grade_name in self.grade_order:
+            grade_data = self.input_rates.get(grade_name, {})
+            
+            # Calculate vertical average (per position)
+            if grade_data.get('vertical') is not None:
+                vertical_sum += float(grade_data['vertical'])
+                vertical_count += 1
+            
+            # Calculate horizontal average - UPDATED for global intervals
+            if global_horizontal_intervals:
+                # Use global intervals (only count once since they are global)
+                if horizontal_count == 0:  # Only add once for global intervals
+                    for interval_name, interval_value in global_horizontal_intervals.items():
+                        if interval_value is not None and interval_value != '':
+                            horizontal_sum += float(interval_value)
+                            horizontal_count += 1
+            else:
+                # Fallback: per-position horizontal intervals (old logic)
+                horizontal_intervals = grade_data.get('horizontal_intervals', {})
+                if horizontal_intervals:
+                    for interval_name, interval_value in horizontal_intervals.items():
+                        if interval_value is not None and interval_value != '':
+                            horizontal_sum += float(interval_value)
+                            horizontal_count += 1
+        
+        self.vertical_avg = (vertical_sum / vertical_count / 100) if vertical_count > 0 else 0
+        self.horizontal_avg = (horizontal_sum / horizontal_count / 100) if horizontal_count > 0 else 0
+    
+   
+    
+    def calculate_metrics(self, current_data=None):
+        """Calculate metrics for scenario comparison"""
+        if not self.calculated_grades:
+            return
+        
+        total_budget_impact = 0
+        avg_salary_increase = 0
+        
+        if current_data and current_data.get('grades'):
+            # Calculate budget impact and salary increases
+            increase_sum = 0
+            grade_count = 0
+            
+            for grade_name in self.grade_order:
+                if grade_name in self.calculated_grades and grade_name in current_data['grades']:
+                    scenario_median = self.calculated_grades[grade_name].get('M', 0)
+                    current_median = current_data['grades'][grade_name].get('M', 0)
+                    
+                    total_budget_impact += scenario_median
+                    
+                    if current_median > 0:
+                        increase = ((scenario_median - current_median) / current_median) * 100
+                        increase_sum += increase
+                        grade_count += 1
+            
+            avg_salary_increase = increase_sum / grade_count if grade_count > 0 else 0
+        
+        # Calculate competitiveness and risk level
+        competitiveness = self._calculate_competitiveness()
+        risk_level = self._calculate_risk_level()
+        
+        self.metrics = {
+            'totalBudgetImpact': total_budget_impact,
+            'avgSalaryIncrease': avg_salary_increase,
+            'competitiveness': competitiveness,
+            'riskLevel': risk_level
+        }
+
+    def _calculate_competitiveness(self):
+        """Calculate competitiveness percentage"""
+        # Simple logic: higher vertical/horizontal rates = more competitive
+        if self.vertical_avg and self.horizontal_avg:
+            combined_avg = (self.vertical_avg + self.horizontal_avg) * 100
+            return min(combined_avg * 2, 100)  # Cap at 100%
+        return 50  # Default neutral value
+
+    def _calculate_risk_level(self):
+        """Calculate risk level based on rate increases"""
+        if self.vertical_avg > 0.25 or self.horizontal_avg > 0.15:
+            return "High"
+        elif self.vertical_avg > 0.15 or self.horizontal_avg > 0.10:
+            return "Medium"
+        return "Low"
+
     class Meta:
         ordering = ['-created_at']
         indexes = [
             models.Index(fields=['grading_system', 'status']),
             models.Index(fields=['status', 'created_at']),
-            # GIN index for JSON fields (PostgreSQL specific)
             GinIndex(fields=['calculated_grades']),
-            GinIndex(fields=['custom_vertical_rates']),
-            GinIndex(fields=['custom_horizontal_rates']),
+            GinIndex(fields=['input_rates']),
         ]
 
 class ScenarioHistory(models.Model):
     """History of scenario applications"""
     scenario = models.ForeignKey(SalaryScenario, on_delete=models.CASCADE, related_name='history')
-    action = models.CharField(max_length=30, db_index=True)  # CREATED, CALCULATED, APPLIED, ARCHIVED
+    action = models.CharField(max_length=30, db_index=True)
     previous_current_scenario = models.ForeignKey(SalaryScenario, on_delete=models.SET_NULL, null=True, blank=True)
-    changes_made = models.JSONField(default=dict)  # PostgreSQL JSONField
+    changes_made = models.JSONField(default=dict)
     performed_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
     timestamp = models.DateTimeField(auto_now_add=True, db_index=True)
 
@@ -164,9 +224,3 @@ class ScenarioHistory(models.Model):
 
     class Meta:
         ordering = ['-timestamp']
-        indexes = [
-            models.Index(fields=['scenario', 'timestamp']),
-            models.Index(fields=['action', 'timestamp']),
-            # GIN index for JSON field
-            GinIndex(fields=['changes_made']),
-        ]
