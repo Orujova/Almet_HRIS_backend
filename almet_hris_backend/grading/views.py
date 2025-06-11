@@ -317,6 +317,200 @@ class SalaryScenarioViewSet(viewsets.ModelViewSet):
                 'error': str(e)
             }, status=status.HTTP_400_BAD_REQUEST)
 
+    @action(detail=False, methods=['post'])
+    def save_scenario(self, request):
+        """Save scenario with calculated grades"""
+        scenario_data = request.data
+        
+        try:
+            # Extract and validate data
+            name = scenario_data.get('name')
+            description = scenario_data.get('description', '')
+            grading_system_id = scenario_data.get('grading_system')
+            base_position_id = scenario_data.get('base_position')
+            base_value = scenario_data.get('base_value')
+            vertical_rates = scenario_data.get('vertical_rates', {})
+            horizontal_rates = scenario_data.get('horizontal_rates', {})
+            calculated_grades = scenario_data.get('calculated_grades', {})
+            
+            if not name:
+                return Response({
+                    'success': False,
+                    'error': 'Scenario name is required'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Check if name already exists
+            if SalaryScenario.objects.filter(name=name).exists():
+                return Response({
+                    'success': False,
+                    'error': 'Scenario name already exists'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Clean up rate data - remove empty values
+            clean_vertical_rates = {}
+            for pos_id, rate in vertical_rates.items():
+                if rate is not None and rate != '':
+                    clean_vertical_rates[pos_id] = float(rate)
+            
+            clean_horizontal_rates = {}
+            for pos_id, rates in horizontal_rates.items():
+                if isinstance(rates, dict):
+                    clean_horizontal_rates[pos_id] = {}
+                    for transition, rate in rates.items():
+                        if rate is not None and rate != '':
+                            clean_horizontal_rates[pos_id][transition] = float(rate)
+            
+            # Create scenario
+            scenario = SalaryScenario.objects.create(
+                name=name,
+                description=description,
+                grading_system_id=grading_system_id,
+                base_position_id=base_position_id,
+                base_value=base_value,
+                custom_vertical_rates=clean_vertical_rates,
+                custom_horizontal_rates=clean_horizontal_rates,
+                calculated_grades=calculated_grades,
+                calculation_timestamp=timezone.now(),
+                created_by=request.user
+            )
+            
+            logger.info(f"Scenario '{name}' saved successfully by user {request.user.username}")
+            
+            return Response({
+                'success': True,
+                'message': 'Scenario saved successfully',
+                'scenario_id': str(scenario.id),
+                'scenario': SalaryScenarioDetailSerializer(scenario).data
+            })
+            
+        except Exception as e:
+            logger.error(f"Error saving scenario: {str(e)}")
+            return Response({
+                'success': False,
+                'error': str(e)
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        if not base_value or float(base_value) <= 0:
+            return Response({
+                'success': False,
+                'error': 'Valid base value is required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            grading_system = GradingSystem.objects.get(id=grading_system_id)
+        except GradingSystem.DoesNotExist:
+            return Response({
+                'success': False,
+                'error': 'Grading system not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        # Get all active positions ordered by hierarchy level (base position = highest number)
+        positions = PositionGroup.objects.filter(is_active=True).order_by('hierarchy_level')
+        base_position = positions.last()  # Highest hierarchy level (Blue Collar)
+        
+        # Create empty rate structure
+        rate_structure = {
+            'base_info': {
+                'grading_system': grading_system_id,
+                'base_position': base_position.id,
+                'base_value': float(base_value)
+            },
+            'positions': [],
+            'vertical_rates': {},
+            'horizontal_rates': {}
+        }
+        
+        # Build position structure with empty rates
+        for position in positions:
+            pos_data = {
+                'id': position.id,
+                'name': position.name,
+                'display_name': position.get_name_display(),
+                'hierarchy_level': position.hierarchy_level,
+                'is_base': position.id == base_position.id
+            }
+            rate_structure['positions'].append(pos_data)
+            
+            # Initialize empty vertical rate (except for top position)
+            if position.hierarchy_level > 1:
+                rate_structure['vertical_rates'][str(position.id)] = None
+            
+            # Initialize empty horizontal rates for all positions
+            rate_structure['horizontal_rates'][str(position.id)] = {
+                'LD_TO_LQ': None,
+                'LQ_TO_M': None,
+                'M_TO_UQ': None,
+                'UQ_TO_UD': None
+            }
+        
+        return Response({
+            'success': True,
+            'data': rate_structure
+        })
+
+    @action(detail=False, methods=['post'])
+    def calculate_dynamic(self, request):
+        """Calculate scenario dynamically as rates are entered"""
+        scenario_data = request.data
+        
+        try:
+            # Extract data
+            grading_system_id = scenario_data.get('grading_system')
+            base_position_id = scenario_data.get('base_position')
+            base_value = Decimal(str(scenario_data.get('base_value', 0)))
+            vertical_rates = scenario_data.get('vertical_rates', {})
+            horizontal_rates = scenario_data.get('horizontal_rates', {})
+            
+            # Validate basic data
+            if not grading_system_id or not base_position_id or base_value <= 0:
+                return Response({
+                    'success': False,
+                    'error': 'Invalid scenario data'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Get positions
+            positions = PositionGroup.objects.filter(is_active=True).order_by('hierarchy_level')
+            base_position = PositionGroup.objects.get(id=base_position_id)
+            
+            # Filter out empty rates and convert to proper format
+            clean_vertical_rates = {}
+            for pos_id, rate in vertical_rates.items():
+                if rate is not None and rate != '' and float(rate) >= 0:
+                    clean_vertical_rates[int(pos_id)] = float(rate)
+            
+            clean_horizontal_rates = {}
+            for pos_id, rates in horizontal_rates.items():
+                pos_id_int = int(pos_id)
+                clean_horizontal_rates[pos_id_int] = {}
+                if isinstance(rates, dict):
+                    for transition, rate in rates.items():
+                        if rate is not None and rate != '' and float(rate) >= 0:
+                            clean_horizontal_rates[pos_id_int][transition] = float(rate)
+            
+            # Calculate grades using the manager
+            calculated_grades = SalaryCalculationManager.calculate_dynamic_grades(
+                positions, base_position, base_value, 
+                clean_vertical_rates, clean_horizontal_rates
+            )
+            
+            # Calculate completion status
+            completion_stats = self._get_completion_stats(
+                positions, vertical_rates, horizontal_rates
+            )
+            
+            return Response({
+                'success': True,
+                'calculated_grades': calculated_grades,
+                'completion_stats': completion_stats
+            })
+            
+        except Exception as e:
+            logger.error(f"Error in dynamic calculation: {str(e)}")
+            return Response({
+                'success': False,
+                'error': str(e)
+            }, status=status.HTTP_400_BAD_REQUEST)
+
     def _get_completion_stats(self, positions, vertical_rates, horizontal_rates):
         """Get completion statistics for the scenario"""
         total_vertical_needed = len(positions) - 1  # All except top position
