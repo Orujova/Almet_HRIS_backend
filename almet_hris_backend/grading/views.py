@@ -266,7 +266,7 @@ class SalaryScenarioViewSet(viewsets.ModelViewSet):
                 'calculatedOutputs': calculated_outputs,
                 'success': True
             })
-        
+            
         except Exception as e:
             logger.error(f"=== CALCULATE DYNAMIC ERROR ===")
             logger.error(f"Error type: {type(e).__name__}")
@@ -278,6 +278,8 @@ class SalaryScenarioViewSet(viewsets.ModelViewSet):
                 'success': False,
                 'debug_info': traceback.format_exc() if settings.DEBUG else None
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+
 
     @action(detail=False, methods=['post'], url_path='save_draft')
     def  save_draft(self, request):
