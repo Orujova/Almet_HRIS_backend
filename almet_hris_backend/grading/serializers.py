@@ -1,8 +1,11 @@
-# grading/serializers.py - UPDATED for 4 horizontal intervals
+# grading/serializers.py - FIXED: Removed competitiveness/riskLevel, Enhanced data display
 
 from rest_framework import serializers
 from .models import GradingSystem, SalaryGrade, SalaryScenario, ScenarioHistory
 from api.models import PositionGroup
+import logging
+
+logger = logging.getLogger(__name__)
 
 # --- HELPER SERIALIZERS (Updated for 4 intervals) ---
 
@@ -116,13 +119,13 @@ class SalaryGradeSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'created_at', 'updated_at']
 
 class SalaryScenarioListSerializer(serializers.ModelSerializer):
-    """List serializer for draft scenarios matching frontend format"""
+    """FIXED: List serializer for draft scenarios (removed competitiveness/riskLevel)"""
     created_by_name = serializers.CharField(source='created_by.get_full_name', read_only=True)
     is_calculated = serializers.SerializerMethodField()
     balance_score = serializers.SerializerMethodField()
     grading_system_name = serializers.CharField(source='grading_system.name', read_only=True)
     
-    # Format data to match frontend structure
+    # Format data to match frontend structure - ENHANCED
     data = serializers.SerializerMethodField()
     
     class Meta:
@@ -138,29 +141,64 @@ class SalaryScenarioListSerializer(serializers.ModelSerializer):
         return bool(obj.calculated_grades and obj.calculation_timestamp)
     
     def get_balance_score(self, obj):
-        vertical_avg = float(obj.vertical_avg)
-        horizontal_avg = float(obj.horizontal_avg)
-        deviation = abs(vertical_avg - horizontal_avg)
-        return (vertical_avg + horizontal_avg) / (1 + deviation) if (vertical_avg + horizontal_avg) > 0 else 0
+        """ENHANCED: Safe balance score calculation"""
+        try:
+            vertical_avg = float(obj.vertical_avg) if obj.vertical_avg else 0
+            horizontal_avg = float(obj.horizontal_avg) if obj.horizontal_avg else 0
+            
+            if vertical_avg == 0 and horizontal_avg == 0:
+                return 0
+                
+            deviation = abs(vertical_avg - horizontal_avg)
+            return (vertical_avg + horizontal_avg) / (1 + deviation)
+        except (ValueError, TypeError):
+            return 0
     
     def get_data(self, obj):
-        """Format data to match frontend structure"""
+        """ENHANCED: Format data with proper validation"""
+        # Ensure calculated_grades exists and is properly formatted
+        calculated_grades = {}
+        if obj.calculated_grades and isinstance(obj.calculated_grades, dict):
+            calculated_grades = obj.calculated_grades
+        
+        # Ensure grade_order exists
+        grade_order = obj.grade_order if obj.grade_order else []
+        
+        # Fill missing grades with proper structure
+        for grade_name in grade_order:
+            if grade_name not in calculated_grades:
+                calculated_grades[grade_name] = {
+                    'LD': 0, 'LQ': 0, 'M': 0, 'UQ': 0, 'UD': 0
+                }
+            else:
+                # Ensure all required fields exist
+                grade_data = calculated_grades[grade_name]
+                if isinstance(grade_data, dict):
+                    for field in ['LD', 'LQ', 'M', 'UQ', 'UD']:
+                        if field not in grade_data or grade_data[field] is None:
+                            grade_data[field] = 0
+                else:
+                    # Invalid grade data structure
+                    calculated_grades[grade_name] = {
+                        'LD': 0, 'LQ': 0, 'M': 0, 'UQ': 0, 'UD': 0
+                    }
+        
         return {
-            'baseValue1': float(obj.base_value),
-            'gradeOrder': obj.grade_order,
-            'grades': obj.calculated_grades,
-            'verticalAvg': float(obj.vertical_avg),
-            'horizontalAvg': float(obj.horizontal_avg)
+            'baseValue1': float(obj.base_value) if obj.base_value else 0,
+            'gradeOrder': grade_order,
+            'grades': calculated_grades,
+            'verticalAvg': float(obj.vertical_avg) if obj.vertical_avg else 0,
+            'horizontalAvg': float(obj.horizontal_avg) if obj.horizontal_avg else 0
         }
 
 class SalaryScenarioDetailSerializer(serializers.ModelSerializer):
-    """Detail serializer for scenario display"""
+    """ENHANCED: Detail serializer with better data validation"""
     created_by_name = serializers.CharField(source='created_by.get_full_name', read_only=True)
     applied_by_name = serializers.CharField(source='applied_by.get_full_name', read_only=True)
     is_calculated = serializers.SerializerMethodField()
     grading_system_name = serializers.CharField(source='grading_system.name', read_only=True)
     
-    # Format data to match frontend structure
+    # ENHANCED: Format data to match frontend structure with validation
     data = serializers.SerializerMethodField()
     
     class Meta:
@@ -177,14 +215,144 @@ class SalaryScenarioDetailSerializer(serializers.ModelSerializer):
         return bool(obj.calculated_grades and obj.calculation_timestamp)
     
     def get_data(self, obj):
-        """Format data to match frontend structure"""
-        return {
-            'baseValue1': float(obj.base_value),
-            'gradeOrder': obj.grade_order,
-            'grades': obj.calculated_grades,
-            'verticalAvg': float(obj.vertical_avg),
-            'horizontalAvg': float(obj.horizontal_avg)
+        """FIXED: Data formatting with comprehensive validation for detail modal"""
+        logger.info(f"=== DETAIL SERIALIZER DATA FORMATTING for {obj.name} ===")
+        
+        # Validate calculated_grades
+        calculated_grades = {}
+        if obj.calculated_grades:
+            if isinstance(obj.calculated_grades, dict):
+                calculated_grades = obj.calculated_grades.copy()
+                logger.info(f"Found calculated_grades: {calculated_grades}")
+            else:
+                logger.warning(f"Invalid calculated_grades type: {type(obj.calculated_grades)}")
+        else:
+            logger.info("No calculated_grades found")
+        
+        # Validate grade_order
+        grade_order = []
+        if obj.grade_order:
+            if isinstance(obj.grade_order, list):
+                grade_order = obj.grade_order.copy()
+                logger.info(f"Found grade_order: {grade_order}")
+            else:
+                logger.warning(f"Invalid grade_order type: {type(obj.grade_order)}")
+        else:
+            logger.info("No grade_order found")
+        
+        # FIXED: Extract global horizontal intervals from input_rates
+        global_horizontal_intervals = {
+            'LD_to_LQ': 0,
+            'LQ_to_M': 0,
+            'M_to_UQ': 0,
+            'UQ_to_UD': 0
         }
+        
+        if obj.input_rates and isinstance(obj.input_rates, dict):
+            # Find first position with horizontal intervals
+            for grade_name in grade_order:
+                grade_input_data = obj.input_rates.get(grade_name, {})
+                if isinstance(grade_input_data, dict):
+                    intervals = grade_input_data.get('horizontal_intervals', {})
+                    if intervals and isinstance(intervals, dict):
+                        # Update global intervals with found values
+                        for key in global_horizontal_intervals.keys():
+                            if key in intervals and intervals[key] is not None:
+                                try:
+                                    global_horizontal_intervals[key] = float(intervals[key])
+                                except (ValueError, TypeError):
+                                    pass
+                        logger.info(f"Found horizontal intervals in {grade_name}: {intervals}")
+                        break
+        
+        logger.info(f"Global horizontal intervals: {global_horizontal_intervals}")
+        
+        # ENHANCED: Fill missing grades and validate existing ones
+        for grade_name in grade_order:
+            if grade_name not in calculated_grades:
+                logger.info(f"Adding missing grade data for {grade_name}")
+                calculated_grades[grade_name] = {
+                    'LD': 0, 'LQ': 0, 'M': 0, 'UQ': 0, 'UD': 0
+                }
+            else:
+                # Validate existing grade data
+                grade_data = calculated_grades[grade_name]
+                if isinstance(grade_data, dict):
+                    # Ensure all required fields exist with valid values
+                    for field in ['LD', 'LQ', 'M', 'UQ', 'UD']:
+                        if field not in grade_data:
+                            logger.info(f"Adding missing field {field} for {grade_name}")
+                            grade_data[field] = 0
+                        else:
+                            # Validate field value
+                            field_value = grade_data[field]
+                            if field_value is None or field_value == '':
+                                logger.info(f"Fixing null/empty field {field} for {grade_name}")
+                                grade_data[field] = 0
+                            else:
+                                try:
+                                    # Ensure it's a valid number
+                                    grade_data[field] = float(field_value)
+                                except (ValueError, TypeError):
+                                    logger.warning(f"Invalid value for {field} in {grade_name}: {field_value}")
+                                    grade_data[field] = 0
+                else:
+                    logger.warning(f"Invalid grade data structure for {grade_name}: {type(grade_data)}")
+                    calculated_grades[grade_name] = {
+                        'LD': 0, 'LQ': 0, 'M': 0, 'UQ': 0, 'UD': 0
+                    }
+        
+        # FIXED: Validate averages using actual database values
+        vertical_avg = 0
+        horizontal_avg = 0
+        
+        try:
+            if obj.vertical_avg is not None:
+                vertical_avg = float(obj.vertical_avg)
+                logger.info(f"Using stored vertical_avg: {vertical_avg}")
+        except (ValueError, TypeError):
+            logger.warning(f"Invalid vertical_avg: {obj.vertical_avg}")
+            vertical_avg = 0
+        
+        try:
+            if obj.horizontal_avg is not None:
+                horizontal_avg = float(obj.horizontal_avg)
+                logger.info(f"Using stored horizontal_avg: {horizontal_avg}")
+        except (ValueError, TypeError):
+            logger.warning(f"Invalid horizontal_avg: {obj.horizontal_avg}")
+            horizontal_avg = 0
+        
+        # ENHANCED: Validate base_value
+        base_value = 0
+        try:
+            if obj.base_value is not None:
+                base_value = float(obj.base_value)
+        except (ValueError, TypeError):
+            logger.warning(f"Invalid base_value: {obj.base_value}")
+            base_value = 0
+        
+        result = {
+            'baseValue1': base_value,
+            'gradeOrder': grade_order,
+            'grades': calculated_grades,
+            'globalHorizontalIntervals': global_horizontal_intervals,  # FIXED: Include global intervals
+            'verticalAvg': vertical_avg,
+            'horizontalAvg': horizontal_avg,
+            'hasCalculation': bool(obj.calculated_grades and obj.calculation_timestamp),
+            'isComplete': bool(calculated_grades and all(
+                isinstance(grade, dict) and sum(float(v) for v in grade.values() if v is not None) > 0 
+                for grade in calculated_grades.values()
+            ))
+        }
+        
+        logger.info(f"Final data result:")
+        logger.info(f"  verticalAvg: {result['verticalAvg']}")
+        logger.info(f"  horizontalAvg: {result['horizontalAvg']}")
+        logger.info(f"  globalHorizontalIntervals: {result['globalHorizontalIntervals']}")
+        logger.info(f"=== DETAIL SERIALIZER DATA FORMATTING END ===")
+        
+        return result
+
 
 class SalaryScenarioCreateSerializer(serializers.ModelSerializer):
     """UPDATED: Create/Update serializer for scenarios with 4 interval validation"""

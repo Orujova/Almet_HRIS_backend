@@ -1,4 +1,4 @@
-# grading/models.py
+# grading/models.py - FIXED: Removed competitiveness/riskLevel, Fixed calculate_averages
 
 from django.db import models
 from django.core.validators import MinValueValidator, MaxValueValidator
@@ -8,6 +8,9 @@ from django.contrib.postgres.fields import JSONField
 from django.contrib.postgres.indexes import GinIndex
 from api.models import PositionGroup
 import uuid
+import logging
+
+logger = logging.getLogger(__name__)
 
 class GradingSystem(models.Model):
     """Main grading system configuration"""
@@ -85,8 +88,8 @@ class SalaryScenario(models.Model):
     vertical_avg = models.DecimalField(max_digits=5, decimal_places=4, default=0, help_text="Average vertical percentage as decimal")
     horizontal_avg = models.DecimalField(max_digits=5, decimal_places=4, default=0, help_text="Average horizontal percentage as decimal")
     
-    # Metrics for comparison (matches frontend metrics calculation)
-    metrics = models.JSONField(default=dict, help_text="Calculated metrics for comparison")
+    # Basic metrics for comparison (REMOVED competitiveness/riskLevel)
+    metrics = models.JSONField(default=dict, help_text="Basic calculated metrics")
     
     # Metadata
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
@@ -99,56 +102,89 @@ class SalaryScenario(models.Model):
         return f"{self.name} ({self.get_status_display()})"
 
     def calculate_averages(self):
-        """Calculate vertical and horizontal averages from input rates - UPDATED for global intervals"""
+        """COMPLETELY FIXED: Calculate vertical and horizontal averages properly"""
+        logger.info(f"=== CALCULATE AVERAGES START for {self.name} ===")
+        
         if not self.input_rates or not self.grade_order:
+            logger.info("No input_rates or grade_order, setting averages to 0")
+            self.vertical_avg = 0
+            self.horizontal_avg = 0
             return
+        
+        logger.info(f"Input rates: {self.input_rates}")
+        logger.info(f"Grade order: {self.grade_order}")
         
         vertical_sum = 0
         vertical_count = 0
+        horizontal_values = []
         
-        # Horizontal average calculation - UPDATED for global intervals
-        horizontal_sum = 0
-        horizontal_count = 0
+        # FIXED: Collect vertical rates (skip base position)
+        for i, grade_name in enumerate(self.grade_order):
+            # Base position is the LAST in the order - skip it for vertical
+            is_base_position = (i == len(self.grade_order) - 1)
+            if is_base_position:
+                logger.info(f"Skipping {grade_name} - base position (no vertical needed)")
+                continue
+                
+            grade_data = self.input_rates.get(grade_name, {})
+            vertical_value = grade_data.get('vertical')
+            
+            logger.info(f"Position {grade_name}: vertical = {vertical_value}")
+            
+            if vertical_value is not None and vertical_value != '' and vertical_value != 0:
+                try:
+                    vertical_float = float(vertical_value)
+                    vertical_sum += vertical_float
+                    vertical_count += 1
+                    logger.info(f"  ✅ Added vertical: {vertical_float}, sum now: {vertical_sum}")
+                except (ValueError, TypeError):
+                    logger.warning(f"  ❌ Could not convert vertical value: {vertical_value}")
         
-        # First, try to get global horizontal intervals (if they exist)
-        global_horizontal_intervals = None
-        first_grade_name = self.grade_order[0] if self.grade_order else None
-        if first_grade_name and self.input_rates.get(first_grade_name, {}).get('horizontal_intervals'):
-            # Extract global intervals from first position (they should be same for all)
-            global_horizontal_intervals = self.input_rates[first_grade_name]['horizontal_intervals']
-        
+        # COMPLETELY FIXED: Global horizontal intervals collection
+        # Look for horizontal_intervals in ANY position (they should be the same for all)
+        global_intervals = None
         for grade_name in self.grade_order:
             grade_data = self.input_rates.get(grade_name, {})
+            intervals = grade_data.get('horizontal_intervals', {})
             
-            # Calculate vertical average (per position)
-            if grade_data.get('vertical') is not None:
-                vertical_sum += float(grade_data['vertical'])
-                vertical_count += 1
-            
-            # Calculate horizontal average - UPDATED for global intervals
-            if global_horizontal_intervals:
-                # Use global intervals (only count once since they are global)
-                if horizontal_count == 0:  # Only add once for global intervals
-                    for interval_name, interval_value in global_horizontal_intervals.items():
-                        if interval_value is not None and interval_value != '':
-                            horizontal_sum += float(interval_value)
-                            horizontal_count += 1
-            else:
-                # Fallback: per-position horizontal intervals (old logic)
-                horizontal_intervals = grade_data.get('horizontal_intervals', {})
-                if horizontal_intervals:
-                    for interval_name, interval_value in horizontal_intervals.items():
-                        if interval_value is not None and interval_value != '':
-                            horizontal_sum += float(interval_value)
-                            horizontal_count += 1
+            # Check if this position has meaningful horizontal intervals
+            if intervals and isinstance(intervals, dict):
+                has_values = any(
+                    v is not None and v != '' and v != 0 
+                    for v in intervals.values()
+                )
+                if has_values:
+                    global_intervals = intervals
+                    logger.info(f"✅ Found global horizontal intervals in {grade_name}: {global_intervals}")
+                    break
         
+        # Collect horizontal values from global intervals
+        if global_intervals:
+            interval_names = ['LD_to_LQ', 'LQ_to_M', 'M_to_UQ', 'UQ_to_UD']
+            for interval_name in interval_names:
+                interval_value = global_intervals.get(interval_name)
+                logger.info(f"  Processing interval {interval_name}: {interval_value}")
+                
+                if interval_value is not None and interval_value != '' and interval_value != 0:
+                    try:
+                        interval_float = float(interval_value)
+                        horizontal_values.append(interval_float)
+                        logger.info(f"    ✅ Added horizontal: {interval_float}")
+                    except (ValueError, TypeError):
+                        logger.warning(f"    ❌ Could not convert horizontal value: {interval_value}")
+        else:
+            logger.info("❌ No global horizontal intervals found in any position")
+        
+        # Calculate final averages
         self.vertical_avg = (vertical_sum / vertical_count / 100) if vertical_count > 0 else 0
-        self.horizontal_avg = (horizontal_sum / horizontal_count / 100) if horizontal_count > 0 else 0
-    
-   
-    
+        self.horizontal_avg = (sum(horizontal_values) / len(horizontal_values) / 100) if horizontal_values else 0
+        
+        logger.info(f"🎯 FINAL AVERAGES:")
+        logger.info(f"  Vertical: {vertical_sum} ÷ {vertical_count} ÷ 100 = {self.vertical_avg} ({self.vertical_avg * 100:.1f}%)")
+        logger.info(f"  Horizontal: {sum(horizontal_values)} ÷ {len(horizontal_values)} ÷ 100 = {self.horizontal_avg} ({self.horizontal_avg * 100:.1f}%)")
+        logger.info(f"=== CALCULATE AVERAGES END ===")
     def calculate_metrics(self, current_data=None):
-        """Calculate metrics for scenario comparison"""
+        """SIMPLIFIED: Calculate basic metrics (removed competitiveness/riskLevel)"""
         if not self.calculated_grades:
             return
         
@@ -174,32 +210,12 @@ class SalaryScenario(models.Model):
             
             avg_salary_increase = increase_sum / grade_count if grade_count > 0 else 0
         
-        # Calculate competitiveness and risk level
-        competitiveness = self._calculate_competitiveness()
-        risk_level = self._calculate_risk_level()
-        
+        # SIMPLIFIED metrics (removed competitiveness/riskLevel)
         self.metrics = {
             'totalBudgetImpact': total_budget_impact,
             'avgSalaryIncrease': avg_salary_increase,
-            'competitiveness': competitiveness,
-            'riskLevel': risk_level
+            'positionsAffected': len(self.grade_order)
         }
-
-    def _calculate_competitiveness(self):
-        """Calculate competitiveness percentage"""
-        # Simple logic: higher vertical/horizontal rates = more competitive
-        if self.vertical_avg and self.horizontal_avg:
-            combined_avg = (self.vertical_avg + self.horizontal_avg) * 100
-            return min(combined_avg * 2, 100)  # Cap at 100%
-        return 50  # Default neutral value
-
-    def _calculate_risk_level(self):
-        """Calculate risk level based on rate increases"""
-        if self.vertical_avg > 0.25 or self.horizontal_avg > 0.15:
-            return "High"
-        elif self.vertical_avg > 0.15 or self.horizontal_avg > 0.10:
-            return "Medium"
-        return "Low"
 
     class Meta:
         ordering = ['-created_at']

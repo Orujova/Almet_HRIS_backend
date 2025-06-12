@@ -1,4 +1,4 @@
-# grading/views.py - COMPLETE FILE WITH ALL ACTIONS
+# grading/views.py - FIXED: Removed competitiveness/riskLevel, Enhanced data validation
 
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
@@ -12,6 +12,7 @@ from django.conf import settings
 from decimal import Decimal
 import logging
 import traceback
+import json
 
 from .models import GradingSystem, SalaryGrade, SalaryScenario, ScenarioHistory
 from .serializers import (
@@ -40,7 +41,7 @@ class GradingSystemViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'])
     def current_structure(self, request):
-        """Get current grade structure from database"""
+        """ENHANCED: Get current grade structure from database with better validation"""
         grading_system_id = request.query_params.get('grading_system_id')
         
         try:
@@ -53,7 +54,7 @@ class GradingSystemViewSet(viewsets.ModelViewSet):
             else:
                 grading_system = GradingSystem.objects.filter(is_active=True).first()
             
-            # Create current structure from database
+            # Create current structure from database with enhanced validation
             current_data = SalaryCalculationManager.create_current_structure_from_db()
             
             if current_data is None:
@@ -67,11 +68,15 @@ class GradingSystemViewSet(viewsets.ModelViewSet):
                 current_data['grading_system_id'] = grading_system.id
                 current_data['grading_system_name'] = grading_system.name
             
+            # ENHANCED: Log current structure for debugging
+            logger.info(f"Current structure data: verticalAvg={current_data.get('verticalAvg')}, horizontalAvg={current_data.get('horizontalAvg')}")
+            
             serializer = CurrentStructureSerializer(current_data)
             return Response(serializer.data)
             
         except Exception as e:
             logger.error(f"Error getting current structure: {str(e)}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
             return Response({
                 'error': 'Failed to get current structure',
                 'details': str(e)
@@ -167,18 +172,21 @@ class SalaryScenarioViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['post'], url_path='calculate_dynamic')
     def calculate_dynamic(self, request):
-        """Calculate scenario dynamically using database position groups - UPDATED FOR 4 INTERVALS"""
+        """ENHANCED: Calculate scenario dynamically with better validation and debugging"""
         try:
-            logger.info("=== CALCULATE DYNAMIC START (4 INTERVALS) ===")
-            logger.info(f"Request data: {request.data}")
+            logger.info("=== CALCULATE DYNAMIC START (ENHANCED) ===")
+            logger.info(f"Request data type: {type(request.data)}")
+            logger.info(f"Request data: {json.dumps(request.data, indent=2, default=str)}")
             
-            # Validate request data
+            # Extract and validate request data
             request_data = request.data
             base_value = request_data.get('baseValue1')
             input_rates = request_data.get('grades', {})
             
-            logger.info(f"Parsed - base_value: {base_value}, input_rates: {input_rates}")
+            logger.info(f"Parsed - base_value: {base_value} (type: {type(base_value)})")
+            logger.info(f"Parsed - input_rates: {json.dumps(input_rates, indent=2, default=str)}")
             
+            # Enhanced base value validation
             if not base_value:
                 logger.error("Base value is missing")
                 return Response({
@@ -188,24 +196,28 @@ class SalaryScenarioViewSet(viewsets.ModelViewSet):
                 
             try:
                 base_value_float = float(base_value)
+                if base_value_float <= 0:
+                    raise ValueError("Base value must be positive")
             except (ValueError, TypeError) as e:
-                logger.error(f"Base value conversion error: {e}")
+                logger.error(f"Base value validation error: {e}")
                 return Response({
-                    'errors': ['Base value must be a valid number'],
+                    'errors': [f'Base value must be a valid positive number: {str(e)}'],
                     'success': False
                 }, status=status.HTTP_400_BAD_REQUEST)
             
-            if base_value_float <= 0:
-                logger.error(f"Base value too low: {base_value_float}")
+            # Enhanced input rates validation
+            if not input_rates or not isinstance(input_rates, dict):
+                logger.error("Input rates missing or invalid")
                 return Response({
-                    'errors': ['Base value must be greater than 0'],
+                    'errors': ['Grade input rates are required'],
                     'success': False
                 }, status=status.HTTP_400_BAD_REQUEST)
             
-            # Get position groups from database - CORRECT ORDER
+            # Get position groups from database
             logger.info("Getting position groups from database...")
             position_groups = SalaryCalculationManager.get_position_groups_from_db()
-            logger.info(f"Found position groups: {list(position_groups.values_list('name', 'hierarchy_level'))}")
+            position_list = list(position_groups.values_list('name', 'hierarchy_level'))
+            logger.info(f"Found position groups: {position_list}")
             
             if not position_groups.exists():
                 logger.error("No position groups found")
@@ -214,53 +226,43 @@ class SalaryScenarioViewSet(viewsets.ModelViewSet):
                     'success': False
                 }, status=status.HTTP_400_BAD_REQUEST)
             
-            # Validate input rates - UPDATED FOR 4 INTERVALS
-            logger.info("Validating input rates with 4 interval structure...")
-            validation_errors = SalaryCalculationManager.validate_scenario_inputs(
-                base_value_float, input_rates
-            )
-            
+            # Enhanced validation using manager
+            validation_errors = SalaryCalculationManager.validate_scenario_inputs(base_value_float, input_rates)
             if validation_errors:
-                logger.error(f"Validation errors: {validation_errors}")
+                logger.error(f"Validation errors found: {validation_errors}")
                 return Response({
                     'errors': validation_errors,
                     'success': False
                 }, status=status.HTTP_400_BAD_REQUEST)
             
-            # Log the structure of input_rates for debugging
-            for grade_name, grade_data in input_rates.items():
-                logger.info(f"Grade {grade_name}:")
-                logger.info(f"  Vertical: {grade_data.get('vertical', 'N/A')}")
-                if 'horizontal_intervals' in grade_data:
-                    intervals = grade_data['horizontal_intervals']
-                    logger.info(f"  Horizontal intervals:")
-                    logger.info(f"    LD→LQ: {intervals.get('LD_to_LQ', 'empty')}")
-                    logger.info(f"    LQ→M: {intervals.get('LQ_to_M', 'empty')}")
-                    logger.info(f"    M→UQ: {intervals.get('M_to_UQ', 'empty')}")
-                    logger.info(f"    UQ→UD: {intervals.get('UQ_to_UD', 'empty')}")
-                else:
-                    logger.warning(f"  No horizontal_intervals found for {grade_name}")
+            logger.info("=== VALIDATION PASSED ===")
             
-            # Calculate grades using database position groups with 4 intervals
-            logger.info("Starting grade calculation with 4 intervals...")
+            # Calculate grades using enhanced manager
+            logger.info("Starting grade calculation...")
             calculated_grades = SalaryCalculationManager.calculate_scenario_grades(
                 base_value_float, input_rates, position_groups
             )
-            logger.info(f"Calculated grades: {calculated_grades}")
+            logger.info(f"Calculation complete. Results: {json.dumps(calculated_grades, indent=2, default=str)}")
             
-            # Format output to match frontend calculatedOutputs
+            # ENHANCED: Format output for frontend with validation
             calculated_outputs = {}
             for position_name, grades in calculated_grades.items():
-                calculated_outputs[position_name] = {
-                    'LD': grades['LD'] if grades['LD'] > 0 else "",
-                    'LQ': grades['LQ'] if grades['LQ'] > 0 else "",
-                    'M': grades['M'] if grades['M'] > 0 else "",
-                    'UQ': grades['UQ'] if grades['UQ'] > 0 else "",
-                    'UD': grades['UD'] if grades['UD'] > 0 else ""
-                }
+                if isinstance(grades, dict):
+                    calculated_outputs[position_name] = {
+                        'LD': grades.get('LD', 0) if grades.get('LD', 0) > 0 else "",
+                        'LQ': grades.get('LQ', 0) if grades.get('LQ', 0) > 0 else "",
+                        'M': grades.get('M', 0) if grades.get('M', 0) > 0 else "",
+                        'UQ': grades.get('UQ', 0) if grades.get('UQ', 0) > 0 else "",
+                        'UD': grades.get('UD', 0) if grades.get('UD', 0) > 0 else ""
+                    }
+                else:
+                    logger.warning(f"Invalid grade data for {position_name}: {grades}")
+                    calculated_outputs[position_name] = {
+                        'LD': "", 'LQ': "", 'M': "", 'UQ': "", 'UD': ""
+                    }
             
-            logger.info(f"Formatted outputs: {calculated_outputs}")
-            logger.info("=== CALCULATE DYNAMIC SUCCESS (4 INTERVALS) ===")
+            logger.info(f"Formatted outputs: {json.dumps(calculated_outputs, indent=2, default=str)}")
+            logger.info("=== CALCULATE DYNAMIC SUCCESS ===")
             
             return Response({
                 'calculatedOutputs': calculated_outputs,
@@ -276,41 +278,230 @@ class SalaryScenarioViewSet(viewsets.ModelViewSet):
             return Response({
                 'errors': [f'Calculation error: {str(e)}'],
                 'success': False,
-                'debug_info': traceback.format_exc() if settings.DEBUG else None
+                'debug_info': {
+                    'error_type': type(e).__name__,
+                    'traceback': traceback.format_exc()
+                } if settings.DEBUG else None
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-    
-
 
     @action(detail=False, methods=['post'], url_path='save_draft')
-    def  save_draft(self, request):
-        """Save scenario as draft using database position groups - UPDATED for global intervals"""
+    def save_draft(self, request):
+        """COMPLETELY FIXED: Save scenario with proper global horizontal intervals"""
         try:
+            logger.info("=== SAVE DRAFT START (COMPLETE FIX) ===")
+            
+            # Extract data
+            name = request.data.get('name')
+            description = request.data.get('description', '')
+            base_value = request.data.get('baseValue1')
+            grade_order = request.data.get('gradeOrder', [])
+            input_rates = request.data.get('grades', {})
+            global_horizontal_intervals = request.data.get('globalHorizontalIntervals', {})
+            calculated_outputs = request.data.get('calculatedOutputs', {})
+            
+            logger.info(f"📊 RECEIVED DATA:")
+            logger.info(f"  Global intervals: {global_horizontal_intervals}")
+            logger.info(f"  Has intervals: {bool(global_horizontal_intervals)}")
+            
+            # Validation
+            validation_errors = []
+            
+            if not name or len(name.strip()) == 0:
+                validation_errors.append('Scenario name is required')
+            
+            try:
+                base_value_float = float(base_value) if base_value else 0
+                if base_value_float <= 0:
+                    validation_errors.append('Base value must be greater than 0')
+            except (ValueError, TypeError):
+                validation_errors.append('Base value must be a valid number')
+                base_value_float = 0
+            
+            if not grade_order:
+                validation_errors.append('Grade order is required')
+            
+            if validation_errors:
+                return Response({
+                    'success': False,
+                    'errors': validation_errors
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Get grading system
+            grading_system, created = GradingSystem.objects.get_or_create(
+                name="Default Grading System",
+                defaults={
+                    'description': "Default grading system",
+                    'is_active': True,
+                    'created_by': request.user
+                }
+            )
+            
+            # COMPLETELY FIXED: Format input rates with global intervals
+            formatted_input_rates = {}
+            
+            logger.info(f"🔧 FORMATTING INPUT RATES:")
+            for position_name in grade_order:
+                position_input = input_rates.get(position_name, {})
+                
+                # Handle vertical
+                vertical_value = position_input.get('vertical')
+                if vertical_value == '' or vertical_value is None:
+                    vertical_value = None
+                else:
+                    try:
+                        vertical_value = float(vertical_value)
+                    except (ValueError, TypeError):
+                        vertical_value = None
+                
+                # FIXED: Apply global intervals to EVERY position
+                clean_intervals = {}
+                if global_horizontal_intervals:
+                    for interval_key, interval_value in global_horizontal_intervals.items():
+                        try:
+                            clean_value = float(interval_value) if interval_value not in ['', None] else 0
+                            clean_intervals[interval_key] = clean_value
+                        except (ValueError, TypeError):
+                            clean_intervals[interval_key] = 0
+                
+                formatted_input_rates[position_name] = {
+                    'vertical': vertical_value,
+                    'horizontal_intervals': clean_intervals
+                }
+                
+                logger.info(f"  {position_name}: vertical={vertical_value}, intervals={clean_intervals}")
+            
+            # FIXED: Calculate averages manually to ensure they're correct
+            vertical_sum = 0
+            vertical_count = 0
+            horizontal_sum = 0
+            horizontal_count = 0
+            
+            # Vertical averages (exclude base position)
+            for i, position_name in enumerate(grade_order):
+                is_base_position = (i == len(grade_order) - 1)
+                if is_base_position:
+                    continue
+                    
+                position_data = formatted_input_rates.get(position_name, {})
+                vertical_value = position_data.get('vertical')
+                if vertical_value is not None and vertical_value != 0:
+                    vertical_sum += vertical_value
+                    vertical_count += 1
+            
+            # FIXED: Horizontal averages from global intervals
+            if global_horizontal_intervals:
+                for interval_value in global_horizontal_intervals.values():
+                    if interval_value not in ['', None, 0]:
+                        try:
+                            horizontal_sum += float(interval_value)
+                            horizontal_count += 1
+                        except (ValueError, TypeError):
+                            pass
+            
+            vertical_avg = (vertical_sum / vertical_count / 100) if vertical_count > 0 else 0
+            horizontal_avg = (horizontal_sum / horizontal_count / 100) if horizontal_count > 0 else 0
+            
+            logger.info(f"🎯 CALCULATED AVERAGES:")
+            logger.info(f"  Vertical: {vertical_sum} ÷ {vertical_count} ÷ 100 = {vertical_avg} ({vertical_avg * 100:.1f}%)")
+            logger.info(f"  Horizontal: {horizontal_sum} ÷ {horizontal_count} ÷ 100 = {horizontal_avg} ({horizontal_avg * 100:.1f}%)")
+            
+            # Create scenario
+            with transaction.atomic():
+                scenario = SalaryScenario.objects.create(
+                    grading_system=grading_system,
+                    name=name.strip(),
+                    description=description,
+                    base_value=Decimal(str(base_value_float)),
+                    grade_order=grade_order,
+                    input_rates=formatted_input_rates,
+                    calculated_grades=calculated_outputs,
+                    calculation_timestamp=timezone.now(),
+                    vertical_avg=Decimal(str(vertical_avg)),
+                    horizontal_avg=Decimal(str(horizontal_avg)),
+                    created_by=request.user
+                )
+                
+                logger.info(f"✅ SCENARIO CREATED:")
+                logger.info(f"  ID: {scenario.id}")
+                logger.info(f"  Vertical avg: {scenario.vertical_avg}")
+                logger.info(f"  Horizontal avg: {scenario.horizontal_avg}")
+            
+            # Format response
+            scenario_serializer = SalaryScenarioDetailSerializer(scenario)
+            
+            return Response({
+                'success': True,
+                'message': 'Scenario saved successfully!',
+                'scenario_id': str(scenario.id),
+                'scenario': scenario_serializer.data
+            })
+            
+        except Exception as e:
+            logger.error(f"❌ SAVE DRAFT ERROR: {str(e)}")
+            return Response({
+                'success': False,
+                'error': f'Failed to save scenario: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            
+        """FIXED: Save scenario as draft with proper global horizontal interval handling"""
+        try:
+            logger.info("=== SAVE DRAFT START (FIXED) ===")
+            logger.info(f"Request data: {json.dumps(request.data, indent=2, default=str)}")
+            
             # Extract and validate data
             name = request.data.get('name')
             description = request.data.get('description', '')
             base_value = request.data.get('baseValue1')
+            grade_order = request.data.get('gradeOrder', [])
             input_rates = request.data.get('grades', {})
+            global_horizontal_intervals = request.data.get('globalHorizontalIntervals', {})
             calculated_outputs = request.data.get('calculatedOutputs', {})
             
-            logger.info(f"=== SAVE DRAFT START (GLOBAL INTERVALS) ===")
-            logger.info(f"Name: {name}")
-            logger.info(f"Base value: {base_value}")
-            logger.info(f"Input rates: {input_rates}")
+            logger.info(f"Extracted data:")
+            logger.info(f"  Name: {name}")
+            logger.info(f"  Base value: {base_value}")
+            logger.info(f"  Grade order: {grade_order}")
+            logger.info(f"  Global intervals: {global_horizontal_intervals}")
             
-            if not name:
+            # Enhanced validation
+            validation_errors = []
+            
+            if not name or len(name.strip()) == 0:
+                validation_errors.append('Scenario name is required')
+            
+            if not base_value:
+                validation_errors.append('Base value is required')
+            else:
+                try:
+                    base_value_float = float(base_value)
+                    if base_value_float <= 0:
+                        validation_errors.append('Base value must be greater than 0')
+                except (ValueError, TypeError):
+                    validation_errors.append('Base value must be a valid number')
+            
+            if not grade_order or len(grade_order) == 0:
+                validation_errors.append('Grade order is required')
+            
+            # ENHANCED: Validate calculated outputs structure
+            if calculated_outputs:
+                for grade_name, grade_data in calculated_outputs.items():
+                    if not isinstance(grade_data, dict):
+                        validation_errors.append(f'Invalid calculated output structure for {grade_name}')
+                    else:
+                        # Ensure all required fields exist
+                        for field in ['LD', 'LQ', 'M', 'UQ', 'UD']:
+                            if field not in grade_data:
+                                logger.warning(f"Missing field {field} in calculated output for {grade_name}")
+            
+            if validation_errors:
+                logger.error(f"Validation errors: {validation_errors}")
                 return Response({
                     'success': False,
-                    'error': 'Scenario name is required'
-                }, status=status.HTTP_400_BAD_REQUEST)
-            
-            if not base_value or base_value <= 0:
-                return Response({
-                    'success': False,
-                    'error': 'Base value must be greater than 0'
+                    'errors': validation_errors
                 }, status=status.HTTP_400_BAD_REQUEST)
             
             # Check if name already exists
-            if SalaryScenario.objects.filter(name=name).exists():
+            if SalaryScenario.objects.filter(name=name.strip()).exists():
                 return Response({
                     'success': False,
                     'error': 'Scenario name already exists'
@@ -335,45 +526,78 @@ class SalaryScenarioViewSet(viewsets.ModelViewSet):
                     'error': 'No position groups found in database'
                 }, status=status.HTTP_400_BAD_REQUEST)
             
-            # Build grade order from database
-            grade_order = [pos.get_name_display() for pos in position_groups]
+            # FIXED: Build formatted input rates with global intervals applied to ALL positions
+            formatted_input_rates = {}
             
-            # UPDATED: Handle global horizontal intervals
-            # The input_rates should already contain global intervals applied to each position
-            # But we need to verify and log the structure
+            # Ensure global_horizontal_intervals has all required keys with default values
+            default_intervals = {
+                'LD_to_LQ': 0,
+                'LQ_to_M': 0,
+                'M_to_UQ': 0,
+                'UQ_to_UD': 0
+            }
             
-            sample_position = grade_order[0] if grade_order else None
-            global_intervals = None
-            if sample_position and input_rates.get(sample_position, {}).get('horizontal_intervals'):
-                global_intervals = input_rates[sample_position]['horizontal_intervals']
-                logger.info(f"Detected global horizontal intervals: {global_intervals}")
+            # Merge with provided intervals, cleaning values
+            final_global_intervals = {}
+            for key in default_intervals.keys():
+                value = global_horizontal_intervals.get(key, 0)
+                if value == '' or value is None:
+                    final_global_intervals[key] = 0
+                else:
+                    try:
+                        final_global_intervals[key] = float(value)
+                    except (ValueError, TypeError):
+                        final_global_intervals[key] = 0
+            
+            logger.info(f"Final global intervals: {final_global_intervals}")
+            
+            # Apply global horizontal intervals to each position
+            for position_name in grade_order:
+                position_input = input_rates.get(position_name, {})
                 
-                # Verify all positions have the same intervals (they should for global logic)
-                for position_name in grade_order:
-                    position_intervals = input_rates.get(position_name, {}).get('horizontal_intervals', {})
-                    if position_intervals != global_intervals:
-                        logger.warning(f"Position {position_name} has different intervals: {position_intervals}")
+                # Handle vertical input
+                vertical_value = position_input.get('vertical')
+                if vertical_value == '' or vertical_value is None:
+                    vertical_value = None
+                else:
+                    try:
+                        vertical_value = float(vertical_value)
+                    except (ValueError, TypeError):
+                        vertical_value = None
+                
+                # Apply global horizontal intervals to this position (FIXED)
+                formatted_input_rates[position_name] = {
+                    'vertical': vertical_value,
+                    'horizontal_intervals': final_global_intervals.copy()  # Copy to each position
+                }
             
-            # Calculate averages - UPDATED for global intervals
+            logger.info(f"Formatted input rates: {json.dumps(formatted_input_rates, indent=2, default=str)}")
+            
+            # ENHANCED: Calculate averages with proper validation
             vertical_sum = 0
-            horizontal_sum = 0
             vertical_count = 0
+            horizontal_sum = 0
             horizontal_count = 0
             
+            # Vertical averages (per position)
             for position_name in grade_order:
-                grade_data = input_rates.get(position_name, {})
-                
-                # Vertical (per position)
-                if grade_data.get('vertical') is not None:
-                    vertical_sum += float(grade_data['vertical'])
-                    vertical_count += 1
-                
-                # Horizontal (global - only count once)
-                if global_intervals and horizontal_count == 0:
-                    for interval_name, interval_value in global_intervals.items():
-                        if interval_value is not None and interval_value != '':
-                            horizontal_sum += float(interval_value)
-                            horizontal_count += 1
+                position_data = formatted_input_rates.get(position_name, {})
+                vertical_value = position_data.get('vertical')
+                if vertical_value is not None and vertical_value != 0:
+                    try:
+                        vertical_sum += float(vertical_value)
+                        vertical_count += 1
+                    except (ValueError, TypeError):
+                        pass
+            
+            # Horizontal averages (global - from final_global_intervals)
+            for interval_value in final_global_intervals.values():
+                if interval_value is not None and interval_value != 0:
+                    try:
+                        horizontal_sum += float(interval_value)
+                        horizontal_count += 1
+                    except (ValueError, TypeError):
+                        pass
             
             vertical_avg = (vertical_sum / vertical_count / 100) if vertical_count > 0 else 0
             horizontal_avg = (horizontal_sum / horizontal_count / 100) if horizontal_count > 0 else 0
@@ -393,7 +617,7 @@ class SalaryScenarioViewSet(viewsets.ModelViewSet):
                 'horizontalAvg': horizontal_avg
             }
             
-            # Calculate metrics
+            # SIMPLIFIED: Calculate basic metrics (removed competitiveness/riskLevel)
             metrics = SalaryCalculationManager.calculate_scenario_metrics(
                 scenario_data, current_data
             ) if current_data else {}
@@ -402,15 +626,15 @@ class SalaryScenarioViewSet(viewsets.ModelViewSet):
             with transaction.atomic():
                 scenario = SalaryScenario.objects.create(
                     grading_system=grading_system,
-                    name=name,
+                    name=name.strip(),
                     description=description,
-                    base_value=base_value,
+                    base_value=Decimal(str(base_value_float)),
                     grade_order=grade_order,
-                    input_rates=input_rates,  # Contains global intervals applied to each position
+                    input_rates=formatted_input_rates,
                     calculated_grades=calculated_outputs,
                     calculation_timestamp=timezone.now(),
-                    vertical_avg=Decimal(str(vertical_avg)),
-                    horizontal_avg=Decimal(str(horizontal_avg)),
+                    vertical_avg=Decimal(str(vertical_avg)),  # FIXED: Set calculated average
+                    horizontal_avg=Decimal(str(horizontal_avg)),  # FIXED: Set calculated average
                     metrics=metrics,
                     created_by=request.user
                 )
@@ -422,28 +646,44 @@ class SalaryScenarioViewSet(viewsets.ModelViewSet):
                     performed_by=request.user,
                     changes_made={
                         'created_scenario': scenario.name,
-                        'global_intervals': global_intervals,
-                        'has_global_intervals': global_intervals is not None
+                        'global_intervals': final_global_intervals,
+                        'has_global_intervals': bool(any(v != 0 for v in final_global_intervals.values())),
+                        'calculated_averages': {
+                            'vertical_avg': vertical_avg,
+                            'horizontal_avg': horizontal_avg
+                        }
                     }
                 )
             
-            logger.info(f"Scenario '{name}' saved as draft with global intervals by user {request.user.username}")
+            logger.info(f"Scenario '{name}' saved successfully with ID: {scenario.id}")
+            logger.info(f"Final averages - Vertical: {vertical_avg}, Horizontal: {horizontal_avg}")
             logger.info(f"=== SAVE DRAFT SUCCESS ===")
+            
+            # Format response
+            scenario_serializer = SalaryScenarioDetailSerializer(scenario)
             
             return Response({
                 'success': True,
-                'message': 'Scenario saved as draft with global intervals!',
+                'message': 'Scenario saved as draft successfully!',
                 'scenario_id': str(scenario.id),
-                'scenario': SalaryScenarioDetailSerializer(scenario).data
+                'scenario': scenario_serializer.data
             })
             
         except Exception as e:
-            logger.error(f"Error saving draft scenario with global intervals: {str(e)}")
+            logger.error(f"=== SAVE DRAFT ERROR ===")
+            logger.error(f"Error type: {type(e).__name__}")
+            logger.error(f"Error message: {str(e)}")
             logger.error(f"Traceback: {traceback.format_exc()}")
+            
             return Response({
                 'success': False,
-                'error': str(e)
+                'error': f'Failed to save scenario: {str(e)}',
+                'debug_info': {
+                    'error_type': type(e).__name__,
+                    'traceback': traceback.format_exc()
+                } if settings.DEBUG else None
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
     @action(detail=True, methods=['post'])
     def apply_as_current(self, request, pk=None):
         """Apply scenario as current (archive previous current scenario)"""
@@ -466,7 +706,7 @@ class SalaryScenarioViewSet(viewsets.ModelViewSet):
             with transaction.atomic():
                 applied_scenario = SalaryCalculationManager.apply_scenario(scenario.id, request.user)
             
-            logger.info(f"Scenario {scenario.name} applied as current by user {request.user.username}, previous scenario archived")
+            logger.info(f"Scenario {scenario.name} applied as current by user {request.user.username}")
             
             return Response({
                 'success': True,
@@ -547,8 +787,8 @@ class SalaryScenarioViewSet(viewsets.ModelViewSet):
             
             for scenario in queryset:
                 scenario_data = {
-                    'verticalAvg': float(scenario.vertical_avg),
-                    'horizontalAvg': float(scenario.horizontal_avg)
+                    'verticalAvg': float(scenario.vertical_avg) if scenario.vertical_avg else 0,
+                    'horizontalAvg': float(scenario.horizontal_avg) if scenario.horizontal_avg else 0
                 }
                 score = SalaryCalculationManager.get_balance_score(scenario_data)
                 
@@ -661,7 +901,7 @@ class SalaryScenarioViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'])
     def statistics(self, request):
-        """Get scenario statistics"""
+        """SIMPLIFIED: Get scenario statistics (removed competitiveness/riskLevel)"""
         try:
             grading_system_id = request.query_params.get('grading_system')
             queryset = self.get_queryset()

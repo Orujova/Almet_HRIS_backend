@@ -1,4 +1,4 @@
-# grading/admin.py
+# grading/admin.py - FIXED: Removed competitiveness/riskLevel references
 
 from django.contrib import admin
 from django.utils.html import format_html
@@ -170,7 +170,7 @@ class SalaryScenarioAdmin(admin.ModelAdmin):
         for grade_name in obj.grade_order:
             grade_data = obj.input_rates.get(grade_name, {})
             if (grade_data.get('vertical') is not None and 
-                grade_data.get('horizontal') is not None):
+                grade_data.get('horizontal_intervals') is not None):
                 configured_grades += 1
         
         percentage = round((configured_grades / total_grades) * 100, 1) if total_grades > 0 else 0
@@ -227,7 +227,7 @@ class SalaryScenarioAdmin(admin.ModelAdmin):
                     calculated_grades = SalaryCalculationManager.calculate_scenario_grades(
                         scenario.base_value,
                         scenario.input_rates,
-                        scenario.grade_order or SalaryCalculationManager.get_default_grade_order()
+                        scenario.grade_order or SalaryCalculationManager.get_position_groups_from_db()
                     )
                     
                     # Update scenario

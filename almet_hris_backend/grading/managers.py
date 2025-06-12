@@ -1,4 +1,4 @@
-# grading/managers.py - CORRECTED HORIZONTAL LOGIC WITH 4 INTERVALS
+# grading/managers.py - FIXED: Removed competitiveness/riskLevel, Enhanced validation
 
 from django.db import models
 from django.utils import timezone
@@ -8,7 +8,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 class SalaryCalculationManager:
-    """Manager for salary calculations with CORRECT horizontal logic - 4 intervals"""
+    """Manager for salary calculations with FIXED vertical logic"""
     
     @staticmethod
     def get_position_groups_from_db():
@@ -26,7 +26,7 @@ class SalaryCalculationManager:
     
     @staticmethod
     def create_current_structure_from_db():
-        """Create current structure data from database"""
+        """Create current structure data from database - ENHANCED validation"""
         from .models import SalaryGrade, SalaryScenario
         from api.models import PositionGroup
         
@@ -56,34 +56,61 @@ class SalaryCalculationManager:
                 grade_name = pos_group.get_name_display()
                 grade_order.append(grade_name)
                 
-                if grade_name in current_scenario.calculated_grades:
+                if (current_scenario.calculated_grades and 
+                    grade_name in current_scenario.calculated_grades):
                     grade_data = current_scenario.calculated_grades[grade_name]
+                    
+                    # ENHANCED: Validate grade data structure
+                    if isinstance(grade_data, dict):
+                        grades_data[grade_name] = {
+                            'LD': grade_data.get('LD', 0) or 0,
+                            'LQ': grade_data.get('LQ', 0) or 0, 
+                            'M': grade_data.get('M', 0) or 0,
+                            'UQ': grade_data.get('UQ', 0) or 0,
+                            'UD': grade_data.get('UD', 0) or 0,
+                            'vertical': 0,
+                            'horizontal_intervals': {
+                                'LD_to_LQ': 0,
+                                'LQ_to_M': 0,
+                                'M_to_UQ': 0,
+                                'UQ_to_UD': 0
+                            }
+                        }
+                    else:
+                        # Fallback for invalid grade data
+                        grades_data[grade_name] = {
+                            'LD': 0, 'LQ': 0, 'M': 0, 'UQ': 0, 'UD': 0,
+                            'vertical': 0,
+                            'horizontal_intervals': {
+                                'LD_to_LQ': 0, 'LQ_to_M': 0, 'M_to_UQ': 0, 'UQ_to_UD': 0
+                            }
+                        }
+                else:
+                    # No data for this position
                     grades_data[grade_name] = {
-                        'LD': grade_data.get('LD', 0),
-                        'LQ': grade_data.get('LQ', 0), 
-                        'M': grade_data.get('M', 0),
-                        'UQ': grade_data.get('UQ', 0),
-                        'UD': grade_data.get('UD', 0),
+                        'LD': 0, 'LQ': 0, 'M': 0, 'UQ': 0, 'UD': 0,
                         'vertical': 0,
                         'horizontal_intervals': {
-                            'LD_to_LQ': 0,
-                            'LQ_to_M': 0,
-                            'M_to_UQ': 0,
-                            'UQ_to_UD': 0
+                            'LD_to_LQ': 0, 'LQ_to_M': 0, 'M_to_UQ': 0, 'UQ_to_UD': 0
                         }
                     }
             
             logger.info(f"Current structure grade order: {grade_order}")
             logger.info(f"Base value position: {grade_order[-1]} (last = lowest hierarchy)")
             
+            # ENHANCED: Validate averages
+            vertical_avg = float(current_scenario.vertical_avg) if current_scenario.vertical_avg else 0
+            horizontal_avg = float(current_scenario.horizontal_avg) if current_scenario.horizontal_avg else 0
+            base_value = float(current_scenario.base_value) if current_scenario.base_value else 0
+            
             return {
                 'id': 'current',
                 'name': 'Current Structure',
                 'grades': grades_data,
                 'gradeOrder': grade_order,
-                'verticalAvg': float(current_scenario.vertical_avg),
-                'horizontalAvg': float(current_scenario.horizontal_avg),
-                'baseValue1': float(current_scenario.base_value),
+                'verticalAvg': vertical_avg,
+                'horizontalAvg': horizontal_avg,
+                'baseValue1': base_value,
                 'status': 'current'
             }
             
@@ -100,10 +127,7 @@ class SalaryCalculationManager:
                     'LD': 0, 'LQ': 0, 'M': 0, 'UQ': 0, 'UD': 0,
                     'vertical': 0,
                     'horizontal_intervals': {
-                        'LD_to_LQ': 0,
-                        'LQ_to_M': 0,
-                        'M_to_UQ': 0,
-                        'UQ_to_UD': 0
+                        'LD_to_LQ': 0, 'LQ_to_M': 0, 'M_to_UQ': 0, 'UQ_to_UD': 0
                     }
                 }
             
@@ -121,29 +145,11 @@ class SalaryCalculationManager:
     @staticmethod
     def calculate_scenario_grades(base_value, input_rates, position_groups=None):
         """
-        Calculate grades with CORRECTED horizontal logic - 4 intervals
-        
-        HORIZONTAL LOGIC CORRECTION:
-        - Each position has 4 horizontal intervals: LD→LQ→M→UQ→UD
-        - Each interval is controlled separately
-        - input_rates now contains horizontal_intervals dict for each position
-        
-        Args:
-            base_value: Base salary value (Last position LD)
-            input_rates: Dict with position_name -> {
-                vertical: %, 
-                horizontal_intervals: {
-                    'LD_to_LQ': %,
-                    'LQ_to_M': %,
-                    'M_to_UQ': %,
-                    'UQ_to_UD': %
-                }
-            }
-            position_groups: QuerySet of PositionGroup objects (optional)
+        Calculate scenario grades with enhanced validation
         """
-        logger.info(f"=== GRADE CALCULATION START (4 INTERVALS) ===")
+        logger.info(f"=== GRADE CALCULATION START ===")
         logger.info(f"Base value: {base_value}")
-        logger.info(f"Input rates: {input_rates}")
+        logger.info(f"Input rates structure: {input_rates}")
         
         if position_groups is None:
             position_groups = SalaryCalculationManager.get_position_groups_from_db()
@@ -158,68 +164,86 @@ class SalaryCalculationManager:
             logger.error("No positions to calculate")
             return calculated_grades
         
-        # Start from LAST position (base position)
-        base_position = positions_list[-1]
-        current_ld = Decimal(str(base_value))
-        
-        logger.info(f"Base position: {base_position.get_name_display()} with LD={current_ld}")
-        
-        # Calculate from base position upwards
+        # Process all positions from bottom (highest index) to top (index 0)
         for i in range(len(positions_list) - 1, -1, -1):
             position = positions_list[i]
             position_name = position.get_name_display()
-            grade_inputs = input_rates.get(position_name, {})
+            position_inputs = input_rates.get(position_name, {})
             
-            # Get horizontal intervals - NEW LOGIC
-            horizontal_intervals = grade_inputs.get('horizontal_intervals', {})
+            logger.info(f"\n--- Processing Position {len(positions_list)-i}: {position_name} (index {i}) ---")
             
-            logger.info(f"Processing {position_name} (level {position.hierarchy_level}): LD={current_ld}")
-            logger.info(f"Horizontal intervals: {horizontal_intervals}")
+            # Determine this position's LD
+            if i == len(positions_list) - 1:
+                # This is the base position - use base_value directly
+                position_ld = Decimal(str(base_value))
+                logger.info(f"BASE POSITION: {position_name} LD = {position_ld} (base value)")
+            else:
+                # This is NOT the base position - calculate based on vertical rate
+                vertical_input = position_inputs.get('vertical', 0)
+                
+                # Get the LD of the position below (higher index)
+                lower_position = positions_list[i + 1]
+                lower_position_name = lower_position.get_name_display()
+                lower_position_ld = calculated_grades[lower_position_name]['LD']
+                
+                # Safe vertical conversion
+                if vertical_input == '' or vertical_input is None:
+                    vertical_rate = Decimal('0')
+                    logger.info(f"No vertical input for {position_name}, using 0%")
+                else:
+                    try:
+                        vertical_rate = Decimal(str(vertical_input))
+                        logger.info(f"Vertical rate for {position_name}: {vertical_rate}%")
+                    except (ValueError, TypeError):
+                        logger.warning(f"Invalid vertical input for {position_name}: {vertical_input}, using 0")
+                        vertical_rate = Decimal('0')
+                
+                # Calculate this position's LD based on the position below + vertical rate
+                position_ld = Decimal(str(lower_position_ld)) * (Decimal('1') + vertical_rate / Decimal('100'))
+                
+                logger.info(f"VERTICAL CALCULATION: {lower_position_name} → {position_name}")
+                logger.info(f"  Lower position LD: {lower_position_ld}")
+                logger.info(f"  Vertical rate: {vertical_rate}%")
+                logger.info(f"  Calculated LD: {lower_position_ld} × (1 + {vertical_rate}/100) = {position_ld}")
             
-            # Calculate horizontal grades for current position with 4 intervals
+            # Get horizontal intervals for this position
+            horizontal_intervals = position_inputs.get('horizontal_intervals', {})
+            
+            # Calculate horizontal grades for this position
             grades = SalaryCalculationManager._calculate_horizontal_grades_with_intervals(
-                current_ld, horizontal_intervals
+                position_ld, horizontal_intervals
             )
             calculated_grades[position_name] = grades
             
-            # Calculate LD for next higher position (if exists)
-            if i > 0:  # Not the first position
-                vertical_input = grade_inputs.get('vertical', 0)
-                if vertical_input == '' or vertical_input is None:
-                    vertical_rate = Decimal('0')
-                else:
-                    vertical_rate = Decimal(str(vertical_input))
-                
-                # Next position LD = Current LD * (1 + vertical_rate/100)
-                current_ld = current_ld * (Decimal('1') + vertical_rate / Decimal('100'))
-                logger.info(f"Next position LD calculated: {current_ld} (using {position_name} vertical {vertical_rate}%)")
+            logger.info(f"Final grades for {position_name}: LD={grades['LD']}, LQ={grades['LQ']}, M={grades['M']}, UQ={grades['UQ']}, UD={grades['UD']}")
         
         logger.info(f"=== CALCULATION COMPLETE ===")
-        logger.info(f"Final result: {calculated_grades}")
         return calculated_grades
     
     @staticmethod
     def _calculate_horizontal_grades_with_intervals(lower_decile, horizontal_intervals):
         """
-        NEW: Calculate horizontal grades with 4 separate interval inputs
-        
-        horizontal_intervals = {
-            'LD_to_LQ': 5.0,  # LD→LQ artım faizi
-            'LQ_to_M': 5.0,   # LQ→M artım faizi  
-            'M_to_UQ': 5.0,   # M→UQ artım faizi
-            'UQ_to_UD': 5.0   # UQ→UD artım faizi
-        }
-        
-        Returns:
-            dict: {'LD': value, 'LQ': value, 'M': value, 'UQ': value, 'UD': value}
+        Calculate horizontal grades with 4 separate interval inputs - ENHANCED validation
         """
         ld = float(lower_decile)
         
-        # Get interval percentages (default to 0 if not provided)
-        ld_to_lq = float(horizontal_intervals.get('LD_to_LQ', 0)) / 100
-        lq_to_m = float(horizontal_intervals.get('LQ_to_M', 0)) / 100
-        m_to_uq = float(horizontal_intervals.get('M_to_UQ', 0)) / 100
-        uq_to_ud = float(horizontal_intervals.get('UQ_to_UD', 0)) / 100
+        # Safe conversion function
+        def safe_float_conversion(value, default=0.0):
+            if value is None or value == '' or value == 'None':
+                return default
+            try:
+                return float(value)
+            except (ValueError, TypeError):
+                logger.warning(f"Could not convert '{value}' to float, using default {default}")
+                return default
+        
+        # Get interval percentages with safe conversion and validation
+        intervals = horizontal_intervals if isinstance(horizontal_intervals, dict) else {}
+        
+        ld_to_lq = safe_float_conversion(intervals.get('LD_to_LQ', 0)) / 100
+        lq_to_m = safe_float_conversion(intervals.get('LQ_to_M', 0)) / 100
+        m_to_uq = safe_float_conversion(intervals.get('M_to_UQ', 0)) / 100
+        uq_to_ud = safe_float_conversion(intervals.get('UQ_to_UD', 0)) / 100
         
         # Calculate step by step
         lq = ld * (1 + ld_to_lq)
@@ -235,20 +259,24 @@ class SalaryCalculationManager:
             'UD': round(ud)
         }
         
-        logger.info(f"Horizontal calculation with 4 intervals:")
-        logger.info(f"  LD→LQ: {ld_to_lq*100:.1f}% → {ld:.0f} → {lq:.0f}")
-        logger.info(f"  LQ→M: {lq_to_m*100:.1f}% → {lq:.0f} → {m:.0f}")
-        logger.info(f"  M→UQ: {m_to_uq*100:.1f}% → {m:.0f} → {uq:.0f}")
-        logger.info(f"  UQ→UD: {uq_to_ud*100:.1f}% → {uq:.0f} → {ud:.0f}")
-        logger.info(f"  Final grades: {grades}")
+        logger.debug(f"Horizontal calculation:")
+        logger.debug(f"  LD→LQ: {ld_to_lq*100:.1f}% → {ld:.0f} → {lq:.0f}")
+        logger.debug(f"  LQ→M: {lq_to_m*100:.1f}% → {lq:.0f} → {m:.0f}")
+        logger.debug(f"  M→UQ: {m_to_uq*100:.1f}% → {m:.0f} → {uq:.0f}")
+        logger.debug(f"  UQ→UD: {uq_to_ud*100:.1f}% → {uq:.0f} → {ud:.0f}")
         
         return grades
     
     @staticmethod
     def calculate_scenario_metrics(scenario_data, current_data):
-        """Calculate scenario metrics for comparison"""
+        """SIMPLIFIED: Basic metrics calculation (removed competitiveness/riskLevel)"""
         if not scenario_data.get('grades') or not current_data.get('grades'):
-            return {}
+            return {
+                'totalBudgetImpact': 0,
+                'avgSalaryIncrease': 0,
+                'maxSalaryIncrease': 0,
+                'positionsAffected': 0
+            }
         
         total_budget_impact = 0
         salary_increases = []
@@ -257,34 +285,31 @@ class SalaryCalculationManager:
             scenario_grade = scenario_data['grades'].get(grade_name, {})
             current_grade = current_data['grades'].get(grade_name, {})
             
-            scenario_median = scenario_grade.get('M', 0)
-            current_median = current_grade.get('M', 0)
+            # ENHANCED: Validate grade data
+            scenario_median = 0
+            current_median = 0
+            
+            if isinstance(scenario_grade, dict):
+                scenario_median = float(scenario_grade.get('M', 0) or 0)
+            
+            if isinstance(current_grade, dict):
+                current_median = float(current_grade.get('M', 0) or 0)
             
             total_budget_impact += scenario_median
             
-            if current_median > 0:
+            # Only calculate increase if both values are meaningful
+            if current_median > 0 and scenario_median > 0:
                 increase = ((scenario_median - current_median) / current_median) * 100
                 salary_increases.append(increase)
         
         avg_salary_increase = sum(salary_increases) / len(salary_increases) if salary_increases else 0
-        
-        # Calculate competitiveness
-        competitiveness = min((scenario_data.get('verticalAvg', 0) + scenario_data.get('horizontalAvg', 0)) * 200, 100)
-        
-        # Calculate risk level
-        max_increase = max(salary_increases) if salary_increases else 0
-        if max_increase > 30:
-            risk_level = "High"
-        elif max_increase > 15:
-            risk_level = "Medium"
-        else:
-            risk_level = "Low"
+        max_salary_increase = max(salary_increases) if salary_increases else 0
         
         return {
             'totalBudgetImpact': total_budget_impact,
             'avgSalaryIncrease': avg_salary_increase,
-            'competitiveness': competitiveness,
-            'riskLevel': risk_level
+            'maxSalaryIncrease': max_salary_increase,
+            'positionsAffected': len(salary_increases)
         }
     
     @staticmethod
@@ -342,15 +367,15 @@ class SalaryCalculationManager:
         
         salary_grades_created = 0
         for position_name, grades in scenario.calculated_grades.items():
-            if position_name in position_map:
+            if position_name in position_map and isinstance(grades, dict):
                 SalaryGrade.objects.create(
                     grading_system=scenario.grading_system,
                     position_group=position_map[position_name],
-                    lower_decile=Decimal(str(grades['LD'])),
-                    lower_quartile=Decimal(str(grades['LQ'])),
-                    median=Decimal(str(grades['M'])),
-                    upper_quartile=Decimal(str(grades['UQ'])),
-                    upper_decile=Decimal(str(grades['UD']))
+                    lower_decile=Decimal(str(grades.get('LD', 0) or 0)),
+                    lower_quartile=Decimal(str(grades.get('LQ', 0) or 0)),
+                    median=Decimal(str(grades.get('M', 0) or 0)),
+                    upper_quartile=Decimal(str(grades.get('UQ', 0) or 0)),
+                    upper_decile=Decimal(str(grades.get('UD', 0) or 0))
                 )
                 salary_grades_created += 1
         
@@ -359,23 +384,27 @@ class SalaryCalculationManager:
     
     @staticmethod
     def get_balance_score(scenario_data):
-        """Calculate balance score matching frontend logic"""
+        """Calculate balance score for scenario comparison"""
         vertical_avg = scenario_data.get('verticalAvg', 0)
         horizontal_avg = scenario_data.get('horizontalAvg', 0)
         deviation = abs(vertical_avg - horizontal_avg)
-        return (vertical_avg + horizontal_avg) / (1 + deviation)
+        return (vertical_avg + horizontal_avg) / (1 + deviation) if (vertical_avg + horizontal_avg) > 0 else 0
     
     @staticmethod
     def validate_scenario_inputs(base_value, input_rates):
-        """Validate scenario inputs with proper type checking - UPDATED for 4 intervals"""
+        """ENHANCED: Validate scenario inputs with proper type checking"""
         errors = []
         
-        logger.info(f"=== VALIDATION START (4 INTERVALS) ===")
+        logger.info(f"=== VALIDATION START ===")
         logger.info(f"Base value: {base_value} (type: {type(base_value)})")
         logger.info(f"Input rates: {input_rates}")
         
         if not base_value or base_value <= 0:
             errors.append("Base value must be greater than 0")
+        
+        if not input_rates or not isinstance(input_rates, dict):
+            errors.append("Input rates are required and must be valid")
+            return errors
         
         for grade_name, rates in input_rates.items():
             logger.info(f"Validating {grade_name}: {rates}")
@@ -396,9 +425,9 @@ class SalaryCalculationManager:
                     except (ValueError, TypeError):
                         errors.append(f"Vertical rate for {grade_name} must be a valid number")
                 
-                # Validate horizontal intervals - NEW
+                # Validate horizontal intervals
                 horizontal_intervals = rates.get('horizontal_intervals', {})
-                if horizontal_intervals:
+                if horizontal_intervals and isinstance(horizontal_intervals, dict):
                     interval_names = ['LD_to_LQ', 'LQ_to_M', 'M_to_UQ', 'UQ_to_UD']
                     for interval_name in interval_names:
                         interval_value = horizontal_intervals.get(interval_name)
