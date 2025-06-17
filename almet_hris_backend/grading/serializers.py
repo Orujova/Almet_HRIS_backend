@@ -1,4 +1,4 @@
-# grading/serializers.py - SIMPLIFIED: Enhanced detail display with proper vertical/horizontal data
+# grading/serializers.py - FIXED: Complete input data preservation in both list and detail
 
 from rest_framework import serializers
 from .models import GradingSystem, SalaryGrade, SalaryScenario, ScenarioHistory
@@ -106,7 +106,7 @@ class SalaryGradeSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'created_at', 'updated_at']
 
 class SalaryScenarioListSerializer(serializers.ModelSerializer):
-    """List serializer for scenarios - SIMPLIFIED"""
+    """FIXED: List serializer with complete input data for comparison"""
     created_by_name = serializers.CharField(source='created_by.get_full_name', read_only=True)
     is_calculated = serializers.SerializerMethodField()
     grading_system_name = serializers.CharField(source='grading_system.name', read_only=True)
@@ -118,21 +118,56 @@ class SalaryScenarioListSerializer(serializers.ModelSerializer):
             'id', 'name', 'status', 'grading_system_name', 'base_value', 
             'vertical_avg', 'horizontal_avg', 'metrics', 'data',
             'is_calculated', 'created_by_name', 
-            'created_at', 'calculation_timestamp'
+            'created_at', 'calculation_timestamp',
+            # FIXED: Add input_rates to list for comparison
+            'input_rates'
         ]
     
     def get_is_calculated(self, obj):
         return bool(obj.calculated_grades and obj.calculation_timestamp)
     
     def get_data(self, obj):
-        """Format data for list display"""
+        """FIXED: Format data for list display with complete input preservation"""
+        logger.info(f"=== LIST SERIALIZER for {obj.name} ===")
+        
         calculated_grades = {}
         if obj.calculated_grades and isinstance(obj.calculated_grades, dict):
             calculated_grades = obj.calculated_grades
         
         grade_order = obj.grade_order if obj.grade_order else []
         
-        # Fill missing grades
+        # FIXED: Extract input data just like in detail serializer
+        position_vertical_inputs = {}
+        global_horizontal_intervals = {
+            'LD_to_LQ': 0,
+            'LQ_to_M': 0,
+            'M_to_UQ': 0,
+            'UQ_to_UD': 0
+        }
+        
+        if obj.input_rates and isinstance(obj.input_rates, dict):
+            # Get vertical inputs for each position
+            for grade_name in grade_order:
+                grade_input_data = obj.input_rates.get(grade_name, {})
+                if isinstance(grade_input_data, dict):
+                    vertical_value = grade_input_data.get('vertical')
+                    position_vertical_inputs[grade_name] = vertical_value
+                    
+                    # Get global intervals from first position with intervals
+                    intervals = grade_input_data.get('horizontal_intervals', {})
+                    if intervals and isinstance(intervals, dict) and not any(global_horizontal_intervals.values()):
+                        for key in global_horizontal_intervals.keys():
+                            if key in intervals and intervals[key] is not None:
+                                try:
+                                    global_horizontal_intervals[key] = float(intervals[key])
+                                except (ValueError, TypeError):
+                                    pass
+        
+        logger.info(f"LIST: Extracted vertical inputs: {position_vertical_inputs}")
+        logger.info(f"LIST: Global horizontal intervals: {global_horizontal_intervals}")
+        
+        # FIXED: Enhanced grades with input data for comparison
+        enhanced_grades = {}
         for grade_name in grade_order:
             if grade_name not in calculated_grades:
                 calculated_grades[grade_name] = {
@@ -148,17 +183,31 @@ class SalaryScenarioListSerializer(serializers.ModelSerializer):
                     calculated_grades[grade_name] = {
                         'LD': 0, 'LQ': 0, 'M': 0, 'UQ': 0, 'UD': 0
                     }
+            
+            # FIXED: Add input data to grades for comparison
+            enhanced_grades[grade_name] = {
+                **calculated_grades[grade_name],
+                'verticalInput': position_vertical_inputs.get(grade_name),
+                'vertical': position_vertical_inputs.get(grade_name),
+                'horizontal_intervals': global_horizontal_intervals
+            }
         
         return {
             'baseValue1': float(obj.base_value) if obj.base_value else 0,
             'gradeOrder': grade_order,
-            'grades': calculated_grades,
+            'grades': enhanced_grades,  # FIXED: Now includes input data
             'verticalAvg': float(obj.vertical_avg) if obj.vertical_avg else 0,
-            'horizontalAvg': float(obj.horizontal_avg) if obj.horizontal_avg else 0
+            'horizontalAvg': float(obj.horizontal_avg) if obj.horizontal_avg else 0,
+            
+            # FIXED: Add input data for comparison
+            'positionVerticalInputs': position_vertical_inputs,
+            'globalHorizontalIntervals': global_horizontal_intervals,
+            'inputRates': obj.input_rates or {},
+            'hasCalculation': bool(obj.calculated_grades and obj.calculation_timestamp)
         }
 
 class SalaryScenarioDetailSerializer(serializers.ModelSerializer):
-    """ENHANCED: Detail serializer with proper vertical/horizontal display"""
+    """ENHANCED: Detail serializer with proper input data preservation"""
     created_by_name = serializers.CharField(source='created_by.get_full_name', read_only=True)
     applied_by_name = serializers.CharField(source='applied_by.get_full_name', read_only=True)
     is_calculated = serializers.SerializerMethodField()
@@ -179,7 +228,7 @@ class SalaryScenarioDetailSerializer(serializers.ModelSerializer):
         return bool(obj.calculated_grades and obj.calculation_timestamp)
     
     def get_data(self, obj):
-        """ENHANCED: Detailed data with vertical input display and global intervals"""
+        """Enhanced data with proper input preservation for detail view"""
         logger.info(f"=== DETAIL SERIALIZER for {obj.name} ===")
         
         # Validate calculated_grades
@@ -192,7 +241,7 @@ class SalaryScenarioDetailSerializer(serializers.ModelSerializer):
         if obj.grade_order and isinstance(obj.grade_order, list):
             grade_order = obj.grade_order.copy()
         
-        # ENHANCED: Extract global horizontal intervals from input_rates
+        # Extract global horizontal intervals from input_rates
         global_horizontal_intervals = {
             'LD_to_LQ': 0,
             'LQ_to_M': 0,
@@ -200,7 +249,7 @@ class SalaryScenarioDetailSerializer(serializers.ModelSerializer):
             'UQ_to_UD': 0
         }
         
-        # ENHANCED: Extract vertical inputs for each position
+        # Extract vertical inputs and global intervals
         position_vertical_inputs = {}
         
         if obj.input_rates and isinstance(obj.input_rates, dict):
@@ -221,10 +270,10 @@ class SalaryScenarioDetailSerializer(serializers.ModelSerializer):
                                 except (ValueError, TypeError):
                                     pass
         
-        logger.info(f"Extracted vertical inputs: {position_vertical_inputs}")
-        logger.info(f"Global horizontal intervals: {global_horizontal_intervals}")
+        logger.info(f"DETAIL: Extracted vertical inputs: {position_vertical_inputs}")
+        logger.info(f"DETAIL: Global horizontal intervals: {global_horizontal_intervals}")
         
-        # Enhanced grades with vertical input data
+        # Enhanced grades with proper input data preservation
         enhanced_grades = {}
         for grade_name in grade_order:
             if grade_name not in calculated_grades:
@@ -247,10 +296,12 @@ class SalaryScenarioDetailSerializer(serializers.ModelSerializer):
                         'LD': 0, 'LQ': 0, 'M': 0, 'UQ': 0, 'UD': 0
                     }
             
-            # ENHANCED: Add vertical input data to each grade
+            # Add input data to each grade for comparison
             enhanced_grades[grade_name] = {
                 **calculated_grades[grade_name],
-                'verticalInput': position_vertical_inputs.get(grade_name)  # Show actual vertical input
+                'verticalInput': position_vertical_inputs.get(grade_name),
+                'vertical': position_vertical_inputs.get(grade_name),
+                'horizontal_intervals': global_horizontal_intervals
             }
         
         # Validate averages
@@ -280,22 +331,25 @@ class SalaryScenarioDetailSerializer(serializers.ModelSerializer):
         result = {
             'baseValue1': base_value,
             'gradeOrder': grade_order,
-            'grades': enhanced_grades,  # ENHANCED: Now includes verticalInput for each grade
+            'grades': enhanced_grades,
             'globalHorizontalIntervals': global_horizontal_intervals,
             'verticalAvg': vertical_avg,
             'horizontalAvg': horizontal_avg,
             'hasCalculation': bool(obj.calculated_grades and obj.calculation_timestamp),
-            'positionVerticalInputs': position_vertical_inputs,  # NEW: Separate vertical inputs object
+            
+            # Enhanced input data preservation for comparison
+            'positionVerticalInputs': position_vertical_inputs,
+            'inputRates': obj.input_rates or {},
+            
             'isComplete': bool(calculated_grades and all(
                 isinstance(grade, dict) and sum(float(v) for v in [grade.get('LD', 0), grade.get('LQ', 0), grade.get('M', 0), grade.get('UQ', 0), grade.get('UD', 0)] if v is not None) > 0 
                 for grade in calculated_grades.values()
             ))
         }
         
-        logger.info(f"Detail data result:")
-        logger.info(f"  verticalAvg: {result['verticalAvg']}")
-        logger.info(f"  horizontalAvg: {result['horizontalAvg']}")
+        logger.info(f"DETAIL: Final result input data:")
         logger.info(f"  positionVerticalInputs: {result['positionVerticalInputs']}")
+        logger.info(f"  inputRates preserved: {bool(result['inputRates'])}")
         logger.info(f"=== DETAIL SERIALIZER END ===")
         
         return result

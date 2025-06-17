@@ -4015,3 +4015,750 @@ INFO 2025-06-17 09:32:36,292 serializers 21444 17068   verticalAvg: 0.565
 INFO 2025-06-17 09:32:36,295 serializers 21444 17068   horizontalAvg: 0.5925
 INFO 2025-06-17 09:32:36,297 serializers 21444 17068   positionVerticalInputs: {'Vice Chairman': 37.0, 'Director': 36.0, 'HOD': 58.0, 'Manager': 93.0, 'Senior Specialist': 37.0, 'Specialist': 21.0, 'Junior Specialist': 96.0, 'Blue Colar ': 74.0, 'Blue Colar (GEO)': None}
 INFO 2025-06-17 09:32:36,298 serializers 21444 17068 === DETAIL SERIALIZER END ===
+INFO 2025-06-17 09:54:30,541 views 21444 25116 === Microsoft authentication request received ===
+INFO 2025-06-17 09:54:30,554 views 21444 25116 Request method: POST
+INFO 2025-06-17 09:54:30,571 views 21444 25116 Request headers: {'Content-Length': '1289', 'Content-Type': 'application/json', 'Host': 'localhost:8000', 'Connection': 'keep-alive', 'Sec-Ch-Ua-Platform': '"Windows"', 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36', 'Accept': 'application/json, text/plain, */*', 'Sec-Ch-Ua': '"Google Chrome";v="137", "Chromium";v="137", "Not/A)Brand";v="24"', 'Sec-Ch-Ua-Mobile': '?0', 'Origin': 'http://localhost:3000', 'Sec-Fetch-Site': 'same-site', 'Sec-Fetch-Mode': 'cors', 'Sec-Fetch-Dest': 'empty', 'Referer': 'http://localhost:3000/', 'Accept-Encoding': 'gzip, deflate, br, zstd', 'Accept-Language': 'en-CA,en;q=0.9,az-AZ;q=0.8,az;q=0.7,en-GB;q=0.6,en-US;q=0.5'}
+INFO 2025-06-17 09:54:30,575 views 21444 25116 Request data keys: ['id_token']
+INFO 2025-06-17 09:54:30,580 views 21444 25116 Microsoft authentication attempt - validating token
+INFO 2025-06-17 09:54:30,583 views 21444 25116 Token length: 1274
+INFO 2025-06-17 09:54:30,590 auth 21444 25116 === Starting Microsoft token validation ===
+INFO 2025-06-17 09:54:30,598 auth 21444 25116 Received token: eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiIsImtpZCI6IkNOdj...
+INFO 2025-06-17 09:54:30,608 auth 21444 25116 === Token payload ===
+INFO 2025-06-17 09:54:30,616 auth 21444 25116 {
+  "aud": "230458ff-ed69-4abb-8496-3888067116f6",
+  "iss": "https://login.microsoftonline.com/b3222ef7-242d-4724-a665-97b0a764f2d0/v2.0",
+  "iat": 1750138011,
+  "nbf": 1750138011,
+  "exp": 1750141911,
+  "email": "n.orujova@almettrading.com",
+  "name": "Narmin Orujova",
+  "nonce": "01977c5f-36e9-79b0-9d42-ee9eef2058b8",
+  "oid": "2c74167f-d69a-43a5-a1e6-910fd8560625",
+  "preferred_username": "n.orujova@almettrading.com",
+  "rh": "1.ATkA9y4isy0kJEemZZewp2Ty0P9YBCNp7btKhJY4iAZxFvaqARM5AA.",
+  "sid": "005023b9-f899-0bf0-952a-8ebc4e9da951",
+  "sub": "i7rUkArSkR21ADRGNhKBNmJkwt25_DaBfDeIyBhUpf4",
+  "tid": "b3222ef7-242d-4724-a665-97b0a764f2d0",
+  "uti": "Nt8XlK6sA0-rJGwLs24AAA",
+  "ver": "2.0"
+}
+INFO 2025-06-17 09:54:30,629 auth 21444 25116 Audience from token: 230458ff-ed69-4abb-8496-3888067116f6
+INFO 2025-06-17 09:54:30,638 auth 21444 25116 Expected audience: 230458ff-ed69-4abb-8496-3888067116f6
+INFO 2025-06-17 09:54:30,644 auth 21444 25116 Microsoft ID (sub): i7rUkArSkR21ADRGNhKBNmJkwt25_DaBfDeIyBhUpf4
+INFO 2025-06-17 09:54:30,653 auth 21444 25116 Full name from token: Narmin Orujova
+INFO 2025-06-17 09:54:30,657 auth 21444 25116 Extracted user info: email=n.orujova@almettrading.com, first_name=Narmin, last_name=Orujova
+INFO 2025-06-17 09:54:30,757 auth 21444 25116 Found existing Microsoft user: n.orujova
+INFO 2025-06-17 09:54:30,758 auth 21444 25116 === Token validation successful for user: n.orujova ===
+INFO 2025-06-17 09:54:30,759 views 21444 25116 Token validated successfully for user: n.orujova
+INFO 2025-06-17 09:54:30,760 views 21444 25116 JWT tokens generated for user: n.orujova
+INFO 2025-06-17 09:54:30,761 views 21444 25116 Returning successful response for user: n.orujova
+INFO 2025-06-17 09:54:34,755 managers 21444 25116 Creating current structure from DB...
+INFO 2025-06-17 09:54:34,762 managers 21444 25116 Position groups order (ASC): [('VC', 1), ('Director', 2), ('HOD', 3), ('Manager', 4), ('Senior Specialist', 5), ('Specialist', 6), ('Junior Specialist', 7), ('Blue Colar ', 8), ('Blue Colar (GEO)', 9)]
+INFO 2025-06-17 09:54:34,765 managers 21444 25116 Total position groups found: 9
+INFO 2025-06-17 09:54:34,769 managers 21444 25116 Position: Vice Chairman (level 1)
+INFO 2025-06-17 09:54:34,772 managers 21444 25116 Position: Director (level 2)
+INFO 2025-06-17 09:54:34,772 managers 21444 25116 Position: HOD (level 3)
+INFO 2025-06-17 09:54:34,778 managers 21444 25116 Position: Manager (level 4)
+INFO 2025-06-17 09:54:34,783 managers 21444 25116 Position: Senior Specialist (level 5)
+INFO 2025-06-17 09:54:34,784 managers 21444 25116 Position: Specialist (level 6)
+INFO 2025-06-17 09:54:34,786 managers 21444 25116 Position: Junior Specialist (level 7)
+INFO 2025-06-17 09:54:34,789 managers 21444 25116 Position: Blue Colar  (level 8)
+INFO 2025-06-17 09:54:34,790 managers 21444 25116 Position: Blue Colar (GEO) (level 9)
+INFO 2025-06-17 09:54:34,800 managers 21444 25116 Found current scenario: Scenario 6/13/2025 4:08:02 PM
+INFO 2025-06-17 09:54:34,802 managers 21444 25116 Current structure grade order: ['Vice Chairman', 'Director', 'HOD', 'Manager', 'Senior Specialist', 'Specialist', 'Junior Specialist', 'Blue Colar ', 'Blue Colar (GEO)']
+INFO 2025-06-17 09:54:34,803 managers 21444 25116 Base value position: Blue Colar (GEO) (last = lowest hierarchy)
+INFO 2025-06-17 09:54:34,814 managers 21444 25116 Creating current structure from DB...
+INFO 2025-06-17 09:54:34,817 managers 21444 25116 Position groups order (ASC): [('VC', 1), ('Director', 2), ('HOD', 3), ('Manager', 4), ('Senior Specialist', 5), ('Specialist', 6), ('Junior Specialist', 7), ('Blue Colar ', 8), ('Blue Colar (GEO)', 9)]
+INFO 2025-06-17 09:54:34,819 managers 21444 25116 Total position groups found: 9
+INFO 2025-06-17 09:54:34,824 managers 21444 25116 Position: Vice Chairman (level 1)
+INFO 2025-06-17 09:54:34,825 managers 21444 25116 Position: Director (level 2)
+INFO 2025-06-17 09:54:34,825 managers 21444 25116 Position: HOD (level 3)
+INFO 2025-06-17 09:54:34,826 managers 21444 25116 Position: Manager (level 4)
+INFO 2025-06-17 09:54:34,827 managers 21444 25116 Position: Senior Specialist (level 5)
+INFO 2025-06-17 09:54:34,829 managers 21444 25116 Position: Specialist (level 6)
+INFO 2025-06-17 09:54:34,831 managers 21444 25116 Position: Junior Specialist (level 7)
+INFO 2025-06-17 09:54:34,831 managers 21444 25116 Position: Blue Colar  (level 8)
+INFO 2025-06-17 09:54:34,834 managers 21444 25116 Position: Blue Colar (GEO) (level 9)
+INFO 2025-06-17 09:54:34,839 managers 21444 25112 Position groups order (ASC): [('VC', 1), ('Director', 2), ('HOD', 3), ('Manager', 4), ('Senior Specialist', 5), ('Specialist', 6), ('Junior Specialist', 7), ('Blue Colar ', 8), ('Blue Colar (GEO)', 9)]
+INFO 2025-06-17 09:54:34,839 managers 21444 25116 Found current scenario: Scenario 6/13/2025 4:08:02 PM
+INFO 2025-06-17 09:54:34,842 serializers 21444 25108 === DETAIL SERIALIZER for Scenario 6/13/2025 4:08:02 PM ===
+INFO 2025-06-17 09:54:34,842 managers 21444 25116 Current structure grade order: ['Vice Chairman', 'Director', 'HOD', 'Manager', 'Senior Specialist', 'Specialist', 'Junior Specialist', 'Blue Colar ', 'Blue Colar (GEO)']
+INFO 2025-06-17 09:54:34,843 managers 21444 25112 Total position groups found: 9
+INFO 2025-06-17 09:54:34,845 serializers 21444 25108 Extracted vertical inputs: {'Vice Chairman': 67.0, 'Director': 38.0, 'HOD': 56.0, 'Manager': 77.0, 'Senior Specialist': 97.0, 'Specialist': 87.0, 'Junior Specialist': 97.0, 'Blue Colar ': 15.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-17 09:54:34,847 managers 21444 25116 Base value position: Blue Colar (GEO) (last = lowest hierarchy)
+INFO 2025-06-17 09:54:34,850 serializers 21444 25108 Global horizontal intervals: {'LD_to_LQ': 98.0, 'LQ_to_M': 72.0, 'M_to_UQ': 60.0, 'UQ_to_UD': 43.0}
+INFO 2025-06-17 09:54:34,866 managers 21444 25112 Position groups order (ASC): [('VC', 1), ('Director', 2), ('HOD', 3), ('Manager', 4), ('Senior Specialist', 5), ('Specialist', 6), ('Junior Specialist', 7), ('Blue Colar ', 8), ('Blue Colar (GEO)', 9)]
+INFO 2025-06-17 09:54:34,868 serializers 21444 25108 Detail data result:
+INFO 2025-06-17 09:54:34,879 managers 21444 25112 Total position groups found: 9
+INFO 2025-06-17 09:54:34,884 serializers 21444 25108   verticalAvg: 0.6675
+INFO 2025-06-17 09:54:34,905 serializers 21444 25108   horizontalAvg: 0.6825
+INFO 2025-06-17 09:54:34,909 serializers 21444 25108   positionVerticalInputs: {'Vice Chairman': 67.0, 'Director': 38.0, 'HOD': 56.0, 'Manager': 77.0, 'Senior Specialist': 97.0, 'Specialist': 87.0, 'Junior Specialist': 97.0, 'Blue Colar ': 15.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-17 09:54:34,916 serializers 21444 25108 === DETAIL SERIALIZER END ===
+INFO 2025-06-17 09:54:34,939 serializers 21444 25108 === DETAIL SERIALIZER for Scenario 6/13/2025 4:08:02 PM ===
+INFO 2025-06-17 09:54:34,940 serializers 21444 25108 Extracted vertical inputs: {'Vice Chairman': 67.0, 'Director': 38.0, 'HOD': 56.0, 'Manager': 77.0, 'Senior Specialist': 97.0, 'Specialist': 87.0, 'Junior Specialist': 97.0, 'Blue Colar ': 15.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-17 09:54:34,941 serializers 21444 25108 Global horizontal intervals: {'LD_to_LQ': 98.0, 'LQ_to_M': 72.0, 'M_to_UQ': 60.0, 'UQ_to_UD': 43.0}
+INFO 2025-06-17 09:54:34,943 serializers 21444 25108 Detail data result:
+INFO 2025-06-17 09:54:34,951 serializers 21444 25108   verticalAvg: 0.6675
+INFO 2025-06-17 09:54:34,961 serializers 21444 25108   horizontalAvg: 0.6825
+INFO 2025-06-17 09:54:34,965 serializers 21444 25108   positionVerticalInputs: {'Vice Chairman': 67.0, 'Director': 38.0, 'HOD': 56.0, 'Manager': 77.0, 'Senior Specialist': 97.0, 'Specialist': 87.0, 'Junior Specialist': 97.0, 'Blue Colar ': 15.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-17 09:54:34,966 serializers 21444 25108 === DETAIL SERIALIZER END ===
+INFO 2025-06-17 10:34:05,624 managers 21444 17772 Creating current structure from DB...
+INFO 2025-06-17 10:34:05,631 managers 21444 17772 Position groups order (ASC): [('VC', 1), ('Director', 2), ('HOD', 3), ('Manager', 4), ('Senior Specialist', 5), ('Specialist', 6), ('Junior Specialist', 7), ('Blue Colar ', 8), ('Blue Colar (GEO)', 9)]
+INFO 2025-06-17 10:34:05,636 managers 21444 17772 Total position groups found: 9
+INFO 2025-06-17 10:34:05,636 managers 21444 23392 Position groups order (ASC): [('VC', 1), ('Director', 2), ('HOD', 3), ('Manager', 4), ('Senior Specialist', 5), ('Specialist', 6), ('Junior Specialist', 7), ('Blue Colar ', 8), ('Blue Colar (GEO)', 9)]
+INFO 2025-06-17 10:34:05,640 managers 21444 17772 Position: Vice Chairman (level 1)
+INFO 2025-06-17 10:34:05,640 managers 21444 23392 Total position groups found: 9
+INFO 2025-06-17 10:34:05,643 managers 21444 17772 Position: Director (level 2)
+INFO 2025-06-17 10:34:05,649 managers 21444 17772 Position: HOD (level 3)
+INFO 2025-06-17 10:34:05,655 serializers 21444 2004 === DETAIL SERIALIZER for Scenario 6/13/2025 4:08:02 PM ===
+INFO 2025-06-17 10:34:05,655 managers 21444 17772 Position: Manager (level 4)
+INFO 2025-06-17 10:34:05,657 serializers 21444 2004 Extracted vertical inputs: {'Vice Chairman': 67.0, 'Director': 38.0, 'HOD': 56.0, 'Manager': 77.0, 'Senior Specialist': 97.0, 'Specialist': 87.0, 'Junior Specialist': 97.0, 'Blue Colar ': 15.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-17 10:34:05,659 managers 21444 17772 Position: Senior Specialist (level 5)
+INFO 2025-06-17 10:34:05,659 serializers 21444 2004 Global horizontal intervals: {'LD_to_LQ': 98.0, 'LQ_to_M': 72.0, 'M_to_UQ': 60.0, 'UQ_to_UD': 43.0}
+INFO 2025-06-17 10:34:05,661 managers 21444 17772 Position: Specialist (level 6)
+INFO 2025-06-17 10:34:05,661 serializers 21444 2004 Detail data result:
+INFO 2025-06-17 10:34:05,664 managers 21444 17772 Position: Junior Specialist (level 7)
+INFO 2025-06-17 10:34:05,665 views 21444 15404 User info request for user: n.orujova
+INFO 2025-06-17 10:34:05,666 serializers 21444 2004   verticalAvg: 0.6675
+INFO 2025-06-17 10:34:05,672 managers 21444 17772 Position: Blue Colar  (level 8)
+INFO 2025-06-17 10:34:05,678 serializers 21444 2004   horizontalAvg: 0.6825
+INFO 2025-06-17 10:34:05,679 managers 21444 17772 Position: Blue Colar (GEO) (level 9)
+INFO 2025-06-17 10:34:05,679 serializers 21444 2004   positionVerticalInputs: {'Vice Chairman': 67.0, 'Director': 38.0, 'HOD': 56.0, 'Manager': 77.0, 'Senior Specialist': 97.0, 'Specialist': 87.0, 'Junior Specialist': 97.0, 'Blue Colar ': 15.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-17 10:34:05,683 serializers 21444 2004 === DETAIL SERIALIZER END ===
+INFO 2025-06-17 10:34:05,695 managers 21444 17772 Found current scenario: Scenario 6/13/2025 4:08:02 PM
+INFO 2025-06-17 10:34:05,696 managers 21444 17772 Current structure grade order: ['Vice Chairman', 'Director', 'HOD', 'Manager', 'Senior Specialist', 'Specialist', 'Junior Specialist', 'Blue Colar ', 'Blue Colar (GEO)']
+INFO 2025-06-17 10:34:05,697 managers 21444 17772 Base value position: Blue Colar (GEO) (last = lowest hierarchy)
+INFO 2025-06-17 10:34:05,727 views 21444 15404 [n.orujova] No employee profile found
+INFO 2025-06-17 10:34:05,735 views 21444 15404 [n.orujova] User info response prepared successfully
+INFO 2025-06-17 10:34:15,046 serializers 21444 15404 === DETAIL SERIALIZER for Scenario 6/13/2025 4:04:49 PM ===
+INFO 2025-06-17 10:34:15,047 serializers 21444 15404 Extracted vertical inputs: {'Vice Chairman': 50.0, 'Director': 68.0, 'HOD': 49.0, 'Manager': 55.0, 'Senior Specialist': 97.0, 'Specialist': 32.0, 'Junior Specialist': 68.0, 'Blue Colar ': 42.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-17 10:34:15,048 serializers 21444 15404 Global horizontal intervals: {'LD_to_LQ': 75.0, 'LQ_to_M': 79.0, 'M_to_UQ': 20.0, 'UQ_to_UD': 39.0}
+INFO 2025-06-17 10:34:15,049 serializers 21444 15404 Detail data result:
+INFO 2025-06-17 10:34:15,049 serializers 21444 15404   verticalAvg: 0.5763
+INFO 2025-06-17 10:34:15,051 serializers 21444 15404   horizontalAvg: 0.5325
+INFO 2025-06-17 10:34:15,052 serializers 21444 15404   positionVerticalInputs: {'Vice Chairman': 50.0, 'Director': 68.0, 'HOD': 49.0, 'Manager': 55.0, 'Senior Specialist': 97.0, 'Specialist': 32.0, 'Junior Specialist': 68.0, 'Blue Colar ': 42.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-17 10:34:15,053 serializers 21444 15404 === DETAIL SERIALIZER END ===
+INFO 2025-06-17 10:42:31,388 views 21444 22640 User info request for user: n.orujova
+INFO 2025-06-17 10:42:31,409 views 21444 22640 [n.orujova] No employee profile found
+INFO 2025-06-17 10:42:31,411 views 21444 22640 [n.orujova] User info response prepared successfully
+INFO 2025-06-17 10:45:39,309 serializers 21444 11088 === DETAIL SERIALIZER for Scenario 6/13/2025 4:08:02 PM ===
+INFO 2025-06-17 10:45:39,310 serializers 21444 11088 Extracted vertical inputs: {'Vice Chairman': 67.0, 'Director': 38.0, 'HOD': 56.0, 'Manager': 77.0, 'Senior Specialist': 97.0, 'Specialist': 87.0, 'Junior Specialist': 97.0, 'Blue Colar ': 15.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-17 10:45:39,310 serializers 21444 11088 Global horizontal intervals: {'LD_to_LQ': 98.0, 'LQ_to_M': 72.0, 'M_to_UQ': 60.0, 'UQ_to_UD': 43.0}
+INFO 2025-06-17 10:45:39,311 serializers 21444 11088 Detail data result:
+INFO 2025-06-17 10:45:39,311 serializers 21444 11088   verticalAvg: 0.6675
+INFO 2025-06-17 10:45:39,311 serializers 21444 11088   horizontalAvg: 0.6825
+INFO 2025-06-17 10:45:39,312 serializers 21444 11088   positionVerticalInputs: {'Vice Chairman': 67.0, 'Director': 38.0, 'HOD': 56.0, 'Manager': 77.0, 'Senior Specialist': 97.0, 'Specialist': 87.0, 'Junior Specialist': 97.0, 'Blue Colar ': 15.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-17 10:45:39,312 serializers 21444 11088 === DETAIL SERIALIZER END ===
+INFO 2025-06-17 10:46:29,209 managers 21444 11088 Creating current structure from DB...
+INFO 2025-06-17 10:46:29,213 managers 21444 11088 Position groups order (ASC): [('VC', 1), ('Director', 2), ('HOD', 3), ('Manager', 4), ('Senior Specialist', 5), ('Specialist', 6), ('Junior Specialist', 7), ('Blue Colar ', 8), ('Blue Colar (GEO)', 9)]
+INFO 2025-06-17 10:46:29,217 managers 21444 11088 Total position groups found: 9
+INFO 2025-06-17 10:46:29,219 managers 21444 11088 Position: Vice Chairman (level 1)
+INFO 2025-06-17 10:46:29,220 managers 21444 11088 Position: Director (level 2)
+INFO 2025-06-17 10:46:29,220 managers 21444 11088 Position: HOD (level 3)
+INFO 2025-06-17 10:46:29,221 managers 21444 11088 Position: Manager (level 4)
+INFO 2025-06-17 10:46:29,221 managers 21444 11088 Position: Senior Specialist (level 5)
+INFO 2025-06-17 10:46:29,221 managers 21444 11088 Position: Specialist (level 6)
+INFO 2025-06-17 10:46:29,221 managers 21444 11088 Position: Junior Specialist (level 7)
+INFO 2025-06-17 10:46:29,222 managers 21444 11088 Position: Blue Colar  (level 8)
+INFO 2025-06-17 10:46:29,222 managers 21444 11088 Position: Blue Colar (GEO) (level 9)
+INFO 2025-06-17 10:46:29,224 managers 21444 11088 Found current scenario: Scenario 6/13/2025 4:08:02 PM
+INFO 2025-06-17 10:46:29,224 managers 21444 11088 Current structure grade order: ['Vice Chairman', 'Director', 'HOD', 'Manager', 'Senior Specialist', 'Specialist', 'Junior Specialist', 'Blue Colar ', 'Blue Colar (GEO)']
+INFO 2025-06-17 10:46:29,225 managers 21444 11088 Base value position: Blue Colar (GEO) (last = lowest hierarchy)
+INFO 2025-06-17 10:47:24,273 serializers 21444 11088 === DETAIL SERIALIZER for Scenario 6/13/2025 4:08:02 PM ===
+INFO 2025-06-17 10:47:24,273 serializers 21444 11088 Extracted vertical inputs: {'Vice Chairman': 67.0, 'Director': 38.0, 'HOD': 56.0, 'Manager': 77.0, 'Senior Specialist': 97.0, 'Specialist': 87.0, 'Junior Specialist': 97.0, 'Blue Colar ': 15.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-17 10:47:24,273 serializers 21444 11088 Global horizontal intervals: {'LD_to_LQ': 98.0, 'LQ_to_M': 72.0, 'M_to_UQ': 60.0, 'UQ_to_UD': 43.0}
+INFO 2025-06-17 10:47:24,274 serializers 21444 11088 Detail data result:
+INFO 2025-06-17 10:47:24,274 serializers 21444 11088   verticalAvg: 0.6675
+INFO 2025-06-17 10:47:24,274 serializers 21444 11088   horizontalAvg: 0.6825
+INFO 2025-06-17 10:47:24,274 serializers 21444 11088   positionVerticalInputs: {'Vice Chairman': 67.0, 'Director': 38.0, 'HOD': 56.0, 'Manager': 77.0, 'Senior Specialist': 97.0, 'Specialist': 87.0, 'Junior Specialist': 97.0, 'Blue Colar ': 15.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-17 10:47:24,274 serializers 21444 11088 === DETAIL SERIALIZER END ===
+INFO 2025-06-17 11:49:36,653 managers 27652 15352 Creating current structure from DB...
+INFO 2025-06-17 11:49:36,656 managers 27652 15352 Position groups order (ASC): [('VC', 1), ('Director', 2), ('HOD', 3), ('Manager', 4), ('Senior Specialist', 5), ('Specialist', 6), ('Junior Specialist', 7), ('Blue Colar ', 8), ('Blue Colar (GEO)', 9)]
+INFO 2025-06-17 11:49:36,657 managers 27652 15352 Total position groups found: 9
+INFO 2025-06-17 11:49:36,659 managers 27652 19676 Position groups order (ASC): [('VC', 1), ('Director', 2), ('HOD', 3), ('Manager', 4), ('Senior Specialist', 5), ('Specialist', 6), ('Junior Specialist', 7), ('Blue Colar ', 8), ('Blue Colar (GEO)', 9)]
+INFO 2025-06-17 11:49:36,660 managers 27652 15352 Position: Vice Chairman (level 1)
+INFO 2025-06-17 11:49:36,661 managers 27652 15352 Position: Director (level 2)
+INFO 2025-06-17 11:49:36,661 managers 27652 19676 Total position groups found: 9
+INFO 2025-06-17 11:49:36,661 managers 27652 15352 Position: HOD (level 3)
+INFO 2025-06-17 11:49:36,662 managers 27652 15352 Position: Manager (level 4)
+INFO 2025-06-17 11:49:36,662 managers 27652 15352 Position: Senior Specialist (level 5)
+INFO 2025-06-17 11:49:36,663 managers 27652 15352 Position: Specialist (level 6)
+INFO 2025-06-17 11:49:36,663 managers 27652 15352 Position: Junior Specialist (level 7)
+INFO 2025-06-17 11:49:36,664 managers 27652 15352 Position: Blue Colar  (level 8)
+INFO 2025-06-17 11:49:36,664 managers 27652 15352 Position: Blue Colar (GEO) (level 9)
+INFO 2025-06-17 11:49:36,669 managers 27652 15352 Found current scenario: Scenario 6/13/2025 4:08:02 PM
+INFO 2025-06-17 11:49:36,669 managers 27652 15352 Current structure grade order: ['Vice Chairman', 'Director', 'HOD', 'Manager', 'Senior Specialist', 'Specialist', 'Junior Specialist', 'Blue Colar ', 'Blue Colar (GEO)']
+INFO 2025-06-17 11:49:36,669 managers 27652 15352 Base value position: Blue Colar (GEO) (last = lowest hierarchy)
+INFO 2025-06-17 11:49:36,671 serializers 27652 1940 === DETAIL SERIALIZER for Scenario 6/13/2025 4:08:02 PM ===
+INFO 2025-06-17 11:49:36,671 serializers 27652 1940 Extracted vertical inputs: {'Vice Chairman': 67.0, 'Director': 38.0, 'HOD': 56.0, 'Manager': 77.0, 'Senior Specialist': 97.0, 'Specialist': 87.0, 'Junior Specialist': 97.0, 'Blue Colar ': 15.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-17 11:49:36,671 serializers 27652 1940 Global horizontal intervals: {'LD_to_LQ': 98.0, 'LQ_to_M': 72.0, 'M_to_UQ': 60.0, 'UQ_to_UD': 43.0}
+INFO 2025-06-17 11:49:36,672 serializers 27652 1940 Detail data result:
+INFO 2025-06-17 11:49:36,672 serializers 27652 1940   verticalAvg: 0.6675
+INFO 2025-06-17 11:49:36,672 serializers 27652 1940   horizontalAvg: 0.6825
+INFO 2025-06-17 11:49:36,672 serializers 27652 1940   positionVerticalInputs: {'Vice Chairman': 67.0, 'Director': 38.0, 'HOD': 56.0, 'Manager': 77.0, 'Senior Specialist': 97.0, 'Specialist': 87.0, 'Junior Specialist': 97.0, 'Blue Colar ': 15.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-17 11:49:36,672 serializers 27652 1940   globalHorizontalIntervals: {'LD_to_LQ': 98.0, 'LQ_to_M': 72.0, 'M_to_UQ': 60.0, 'UQ_to_UD': 43.0}
+INFO 2025-06-17 11:49:36,673 serializers 27652 1940 === DETAIL SERIALIZER END ===
+INFO 2025-06-17 11:50:07,080 managers 25660 27640 Creating current structure from DB...
+INFO 2025-06-17 11:50:07,083 managers 25660 27640 Position groups order (ASC): [('VC', 1), ('Director', 2), ('HOD', 3), ('Manager', 4), ('Senior Specialist', 5), ('Specialist', 6), ('Junior Specialist', 7), ('Blue Colar ', 8), ('Blue Colar (GEO)', 9)]
+INFO 2025-06-17 11:50:07,084 managers 25660 27640 Total position groups found: 9
+INFO 2025-06-17 11:50:07,085 managers 25660 15600 Position groups order (ASC): [('VC', 1), ('Director', 2), ('HOD', 3), ('Manager', 4), ('Senior Specialist', 5), ('Specialist', 6), ('Junior Specialist', 7), ('Blue Colar ', 8), ('Blue Colar (GEO)', 9)]
+INFO 2025-06-17 11:50:07,085 managers 25660 27640 Position: Vice Chairman (level 1)
+INFO 2025-06-17 11:50:07,086 managers 25660 27640 Position: Director (level 2)
+INFO 2025-06-17 11:50:07,086 managers 25660 15600 Total position groups found: 9
+INFO 2025-06-17 11:50:07,086 managers 25660 27640 Position: HOD (level 3)
+INFO 2025-06-17 11:50:07,087 managers 25660 27640 Position: Manager (level 4)
+INFO 2025-06-17 11:50:07,087 managers 25660 27640 Position: Senior Specialist (level 5)
+INFO 2025-06-17 11:50:07,088 managers 25660 27640 Position: Specialist (level 6)
+INFO 2025-06-17 11:50:07,088 managers 25660 27640 Position: Junior Specialist (level 7)
+INFO 2025-06-17 11:50:07,089 managers 25660 27640 Position: Blue Colar  (level 8)
+INFO 2025-06-17 11:50:07,089 managers 25660 27640 Position: Blue Colar (GEO) (level 9)
+INFO 2025-06-17 11:50:07,093 serializers 25660 26636 === DETAIL SERIALIZER for Scenario 6/13/2025 4:08:02 PM ===
+INFO 2025-06-17 11:50:07,093 serializers 25660 26636 Extracted vertical inputs: {'Vice Chairman': 67.0, 'Director': 38.0, 'HOD': 56.0, 'Manager': 77.0, 'Senior Specialist': 97.0, 'Specialist': 87.0, 'Junior Specialist': 97.0, 'Blue Colar ': 15.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-17 11:50:07,094 serializers 25660 26636 Global horizontal intervals: {'LD_to_LQ': 98.0, 'LQ_to_M': 72.0, 'M_to_UQ': 60.0, 'UQ_to_UD': 43.0}
+INFO 2025-06-17 11:50:07,095 serializers 25660 26636 Detail data result:
+INFO 2025-06-17 11:50:07,096 managers 25660 27640 Found current scenario: Scenario 6/13/2025 4:08:02 PM
+INFO 2025-06-17 11:50:07,096 serializers 25660 26636   verticalAvg: 0.6675
+INFO 2025-06-17 11:50:07,096 managers 25660 27640 Current structure grade order: ['Vice Chairman', 'Director', 'HOD', 'Manager', 'Senior Specialist', 'Specialist', 'Junior Specialist', 'Blue Colar ', 'Blue Colar (GEO)']
+INFO 2025-06-17 11:50:07,096 serializers 25660 26636   horizontalAvg: 0.6825
+INFO 2025-06-17 11:50:07,096 managers 25660 27640 Base value position: Blue Colar (GEO) (last = lowest hierarchy)
+INFO 2025-06-17 11:50:07,097 serializers 25660 26636   positionVerticalInputs: {'Vice Chairman': 67.0, 'Director': 38.0, 'HOD': 56.0, 'Manager': 77.0, 'Senior Specialist': 97.0, 'Specialist': 87.0, 'Junior Specialist': 97.0, 'Blue Colar ': 15.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-17 11:50:07,098 serializers 25660 26636 === DETAIL SERIALIZER END ===
+INFO 2025-06-17 12:10:01,547 managers 28504 17584 Position groups order (ASC): [('VC', 1), ('Director', 2), ('HOD', 3), ('Manager', 4), ('Senior Specialist', 5), ('Specialist', 6), ('Junior Specialist', 7), ('Blue Colar ', 8), ('Blue Colar (GEO)', 9)]
+INFO 2025-06-17 12:10:01,551 managers 28504 17584 Total position groups found: 9
+INFO 2025-06-17 12:10:01,563 managers 28504 28656 Creating current structure from DB...
+INFO 2025-06-17 12:10:01,568 managers 28504 28656 Position groups order (ASC): [('VC', 1), ('Director', 2), ('HOD', 3), ('Manager', 4), ('Senior Specialist', 5), ('Specialist', 6), ('Junior Specialist', 7), ('Blue Colar ', 8), ('Blue Colar (GEO)', 9)]
+INFO 2025-06-17 12:10:01,572 managers 28504 28656 Total position groups found: 9
+INFO 2025-06-17 12:10:01,573 serializers 28504 10312 === DETAIL SERIALIZER for Scenario 6/13/2025 4:08:02 PM ===
+INFO 2025-06-17 12:10:01,573 managers 28504 28656 Position: Vice Chairman (level 1)
+INFO 2025-06-17 12:10:01,574 serializers 28504 10312 Extracted vertical inputs: {'Vice Chairman': 67.0, 'Director': 38.0, 'HOD': 56.0, 'Manager': 77.0, 'Senior Specialist': 97.0, 'Specialist': 87.0, 'Junior Specialist': 97.0, 'Blue Colar ': 15.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-17 12:10:01,574 managers 28504 28656 Position: Director (level 2)
+INFO 2025-06-17 12:10:01,574 serializers 28504 10312 Global horizontal intervals: {'LD_to_LQ': 98.0, 'LQ_to_M': 72.0, 'M_to_UQ': 60.0, 'UQ_to_UD': 43.0}
+INFO 2025-06-17 12:10:01,574 managers 28504 28656 Position: HOD (level 3)
+INFO 2025-06-17 12:10:01,575 serializers 28504 10312 Detail data result:
+INFO 2025-06-17 12:10:01,575 managers 28504 28656 Position: Manager (level 4)
+INFO 2025-06-17 12:10:01,575 serializers 28504 10312   verticalAvg: 0.6675
+INFO 2025-06-17 12:10:01,575 managers 28504 28656 Position: Senior Specialist (level 5)
+INFO 2025-06-17 12:10:01,575 serializers 28504 10312   horizontalAvg: 0.6825
+INFO 2025-06-17 12:10:01,576 managers 28504 28656 Position: Specialist (level 6)
+INFO 2025-06-17 12:10:01,576 serializers 28504 10312   positionVerticalInputs: {'Vice Chairman': 67.0, 'Director': 38.0, 'HOD': 56.0, 'Manager': 77.0, 'Senior Specialist': 97.0, 'Specialist': 87.0, 'Junior Specialist': 97.0, 'Blue Colar ': 15.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-17 12:10:01,576 managers 28504 28656 Position: Junior Specialist (level 7)
+INFO 2025-06-17 12:10:01,577 managers 28504 28656 Position: Blue Colar  (level 8)
+INFO 2025-06-17 12:10:01,577 serializers 28504 10312   globalHorizontalIntervals: {'LD_to_LQ': 98.0, 'LQ_to_M': 72.0, 'M_to_UQ': 60.0, 'UQ_to_UD': 43.0}
+INFO 2025-06-17 12:10:01,577 managers 28504 28656 Position: Blue Colar (GEO) (level 9)
+INFO 2025-06-17 12:10:01,578 serializers 28504 10312 === DETAIL SERIALIZER END ===
+INFO 2025-06-17 12:10:01,587 managers 28504 28656 Found current scenario: Scenario 6/13/2025 4:08:02 PM
+INFO 2025-06-17 12:10:01,587 managers 28504 28656 Current structure grade order: ['Vice Chairman', 'Director', 'HOD', 'Manager', 'Senior Specialist', 'Specialist', 'Junior Specialist', 'Blue Colar ', 'Blue Colar (GEO)']
+INFO 2025-06-17 12:10:01,588 managers 28504 28656 Base value position: Blue Colar (GEO) (last = lowest hierarchy)
+INFO 2025-06-17 12:13:12,559 managers 23616 16900 Creating current structure from DB...
+INFO 2025-06-17 12:13:12,563 managers 23616 16900 Position groups order (ASC): [('VC', 1), ('Director', 2), ('HOD', 3), ('Manager', 4), ('Senior Specialist', 5), ('Specialist', 6), ('Junior Specialist', 7), ('Blue Colar ', 8), ('Blue Colar (GEO)', 9)]
+INFO 2025-06-17 12:13:12,564 managers 23616 16900 Total position groups found: 9
+INFO 2025-06-17 12:13:12,567 managers 23616 16900 Position: Vice Chairman (level 1)
+INFO 2025-06-17 12:13:12,568 managers 23616 16900 Position: Director (level 2)
+INFO 2025-06-17 12:13:12,569 managers 23616 16900 Position: HOD (level 3)
+INFO 2025-06-17 12:13:12,569 managers 23616 16900 Position: Manager (level 4)
+INFO 2025-06-17 12:13:12,570 managers 23616 16900 Position: Senior Specialist (level 5)
+INFO 2025-06-17 12:13:12,572 managers 23616 22872 Position groups order (ASC): [('VC', 1), ('Director', 2), ('HOD', 3), ('Manager', 4), ('Senior Specialist', 5), ('Specialist', 6), ('Junior Specialist', 7), ('Blue Colar ', 8), ('Blue Colar (GEO)', 9)]
+INFO 2025-06-17 12:13:12,572 managers 23616 16900 Position: Specialist (level 6)
+INFO 2025-06-17 12:13:12,574 serializers 23616 23180 === DETAIL SERIALIZER for Scenario 6/13/2025 4:08:02 PM ===
+INFO 2025-06-17 12:13:12,574 managers 23616 22872 Total position groups found: 9
+INFO 2025-06-17 12:13:12,575 views 23616 23944 User info request for user: n.orujova
+INFO 2025-06-17 12:13:12,575 managers 23616 16900 Position: Junior Specialist (level 7)
+INFO 2025-06-17 12:13:12,575 serializers 23616 23180 FIXED: Extracted vertical inputs: {'Vice Chairman': 67.0, 'Director': 38.0, 'HOD': 56.0, 'Manager': 77.0, 'Senior Specialist': 97.0, 'Specialist': 87.0, 'Junior Specialist': 97.0, 'Blue Colar ': 15.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-17 12:13:12,578 managers 23616 16900 Position: Blue Colar  (level 8)
+INFO 2025-06-17 12:13:12,579 serializers 23616 23180 FIXED: Global horizontal intervals: {'LD_to_LQ': 98.0, 'LQ_to_M': 72.0, 'M_to_UQ': 60.0, 'UQ_to_UD': 43.0}
+INFO 2025-06-17 12:13:12,580 managers 23616 16900 Position: Blue Colar (GEO) (level 9)
+INFO 2025-06-17 12:13:12,580 serializers 23616 23180 FIXED: Detail data result:
+INFO 2025-06-17 12:13:12,582 serializers 23616 23180   verticalAvg: 0.6675
+INFO 2025-06-17 12:13:12,583 serializers 23616 23180   horizontalAvg: 0.6825
+INFO 2025-06-17 12:13:12,584 serializers 23616 23180   positionVerticalInputs: {'Vice Chairman': 67.0, 'Director': 38.0, 'HOD': 56.0, 'Manager': 77.0, 'Senior Specialist': 97.0, 'Specialist': 87.0, 'Junior Specialist': 97.0, 'Blue Colar ': 15.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-17 12:13:12,584 serializers 23616 23180   inputRates preserved: True
+INFO 2025-06-17 12:13:12,585 serializers 23616 23180 === DETAIL SERIALIZER END ===
+INFO 2025-06-17 12:13:12,588 managers 23616 16900 Found current scenario: Scenario 6/13/2025 4:08:02 PM
+INFO 2025-06-17 12:13:12,589 managers 23616 16900 Current structure grade order: ['Vice Chairman', 'Director', 'HOD', 'Manager', 'Senior Specialist', 'Specialist', 'Junior Specialist', 'Blue Colar ', 'Blue Colar (GEO)']
+INFO 2025-06-17 12:13:12,590 managers 23616 16900 Base value position: Blue Colar (GEO) (last = lowest hierarchy)
+INFO 2025-06-17 12:13:12,603 views 23616 23944 [n.orujova] No employee profile found
+INFO 2025-06-17 12:13:12,605 views 23616 23944 [n.orujova] User info response prepared successfully
+INFO 2025-06-17 12:13:21,882 views 23616 16900 === CALCULATE DYNAMIC START ===
+INFO 2025-06-17 12:13:21,885 managers 23616 16900 Position groups order (ASC): [('VC', 1), ('Director', 2), ('HOD', 3), ('Manager', 4), ('Senior Specialist', 5), ('Specialist', 6), ('Junior Specialist', 7), ('Blue Colar ', 8), ('Blue Colar (GEO)', 9)]
+INFO 2025-06-17 12:13:21,888 managers 23616 16900 Total position groups found: 9
+INFO 2025-06-17 12:13:21,897 managers 23616 16900 === VALIDATION START ===
+INFO 2025-06-17 12:13:21,898 managers 23616 16900 Base value: 52.0 (type: <class 'float'>)
+INFO 2025-06-17 12:13:21,898 managers 23616 16900 Input rates: {'Vice Chairman': {'vertical': 2, 'horizontal_intervals': {'LD_to_LQ': 89, 'LQ_to_M': 16, 'M_to_UQ': 44, 'UQ_to_UD': 70}}, 'Director': {'vertical': 49, 'horizontal_intervals': {'LD_to_LQ': 89, 'LQ_to_M': 16, 'M_to_UQ': 44, 'UQ_to_UD': 70}}, 'HOD': {'vertical': 50, 'horizontal_intervals': {'LD_to_LQ': 89, 'LQ_to_M': 16, 'M_to_UQ': 44, 'UQ_to_UD': 70}}, 'Manager': {'vertical': 25, 'horizontal_intervals': {'LD_to_LQ': 89, 'LQ_to_M': 16, 'M_to_UQ': 44, 'UQ_to_UD': 70}}, 'Senior Specialist': {'vertical': 41, 'horizontal_intervals': {'LD_to_LQ': 89, 'LQ_to_M': 16, 'M_to_UQ': 44, 'UQ_to_UD': 70}}, 'Specialist': {'vertical': 14, 'horizontal_intervals': {'LD_to_LQ': 89, 'LQ_to_M': 16, 'M_to_UQ': 44, 'UQ_to_UD': 70}}, 'Junior Specialist': {'vertical': 33, 'horizontal_intervals': {'LD_to_LQ': 89, 'LQ_to_M': 16, 'M_to_UQ': 44, 'UQ_to_UD': 70}}, 'Blue Colar ': {'vertical': 30, 'horizontal_intervals': {'LD_to_LQ': 89, 'LQ_to_M': 16, 'M_to_UQ': 44, 'UQ_to_UD': 70}}, 'Blue Colar (GEO)': {'vertical': None, 'horizontal_intervals': {'LD_to_LQ': 89, 'LQ_to_M': 16, 'M_to_UQ': 44, 'UQ_to_UD': 70}}}
+INFO 2025-06-17 12:13:21,899 managers 23616 16900 Validating Vice Chairman: {'vertical': 2, 'horizontal_intervals': {'LD_to_LQ': 89, 'LQ_to_M': 16, 'M_to_UQ': 44, 'UQ_to_UD': 70}}
+INFO 2025-06-17 12:13:21,900 managers 23616 16900 Vertical value: 2 (type: <class 'int'>)
+INFO 2025-06-17 12:13:21,900 managers 23616 16900 Validating Director: {'vertical': 49, 'horizontal_intervals': {'LD_to_LQ': 89, 'LQ_to_M': 16, 'M_to_UQ': 44, 'UQ_to_UD': 70}}
+INFO 2025-06-17 12:13:21,900 managers 23616 16900 Vertical value: 49 (type: <class 'int'>)
+INFO 2025-06-17 12:13:21,900 managers 23616 16900 Validating HOD: {'vertical': 50, 'horizontal_intervals': {'LD_to_LQ': 89, 'LQ_to_M': 16, 'M_to_UQ': 44, 'UQ_to_UD': 70}}
+INFO 2025-06-17 12:13:21,900 managers 23616 16900 Vertical value: 50 (type: <class 'int'>)
+INFO 2025-06-17 12:13:21,901 managers 23616 16900 Validating Manager: {'vertical': 25, 'horizontal_intervals': {'LD_to_LQ': 89, 'LQ_to_M': 16, 'M_to_UQ': 44, 'UQ_to_UD': 70}}
+INFO 2025-06-17 12:13:21,901 managers 23616 16900 Vertical value: 25 (type: <class 'int'>)
+INFO 2025-06-17 12:13:21,901 managers 23616 16900 Validating Senior Specialist: {'vertical': 41, 'horizontal_intervals': {'LD_to_LQ': 89, 'LQ_to_M': 16, 'M_to_UQ': 44, 'UQ_to_UD': 70}}
+INFO 2025-06-17 12:13:21,902 managers 23616 16900 Vertical value: 41 (type: <class 'int'>)
+INFO 2025-06-17 12:13:21,902 managers 23616 16900 Validating Specialist: {'vertical': 14, 'horizontal_intervals': {'LD_to_LQ': 89, 'LQ_to_M': 16, 'M_to_UQ': 44, 'UQ_to_UD': 70}}
+INFO 2025-06-17 12:13:21,902 managers 23616 16900 Vertical value: 14 (type: <class 'int'>)
+INFO 2025-06-17 12:13:21,902 managers 23616 16900 Validating Junior Specialist: {'vertical': 33, 'horizontal_intervals': {'LD_to_LQ': 89, 'LQ_to_M': 16, 'M_to_UQ': 44, 'UQ_to_UD': 70}}
+INFO 2025-06-17 12:13:21,903 managers 23616 16900 Vertical value: 33 (type: <class 'int'>)
+INFO 2025-06-17 12:13:21,903 managers 23616 16900 Validating Blue Colar : {'vertical': 30, 'horizontal_intervals': {'LD_to_LQ': 89, 'LQ_to_M': 16, 'M_to_UQ': 44, 'UQ_to_UD': 70}}
+INFO 2025-06-17 12:13:21,904 managers 23616 16900 Vertical value: 30 (type: <class 'int'>)
+INFO 2025-06-17 12:13:21,904 managers 23616 16900 Validating Blue Colar (GEO): {'vertical': None, 'horizontal_intervals': {'LD_to_LQ': 89, 'LQ_to_M': 16, 'M_to_UQ': 44, 'UQ_to_UD': 70}}
+INFO 2025-06-17 12:13:21,905 managers 23616 16900 Validation errors: []
+INFO 2025-06-17 12:13:21,905 managers 23616 16900 === VALIDATION END ===
+INFO 2025-06-17 12:13:21,906 managers 23616 16900 === GRADE CALCULATION START ===
+INFO 2025-06-17 12:13:21,908 managers 23616 16900 Base value: 52.0
+INFO 2025-06-17 12:13:21,908 managers 23616 16900 Input rates structure: {'Vice Chairman': {'vertical': 2, 'horizontal_intervals': {'LD_to_LQ': 89, 'LQ_to_M': 16, 'M_to_UQ': 44, 'UQ_to_UD': 70}}, 'Director': {'vertical': 49, 'horizontal_intervals': {'LD_to_LQ': 89, 'LQ_to_M': 16, 'M_to_UQ': 44, 'UQ_to_UD': 70}}, 'HOD': {'vertical': 50, 'horizontal_intervals': {'LD_to_LQ': 89, 'LQ_to_M': 16, 'M_to_UQ': 44, 'UQ_to_UD': 70}}, 'Manager': {'vertical': 25, 'horizontal_intervals': {'LD_to_LQ': 89, 'LQ_to_M': 16, 'M_to_UQ': 44, 'UQ_to_UD': 70}}, 'Senior Specialist': {'vertical': 41, 'horizontal_intervals': {'LD_to_LQ': 89, 'LQ_to_M': 16, 'M_to_UQ': 44, 'UQ_to_UD': 70}}, 'Specialist': {'vertical': 14, 'horizontal_intervals': {'LD_to_LQ': 89, 'LQ_to_M': 16, 'M_to_UQ': 44, 'UQ_to_UD': 70}}, 'Junior Specialist': {'vertical': 33, 'horizontal_intervals': {'LD_to_LQ': 89, 'LQ_to_M': 16, 'M_to_UQ': 44, 'UQ_to_UD': 70}}, 'Blue Colar ': {'vertical': 30, 'horizontal_intervals': {'LD_to_LQ': 89, 'LQ_to_M': 16, 'M_to_UQ': 44, 'UQ_to_UD': 70}}, 'Blue Colar (GEO)': {'vertical': None, 'horizontal_intervals': {'LD_to_LQ': 89, 'LQ_to_M': 16, 'M_to_UQ': 44, 'UQ_to_UD': 70}}}
+INFO 2025-06-17 12:13:21,911 managers 23616 16900 Positions order: [('Vice Chairman', 1), ('Director', 2), ('HOD', 3), ('Manager', 4), ('Senior Specialist', 5), ('Specialist', 6), ('Junior Specialist', 7), ('Blue Colar ', 8), ('Blue Colar (GEO)', 9)]
+INFO 2025-06-17 12:13:21,915 managers 23616 16900 
+--- Processing Position 1: Blue Colar (GEO) (index 8) ---
+INFO 2025-06-17 12:13:21,916 managers 23616 16900 BASE POSITION: Blue Colar (GEO) LD = 52.0 (base value)
+INFO 2025-06-17 12:13:21,916 managers 23616 16900 Final grades for Blue Colar (GEO): LD=52, LQ=98, M=114, UQ=164, UD=279
+INFO 2025-06-17 12:13:21,916 managers 23616 16900 
+--- Processing Position 2: Blue Colar  (index 7) ---
+INFO 2025-06-17 12:13:21,917 managers 23616 16900 Vertical rate for Blue Colar : 30%
+INFO 2025-06-17 12:13:22,422 managers 23616 16900   Lower position LD: 52
+INFO 2025-06-17 12:13:22,430 managers 23616 16900   Vertical rate: 30%
+INFO 2025-06-17 12:13:22,434 managers 23616 16900   Calculated LD: 52 × (1 + 30/100) = 67.6
+INFO 2025-06-17 12:13:22,434 managers 23616 16900 Final grades for Blue Colar : LD=68, LQ=128, M=148, UQ=213, UD=363
+INFO 2025-06-17 12:13:22,435 managers 23616 16900 
+--- Processing Position 3: Junior Specialist (index 6) ---
+INFO 2025-06-17 12:13:22,435 managers 23616 16900 Vertical rate for Junior Specialist: 33%
+INFO 2025-06-17 12:13:22,455 managers 23616 16900   Lower position LD: 68
+INFO 2025-06-17 12:13:22,455 managers 23616 16900   Vertical rate: 33%
+INFO 2025-06-17 12:13:22,456 managers 23616 16900   Calculated LD: 68 × (1 + 33/100) = 90.44
+INFO 2025-06-17 12:13:22,456 managers 23616 16900 Final grades for Junior Specialist: LD=90, LQ=171, M=198, UQ=286, UD=485
+INFO 2025-06-17 12:13:22,456 managers 23616 16900 
+--- Processing Position 4: Specialist (index 5) ---
+INFO 2025-06-17 12:13:22,457 managers 23616 16900 Vertical rate for Specialist: 14%
+INFO 2025-06-17 12:13:22,470 managers 23616 16900   Lower position LD: 90
+INFO 2025-06-17 12:13:22,471 managers 23616 16900   Vertical rate: 14%
+INFO 2025-06-17 12:13:22,471 managers 23616 16900   Calculated LD: 90 × (1 + 14/100) = 102.60
+INFO 2025-06-17 12:13:22,472 managers 23616 16900 Final grades for Specialist: LD=103, LQ=194, M=225, UQ=324, UD=551
+INFO 2025-06-17 12:13:22,472 managers 23616 16900 
+--- Processing Position 5: Senior Specialist (index 4) ---
+INFO 2025-06-17 12:13:22,475 managers 23616 16900 Vertical rate for Senior Specialist: 41%
+INFO 2025-06-17 12:13:22,487 managers 23616 16900   Lower position LD: 103
+INFO 2025-06-17 12:13:22,488 managers 23616 16900   Vertical rate: 41%
+INFO 2025-06-17 12:13:22,488 managers 23616 16900   Calculated LD: 103 × (1 + 41/100) = 145.23
+INFO 2025-06-17 12:13:22,491 managers 23616 16900 Final grades for Senior Specialist: LD=145, LQ=274, M=318, UQ=458, UD=779
+INFO 2025-06-17 12:13:22,493 managers 23616 16900 
+--- Processing Position 6: Manager (index 3) ---
+INFO 2025-06-17 12:13:22,494 managers 23616 16900 Vertical rate for Manager: 25%
+INFO 2025-06-17 12:13:22,508 managers 23616 16900   Lower position LD: 145
+INFO 2025-06-17 12:13:22,508 managers 23616 16900   Vertical rate: 25%
+INFO 2025-06-17 12:13:22,509 managers 23616 16900   Calculated LD: 145 × (1 + 25/100) = 181.25
+INFO 2025-06-17 12:13:22,509 managers 23616 16900 Final grades for Manager: LD=181, LQ=343, M=397, UQ=572, UD=973
+INFO 2025-06-17 12:13:22,509 managers 23616 16900 
+--- Processing Position 7: HOD (index 2) ---
+INFO 2025-06-17 12:13:22,510 managers 23616 16900 Vertical rate for HOD: 50%
+INFO 2025-06-17 12:13:22,518 managers 23616 16900   Lower position LD: 181
+INFO 2025-06-17 12:13:22,519 managers 23616 16900   Vertical rate: 50%
+INFO 2025-06-17 12:13:22,519 managers 23616 16900   Calculated LD: 181 × (1 + 50/100) = 271.5
+INFO 2025-06-17 12:13:22,519 managers 23616 16900 Final grades for HOD: LD=272, LQ=513, M=595, UQ=857, UD=1457
+INFO 2025-06-17 12:13:22,520 managers 23616 16900 
+--- Processing Position 8: Director (index 1) ---
+INFO 2025-06-17 12:13:22,521 managers 23616 16900 Vertical rate for Director: 49%
+INFO 2025-06-17 12:13:22,528 managers 23616 16900   Lower position LD: 272
+INFO 2025-06-17 12:13:22,529 managers 23616 16900   Vertical rate: 49%
+INFO 2025-06-17 12:13:22,529 managers 23616 16900   Calculated LD: 272 × (1 + 49/100) = 405.28
+INFO 2025-06-17 12:13:22,530 managers 23616 16900 Final grades for Director: LD=405, LQ=766, M=889, UQ=1279, UD=2175
+INFO 2025-06-17 12:13:22,530 managers 23616 16900 
+--- Processing Position 9: Vice Chairman (index 0) ---
+INFO 2025-06-17 12:13:22,531 managers 23616 16900 Vertical rate for Vice Chairman: 2%
+INFO 2025-06-17 12:13:22,537 managers 23616 16900   Lower position LD: 405
+INFO 2025-06-17 12:13:22,538 managers 23616 16900   Vertical rate: 2%
+INFO 2025-06-17 12:13:22,538 managers 23616 16900   Calculated LD: 405 × (1 + 2/100) = 413.10
+INFO 2025-06-17 12:13:22,539 managers 23616 16900 Final grades for Vice Chairman: LD=413, LQ=781, M=906, UQ=1304, UD=2217
+INFO 2025-06-17 12:13:22,539 managers 23616 16900 === CALCULATION COMPLETE ===
+INFO 2025-06-17 12:13:24,699 views 23616 16900 === SAVE DRAFT START ===
+INFO 2025-06-17 12:13:24,722 serializers 23616 16900 === DETAIL SERIALIZER for Scenario 6/17/2025 12:13:24 PM ===
+INFO 2025-06-17 12:13:24,722 serializers 23616 16900 FIXED: Extracted vertical inputs: {'Vice Chairman': 2.0, 'Director': 49.0, 'HOD': 50.0, 'Manager': 25.0, 'Senior Specialist': 41.0, 'Specialist': 14.0, 'Junior Specialist': 33.0, 'Blue Colar ': 30.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-17 12:13:24,723 serializers 23616 16900 FIXED: Global horizontal intervals: {'LD_to_LQ': 89.0, 'LQ_to_M': 16.0, 'M_to_UQ': 44.0, 'UQ_to_UD': 70.0}
+INFO 2025-06-17 12:13:24,723 serializers 23616 16900 FIXED: Detail data result:
+INFO 2025-06-17 12:13:24,723 serializers 23616 16900   verticalAvg: 0.305
+INFO 2025-06-17 12:13:24,724 serializers 23616 16900   horizontalAvg: 0.5475
+INFO 2025-06-17 12:13:24,724 serializers 23616 16900   positionVerticalInputs: {'Vice Chairman': 2.0, 'Director': 49.0, 'HOD': 50.0, 'Manager': 25.0, 'Senior Specialist': 41.0, 'Specialist': 14.0, 'Junior Specialist': 33.0, 'Blue Colar ': 30.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-17 12:13:24,724 serializers 23616 16900   inputRates preserved: True
+INFO 2025-06-17 12:13:24,724 serializers 23616 16900 === DETAIL SERIALIZER END ===
+INFO 2025-06-17 12:13:29,136 serializers 23616 16900 === DETAIL SERIALIZER for Scenario 6/17/2025 12:13:24 PM ===
+INFO 2025-06-17 12:13:29,136 serializers 23616 16900 FIXED: Extracted vertical inputs: {'Vice Chairman': 2.0, 'Director': 49.0, 'HOD': 50.0, 'Manager': 25.0, 'Senior Specialist': 41.0, 'Specialist': 14.0, 'Junior Specialist': 33.0, 'Blue Colar ': 30.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-17 12:13:29,137 serializers 23616 16900 FIXED: Global horizontal intervals: {'LD_to_LQ': 89.0, 'LQ_to_M': 16.0, 'M_to_UQ': 44.0, 'UQ_to_UD': 70.0}
+INFO 2025-06-17 12:13:29,137 serializers 23616 16900 FIXED: Detail data result:
+INFO 2025-06-17 12:13:29,138 serializers 23616 16900   verticalAvg: 0.305
+INFO 2025-06-17 12:13:29,138 serializers 23616 16900   horizontalAvg: 0.5475
+INFO 2025-06-17 12:13:29,139 serializers 23616 16900   positionVerticalInputs: {'Vice Chairman': 2.0, 'Director': 49.0, 'HOD': 50.0, 'Manager': 25.0, 'Senior Specialist': 41.0, 'Specialist': 14.0, 'Junior Specialist': 33.0, 'Blue Colar ': 30.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-17 12:13:29,139 serializers 23616 16900   inputRates preserved: True
+INFO 2025-06-17 12:13:29,139 serializers 23616 16900 === DETAIL SERIALIZER END ===
+INFO 2025-06-17 12:14:43,196 managers 23616 28268 Creating current structure from DB...
+INFO 2025-06-17 12:14:43,200 managers 23616 28268 Position groups order (ASC): [('VC', 1), ('Director', 2), ('HOD', 3), ('Manager', 4), ('Senior Specialist', 5), ('Specialist', 6), ('Junior Specialist', 7), ('Blue Colar ', 8), ('Blue Colar (GEO)', 9)]
+INFO 2025-06-17 12:14:43,201 managers 23616 28268 Total position groups found: 9
+INFO 2025-06-17 12:14:43,202 managers 23616 28268 Position: Vice Chairman (level 1)
+INFO 2025-06-17 12:14:43,202 managers 23616 28268 Position: Director (level 2)
+INFO 2025-06-17 12:14:43,203 managers 23616 28268 Position: HOD (level 3)
+INFO 2025-06-17 12:14:43,203 managers 23616 28268 Position: Manager (level 4)
+INFO 2025-06-17 12:14:43,203 managers 23616 28268 Position: Senior Specialist (level 5)
+INFO 2025-06-17 12:14:43,204 managers 23616 28268 Position: Specialist (level 6)
+INFO 2025-06-17 12:14:43,205 managers 23616 28268 Position: Junior Specialist (level 7)
+INFO 2025-06-17 12:14:43,206 managers 23616 28268 Position: Blue Colar  (level 8)
+INFO 2025-06-17 12:14:43,206 managers 23616 28268 Position: Blue Colar (GEO) (level 9)
+INFO 2025-06-17 12:14:43,213 managers 23616 18732 Position groups order (ASC): [('VC', 1), ('Director', 2), ('HOD', 3), ('Manager', 4), ('Senior Specialist', 5), ('Specialist', 6), ('Junior Specialist', 7), ('Blue Colar ', 8), ('Blue Colar (GEO)', 9)]
+INFO 2025-06-17 12:14:43,215 managers 23616 28268 Found current scenario: Scenario 6/13/2025 4:08:02 PM
+INFO 2025-06-17 12:14:43,218 managers 23616 28268 Current structure grade order: ['Vice Chairman', 'Director', 'HOD', 'Manager', 'Senior Specialist', 'Specialist', 'Junior Specialist', 'Blue Colar ', 'Blue Colar (GEO)']
+INFO 2025-06-17 12:14:43,217 managers 23616 18732 Total position groups found: 9
+INFO 2025-06-17 12:14:43,219 managers 23616 28268 Base value position: Blue Colar (GEO) (last = lowest hierarchy)
+INFO 2025-06-17 12:14:43,221 serializers 23616 12744 === DETAIL SERIALIZER for Scenario 6/13/2025 4:08:02 PM ===
+INFO 2025-06-17 12:14:43,225 serializers 23616 12744 FIXED: Extracted vertical inputs: {'Vice Chairman': 67.0, 'Director': 38.0, 'HOD': 56.0, 'Manager': 77.0, 'Senior Specialist': 97.0, 'Specialist': 87.0, 'Junior Specialist': 97.0, 'Blue Colar ': 15.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-17 12:14:43,225 serializers 23616 12744 FIXED: Global horizontal intervals: {'LD_to_LQ': 98.0, 'LQ_to_M': 72.0, 'M_to_UQ': 60.0, 'UQ_to_UD': 43.0}
+INFO 2025-06-17 12:14:43,226 serializers 23616 12744 FIXED: Detail data result:
+INFO 2025-06-17 12:14:43,226 serializers 23616 12744   verticalAvg: 0.6675
+INFO 2025-06-17 12:14:43,227 serializers 23616 12744   horizontalAvg: 0.6825
+INFO 2025-06-17 12:14:43,228 serializers 23616 12744   positionVerticalInputs: {'Vice Chairman': 67.0, 'Director': 38.0, 'HOD': 56.0, 'Manager': 77.0, 'Senior Specialist': 97.0, 'Specialist': 87.0, 'Junior Specialist': 97.0, 'Blue Colar ': 15.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-17 12:14:43,229 serializers 23616 12744   inputRates preserved: True
+INFO 2025-06-17 12:14:43,230 serializers 23616 12744 === DETAIL SERIALIZER END ===
+INFO 2025-06-17 12:14:43,232 views 23616 22764 User info request for user: n.orujova
+INFO 2025-06-17 12:14:43,254 views 23616 22764 [n.orujova] No employee profile found
+INFO 2025-06-17 12:14:43,257 views 23616 22764 [n.orujova] User info response prepared successfully
+INFO 2025-06-17 12:14:47,325 views 23616 22764 === CALCULATE DYNAMIC START ===
+INFO 2025-06-17 12:14:47,326 managers 23616 22764 Position groups order (ASC): [('VC', 1), ('Director', 2), ('HOD', 3), ('Manager', 4), ('Senior Specialist', 5), ('Specialist', 6), ('Junior Specialist', 7), ('Blue Colar ', 8), ('Blue Colar (GEO)', 9)]
+INFO 2025-06-17 12:14:47,327 managers 23616 22764 Total position groups found: 9
+INFO 2025-06-17 12:14:47,329 managers 23616 22764 === VALIDATION START ===
+INFO 2025-06-17 12:14:47,329 managers 23616 22764 Base value: 54.0 (type: <class 'float'>)
+INFO 2025-06-17 12:14:47,330 managers 23616 22764 Input rates: {'Vice Chairman': {'vertical': 16, 'horizontal_intervals': {'LD_to_LQ': 46, 'LQ_to_M': 20, 'M_to_UQ': 37, 'UQ_to_UD': 70}}, 'Director': {'vertical': 18, 'horizontal_intervals': {'LD_to_LQ': 46, 'LQ_to_M': 20, 'M_to_UQ': 37, 'UQ_to_UD': 70}}, 'HOD': {'vertical': 4, 'horizontal_intervals': {'LD_to_LQ': 46, 'LQ_to_M': 20, 'M_to_UQ': 37, 'UQ_to_UD': 70}}, 'Manager': {'vertical': 22, 'horizontal_intervals': {'LD_to_LQ': 46, 'LQ_to_M': 20, 'M_to_UQ': 37, 'UQ_to_UD': 70}}, 'Senior Specialist': {'vertical': 8, 'horizontal_intervals': {'LD_to_LQ': 46, 'LQ_to_M': 20, 'M_to_UQ': 37, 'UQ_to_UD': 70}}, 'Specialist': {'vertical': 83, 'horizontal_intervals': {'LD_to_LQ': 46, 'LQ_to_M': 20, 'M_to_UQ': 37, 'UQ_to_UD': 70}}, 'Junior Specialist': {'vertical': 16, 'horizontal_intervals': {'LD_to_LQ': 46, 'LQ_to_M': 20, 'M_to_UQ': 37, 'UQ_to_UD': 70}}, 'Blue Colar ': {'vertical': 13, 'horizontal_intervals': {'LD_to_LQ': 46, 'LQ_to_M': 20, 'M_to_UQ': 37, 'UQ_to_UD': 70}}, 'Blue Colar (GEO)': {'vertical': None, 'horizontal_intervals': {'LD_to_LQ': 46, 'LQ_to_M': 20, 'M_to_UQ': 37, 'UQ_to_UD': 70}}}
+INFO 2025-06-17 12:14:47,331 managers 23616 22764 Validating Vice Chairman: {'vertical': 16, 'horizontal_intervals': {'LD_to_LQ': 46, 'LQ_to_M': 20, 'M_to_UQ': 37, 'UQ_to_UD': 70}}
+INFO 2025-06-17 12:14:47,331 managers 23616 22764 Vertical value: 16 (type: <class 'int'>)
+INFO 2025-06-17 12:14:47,332 managers 23616 22764 Validating Director: {'vertical': 18, 'horizontal_intervals': {'LD_to_LQ': 46, 'LQ_to_M': 20, 'M_to_UQ': 37, 'UQ_to_UD': 70}}
+INFO 2025-06-17 12:14:47,332 managers 23616 22764 Vertical value: 18 (type: <class 'int'>)
+INFO 2025-06-17 12:14:47,333 managers 23616 22764 Validating HOD: {'vertical': 4, 'horizontal_intervals': {'LD_to_LQ': 46, 'LQ_to_M': 20, 'M_to_UQ': 37, 'UQ_to_UD': 70}}
+INFO 2025-06-17 12:14:47,333 managers 23616 22764 Vertical value: 4 (type: <class 'int'>)
+INFO 2025-06-17 12:14:47,333 managers 23616 22764 Validating Manager: {'vertical': 22, 'horizontal_intervals': {'LD_to_LQ': 46, 'LQ_to_M': 20, 'M_to_UQ': 37, 'UQ_to_UD': 70}}
+INFO 2025-06-17 12:14:47,334 managers 23616 22764 Vertical value: 22 (type: <class 'int'>)
+INFO 2025-06-17 12:14:47,334 managers 23616 22764 Validating Senior Specialist: {'vertical': 8, 'horizontal_intervals': {'LD_to_LQ': 46, 'LQ_to_M': 20, 'M_to_UQ': 37, 'UQ_to_UD': 70}}
+INFO 2025-06-17 12:14:47,334 managers 23616 22764 Vertical value: 8 (type: <class 'int'>)
+INFO 2025-06-17 12:14:47,335 managers 23616 22764 Validating Specialist: {'vertical': 83, 'horizontal_intervals': {'LD_to_LQ': 46, 'LQ_to_M': 20, 'M_to_UQ': 37, 'UQ_to_UD': 70}}
+INFO 2025-06-17 12:14:47,335 managers 23616 22764 Vertical value: 83 (type: <class 'int'>)
+INFO 2025-06-17 12:14:47,336 managers 23616 22764 Validating Junior Specialist: {'vertical': 16, 'horizontal_intervals': {'LD_to_LQ': 46, 'LQ_to_M': 20, 'M_to_UQ': 37, 'UQ_to_UD': 70}}
+INFO 2025-06-17 12:14:47,337 managers 23616 22764 Vertical value: 16 (type: <class 'int'>)
+INFO 2025-06-17 12:14:47,338 managers 23616 22764 Validating Blue Colar : {'vertical': 13, 'horizontal_intervals': {'LD_to_LQ': 46, 'LQ_to_M': 20, 'M_to_UQ': 37, 'UQ_to_UD': 70}}
+INFO 2025-06-17 12:14:47,339 managers 23616 22764 Vertical value: 13 (type: <class 'int'>)
+INFO 2025-06-17 12:14:47,339 managers 23616 22764 Validating Blue Colar (GEO): {'vertical': None, 'horizontal_intervals': {'LD_to_LQ': 46, 'LQ_to_M': 20, 'M_to_UQ': 37, 'UQ_to_UD': 70}}
+INFO 2025-06-17 12:14:47,340 managers 23616 22764 Validation errors: []
+INFO 2025-06-17 12:14:47,340 managers 23616 22764 === VALIDATION END ===
+INFO 2025-06-17 12:14:47,342 managers 23616 22764 === GRADE CALCULATION START ===
+INFO 2025-06-17 12:14:47,343 managers 23616 22764 Base value: 54.0
+INFO 2025-06-17 12:14:47,344 managers 23616 22764 Input rates structure: {'Vice Chairman': {'vertical': 16, 'horizontal_intervals': {'LD_to_LQ': 46, 'LQ_to_M': 20, 'M_to_UQ': 37, 'UQ_to_UD': 70}}, 'Director': {'vertical': 18, 'horizontal_intervals': {'LD_to_LQ': 46, 'LQ_to_M': 20, 'M_to_UQ': 37, 'UQ_to_UD': 70}}, 'HOD': {'vertical': 4, 'horizontal_intervals': {'LD_to_LQ': 46, 'LQ_to_M': 20, 'M_to_UQ': 37, 'UQ_to_UD': 70}}, 'Manager': {'vertical': 22, 'horizontal_intervals': {'LD_to_LQ': 46, 'LQ_to_M': 20, 'M_to_UQ': 37, 'UQ_to_UD': 70}}, 'Senior Specialist': {'vertical': 8, 'horizontal_intervals': {'LD_to_LQ': 46, 'LQ_to_M': 20, 'M_to_UQ': 37, 'UQ_to_UD': 70}}, 'Specialist': {'vertical': 83, 'horizontal_intervals': {'LD_to_LQ': 46, 'LQ_to_M': 20, 'M_to_UQ': 37, 'UQ_to_UD': 70}}, 'Junior Specialist': {'vertical': 16, 'horizontal_intervals': {'LD_to_LQ': 46, 'LQ_to_M': 20, 'M_to_UQ': 37, 'UQ_to_UD': 70}}, 'Blue Colar ': {'vertical': 13, 'horizontal_intervals': {'LD_to_LQ': 46, 'LQ_to_M': 20, 'M_to_UQ': 37, 'UQ_to_UD': 70}}, 'Blue Colar (GEO)': {'vertical': None, 'horizontal_intervals': {'LD_to_LQ': 46, 'LQ_to_M': 20, 'M_to_UQ': 37, 'UQ_to_UD': 70}}}
+INFO 2025-06-17 12:14:47,346 managers 23616 22764 Positions order: [('Vice Chairman', 1), ('Director', 2), ('HOD', 3), ('Manager', 4), ('Senior Specialist', 5), ('Specialist', 6), ('Junior Specialist', 7), ('Blue Colar ', 8), ('Blue Colar (GEO)', 9)]
+INFO 2025-06-17 12:14:47,346 managers 23616 22764 
+--- Processing Position 1: Blue Colar (GEO) (index 8) ---
+INFO 2025-06-17 12:14:47,346 managers 23616 22764 BASE POSITION: Blue Colar (GEO) LD = 54.0 (base value)
+INFO 2025-06-17 12:14:47,348 managers 23616 22764 Final grades for Blue Colar (GEO): LD=54, LQ=79, M=95, UQ=130, UD=220
+INFO 2025-06-17 12:14:47,348 managers 23616 22764 
+--- Processing Position 2: Blue Colar  (index 7) ---
+INFO 2025-06-17 12:14:47,349 managers 23616 22764 Vertical rate for Blue Colar : 13%
+INFO 2025-06-17 12:14:47,364 managers 23616 22764   Lower position LD: 54
+INFO 2025-06-17 12:14:47,364 managers 23616 22764   Vertical rate: 13%
+INFO 2025-06-17 12:14:47,364 managers 23616 22764   Calculated LD: 54 × (1 + 13/100) = 61.02
+INFO 2025-06-17 12:14:47,365 managers 23616 22764 Final grades for Blue Colar : LD=61, LQ=89, M=107, UQ=146, UD=249
+INFO 2025-06-17 12:14:47,365 managers 23616 22764 
+--- Processing Position 3: Junior Specialist (index 6) ---
+INFO 2025-06-17 12:14:47,365 managers 23616 22764 Vertical rate for Junior Specialist: 16%
+INFO 2025-06-17 12:14:47,377 managers 23616 22764   Lower position LD: 61
+INFO 2025-06-17 12:14:47,378 managers 23616 22764   Vertical rate: 16%
+INFO 2025-06-17 12:14:47,378 managers 23616 22764   Calculated LD: 61 × (1 + 16/100) = 70.76
+INFO 2025-06-17 12:14:47,378 managers 23616 22764 Final grades for Junior Specialist: LD=71, LQ=103, M=124, UQ=170, UD=289
+INFO 2025-06-17 12:14:47,378 managers 23616 22764 
+--- Processing Position 4: Specialist (index 5) ---
+INFO 2025-06-17 12:14:47,379 managers 23616 22764 Vertical rate for Specialist: 83%
+INFO 2025-06-17 12:14:47,394 managers 23616 22764   Lower position LD: 71
+INFO 2025-06-17 12:14:47,395 managers 23616 22764   Vertical rate: 83%
+INFO 2025-06-17 12:14:47,395 managers 23616 22764   Calculated LD: 71 × (1 + 83/100) = 129.93
+INFO 2025-06-17 12:14:47,396 managers 23616 22764 Final grades for Specialist: LD=130, LQ=190, M=228, UQ=312, UD=530
+INFO 2025-06-17 12:14:47,397 managers 23616 22764 
+--- Processing Position 5: Senior Specialist (index 4) ---
+INFO 2025-06-17 12:14:47,397 managers 23616 22764 Vertical rate for Senior Specialist: 8%
+INFO 2025-06-17 12:14:47,404 managers 23616 22764   Lower position LD: 130
+INFO 2025-06-17 12:14:47,405 managers 23616 22764   Vertical rate: 8%
+INFO 2025-06-17 12:14:47,405 managers 23616 22764   Calculated LD: 130 × (1 + 8/100) = 140.40
+INFO 2025-06-17 12:14:47,405 managers 23616 22764 Final grades for Senior Specialist: LD=140, LQ=205, M=246, UQ=337, UD=573
+INFO 2025-06-17 12:14:47,406 managers 23616 22764 
+--- Processing Position 6: Manager (index 3) ---
+INFO 2025-06-17 12:14:47,406 managers 23616 22764 Vertical rate for Manager: 22%
+INFO 2025-06-17 12:14:47,416 managers 23616 22764   Lower position LD: 140
+INFO 2025-06-17 12:14:47,416 managers 23616 22764   Vertical rate: 22%
+INFO 2025-06-17 12:14:47,417 managers 23616 22764   Calculated LD: 140 × (1 + 22/100) = 170.80
+INFO 2025-06-17 12:14:47,417 managers 23616 22764 Final grades for Manager: LD=171, LQ=249, M=299, UQ=410, UD=697
+INFO 2025-06-17 12:14:47,417 managers 23616 22764 
+--- Processing Position 7: HOD (index 2) ---
+INFO 2025-06-17 12:14:47,418 managers 23616 22764 Vertical rate for HOD: 4%
+INFO 2025-06-17 12:14:47,423 managers 23616 22764   Lower position LD: 171
+INFO 2025-06-17 12:14:47,424 managers 23616 22764   Vertical rate: 4%
+INFO 2025-06-17 12:14:47,424 managers 23616 22764   Calculated LD: 171 × (1 + 4/100) = 177.84
+INFO 2025-06-17 12:14:47,425 managers 23616 22764 Final grades for HOD: LD=178, LQ=260, M=312, UQ=427, UD=726
+INFO 2025-06-17 12:14:47,425 managers 23616 22764 
+--- Processing Position 8: Director (index 1) ---
+INFO 2025-06-17 12:14:47,425 managers 23616 22764 Vertical rate for Director: 18%
+INFO 2025-06-17 12:14:47,432 managers 23616 22764   Lower position LD: 178
+INFO 2025-06-17 12:14:47,432 managers 23616 22764   Vertical rate: 18%
+INFO 2025-06-17 12:14:47,432 managers 23616 22764   Calculated LD: 178 × (1 + 18/100) = 210.04
+INFO 2025-06-17 12:14:47,433 managers 23616 22764 Final grades for Director: LD=210, LQ=307, M=368, UQ=504, UD=857
+INFO 2025-06-17 12:14:47,433 managers 23616 22764 
+--- Processing Position 9: Vice Chairman (index 0) ---
+INFO 2025-06-17 12:14:47,433 managers 23616 22764 Vertical rate for Vice Chairman: 16%
+INFO 2025-06-17 12:14:47,439 managers 23616 22764   Lower position LD: 210
+INFO 2025-06-17 12:14:47,439 managers 23616 22764   Vertical rate: 16%
+INFO 2025-06-17 12:14:47,439 managers 23616 22764   Calculated LD: 210 × (1 + 16/100) = 243.60
+INFO 2025-06-17 12:14:47,439 managers 23616 22764 Final grades for Vice Chairman: LD=244, LQ=356, M=427, UQ=585, UD=994
+INFO 2025-06-17 12:14:47,440 managers 23616 22764 === CALCULATION COMPLETE ===
+INFO 2025-06-17 12:14:48,523 views 23616 22764 === SAVE DRAFT START ===
+INFO 2025-06-17 12:14:48,540 serializers 23616 22764 === DETAIL SERIALIZER for Scenario 6/17/2025 12:14:48 PM ===
+INFO 2025-06-17 12:14:48,541 serializers 23616 22764 FIXED: Extracted vertical inputs: {'Vice Chairman': 16.0, 'Director': 18.0, 'HOD': 4.0, 'Manager': 22.0, 'Senior Specialist': 8.0, 'Specialist': 83.0, 'Junior Specialist': 16.0, 'Blue Colar ': 13.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-17 12:14:48,542 serializers 23616 22764 FIXED: Global horizontal intervals: {'LD_to_LQ': 46.0, 'LQ_to_M': 20.0, 'M_to_UQ': 37.0, 'UQ_to_UD': 70.0}
+INFO 2025-06-17 12:14:48,543 serializers 23616 22764 FIXED: Detail data result:
+INFO 2025-06-17 12:14:48,544 serializers 23616 22764   verticalAvg: 0.225
+INFO 2025-06-17 12:14:48,544 serializers 23616 22764   horizontalAvg: 0.4325
+INFO 2025-06-17 12:14:48,544 serializers 23616 22764   positionVerticalInputs: {'Vice Chairman': 16.0, 'Director': 18.0, 'HOD': 4.0, 'Manager': 22.0, 'Senior Specialist': 8.0, 'Specialist': 83.0, 'Junior Specialist': 16.0, 'Blue Colar ': 13.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-17 12:14:48,545 serializers 23616 22764   inputRates preserved: True
+INFO 2025-06-17 12:14:48,545 serializers 23616 22764 === DETAIL SERIALIZER END ===
+INFO 2025-06-17 12:14:50,494 serializers 23616 22764 === DETAIL SERIALIZER for Scenario 6/13/2025 4:04:39 PM ===
+INFO 2025-06-17 12:14:50,494 serializers 23616 22764 FIXED: Extracted vertical inputs: {'Vice Chairman': 37.0, 'Director': 36.0, 'HOD': 58.0, 'Manager': 93.0, 'Senior Specialist': 37.0, 'Specialist': 21.0, 'Junior Specialist': 96.0, 'Blue Colar ': 74.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-17 12:14:50,495 serializers 23616 22764 FIXED: Global horizontal intervals: {'LD_to_LQ': 97.0, 'LQ_to_M': 96.0, 'M_to_UQ': 0.0, 'UQ_to_UD': 44.0}
+INFO 2025-06-17 12:14:50,495 serializers 23616 22764 FIXED: Detail data result:
+INFO 2025-06-17 12:14:50,496 serializers 23616 22764   verticalAvg: 0.565
+INFO 2025-06-17 12:14:50,496 serializers 23616 22764   horizontalAvg: 0.5925
+INFO 2025-06-17 12:14:50,497 serializers 23616 22764   positionVerticalInputs: {'Vice Chairman': 37.0, 'Director': 36.0, 'HOD': 58.0, 'Manager': 93.0, 'Senior Specialist': 37.0, 'Specialist': 21.0, 'Junior Specialist': 96.0, 'Blue Colar ': 74.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-17 12:14:50,497 serializers 23616 22764   inputRates preserved: True
+INFO 2025-06-17 12:14:50,497 serializers 23616 22764 === DETAIL SERIALIZER END ===
+INFO 2025-06-17 12:14:53,785 serializers 23616 22764 === DETAIL SERIALIZER for Scenario 6/17/2025 12:14:48 PM ===
+INFO 2025-06-17 12:14:53,785 serializers 23616 22764 FIXED: Extracted vertical inputs: {'Vice Chairman': 16.0, 'Director': 18.0, 'HOD': 4.0, 'Manager': 22.0, 'Senior Specialist': 8.0, 'Specialist': 83.0, 'Junior Specialist': 16.0, 'Blue Colar ': 13.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-17 12:14:53,785 serializers 23616 22764 FIXED: Global horizontal intervals: {'LD_to_LQ': 46.0, 'LQ_to_M': 20.0, 'M_to_UQ': 37.0, 'UQ_to_UD': 70.0}
+INFO 2025-06-17 12:14:53,785 serializers 23616 22764 FIXED: Detail data result:
+INFO 2025-06-17 12:14:53,786 serializers 23616 22764   verticalAvg: 0.225
+INFO 2025-06-17 12:14:53,786 serializers 23616 22764   horizontalAvg: 0.4325
+INFO 2025-06-17 12:14:53,786 serializers 23616 22764   positionVerticalInputs: {'Vice Chairman': 16.0, 'Director': 18.0, 'HOD': 4.0, 'Manager': 22.0, 'Senior Specialist': 8.0, 'Specialist': 83.0, 'Junior Specialist': 16.0, 'Blue Colar ': 13.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-17 12:14:53,787 serializers 23616 22764   inputRates preserved: True
+INFO 2025-06-17 12:14:53,787 serializers 23616 22764 === DETAIL SERIALIZER END ===
+INFO 2025-06-17 12:16:52,063 serializers 23616 27972 === DETAIL SERIALIZER for Scenario 6/13/2025 4:08:02 PM ===
+INFO 2025-06-17 12:16:52,063 serializers 23616 27972 FIXED: Extracted vertical inputs: {'Vice Chairman': 67.0, 'Director': 38.0, 'HOD': 56.0, 'Manager': 77.0, 'Senior Specialist': 97.0, 'Specialist': 87.0, 'Junior Specialist': 97.0, 'Blue Colar ': 15.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-17 12:16:52,064 serializers 23616 27972 FIXED: Global horizontal intervals: {'LD_to_LQ': 98.0, 'LQ_to_M': 72.0, 'M_to_UQ': 60.0, 'UQ_to_UD': 43.0}
+INFO 2025-06-17 12:16:52,064 serializers 23616 27972 FIXED: Detail data result:
+INFO 2025-06-17 12:16:52,065 serializers 23616 27972   verticalAvg: 0.6675
+INFO 2025-06-17 12:16:52,066 serializers 23616 27972   horizontalAvg: 0.6825
+INFO 2025-06-17 12:16:52,067 serializers 23616 27972   positionVerticalInputs: {'Vice Chairman': 67.0, 'Director': 38.0, 'HOD': 56.0, 'Manager': 77.0, 'Senior Specialist': 97.0, 'Specialist': 87.0, 'Junior Specialist': 97.0, 'Blue Colar ': 15.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-17 12:16:52,067 serializers 23616 27972   inputRates preserved: True
+INFO 2025-06-17 12:16:52,067 serializers 23616 27972 === DETAIL SERIALIZER END ===
+INFO 2025-06-17 12:26:00,346 managers 14816 24552 Creating current structure from DB...
+INFO 2025-06-17 12:26:00,350 managers 14816 24552 Position groups order (ASC): [('VC', 1), ('Director', 2), ('HOD', 3), ('Manager', 4), ('Senior Specialist', 5), ('Specialist', 6), ('Junior Specialist', 7), ('Blue Colar ', 8), ('Blue Colar (GEO)', 9)]
+INFO 2025-06-17 12:26:00,352 managers 14816 12304 Position groups order (ASC): [('VC', 1), ('Director', 2), ('HOD', 3), ('Manager', 4), ('Senior Specialist', 5), ('Specialist', 6), ('Junior Specialist', 7), ('Blue Colar ', 8), ('Blue Colar (GEO)', 9)]
+INFO 2025-06-17 12:26:00,354 managers 14816 24552 Total position groups found: 9
+INFO 2025-06-17 12:26:00,355 managers 14816 12304 Total position groups found: 9
+INFO 2025-06-17 12:26:00,359 managers 14816 24552 Position: Vice Chairman (level 1)
+INFO 2025-06-17 12:26:00,364 managers 14816 24552 Position: Director (level 2)
+INFO 2025-06-17 12:26:00,366 serializers 14816 17900 === DETAIL SERIALIZER for Scenario 6/13/2025 4:08:02 PM ===
+INFO 2025-06-17 12:26:00,366 managers 14816 24552 Position: HOD (level 3)
+INFO 2025-06-17 12:26:00,367 serializers 14816 17900 DETAIL: Extracted vertical inputs: {'Vice Chairman': 67.0, 'Director': 38.0, 'HOD': 56.0, 'Manager': 77.0, 'Senior Specialist': 97.0, 'Specialist': 87.0, 'Junior Specialist': 97.0, 'Blue Colar ': 15.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-17 12:26:00,368 managers 14816 24552 Position: Manager (level 4)
+INFO 2025-06-17 12:26:00,369 serializers 14816 17900 DETAIL: Global horizontal intervals: {'LD_to_LQ': 98.0, 'LQ_to_M': 72.0, 'M_to_UQ': 60.0, 'UQ_to_UD': 43.0}
+INFO 2025-06-17 12:26:00,370 managers 14816 24552 Position: Senior Specialist (level 5)
+INFO 2025-06-17 12:26:00,370 serializers 14816 17900 DETAIL: Final result input data:
+INFO 2025-06-17 12:26:00,371 managers 14816 24552 Position: Specialist (level 6)
+INFO 2025-06-17 12:26:00,372 serializers 14816 17900   positionVerticalInputs: {'Vice Chairman': 67.0, 'Director': 38.0, 'HOD': 56.0, 'Manager': 77.0, 'Senior Specialist': 97.0, 'Specialist': 87.0, 'Junior Specialist': 97.0, 'Blue Colar ': 15.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-17 12:26:00,372 managers 14816 24552 Position: Junior Specialist (level 7)
+INFO 2025-06-17 12:26:00,374 managers 14816 24552 Position: Blue Colar  (level 8)
+INFO 2025-06-17 12:26:00,374 serializers 14816 17900   inputRates preserved: True
+INFO 2025-06-17 12:26:00,375 serializers 14816 17900 === DETAIL SERIALIZER END ===
+INFO 2025-06-17 12:26:00,376 managers 14816 24552 Position: Blue Colar (GEO) (level 9)
+INFO 2025-06-17 12:26:00,380 views 14816 22300 User info request for user: n.orujova
+INFO 2025-06-17 12:26:00,387 managers 14816 24552 Found current scenario: Scenario 6/13/2025 4:08:02 PM
+INFO 2025-06-17 12:26:00,388 managers 14816 24552 Current structure grade order: ['Vice Chairman', 'Director', 'HOD', 'Manager', 'Senior Specialist', 'Specialist', 'Junior Specialist', 'Blue Colar ', 'Blue Colar (GEO)']
+INFO 2025-06-17 12:26:00,388 managers 14816 24552 Base value position: Blue Colar (GEO) (last = lowest hierarchy)
+INFO 2025-06-17 12:26:00,412 views 14816 22300 [n.orujova] No employee profile found
+INFO 2025-06-17 12:26:00,415 views 14816 22300 [n.orujova] User info response prepared successfully
+INFO 2025-06-17 12:26:00,518 serializers 14816 17900 === LIST SERIALIZER for Scenario 6/17/2025 12:14:48 PM ===
+INFO 2025-06-17 12:26:00,521 serializers 14816 17900 LIST: Extracted vertical inputs: {'Vice Chairman': 16.0, 'Director': 18.0, 'HOD': 4.0, 'Manager': 22.0, 'Senior Specialist': 8.0, 'Specialist': 83.0, 'Junior Specialist': 16.0, 'Blue Colar ': 13.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-17 12:26:00,523 serializers 14816 17900 LIST: Global horizontal intervals: {'LD_to_LQ': 46.0, 'LQ_to_M': 20.0, 'M_to_UQ': 37.0, 'UQ_to_UD': 70.0}
+INFO 2025-06-17 12:26:00,525 serializers 14816 17900 === LIST SERIALIZER for Scenario 6/17/2025 12:13:24 PM ===
+INFO 2025-06-17 12:26:00,528 serializers 14816 22300 === LIST SERIALIZER for Scenario 6/13/2025 3:59:44 PM ===
+INFO 2025-06-17 12:26:00,529 serializers 14816 17900 LIST: Extracted vertical inputs: {'Vice Chairman': 2.0, 'Director': 49.0, 'HOD': 50.0, 'Manager': 25.0, 'Senior Specialist': 41.0, 'Specialist': 14.0, 'Junior Specialist': 33.0, 'Blue Colar ': 30.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-17 12:26:00,530 serializers 14816 22300 LIST: Extracted vertical inputs: {'Vice Chairman': 98.0, 'Director': 27.0, 'HOD': 18.0, 'Manager': 68.0, 'Senior Specialist': 11.0, 'Specialist': 54.0, 'Junior Specialist': 42.0, 'Blue Colar ': 43.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-17 12:26:00,531 serializers 14816 17900 LIST: Global horizontal intervals: {'LD_to_LQ': 89.0, 'LQ_to_M': 16.0, 'M_to_UQ': 44.0, 'UQ_to_UD': 70.0}
+INFO 2025-06-17 12:26:00,531 serializers 14816 22300 LIST: Global horizontal intervals: {'LD_to_LQ': 5.0, 'LQ_to_M': 18.0, 'M_to_UQ': 76.0, 'UQ_to_UD': 74.0}
+INFO 2025-06-17 12:26:00,532 serializers 14816 17900 === LIST SERIALIZER for Scenario 6/13/2025 4:04:49 PM ===
+INFO 2025-06-17 12:26:00,535 serializers 14816 17900 LIST: Extracted vertical inputs: {'Vice Chairman': 50.0, 'Director': 68.0, 'HOD': 49.0, 'Manager': 55.0, 'Senior Specialist': 97.0, 'Specialist': 32.0, 'Junior Specialist': 68.0, 'Blue Colar ': 42.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-17 12:26:00,537 serializers 14816 17900 LIST: Global horizontal intervals: {'LD_to_LQ': 75.0, 'LQ_to_M': 79.0, 'M_to_UQ': 20.0, 'UQ_to_UD': 39.0}
+INFO 2025-06-17 12:26:00,538 serializers 14816 17900 === LIST SERIALIZER for Scenario 6/13/2025 4:04:39 PM ===
+INFO 2025-06-17 12:26:00,539 serializers 14816 17900 LIST: Extracted vertical inputs: {'Vice Chairman': 37.0, 'Director': 36.0, 'HOD': 58.0, 'Manager': 93.0, 'Senior Specialist': 37.0, 'Specialist': 21.0, 'Junior Specialist': 96.0, 'Blue Colar ': 74.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-17 12:26:00,539 serializers 14816 17900 LIST: Global horizontal intervals: {'LD_to_LQ': 97.0, 'LQ_to_M': 96.0, 'M_to_UQ': 0.0, 'UQ_to_UD': 44.0}
+INFO 2025-06-17 12:26:04,935 views 14816 17900 === CALCULATE DYNAMIC START ===
+INFO 2025-06-17 12:26:04,941 managers 14816 17900 Position groups order (ASC): [('VC', 1), ('Director', 2), ('HOD', 3), ('Manager', 4), ('Senior Specialist', 5), ('Specialist', 6), ('Junior Specialist', 7), ('Blue Colar ', 8), ('Blue Colar (GEO)', 9)]
+INFO 2025-06-17 12:26:04,948 managers 14816 17900 Total position groups found: 9
+INFO 2025-06-17 12:26:04,948 managers 14816 17900 === VALIDATION START ===
+INFO 2025-06-17 12:26:04,949 managers 14816 17900 Base value: 26.0 (type: <class 'float'>)
+INFO 2025-06-17 12:26:04,949 managers 14816 17900 Input rates: {'Vice Chairman': {'vertical': 91, 'horizontal_intervals': {'LD_to_LQ': 50, 'LQ_to_M': 14, 'M_to_UQ': 79, 'UQ_to_UD': 52}}, 'Director': {'vertical': 15, 'horizontal_intervals': {'LD_to_LQ': 50, 'LQ_to_M': 14, 'M_to_UQ': 79, 'UQ_to_UD': 52}}, 'HOD': {'vertical': 4, 'horizontal_intervals': {'LD_to_LQ': 50, 'LQ_to_M': 14, 'M_to_UQ': 79, 'UQ_to_UD': 52}}, 'Manager': {'vertical': 40, 'horizontal_intervals': {'LD_to_LQ': 50, 'LQ_to_M': 14, 'M_to_UQ': 79, 'UQ_to_UD': 52}}, 'Senior Specialist': {'vertical': 26, 'horizontal_intervals': {'LD_to_LQ': 50, 'LQ_to_M': 14, 'M_to_UQ': 79, 'UQ_to_UD': 52}}, 'Specialist': {'vertical': 9, 'horizontal_intervals': {'LD_to_LQ': 50, 'LQ_to_M': 14, 'M_to_UQ': 79, 'UQ_to_UD': 52}}, 'Junior Specialist': {'vertical': 23, 'horizontal_intervals': {'LD_to_LQ': 50, 'LQ_to_M': 14, 'M_to_UQ': 79, 'UQ_to_UD': 52}}, 'Blue Colar ': {'vertical': 11, 'horizontal_intervals': {'LD_to_LQ': 50, 'LQ_to_M': 14, 'M_to_UQ': 79, 'UQ_to_UD': 52}}, 'Blue Colar (GEO)': {'vertical': None, 'horizontal_intervals': {'LD_to_LQ': 50, 'LQ_to_M': 14, 'M_to_UQ': 79, 'UQ_to_UD': 52}}}
+INFO 2025-06-17 12:26:04,950 managers 14816 17900 Validating Vice Chairman: {'vertical': 91, 'horizontal_intervals': {'LD_to_LQ': 50, 'LQ_to_M': 14, 'M_to_UQ': 79, 'UQ_to_UD': 52}}
+INFO 2025-06-17 12:26:04,950 managers 14816 17900 Vertical value: 91 (type: <class 'int'>)
+INFO 2025-06-17 12:26:04,952 managers 14816 17900 Validating Director: {'vertical': 15, 'horizontal_intervals': {'LD_to_LQ': 50, 'LQ_to_M': 14, 'M_to_UQ': 79, 'UQ_to_UD': 52}}
+INFO 2025-06-17 12:26:04,952 managers 14816 17900 Vertical value: 15 (type: <class 'int'>)
+INFO 2025-06-17 12:26:04,953 managers 14816 17900 Validating HOD: {'vertical': 4, 'horizontal_intervals': {'LD_to_LQ': 50, 'LQ_to_M': 14, 'M_to_UQ': 79, 'UQ_to_UD': 52}}
+INFO 2025-06-17 12:26:04,953 managers 14816 17900 Vertical value: 4 (type: <class 'int'>)
+INFO 2025-06-17 12:26:04,953 managers 14816 17900 Validating Manager: {'vertical': 40, 'horizontal_intervals': {'LD_to_LQ': 50, 'LQ_to_M': 14, 'M_to_UQ': 79, 'UQ_to_UD': 52}}
+INFO 2025-06-17 12:26:04,954 managers 14816 17900 Vertical value: 40 (type: <class 'int'>)
+INFO 2025-06-17 12:26:04,954 managers 14816 17900 Validating Senior Specialist: {'vertical': 26, 'horizontal_intervals': {'LD_to_LQ': 50, 'LQ_to_M': 14, 'M_to_UQ': 79, 'UQ_to_UD': 52}}
+INFO 2025-06-17 12:26:04,954 managers 14816 17900 Vertical value: 26 (type: <class 'int'>)
+INFO 2025-06-17 12:26:04,954 managers 14816 17900 Validating Specialist: {'vertical': 9, 'horizontal_intervals': {'LD_to_LQ': 50, 'LQ_to_M': 14, 'M_to_UQ': 79, 'UQ_to_UD': 52}}
+INFO 2025-06-17 12:26:04,955 managers 14816 17900 Vertical value: 9 (type: <class 'int'>)
+INFO 2025-06-17 12:26:04,955 managers 14816 17900 Validating Junior Specialist: {'vertical': 23, 'horizontal_intervals': {'LD_to_LQ': 50, 'LQ_to_M': 14, 'M_to_UQ': 79, 'UQ_to_UD': 52}}
+INFO 2025-06-17 12:26:04,955 managers 14816 17900 Vertical value: 23 (type: <class 'int'>)
+INFO 2025-06-17 12:26:04,956 managers 14816 17900 Validating Blue Colar : {'vertical': 11, 'horizontal_intervals': {'LD_to_LQ': 50, 'LQ_to_M': 14, 'M_to_UQ': 79, 'UQ_to_UD': 52}}
+INFO 2025-06-17 12:26:04,956 managers 14816 17900 Vertical value: 11 (type: <class 'int'>)
+INFO 2025-06-17 12:26:04,956 managers 14816 17900 Validating Blue Colar (GEO): {'vertical': None, 'horizontal_intervals': {'LD_to_LQ': 50, 'LQ_to_M': 14, 'M_to_UQ': 79, 'UQ_to_UD': 52}}
+INFO 2025-06-17 12:26:04,957 managers 14816 17900 Validation errors: []
+INFO 2025-06-17 12:26:04,957 managers 14816 17900 === VALIDATION END ===
+INFO 2025-06-17 12:26:04,957 managers 14816 17900 === GRADE CALCULATION START ===
+INFO 2025-06-17 12:26:04,957 managers 14816 17900 Base value: 26.0
+INFO 2025-06-17 12:26:04,958 managers 14816 17900 Input rates structure: {'Vice Chairman': {'vertical': 91, 'horizontal_intervals': {'LD_to_LQ': 50, 'LQ_to_M': 14, 'M_to_UQ': 79, 'UQ_to_UD': 52}}, 'Director': {'vertical': 15, 'horizontal_intervals': {'LD_to_LQ': 50, 'LQ_to_M': 14, 'M_to_UQ': 79, 'UQ_to_UD': 52}}, 'HOD': {'vertical': 4, 'horizontal_intervals': {'LD_to_LQ': 50, 'LQ_to_M': 14, 'M_to_UQ': 79, 'UQ_to_UD': 52}}, 'Manager': {'vertical': 40, 'horizontal_intervals': {'LD_to_LQ': 50, 'LQ_to_M': 14, 'M_to_UQ': 79, 'UQ_to_UD': 52}}, 'Senior Specialist': {'vertical': 26, 'horizontal_intervals': {'LD_to_LQ': 50, 'LQ_to_M': 14, 'M_to_UQ': 79, 'UQ_to_UD': 52}}, 'Specialist': {'vertical': 9, 'horizontal_intervals': {'LD_to_LQ': 50, 'LQ_to_M': 14, 'M_to_UQ': 79, 'UQ_to_UD': 52}}, 'Junior Specialist': {'vertical': 23, 'horizontal_intervals': {'LD_to_LQ': 50, 'LQ_to_M': 14, 'M_to_UQ': 79, 'UQ_to_UD': 52}}, 'Blue Colar ': {'vertical': 11, 'horizontal_intervals': {'LD_to_LQ': 50, 'LQ_to_M': 14, 'M_to_UQ': 79, 'UQ_to_UD': 52}}, 'Blue Colar (GEO)': {'vertical': None, 'horizontal_intervals': {'LD_to_LQ': 50, 'LQ_to_M': 14, 'M_to_UQ': 79, 'UQ_to_UD': 52}}}
+INFO 2025-06-17 12:26:04,959 managers 14816 17900 Positions order: [('Vice Chairman', 1), ('Director', 2), ('HOD', 3), ('Manager', 4), ('Senior Specialist', 5), ('Specialist', 6), ('Junior Specialist', 7), ('Blue Colar ', 8), ('Blue Colar (GEO)', 9)]
+INFO 2025-06-17 12:26:04,960 managers 14816 17900 
+--- Processing Position 1: Blue Colar (GEO) (index 8) ---
+INFO 2025-06-17 12:26:04,960 managers 14816 17900 BASE POSITION: Blue Colar (GEO) LD = 26.0 (base value)
+INFO 2025-06-17 12:26:04,960 managers 14816 17900 Final grades for Blue Colar (GEO): LD=26, LQ=39, M=44, UQ=80, UD=121
+INFO 2025-06-17 12:26:04,961 managers 14816 17900 
+--- Processing Position 2: Blue Colar  (index 7) ---
+INFO 2025-06-17 12:26:04,961 managers 14816 17900 Vertical rate for Blue Colar : 11%
+INFO 2025-06-17 12:26:05,474 managers 14816 17900   Lower position LD: 26
+INFO 2025-06-17 12:26:05,475 managers 14816 17900   Vertical rate: 11%
+INFO 2025-06-17 12:26:05,475 managers 14816 17900   Calculated LD: 26 × (1 + 11/100) = 28.86
+INFO 2025-06-17 12:26:05,476 managers 14816 17900 Final grades for Blue Colar : LD=29, LQ=43, M=49, UQ=88, UD=134
+INFO 2025-06-17 12:26:05,476 managers 14816 17900 
+--- Processing Position 3: Junior Specialist (index 6) ---
+INFO 2025-06-17 12:26:05,476 managers 14816 17900 Vertical rate for Junior Specialist: 23%
+INFO 2025-06-17 12:26:05,488 managers 14816 17900   Lower position LD: 29
+INFO 2025-06-17 12:26:05,488 managers 14816 17900   Vertical rate: 23%
+INFO 2025-06-17 12:26:05,489 managers 14816 17900   Calculated LD: 29 × (1 + 23/100) = 35.67
+INFO 2025-06-17 12:26:05,489 managers 14816 17900 Final grades for Junior Specialist: LD=36, LQ=54, M=61, UQ=109, UD=166
+INFO 2025-06-17 12:26:05,490 managers 14816 17900 
+--- Processing Position 4: Specialist (index 5) ---
+INFO 2025-06-17 12:26:05,490 managers 14816 17900 Vertical rate for Specialist: 9%
+INFO 2025-06-17 12:26:05,497 managers 14816 17900   Lower position LD: 36
+INFO 2025-06-17 12:26:05,497 managers 14816 17900   Vertical rate: 9%
+INFO 2025-06-17 12:26:05,497 managers 14816 17900   Calculated LD: 36 × (1 + 9/100) = 39.24
+INFO 2025-06-17 12:26:05,497 managers 14816 17900 Final grades for Specialist: LD=39, LQ=59, M=67, UQ=120, UD=183
+INFO 2025-06-17 12:26:05,498 managers 14816 17900 
+--- Processing Position 5: Senior Specialist (index 4) ---
+INFO 2025-06-17 12:26:05,498 managers 14816 17900 Vertical rate for Senior Specialist: 26%
+INFO 2025-06-17 12:26:05,506 managers 14816 17900   Lower position LD: 39
+INFO 2025-06-17 12:26:05,506 managers 14816 17900   Vertical rate: 26%
+INFO 2025-06-17 12:26:05,506 managers 14816 17900   Calculated LD: 39 × (1 + 26/100) = 49.14
+INFO 2025-06-17 12:26:05,507 managers 14816 17900 Final grades for Senior Specialist: LD=49, LQ=74, M=84, UQ=150, UD=229
+INFO 2025-06-17 12:26:05,507 managers 14816 17900 
+--- Processing Position 6: Manager (index 3) ---
+INFO 2025-06-17 12:26:05,507 managers 14816 17900 Vertical rate for Manager: 40%
+INFO 2025-06-17 12:26:05,513 managers 14816 17900   Lower position LD: 49
+INFO 2025-06-17 12:26:05,513 managers 14816 17900   Vertical rate: 40%
+INFO 2025-06-17 12:26:05,513 managers 14816 17900   Calculated LD: 49 × (1 + 40/100) = 68.6
+INFO 2025-06-17 12:26:05,514 managers 14816 17900 Final grades for Manager: LD=69, LQ=103, M=117, UQ=210, UD=319
+INFO 2025-06-17 12:26:05,514 managers 14816 17900 
+--- Processing Position 7: HOD (index 2) ---
+INFO 2025-06-17 12:26:05,514 managers 14816 17900 Vertical rate for HOD: 4%
+INFO 2025-06-17 12:26:05,521 managers 14816 17900   Lower position LD: 69
+INFO 2025-06-17 12:26:05,521 managers 14816 17900   Vertical rate: 4%
+INFO 2025-06-17 12:26:05,522 managers 14816 17900   Calculated LD: 69 × (1 + 4/100) = 71.76
+INFO 2025-06-17 12:26:05,522 managers 14816 17900 Final grades for HOD: LD=72, LQ=108, M=123, UQ=220, UD=334
+INFO 2025-06-17 12:26:05,522 managers 14816 17900 
+--- Processing Position 8: Director (index 1) ---
+INFO 2025-06-17 12:26:05,522 managers 14816 17900 Vertical rate for Director: 15%
+INFO 2025-06-17 12:26:05,527 managers 14816 17900   Lower position LD: 72
+INFO 2025-06-17 12:26:05,527 managers 14816 17900   Vertical rate: 15%
+INFO 2025-06-17 12:26:05,527 managers 14816 17900   Calculated LD: 72 × (1 + 15/100) = 82.80
+INFO 2025-06-17 12:26:05,527 managers 14816 17900 Final grades for Director: LD=83, LQ=124, M=142, UQ=253, UD=385
+INFO 2025-06-17 12:26:05,528 managers 14816 17900 
+--- Processing Position 9: Vice Chairman (index 0) ---
+INFO 2025-06-17 12:26:05,528 managers 14816 17900 Vertical rate for Vice Chairman: 91%
+INFO 2025-06-17 12:26:05,533 managers 14816 17900   Lower position LD: 83
+INFO 2025-06-17 12:26:05,534 managers 14816 17900   Vertical rate: 91%
+INFO 2025-06-17 12:26:05,534 managers 14816 17900   Calculated LD: 83 × (1 + 91/100) = 158.53
+INFO 2025-06-17 12:26:05,534 managers 14816 17900 Final grades for Vice Chairman: LD=159, LQ=238, M=271, UQ=485, UD=738
+INFO 2025-06-17 12:26:05,535 managers 14816 17900 === CALCULATION COMPLETE ===
+INFO 2025-06-17 12:26:06,688 views 14816 17900 === SAVE DRAFT START ===
+INFO 2025-06-17 12:26:06,697 serializers 14816 17900 === DETAIL SERIALIZER for Scenario 6/17/2025 12:26:06 PM ===
+INFO 2025-06-17 12:26:06,698 serializers 14816 17900 DETAIL: Extracted vertical inputs: {'Vice Chairman': 91.0, 'Director': 15.0, 'HOD': 4.0, 'Manager': 40.0, 'Senior Specialist': 26.0, 'Specialist': 9.0, 'Junior Specialist': 23.0, 'Blue Colar ': 11.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-17 12:26:06,698 serializers 14816 17900 DETAIL: Global horizontal intervals: {'LD_to_LQ': 50.0, 'LQ_to_M': 14.0, 'M_to_UQ': 79.0, 'UQ_to_UD': 52.0}
+INFO 2025-06-17 12:26:06,699 serializers 14816 17900 DETAIL: Final result input data:
+INFO 2025-06-17 12:26:06,699 serializers 14816 17900   positionVerticalInputs: {'Vice Chairman': 91.0, 'Director': 15.0, 'HOD': 4.0, 'Manager': 40.0, 'Senior Specialist': 26.0, 'Specialist': 9.0, 'Junior Specialist': 23.0, 'Blue Colar ': 11.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-17 12:26:06,700 serializers 14816 17900   inputRates preserved: True
+INFO 2025-06-17 12:26:06,701 serializers 14816 17900 === DETAIL SERIALIZER END ===
+INFO 2025-06-17 12:26:06,780 serializers 14816 17900 === LIST SERIALIZER for Scenario 6/17/2025 12:26:06 PM ===
+INFO 2025-06-17 12:26:06,780 serializers 14816 17900 LIST: Extracted vertical inputs: {'Vice Chairman': 91.0, 'Director': 15.0, 'HOD': 4.0, 'Manager': 40.0, 'Senior Specialist': 26.0, 'Specialist': 9.0, 'Junior Specialist': 23.0, 'Blue Colar ': 11.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-17 12:26:06,781 serializers 14816 17900 LIST: Global horizontal intervals: {'LD_to_LQ': 50.0, 'LQ_to_M': 14.0, 'M_to_UQ': 79.0, 'UQ_to_UD': 52.0}
+INFO 2025-06-17 12:26:06,782 serializers 14816 17900 === LIST SERIALIZER for Scenario 6/17/2025 12:14:48 PM ===
+INFO 2025-06-17 12:26:06,782 serializers 14816 17900 LIST: Extracted vertical inputs: {'Vice Chairman': 16.0, 'Director': 18.0, 'HOD': 4.0, 'Manager': 22.0, 'Senior Specialist': 8.0, 'Specialist': 83.0, 'Junior Specialist': 16.0, 'Blue Colar ': 13.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-17 12:26:06,783 serializers 14816 17900 LIST: Global horizontal intervals: {'LD_to_LQ': 46.0, 'LQ_to_M': 20.0, 'M_to_UQ': 37.0, 'UQ_to_UD': 70.0}
+INFO 2025-06-17 12:26:06,783 serializers 14816 17900 === LIST SERIALIZER for Scenario 6/17/2025 12:13:24 PM ===
+INFO 2025-06-17 12:26:06,784 serializers 14816 17900 LIST: Extracted vertical inputs: {'Vice Chairman': 2.0, 'Director': 49.0, 'HOD': 50.0, 'Manager': 25.0, 'Senior Specialist': 41.0, 'Specialist': 14.0, 'Junior Specialist': 33.0, 'Blue Colar ': 30.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-17 12:26:06,784 serializers 14816 17900 LIST: Global horizontal intervals: {'LD_to_LQ': 89.0, 'LQ_to_M': 16.0, 'M_to_UQ': 44.0, 'UQ_to_UD': 70.0}
+INFO 2025-06-17 12:26:06,785 serializers 14816 17900 === LIST SERIALIZER for Scenario 6/13/2025 4:04:49 PM ===
+INFO 2025-06-17 12:26:06,786 serializers 14816 17900 LIST: Extracted vertical inputs: {'Vice Chairman': 50.0, 'Director': 68.0, 'HOD': 49.0, 'Manager': 55.0, 'Senior Specialist': 97.0, 'Specialist': 32.0, 'Junior Specialist': 68.0, 'Blue Colar ': 42.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-17 12:26:06,787 serializers 14816 17900 LIST: Global horizontal intervals: {'LD_to_LQ': 75.0, 'LQ_to_M': 79.0, 'M_to_UQ': 20.0, 'UQ_to_UD': 39.0}
+INFO 2025-06-17 12:26:06,787 serializers 14816 17900 === LIST SERIALIZER for Scenario 6/13/2025 4:04:39 PM ===
+INFO 2025-06-17 12:26:06,788 serializers 14816 17900 LIST: Extracted vertical inputs: {'Vice Chairman': 37.0, 'Director': 36.0, 'HOD': 58.0, 'Manager': 93.0, 'Senior Specialist': 37.0, 'Specialist': 21.0, 'Junior Specialist': 96.0, 'Blue Colar ': 74.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-17 12:26:06,788 serializers 14816 17900 LIST: Global horizontal intervals: {'LD_to_LQ': 97.0, 'LQ_to_M': 96.0, 'M_to_UQ': 0.0, 'UQ_to_UD': 44.0}
+INFO 2025-06-17 12:26:08,540 serializers 14816 17900 === DETAIL SERIALIZER for Scenario 6/17/2025 12:26:06 PM ===
+INFO 2025-06-17 12:26:08,540 serializers 14816 17900 DETAIL: Extracted vertical inputs: {'Vice Chairman': 91.0, 'Director': 15.0, 'HOD': 4.0, 'Manager': 40.0, 'Senior Specialist': 26.0, 'Specialist': 9.0, 'Junior Specialist': 23.0, 'Blue Colar ': 11.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-17 12:26:08,541 serializers 14816 17900 DETAIL: Global horizontal intervals: {'LD_to_LQ': 50.0, 'LQ_to_M': 14.0, 'M_to_UQ': 79.0, 'UQ_to_UD': 52.0}
+INFO 2025-06-17 12:26:08,541 serializers 14816 17900 DETAIL: Final result input data:
+INFO 2025-06-17 12:26:08,542 serializers 14816 17900   positionVerticalInputs: {'Vice Chairman': 91.0, 'Director': 15.0, 'HOD': 4.0, 'Manager': 40.0, 'Senior Specialist': 26.0, 'Specialist': 9.0, 'Junior Specialist': 23.0, 'Blue Colar ': 11.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-17 12:26:08,543 serializers 14816 17900   inputRates preserved: True
+INFO 2025-06-17 12:26:08,543 serializers 14816 17900 === DETAIL SERIALIZER END ===
+INFO 2025-06-17 12:26:15,825 serializers 14816 17900 === DETAIL SERIALIZER for Scenario 6/17/2025 12:14:48 PM ===
+INFO 2025-06-17 12:26:15,826 serializers 14816 17900 DETAIL: Extracted vertical inputs: {'Vice Chairman': 16.0, 'Director': 18.0, 'HOD': 4.0, 'Manager': 22.0, 'Senior Specialist': 8.0, 'Specialist': 83.0, 'Junior Specialist': 16.0, 'Blue Colar ': 13.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-17 12:26:15,827 serializers 14816 17900 DETAIL: Global horizontal intervals: {'LD_to_LQ': 46.0, 'LQ_to_M': 20.0, 'M_to_UQ': 37.0, 'UQ_to_UD': 70.0}
+INFO 2025-06-17 12:26:15,827 serializers 14816 17900 DETAIL: Final result input data:
+INFO 2025-06-17 12:26:15,828 serializers 14816 17900   positionVerticalInputs: {'Vice Chairman': 16.0, 'Director': 18.0, 'HOD': 4.0, 'Manager': 22.0, 'Senior Specialist': 8.0, 'Specialist': 83.0, 'Junior Specialist': 16.0, 'Blue Colar ': 13.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-17 12:26:15,828 serializers 14816 17900   inputRates preserved: True
+INFO 2025-06-17 12:26:15,828 serializers 14816 17900 === DETAIL SERIALIZER END ===
+INFO 2025-06-17 12:43:39,756 serializers 14816 26520 === LIST SERIALIZER for Scenario 6/17/2025 12:26:06 PM ===
+INFO 2025-06-17 12:43:39,758 serializers 14816 26520 LIST: Extracted vertical inputs: {'Vice Chairman': 91.0, 'Director': 15.0, 'HOD': 4.0, 'Manager': 40.0, 'Senior Specialist': 26.0, 'Specialist': 9.0, 'Junior Specialist': 23.0, 'Blue Colar ': 11.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-17 12:43:39,758 serializers 14816 26520 LIST: Global horizontal intervals: {'LD_to_LQ': 50.0, 'LQ_to_M': 14.0, 'M_to_UQ': 79.0, 'UQ_to_UD': 52.0}
+INFO 2025-06-17 12:43:39,759 serializers 14816 26520 === LIST SERIALIZER for Scenario 6/17/2025 12:14:48 PM ===
+INFO 2025-06-17 12:43:39,759 serializers 14816 26520 LIST: Extracted vertical inputs: {'Vice Chairman': 16.0, 'Director': 18.0, 'HOD': 4.0, 'Manager': 22.0, 'Senior Specialist': 8.0, 'Specialist': 83.0, 'Junior Specialist': 16.0, 'Blue Colar ': 13.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-17 12:43:39,760 serializers 14816 26520 LIST: Global horizontal intervals: {'LD_to_LQ': 46.0, 'LQ_to_M': 20.0, 'M_to_UQ': 37.0, 'UQ_to_UD': 70.0}
+INFO 2025-06-17 12:43:39,760 serializers 14816 26520 === LIST SERIALIZER for Scenario 6/17/2025 12:13:24 PM ===
+INFO 2025-06-17 12:43:39,761 serializers 14816 26520 LIST: Extracted vertical inputs: {'Vice Chairman': 2.0, 'Director': 49.0, 'HOD': 50.0, 'Manager': 25.0, 'Senior Specialist': 41.0, 'Specialist': 14.0, 'Junior Specialist': 33.0, 'Blue Colar ': 30.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-17 12:43:39,761 serializers 14816 26520 LIST: Global horizontal intervals: {'LD_to_LQ': 89.0, 'LQ_to_M': 16.0, 'M_to_UQ': 44.0, 'UQ_to_UD': 70.0}
+INFO 2025-06-17 12:43:39,761 serializers 14816 26520 === LIST SERIALIZER for Scenario 6/13/2025 4:08:02 PM ===
+INFO 2025-06-17 12:43:39,762 serializers 14816 26520 LIST: Extracted vertical inputs: {'Vice Chairman': 67.0, 'Director': 38.0, 'HOD': 56.0, 'Manager': 77.0, 'Senior Specialist': 97.0, 'Specialist': 87.0, 'Junior Specialist': 97.0, 'Blue Colar ': 15.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-17 12:43:39,762 serializers 14816 26520 LIST: Global horizontal intervals: {'LD_to_LQ': 98.0, 'LQ_to_M': 72.0, 'M_to_UQ': 60.0, 'UQ_to_UD': 43.0}
+INFO 2025-06-17 12:43:39,763 serializers 14816 26520 === LIST SERIALIZER for Scenario 6/13/2025 4:04:49 PM ===
+INFO 2025-06-17 12:43:39,763 serializers 14816 26520 LIST: Extracted vertical inputs: {'Vice Chairman': 50.0, 'Director': 68.0, 'HOD': 49.0, 'Manager': 55.0, 'Senior Specialist': 97.0, 'Specialist': 32.0, 'Junior Specialist': 68.0, 'Blue Colar ': 42.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-17 12:43:39,763 serializers 14816 26520 LIST: Global horizontal intervals: {'LD_to_LQ': 75.0, 'LQ_to_M': 79.0, 'M_to_UQ': 20.0, 'UQ_to_UD': 39.0}
+INFO 2025-06-17 12:43:39,764 serializers 14816 26520 === LIST SERIALIZER for Scenario 6/13/2025 4:04:39 PM ===
+INFO 2025-06-17 12:43:39,764 serializers 14816 26520 LIST: Extracted vertical inputs: {'Vice Chairman': 37.0, 'Director': 36.0, 'HOD': 58.0, 'Manager': 93.0, 'Senior Specialist': 37.0, 'Specialist': 21.0, 'Junior Specialist': 96.0, 'Blue Colar ': 74.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-17 12:43:39,764 serializers 14816 26520 LIST: Global horizontal intervals: {'LD_to_LQ': 97.0, 'LQ_to_M': 96.0, 'M_to_UQ': 0.0, 'UQ_to_UD': 44.0}
+INFO 2025-06-17 12:43:39,765 serializers 14816 26520 === LIST SERIALIZER for Scenario 6/13/2025 3:59:44 PM ===
+INFO 2025-06-17 12:43:39,765 serializers 14816 26520 LIST: Extracted vertical inputs: {'Vice Chairman': 98.0, 'Director': 27.0, 'HOD': 18.0, 'Manager': 68.0, 'Senior Specialist': 11.0, 'Specialist': 54.0, 'Junior Specialist': 42.0, 'Blue Colar ': 43.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-17 12:43:39,765 serializers 14816 26520 LIST: Global horizontal intervals: {'LD_to_LQ': 5.0, 'LQ_to_M': 18.0, 'M_to_UQ': 76.0, 'UQ_to_UD': 74.0}
+INFO 2025-06-17 12:44:05,839 serializers 14816 26520 === DETAIL SERIALIZER for Scenario 6/13/2025 4:08:02 PM ===
+INFO 2025-06-17 12:44:05,839 serializers 14816 26520 DETAIL: Extracted vertical inputs: {'Vice Chairman': 67.0, 'Director': 38.0, 'HOD': 56.0, 'Manager': 77.0, 'Senior Specialist': 97.0, 'Specialist': 87.0, 'Junior Specialist': 97.0, 'Blue Colar ': 15.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-17 12:44:05,840 serializers 14816 26520 DETAIL: Global horizontal intervals: {'LD_to_LQ': 98.0, 'LQ_to_M': 72.0, 'M_to_UQ': 60.0, 'UQ_to_UD': 43.0}
+INFO 2025-06-17 12:44:05,840 serializers 14816 26520 DETAIL: Final result input data:
+INFO 2025-06-17 12:44:05,840 serializers 14816 26520   positionVerticalInputs: {'Vice Chairman': 67.0, 'Director': 38.0, 'HOD': 56.0, 'Manager': 77.0, 'Senior Specialist': 97.0, 'Specialist': 87.0, 'Junior Specialist': 97.0, 'Blue Colar ': 15.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-17 12:44:05,840 serializers 14816 26520   inputRates preserved: True
+INFO 2025-06-17 12:44:05,840 serializers 14816 26520 === DETAIL SERIALIZER END ===
+INFO 2025-06-17 12:44:21,504 serializers 14816 26520 === DETAIL SERIALIZER for Scenario 6/13/2025 4:08:02 PM ===
+INFO 2025-06-17 12:44:21,505 serializers 14816 26520 DETAIL: Extracted vertical inputs: {'Vice Chairman': 67.0, 'Director': 38.0, 'HOD': 56.0, 'Manager': 77.0, 'Senior Specialist': 97.0, 'Specialist': 87.0, 'Junior Specialist': 97.0, 'Blue Colar ': 15.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-17 12:44:21,505 serializers 14816 26520 DETAIL: Global horizontal intervals: {'LD_to_LQ': 98.0, 'LQ_to_M': 72.0, 'M_to_UQ': 60.0, 'UQ_to_UD': 43.0}
+INFO 2025-06-17 12:44:21,505 serializers 14816 26520 DETAIL: Final result input data:
+INFO 2025-06-17 12:44:21,505 serializers 14816 26520   positionVerticalInputs: {'Vice Chairman': 67.0, 'Director': 38.0, 'HOD': 56.0, 'Manager': 77.0, 'Senior Specialist': 97.0, 'Specialist': 87.0, 'Junior Specialist': 97.0, 'Blue Colar ': 15.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-17 12:44:21,506 serializers 14816 26520   inputRates preserved: True
+INFO 2025-06-17 12:44:21,506 serializers 14816 26520 === DETAIL SERIALIZER END ===
+INFO 2025-06-17 12:44:35,231 managers 14816 27476 Creating current structure from DB...
+INFO 2025-06-17 12:44:35,235 managers 14816 27476 Position groups order (ASC): [('VC', 1), ('Director', 2), ('HOD', 3), ('Manager', 4), ('Senior Specialist', 5), ('Specialist', 6), ('Junior Specialist', 7), ('Blue Colar ', 8), ('Blue Colar (GEO)', 9)]
+INFO 2025-06-17 12:44:35,236 managers 14816 27476 Total position groups found: 9
+INFO 2025-06-17 12:44:35,237 managers 14816 27476 Position: Vice Chairman (level 1)
+INFO 2025-06-17 12:44:35,238 managers 14816 27476 Position: Director (level 2)
+INFO 2025-06-17 12:44:35,238 managers 14816 27476 Position: HOD (level 3)
+INFO 2025-06-17 12:44:35,238 managers 14816 27476 Position: Manager (level 4)
+INFO 2025-06-17 12:44:35,238 managers 14816 27476 Position: Senior Specialist (level 5)
+INFO 2025-06-17 12:44:35,238 managers 14816 27476 Position: Specialist (level 6)
+INFO 2025-06-17 12:44:35,238 managers 14816 27476 Position: Junior Specialist (level 7)
+INFO 2025-06-17 12:44:35,239 managers 14816 27476 Position: Blue Colar  (level 8)
+INFO 2025-06-17 12:44:35,239 managers 14816 27476 Position: Blue Colar (GEO) (level 9)
+INFO 2025-06-17 12:44:35,243 managers 14816 27476 Found current scenario: Scenario 6/13/2025 4:08:02 PM
+INFO 2025-06-17 12:44:35,243 managers 14816 27476 Current structure grade order: ['Vice Chairman', 'Director', 'HOD', 'Manager', 'Senior Specialist', 'Specialist', 'Junior Specialist', 'Blue Colar ', 'Blue Colar (GEO)']
+INFO 2025-06-17 12:44:35,244 managers 14816 27476 Base value position: Blue Colar (GEO) (last = lowest hierarchy)
