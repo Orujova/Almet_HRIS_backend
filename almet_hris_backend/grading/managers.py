@@ -1,5 +1,4 @@
-# grading/managers.py - FIXED: Removed competitiveness/riskLevel, Enhanced validation
-
+# grading/managers.py - FIXED: Enhanced current structure with proper input data
 from django.db import models
 from django.utils import timezone
 from decimal import Decimal
@@ -8,7 +7,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 class SalaryCalculationManager:
-    """Manager for salary calculations with FIXED vertical logic"""
+    """Manager for salary calculations with FIXED current structure data"""
     
     @staticmethod
     def get_position_groups_from_db():
@@ -26,7 +25,7 @@ class SalaryCalculationManager:
     
     @staticmethod
     def create_current_structure_from_db():
-        """Create current structure data from database - ENHANCED validation"""
+        """FIXED: Create current structure data with proper input values for comparison"""
         from .models import SalaryGrade, SalaryScenario
         from api.models import PositionGroup
         
@@ -39,11 +38,7 @@ class SalaryCalculationManager:
             logger.error("No position groups found for current structure")
             return None
         
-        # Log the order for debugging
-        for pos in position_groups:
-            logger.info(f"Position: {pos.get_name_display()} (level {pos.hierarchy_level})")
-        
-        # Try to get current scenario first
+        # Try to get current scenario first for input data
         try:
             current_scenario = SalaryScenario.objects.get(status='CURRENT')
             logger.info(f"Found current scenario: {current_scenario.name}")
@@ -56,31 +51,37 @@ class SalaryCalculationManager:
                 grade_name = pos_group.get_name_display()
                 grade_order.append(grade_name)
                 
+                # FIXED: Extract both calculated and input data
                 if (current_scenario.calculated_grades and 
                     grade_name in current_scenario.calculated_grades):
                     grade_data = current_scenario.calculated_grades[grade_name]
                     
-                    # ENHANCED: Validate grade data structure
+                    # ENHANCED: Get input data from scenario for comparison
+                    input_data = current_scenario.input_rates.get(grade_name, {}) if current_scenario.input_rates else {}
+                    
                     if isinstance(grade_data, dict):
                         grades_data[grade_name] = {
+                            # Calculated values
                             'LD': grade_data.get('LD', 0) or 0,
                             'LQ': grade_data.get('LQ', 0) or 0, 
                             'M': grade_data.get('M', 0) or 0,
                             'UQ': grade_data.get('UQ', 0) or 0,
                             'UD': grade_data.get('UD', 0) or 0,
-                            'vertical': 0,
-                            'horizontal_intervals': {
-                                'LD_to_LQ': 0,
-                                'LQ_to_M': 0,
-                                'M_to_UQ': 0,
-                                'UQ_to_UD': 0
+                            
+                            # FIXED: Add input data for comparison (if available)
+                            'vertical': input_data.get('vertical') if input_data else None,
+                            'verticalInput': input_data.get('vertical') if input_data else None,
+                            'horizontal_intervals': input_data.get('horizontal_intervals', {
+                                'LD_to_LQ': 0, 'LQ_to_M': 0, 'M_to_UQ': 0, 'UQ_to_UD': 0
+                            }) if input_data else {
+                                'LD_to_LQ': 0, 'LQ_to_M': 0, 'M_to_UQ': 0, 'UQ_to_UD': 0
                             }
                         }
                     else:
                         # Fallback for invalid grade data
                         grades_data[grade_name] = {
                             'LD': 0, 'LQ': 0, 'M': 0, 'UQ': 0, 'UD': 0,
-                            'vertical': 0,
+                            'vertical': None, 'verticalInput': None,
                             'horizontal_intervals': {
                                 'LD_to_LQ': 0, 'LQ_to_M': 0, 'M_to_UQ': 0, 'UQ_to_UD': 0
                             }
@@ -89,7 +90,7 @@ class SalaryCalculationManager:
                     # No data for this position
                     grades_data[grade_name] = {
                         'LD': 0, 'LQ': 0, 'M': 0, 'UQ': 0, 'UD': 0,
-                        'vertical': 0,
+                        'vertical': None, 'verticalInput': None,
                         'horizontal_intervals': {
                             'LD_to_LQ': 0, 'LQ_to_M': 0, 'M_to_UQ': 0, 'UQ_to_UD': 0
                         }
@@ -98,11 +99,36 @@ class SalaryCalculationManager:
             logger.info(f"Current structure grade order: {grade_order}")
             logger.info(f"Base value position: {grade_order[-1]} (last = lowest hierarchy)")
             
-            # ENHANCED: Validate averages
+            # FIXED: Extract global horizontal intervals from scenario
+            global_horizontal_intervals = {
+                'LD_to_LQ': 0, 'LQ_to_M': 0, 'M_to_UQ': 0, 'UQ_to_UD': 0
+            }
+            
+            if current_scenario.input_rates:
+                # Get global intervals from first position with intervals
+                for grade_name in grade_order:
+                    grade_input_data = current_scenario.input_rates.get(grade_name, {})
+                    if isinstance(grade_input_data, dict):
+                        intervals = grade_input_data.get('horizontal_intervals', {})
+                        if intervals and isinstance(intervals, dict) and any(intervals.values()):
+                            global_horizontal_intervals = intervals
+                            break
+            
+            # FIXED: Extract position vertical inputs for comparison
+            position_vertical_inputs = {}
+            if current_scenario.input_rates:
+                for grade_name in grade_order:
+                    grade_input_data = current_scenario.input_rates.get(grade_name, {})
+                    if isinstance(grade_input_data, dict):
+                        vertical_value = grade_input_data.get('vertical')
+                        position_vertical_inputs[grade_name] = vertical_value
+            
+            # Validate averages
             vertical_avg = float(current_scenario.vertical_avg) if current_scenario.vertical_avg else 0
             horizontal_avg = float(current_scenario.horizontal_avg) if current_scenario.horizontal_avg else 0
             base_value = float(current_scenario.base_value) if current_scenario.base_value else 0
             
+            # ENHANCED: Return current structure with input data for comparison
             return {
                 'id': 'current',
                 'name': 'Current Structure',
@@ -111,7 +137,26 @@ class SalaryCalculationManager:
                 'verticalAvg': vertical_avg,
                 'horizontalAvg': horizontal_avg,
                 'baseValue1': base_value,
-                'status': 'current'
+                'status': 'current',
+                
+                # FIXED: Add input data for comparison
+                'data': {
+                    'baseValue1': base_value,
+                    'gradeOrder': grade_order,
+                    'grades': grades_data,
+                    'globalHorizontalIntervals': global_horizontal_intervals,
+                    'verticalAvg': vertical_avg,
+                    'horizontalAvg': horizontal_avg,
+                    'positionVerticalInputs': position_vertical_inputs,
+                    'inputRates': current_scenario.input_rates or {},
+                    'hasCalculation': True,
+                    'isComplete': True
+                },
+                
+                # FIXED: Preserve original input data for comparison
+                'input_rates': current_scenario.input_rates or {},
+                'vertical_avg': vertical_avg,
+                'horizontal_avg': horizontal_avg
             }
             
         except SalaryScenario.DoesNotExist:
@@ -125,7 +170,7 @@ class SalaryCalculationManager:
                 grade_order.append(grade_name)
                 grades_data[grade_name] = {
                     'LD': 0, 'LQ': 0, 'M': 0, 'UQ': 0, 'UD': 0,
-                    'vertical': 0,
+                    'vertical': None, 'verticalInput': None,
                     'horizontal_intervals': {
                         'LD_to_LQ': 0, 'LQ_to_M': 0, 'M_to_UQ': 0, 'UQ_to_UD': 0
                     }
@@ -139,14 +184,27 @@ class SalaryCalculationManager:
                 'verticalAvg': 0.0,
                 'horizontalAvg': 0.0,
                 'baseValue1': 0,
-                'status': 'current'
+                'status': 'current',
+                'data': {
+                    'baseValue1': 0,
+                    'gradeOrder': grade_order,
+                    'grades': grades_data,
+                    'globalHorizontalIntervals': {'LD_to_LQ': 0, 'LQ_to_M': 0, 'M_to_UQ': 0, 'UQ_to_UD': 0},
+                    'verticalAvg': 0.0,
+                    'horizontalAvg': 0.0,
+                    'positionVerticalInputs': {},
+                    'inputRates': {},
+                    'hasCalculation': False,
+                    'isComplete': False
+                },
+                'input_rates': {},
+                'vertical_avg': 0.0,
+                'horizontal_avg': 0.0
             }
     
     @staticmethod
     def calculate_scenario_grades(base_value, input_rates, position_groups=None):
-        """
-        Calculate scenario grades with enhanced validation
-        """
+        """Calculate scenario grades with enhanced validation"""
         logger.info(f"=== GRADE CALCULATION START ===")
         logger.info(f"Base value: {base_value}")
         logger.info(f"Input rates structure: {input_rates}")
@@ -222,9 +280,7 @@ class SalaryCalculationManager:
     
     @staticmethod
     def _calculate_horizontal_grades_with_intervals(lower_decile, horizontal_intervals):
-        """
-        Calculate horizontal grades with 4 separate interval inputs - ENHANCED validation
-        """
+        """Calculate horizontal grades with 4 separate interval inputs"""
         ld = float(lower_decile)
         
         # Safe conversion function
@@ -269,7 +325,7 @@ class SalaryCalculationManager:
     
     @staticmethod
     def calculate_scenario_metrics(scenario_data, current_data):
-        """SIMPLIFIED: Basic metrics calculation (removed competitiveness/riskLevel)"""
+        """Basic metrics calculation"""
         if not scenario_data.get('grades') or not current_data.get('grades'):
             return {
                 'totalBudgetImpact': 0,
@@ -285,7 +341,6 @@ class SalaryCalculationManager:
             scenario_grade = scenario_data['grades'].get(grade_name, {})
             current_grade = current_data['grades'].get(grade_name, {})
             
-            # ENHANCED: Validate grade data
             scenario_median = 0
             current_median = 0
             
@@ -392,7 +447,7 @@ class SalaryCalculationManager:
     
     @staticmethod
     def validate_scenario_inputs(base_value, input_rates):
-        """ENHANCED: Validate scenario inputs with proper type checking"""
+        """Validate scenario inputs with proper type checking"""
         errors = []
         
         logger.info(f"=== VALIDATION START ===")
