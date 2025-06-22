@@ -1,19 +1,30 @@
-# api/admin.py
+# api/admin.py - FIXED: Complete version with all missing methods
 
 from django.contrib import admin
 from django.utils.html import format_html
 from django.utils import timezone
-from django.db import models
-from django.forms import TextInput, Textarea
+from django.urls import reverse
+from django.db.models import Count, Q
+from django.contrib.auth.admin import UserAdmin
+from django.contrib.auth.models import User
+from django.http import HttpResponse
+from django.shortcuts import redirect
+from django.contrib import messages
+from datetime import date, timedelta
+import csv
+
 from .models import (
     MicrosoftUser, Employee, BusinessFunction, Department, Unit, 
     JobFunction, PositionGroup, EmployeeTag, EmployeeStatus, 
-    EmployeeDocument, EmployeeActivity
+    EmployeeDocument, EmployeeActivity, VacantPosition, HeadcountSummary
 )
 
 # Custom admin styling
 class BaseModelAdmin(admin.ModelAdmin):
     """Base admin class with common styling"""
+    from django.db import models
+    from django.forms import TextInput, Textarea
+    
     formfield_overrides = {
         models.CharField: {'widget': TextInput(attrs={'size': '40'})},
         models.TextField: {'widget': Textarea(attrs={'rows': 4, 'cols': 60})},
@@ -39,402 +50,501 @@ class MicrosoftUserAdmin(BaseModelAdmin):
         return format_html('<span style="color: orange;">? Unknown</span>')
     token_status.short_description = 'Token Status'
 
+# Unregister default User admin and create enhanced version
+admin.site.unregister(User)
+
+@admin.register(User)
+class EnhancedUserAdmin(UserAdmin):
+    """Enhanced User admin with employee profile integration"""
+    list_display = ('username', 'email', 'first_name', 'last_name', 'employee_profile_link', 'is_staff', 'date_joined')
+    list_filter = ('is_staff', 'is_superuser', 'is_active', 'date_joined')
+    search_fields = ('username', 'first_name', 'last_name', 'email')
+    ordering = ('username',)
+    
+    def employee_profile_link(self, obj):
+        """Link to employee profile if exists"""
+        try:
+            employee = obj.employee_profile
+            url = reverse('admin:api_employee_change', args=[employee.id])
+            return format_html(
+                '<a href="{}" style="color: #417690;">View Profile</a>',
+                url
+            )
+        except:
+            return format_html('<span style="color: #999;">No Profile</span>')
+    employee_profile_link.short_description = 'Employee Profile'
+
+# Business Structure Admins
 @admin.register(BusinessFunction)
-class BusinessFunctionAdmin(BaseModelAdmin):
-    list_display = ('name', 'code', 'is_active', 'employee_count', 'created_at')
+class BusinessFunctionAdmin(admin.ModelAdmin):
+    list_display = ('code', 'name', 'employee_count', 'department_count', 'is_active', 'created_at')
     list_filter = ('is_active', 'created_at')
-    search_fields = ('name', 'code')
+    search_fields = ('name', 'code', 'description')
+    ordering = ('code', 'name')
     readonly_fields = ('created_at', 'updated_at')
-    list_editable = ('is_active',)
-    ordering = ('name',)
     
     def employee_count(self, obj):
-        count = obj.employees.count()
+        count = obj.employees.filter(status__affects_headcount=True).count()
         if count > 0:
+            url = reverse('admin:api_employee_changelist') + f'?business_function__id__exact={obj.id}'
             return format_html(
-                '<a href="/admin/api/employee/?business_function__id__exact={}" style="color: #417690; text-decoration: none;">{} employees</a>',
-                obj.id, count
+                '<a href="{}" style="color: #417690;">{} employees</a>',
+                url, count
             )
         return '0 employees'
-    employee_count.short_description = 'Employees'
+    employee_count.short_description = 'Active Employees'
+    
+    def department_count(self, obj):
+        count = obj.departments.filter(is_active=True).count()
+        if count > 0:
+            url = reverse('admin:api_department_changelist') + f'?business_function__id__exact={obj.id}'
+            return format_html(
+                '<a href="{}" style="color: #417690;">{} departments</a>',
+                url, count
+            )
+        return '0 departments'
+    department_count.short_description = 'Departments'
 
 @admin.register(Department)
-class DepartmentAdmin(BaseModelAdmin):
-    list_display = ('name', 'business_function', 'is_active', 'employee_count', 'created_at')
+class DepartmentAdmin(admin.ModelAdmin):
+    list_display = ('name', 'business_function', 'head_display', 'employee_count', 'unit_count', 'is_active')
     list_filter = ('business_function', 'is_active', 'created_at')
-    search_fields = ('name', 'business_function__name')
+    search_fields = ('name', 'business_function__name', 'business_function__code')
+    autocomplete_fields = ['head_of_department']
     readonly_fields = ('created_at', 'updated_at')
-    list_editable = ('is_active',)
-    ordering = ('business_function__name', 'name')
-    autocomplete_fields = ['business_function']
+    
+    
+    
+    def head_display(self, obj):
+        if obj.head_of_department:
+            url = reverse('admin:api_employee_change', args=[obj.head_of_department.id])
+            return format_html(
+                '<a href="{}" style="color: #417690;">{}</a>',
+                url, obj.head_of_department.full_name
+            )
+        return format_html('<span style="color: #999;">No Head</span>')
+    head_display.short_description = 'Department Head'
     
     def employee_count(self, obj):
-        count = obj.employees.count()
+        count = obj.employees.filter(status__affects_headcount=True).count()
         if count > 0:
+            url = reverse('admin:api_employee_changelist') + f'?department__id__exact={obj.id}'
             return format_html(
-                '<a href="/admin/api/employee/?department__id__exact={}" style="color: #417690; text-decoration: none;">{} employees</a>',
-                obj.id, count
+                '<a href="{}" style="color: #417690;">{} employees</a>',
+                url, count
             )
         return '0 employees'
-    employee_count.short_description = 'Employees'
+    employee_count.short_description = 'Active Employees'
+    
+    def unit_count(self, obj):
+        count = obj.units.filter(is_active=True).count()
+        if count > 0:
+            url = reverse('admin:api_unit_changelist') + f'?department__id__exact={obj.id}'
+            return format_html(
+                '<a href="{}" style="color: #417690;">{} units</a>',
+                url, count
+            )
+        return '0 units'
+    unit_count.short_description = 'Units'
 
 @admin.register(Unit)
-class UnitAdmin(BaseModelAdmin):
-    list_display = ('name', 'department', 'business_function', 'is_active', 'employee_count')
-    list_filter = ('department__business_function', 'department', 'is_active')
-    search_fields = ('name', 'department__name', 'department__business_function__name')
+class UnitAdmin(admin.ModelAdmin):
+    list_display = ( 'name', 'department', 'business_function_name', 'unit_head_display', 'employee_count', 'is_active')
+    list_filter = ('department__business_function', 'department', 'is_active', 'created_at')
+    search_fields = ('name',  'department__name', 'department__business_function__name')
+    ordering = ('department__business_function__code', 'department__name', 'name')
+    autocomplete_fields = ['unit_head']
     readonly_fields = ('created_at', 'updated_at')
-    list_editable = ('is_active',)
-    ordering = ('department__business_function__name', 'department__name', 'name')
-    autocomplete_fields = ['department']
     
-    def business_function(self, obj):
+   
+    
+    def business_function_name(self, obj):
         return obj.department.business_function.name
-    business_function.short_description = 'Business Function'
-    business_function.admin_order_field = 'department__business_function__name'
+    business_function_name.short_description = 'Business Function'
+    
+    def unit_head_display(self, obj):
+        if obj.unit_head:
+            url = reverse('admin:api_employee_change', args=[obj.unit_head.id])
+            return format_html(
+                '<a href="{}" style="color: #417690;">{}</a>',
+                url, obj.unit_head.full_name
+            )
+        return format_html('<span style="color: #999;">No Head</span>')
+    unit_head_display.short_description = 'Unit Head'
     
     def employee_count(self, obj):
-        count = obj.employees.count()
+        count = obj.employees.filter(status__affects_headcount=True).count()
         if count > 0:
+            url = reverse('admin:api_employee_changelist') + f'?unit__id__exact={obj.id}'
             return format_html(
-                '<a href="/admin/api/employee/?unit__id__exact={}" style="color: #417690; text-decoration: none;">{} employees</a>',
-                obj.id, count
+                '<a href="{}" style="color: #417690;">{} employees</a>',
+                url, count
             )
         return '0 employees'
-    employee_count.short_description = 'Employees'
+    employee_count.short_description = 'Active Employees'
 
 @admin.register(JobFunction)
-class JobFunctionAdmin(BaseModelAdmin):
-    list_display = ('name', 'is_active', 'employee_count', 'created_at')
+class JobFunctionAdmin(admin.ModelAdmin):
+    list_display = ('name', 'employee_count', 'is_active', 'created_at')
     list_filter = ('is_active', 'created_at')
-    search_fields = ('name',)
-    readonly_fields = ('created_at', 'updated_at')
-    list_editable = ('is_active',)
+    search_fields = ('name', 'description')
     ordering = ('name',)
+    readonly_fields = ('created_at', 'updated_at')
     
     def employee_count(self, obj):
-        count = obj.employees.count()
+        count = obj.employees.filter(status__affects_headcount=True).count()
         if count > 0:
+            url = reverse('admin:api_employee_changelist') + f'?job_function__id__exact={obj.id}'
             return format_html(
-                '<a href="/admin/api/employee/?job_function__id__exact={}" style="color: #417690; text-decoration: none;">{} employees</a>',
-                obj.id, count
+                '<a href="{}" style="color: #417690;">{} employees</a>',
+                url, count
             )
         return '0 employees'
-    employee_count.short_description = 'Employees'
+    employee_count.short_description = 'Active Employees'
 
 @admin.register(PositionGroup)
-class PositionGroupAdmin(BaseModelAdmin):
-    list_display = ('get_name_display', 'hierarchy_level', 'is_active', 'employee_count', 'hierarchy_badge')
-    list_filter = ('is_active', 'hierarchy_level')
-    search_fields = ('name',)
-    readonly_fields = ('created_at', 'updated_at')
-    list_editable = ('is_active', 'hierarchy_level')
-    ordering = ('hierarchy_level',)
-    
-    def hierarchy_badge(self, obj):
-        colors = {
-            1: '#8B0000',  # Dark red for VC
-            2: '#DC143C',  # Crimson for Director
-            3: '#FF6347',  # Tomato for Manager
-            4: '#FFA500',  # Orange for HOD
-            5: '#FFD700',  # Gold for Senior Specialist
-            6: '#9ACD32',  # Yellow-green for Specialist
-            7: '#32CD32',  # Lime green for Junior Specialist
-            8: '#808080',  # Gray for Blue Collar
-        }
-        color = colors.get(obj.hierarchy_level, '#6c757d')
-        return format_html(
-            '<span style="background-color: {}; color: white; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: bold;">Level {}</span>',
-            color, obj.hierarchy_level
-        )
-    hierarchy_badge.short_description = 'Level'
-    
-    def employee_count(self, obj):
-        count = obj.employees.count()
-        if count > 0:
-            return format_html(
-                '<a href="/admin/api/employee/?position_group__id__exact={}" style="color: #417690; text-decoration: none;">{} employees</a>',
-                obj.id, count
-            )
-        return '0 employees'
-    employee_count.short_description = 'Employees'
-
-@admin.register(EmployeeTag)
-class EmployeeTagAdmin(BaseModelAdmin):
-    list_display = ('name', 'tag_type', 'color_preview', 'color', 'is_active', 'employee_count')
-    list_filter = ('tag_type', 'is_active')
-    search_fields = ('name',)
-    readonly_fields = ('created_at', 'updated_at')
-    list_editable = ('is_active', 'color')
-    ordering = ('tag_type', 'name')
-    
-    def color_preview(self, obj):
-        return format_html(
-            '<div style="width: 20px; height: 20px; background-color: {}; border-radius: 50%; display: inline-block; border: 1px solid #ddd; margin-right: 5px;"></div>{}',
-            obj.color, obj.color
-        )
-    color_preview.short_description = 'Color'
-    
-    def employee_count(self, obj):
-        count = obj.employees.count()
-        if count > 0:
-            return format_html(
-                '<a href="/admin/api/employee/?tags__id__exact={}" style="color: #417690; text-decoration: none;">{} employees</a>',
-                obj.id, count
-            )
-        return '0 employees'
-    employee_count.short_description = 'Employees'
-
-@admin.register(EmployeeStatus)
-class EmployeeStatusAdmin(BaseModelAdmin):
-    list_display = ('name', 'color_preview', 'color', 'is_active', 'employee_count', 'created_at')
+class PositionGroupAdmin(admin.ModelAdmin):
+    list_display = ('hierarchy_display', 'name_display', 'grading_shorthand', 'employee_count', 'grading_levels_display', 'is_active')
     list_filter = ('is_active', 'created_at')
     search_fields = ('name',)
-    readonly_fields = ('created_at', 'updated_at')
-    list_editable = ('is_active', 'color')
-    ordering = ('name',)
+    ordering = ('hierarchy_level',)
+    readonly_fields = ('grading_shorthand', 'created_at', 'updated_at')
     
-    def color_preview(self, obj):
+    def hierarchy_display(self, obj):
+        colors = {1: '#8B0000', 2: '#DC143C', 3: '#FF6347', 4: '#FFA500', 
+                 5: '#FFD700', 6: '#9ACD32', 7: '#32CD32', 8: '#808080'}
+        color = colors.get(obj.hierarchy_level, '#6c757d')
         return format_html(
-            '<span style="background-color: {}; color: white; padding: 4px 12px; border-radius: 15px; font-weight: bold; font-size: 12px;">{}</span>',
-            obj.color, obj.name
+            '<span style="background: {}; color: white; padding: 4px 8px; border-radius: 12px; font-size: 12px; font-weight: bold;">Level {}</span>',
+            color, obj.hierarchy_level
         )
-    color_preview.short_description = 'Status Preview'
+    hierarchy_display.short_description = 'Hierarchy Level'
+    hierarchy_display.admin_order_field = 'hierarchy_level'
+    
+    def name_display(self, obj):
+        return obj.get_name_display()
+    name_display.short_description = 'Position Name'
+    name_display.admin_order_field = 'name'
+    
+    def grading_levels_display(self, obj):
+        levels = ['LD', 'LQ', 'M', 'UQ', 'UD']
+        level_badges = []
+        for level in levels:
+            level_badges.append(f'<span style="background: #e3f2fd; color: #1976d2; padding: 2px 6px; border-radius: 4px; font-size: 10px; margin-right: 2px;">{obj.grading_shorthand}_{level}</span>')
+        return format_html(''.join(level_badges))
+    grading_levels_display.short_description = 'Grading Levels'
+    
+    def employee_count(self, obj):
+        count = obj.employees.filter(status__affects_headcount=True).count()
+        if count > 0:
+            url = reverse('admin:api_employee_changelist') + f'?position_group__id__exact={obj.id}'
+            return format_html(
+                '<a href="{}" style="color: #417690;">{} employees</a>',
+                url, count
+            )
+        return '0 employees'
+    employee_count.short_description = 'Active Employees'
+
+@admin.register(EmployeeTag)
+class EmployeeTagAdmin(admin.ModelAdmin):
+    list_display = ('name', 'tag_type', 'color_display', 'employee_count', 'is_active', 'created_at')
+    list_filter = ('tag_type', 'is_active', 'created_at')
+    search_fields = ('name',)
+    ordering = ('tag_type', 'name')
+    
+    def color_display(self, obj):
+        return format_html(
+            '<div style="width: 20px; height: 20px; background-color: {}; border-radius: 3px; display: inline-block;"></div> {}',
+            obj.color, obj.color
+        )
+    color_display.short_description = 'Color'
+    
+    def employee_count(self, obj):
+        count = obj.employees.filter(status__affects_headcount=True).count()
+        if count > 0:
+            url = reverse('admin:api_employee_changelist') + f'?tags__id__exact={obj.id}'
+            return format_html(
+                '<a href="{}" style="color: #417690;">{} employees</a>',
+                url, count
+            )
+        return '0 employees'
+    employee_count.short_description = 'Tagged Employees'
+
+@admin.register(EmployeeStatus)
+class EmployeeStatusAdmin(admin.ModelAdmin):
+    list_display = ('name', 'status_type', 'color_display', 'affects_headcount', 'allows_org_chart', 'employee_count', 'is_active')
+    list_filter = ('status_type', 'affects_headcount', 'allows_org_chart', 'is_active', 'created_at')
+    search_fields = ('name',)
+    ordering = ('name',)
+    readonly_fields = ('created_at', 'updated_at')
+    
+    def color_display(self, obj):
+        return format_html(
+            '<div style="width: 20px; height: 20px; background-color: {}; border-radius: 3px; display: inline-block; margin-right: 8px;"></div><span style="font-family: monospace;">{}</span>',
+            obj.color, obj.color
+        )
+    color_display.short_description = 'Color'
     
     def employee_count(self, obj):
         count = obj.employees.count()
         if count > 0:
+            url = reverse('admin:api_employee_changelist') + f'?status__id__exact={obj.id}'
             return format_html(
-                '<a href="/admin/api/employee/?status__id__exact={}" style="color: #417690; text-decoration: none;">{} employees</a>',
-                obj.id, count
+                '<a href="{}" style="color: #417690;">{} employees</a>',
+                url, count
             )
         return '0 employees'
     employee_count.short_description = 'Employees'
 
+# Employee Document Inline
 class EmployeeDocumentInline(admin.TabularInline):
     model = EmployeeDocument
     extra = 0
-    readonly_fields = ('uploaded_at', 'uploaded_by', 'file_size', 'mime_type')
-    fields = ('name', 'document_type', 'file_path', 'file_size', 'mime_type', 'uploaded_at', 'uploaded_by')
-    can_delete = True
+    readonly_fields = ('uploaded_at', 'file_size', 'mime_type')
+    fields = ('name', 'document_type', 'file_path', 'file_size', 'uploaded_at')
 
+# Employee Activity Inline
 class EmployeeActivityInline(admin.TabularInline):
     model = EmployeeActivity
     extra = 0
-    readonly_fields = ('timestamp', 'performed_by', 'activity_type', 'description')
-    fields = ('activity_type', 'description', 'timestamp', 'performed_by')
-    ordering = ('-timestamp',)
-    max_num = 10  # Show only last 10 activities
+    readonly_fields = ('activity_type', 'description', 'performed_by', 'created_at')
+    fields = ('activity_type', 'description', 'performed_by', 'created_at')
+    can_delete = False
     
     def has_add_permission(self, request, obj=None):
-        return False  # Activities are created automatically
+        return False
 
+# Main Employee Admin
 @admin.register(Employee)
-class EmployeeAdmin(BaseModelAdmin):
+class EmployeeAdmin(admin.ModelAdmin):
     list_display = (
-        'employee_id', 'get_full_name', 'email', 'gender', 'department', 
-        'position_group', 'status_badge', 'contract_info', 'start_date', 
-        'years_of_service_display', 'is_visible_in_org_chart'
+        'employee_id', 'full_name_display', 'email_display', 'position_display', 
+        'business_function_display', 'status_display', 'grading_display', 
+        'line_manager_display', 'start_date', 'contract_status_display', 'is_visible_in_org_chart'
     )
     list_filter = (
-        'status', 'gender', 'business_function', 'department', 'position_group', 
-        'contract_duration', 'is_visible_in_org_chart', 'start_date', 'grade'
+        'status', 'business_function', 'department', 'position_group', 
+        'contract_duration', 'start_date', 'is_visible_in_org_chart', 'created_at'
     )
     search_fields = (
-        'employee_id', 'user__first_name', 'user__last_name', 
-        'user__email', 'job_title', 'full_name', 'phone'
+        'employee_id', 'full_name', 'user__email', 'user__first_name', 
+        'user__last_name', 'job_title', 'phone'
     )
-    readonly_fields = (
-        'full_name', 'status', 'current_status_display', 'years_of_service', 
-        'direct_reports_count', 'created_at', 'updated_at', 'created_by', 'updated_by'
-    )
-    list_editable = ('is_visible_in_org_chart',)
-    
-    autocomplete_fields = [
-        'user', 'business_function', 'department', 'unit', 
-        'job_function', 'position_group', 'line_manager', 'status'
-    ]
-    
-    fieldsets = (
-        ('Basic Information', {
-            'fields': (
-                'employee_id', 'user', 'full_name', 'date_of_birth', 
-                'gender', 'phone', 'address', 'emergency_contact', 'profile_image'
-            ),
-            'classes': ('wide',)
-        }),
-        ('Organizational Structure', {
-            'fields': (
-                'business_function', 'department', 'unit', 'job_function', 
-                'job_title', 'position_group', 'grade', 'line_manager'
-            ),
-            'classes': ('wide',)
-        }),
-        ('Employment & Contract', {
-            'fields': (
-                'start_date', 'end_date', 'contract_duration', 'contract_start_date'
-            ),
-            'classes': ('wide',)
-        }),
-        ('Status (Avtomatik)', {
-            'fields': ('status', 'current_status_display'),
-            'classes': ('wide',),
-            'description': 'Status avtomatik olaraq contract və tarix əsasında təyin edilir'
-        }),
-        ('Settings & Tags', {
-            'fields': ('is_visible_in_org_chart', 'tags', 'notes'),
-            'classes': ('wide',)
-        }),
-        ('Statistics', {
-            'fields': ('years_of_service', 'direct_reports_count'),
-            'classes': ('collapse',)
-        }),
-        ('Audit Information', {
-            'fields': ('created_at', 'updated_at', 'created_by', 'updated_by'),
-            'classes': ('collapse',)
-        }),
-    )
-    
+    ordering = ('employee_id',)
+    autocomplete_fields = ['user', 'line_manager']
     filter_horizontal = ('tags',)
+    readonly_fields = (
+        'full_name', 'contract_end_date', 'years_of_service_display', 
+        'direct_reports_count_display', 'created_at', 'updated_at'
+    )
     inlines = [EmployeeDocumentInline, EmployeeActivityInline]
     
-    actions = ['update_statuses', 'make_visible_in_org_chart', 'hide_from_org_chart']
+    def full_name_display(self, obj):
+        url = reverse('admin:api_employee_change', args=[obj.id])
+        return format_html(
+            '<a href="{}" style="color: #417690; font-weight: bold;">{}</a>',
+            url, obj.full_name
+        )
+    full_name_display.short_description = 'Name'
+    full_name_display.admin_order_field = 'full_name'
     
-    def get_full_name(self, obj):
-        return obj.full_name
-    get_full_name.short_description = 'Full Name'
-    get_full_name.admin_order_field = 'full_name'
-    
-    def email(self, obj):
-        return obj.user.email if obj.user else '-'
-    email.short_description = 'Email'
-    email.admin_order_field = 'user__email'
-    
-    def status_badge(self, obj):
-        if obj.status:
+    def email_display(self, obj):
+        if obj.user and obj.user.email:
             return format_html(
-                '<span style="background-color: {}; color: white; padding: 3px 8px; border-radius: 10px; font-size: 11px; font-weight: bold;">{}</span>',
-                obj.status.color, obj.status.name
+                '<a href="mailto:{}" style="color: #417690;">{}</a>',
+                obj.user.email, obj.user.email
             )
         return '-'
-    status_badge.short_description = 'Status'
-    status_badge.admin_order_field = 'status__name'
+    email_display.short_description = 'Email'
     
-    def contract_info(self, obj):
-        duration_display = obj.get_contract_duration_display()
-        if obj.contract_duration == 'PERMANENT':
-            color = '#28a745'
-        elif obj.contract_duration == '1_YEAR':
-            color = '#17a2b8'
-        else:
-            color = '#ffc107'
-        
+    def position_display(self, obj):
         return format_html(
-            '<span style="background-color: {}; color: white; padding: 2px 6px; border-radius: 8px; font-size: 10px;">{}</span>',
-            color, duration_display
+            '<div><strong>{}</strong><br><small style="color: #666;">{}</small></div>',
+            obj.job_title,
+            obj.position_group.get_name_display()
         )
-    contract_info.short_description = 'Contract'
-    contract_info.admin_order_field = 'contract_duration'
+    position_display.short_description = 'Position'
+    
+    def business_function_display(self, obj):
+        return format_html(
+            '<div><strong>{}</strong><br><small style="color: #666;">{}</small></div>',
+            obj.business_function.code,
+            obj.department.name
+        )
+    business_function_display.short_description = 'Function/Department'
+    
+    def status_display(self, obj):
+        return format_html(
+            '<span style="background: {}; color: white; padding: 3px 8px; border-radius: 10px; font-size: 11px; font-weight: bold;">{}</span>',
+            obj.status.color, obj.status.name
+        )
+    status_display.short_description = 'Status'
+    status_display.admin_order_field = 'status__name'
+    
+    def grading_display(self, obj):
+        if obj.grading_level:
+            return format_html(
+                '<div><strong style="color: #1976d2;">{}</strong><br><small style="color: #666;">{}</small></div>',
+                obj.get_grading_display(),
+                obj.grade or 'No Grade'
+            )
+        return format_html('<span style="color: #999;">No Grading</span>')
+    grading_display.short_description = 'Grading'
+    
+    def line_manager_display(self, obj):
+        if obj.line_manager:
+            url = reverse('admin:api_employee_change', args=[obj.line_manager.id])
+            return format_html(
+                '<a href="{}" style="color: #417690;">{}</a><br><small style="color: #666;">{}</small>',
+                url, obj.line_manager.full_name, obj.line_manager.employee_id
+            )
+        return format_html('<span style="color: #999;">No Manager</span>')
+    line_manager_display.short_description = 'Line Manager'
+    
+    def contract_status_display(self, obj):
+        duration_display = obj.get_contract_duration_display()
+        if obj.contract_end_date:
+            days_left = (obj.contract_end_date - date.today()).days
+            if days_left <= 30:
+                color = '#dc3545'  # Red
+            elif days_left <= 90:
+                color = '#ffc107'  # Yellow
+            else:
+                color = '#28a745'  # Green
+            
+            return format_html(
+                '<div style="color: {};">{}<br><small>Ends: {}</small></div>',
+                color, duration_display, obj.contract_end_date.strftime('%d/%m/%Y')
+            )
+        return duration_display
+    contract_status_display.short_description = 'Contract'
     
     def years_of_service_display(self, obj):
-        years = obj.years_of_service
-        if years >= 1:
-            return f"{years:.1f} years"
-        else:
-            days = int(years * 365)
-            return f"{days} days"
-    years_of_service_display.short_description = 'Service'
-    years_of_service_display.admin_order_field = 'start_date'
+        return f"{obj.years_of_service} years"
+    years_of_service_display.short_description = 'Years of Service'
     
-    def save_model(self, request, obj, form, change):
-        if not change:  # Creating new employee
-            obj.created_by = request.user
-        obj.updated_by = request.user
-        super().save_model(request, obj, form, change)
+    def direct_reports_count_display(self, obj):
+        count = obj.get_direct_reports_count()
+        if count > 0:
+            url = reverse('admin:api_employee_changelist') + f'?line_manager__id__exact={obj.id}'
+            return format_html(
+                '<a href="{}" style="color: #417690;">{} reports</a>',
+                url, count
+            )
+        return '0 reports'
+    direct_reports_count_display.short_description = 'Direct Reports'
+    
+    actions = ['export_employees_csv', 'mark_org_chart_visible', 'mark_org_chart_hidden', 'update_contract_status']
+    
+    def export_employees_csv(self, request, queryset):
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = f'attachment; filename="employees_{date.today()}.csv"'
         
-        # Status avtomatik təyin ediləcək signal vasitəsilə
-        # Əlavə activity log (signal-dan əlavə)
-        activity_type = 'UPDATED' if change else 'CREATED'
-        EmployeeActivity.objects.create(
-            employee=obj,
-            activity_type=activity_type,
-            description=f"Employee {obj.full_name} was {activity_type.lower()} via admin panel",
-            performed_by=request.user,
-            metadata={
-                'admin_action': True,
-                'contract_duration': obj.contract_duration,
-                'via_admin_panel': True
-            }
-        )
+        writer = csv.writer(response)
+        writer.writerow([
+            'Employee ID', 'Name', 'Email', 'Job Title', 'Business Function',
+            'Department', 'Unit', 'Position Group', 'Grade', 'Status',
+            'Line Manager', 'Start Date', 'Contract Duration', 'Phone'
+        ])
+        
+        for employee in queryset:
+            writer.writerow([
+                employee.employee_id,
+                employee.full_name,
+                employee.user.email if employee.user else '',
+                employee.job_title,
+                employee.business_function.name,
+                employee.department.name,
+                employee.unit.name if employee.unit else '',
+                employee.position_group.get_name_display(),
+                employee.get_grading_display(),
+                employee.status.name,
+                employee.line_manager.full_name if employee.line_manager else '',
+                employee.start_date,
+                employee.get_contract_duration_display(),
+                employee.phone or ''
+            ])
+        
+        return response
+    export_employees_csv.short_description = 'Export selected to CSV'
     
-    def update_statuses(self, request, queryset):
-        """Admin action to update employee statuses"""
+    def mark_org_chart_visible(self, request, queryset):
+        updated = queryset.update(is_visible_in_org_chart=True)
+        self.message_user(request, f'Successfully made {updated} employees visible in org chart.')
+    mark_org_chart_visible.short_description = 'Make visible in org chart'
+    
+    def mark_org_chart_hidden(self, request, queryset):
+        updated = queryset.update(is_visible_in_org_chart=False)
+        self.message_user(request, f'Successfully hid {updated} employees from org chart.')
+    mark_org_chart_hidden.short_description = 'Hide from org chart'
+    
+    def update_contract_status(self, request, queryset):
         updated_count = 0
         for employee in queryset:
-            old_status = employee.status.name if employee.status else None
-            employee.update_automatic_status()
-            employee.refresh_from_db()
-            new_status = employee.status.name if employee.status else None
-            
-            if old_status != new_status:
-                updated_count += 1
-                EmployeeActivity.objects.create(
-                    employee=employee,
-                    activity_type='STATUS_CHANGED',
-                    description=f"Status updated from {old_status} to {new_status} via admin bulk action",
-                    performed_by=request.user,
-                    metadata={'admin_bulk_action': True, 'old_status': old_status, 'new_status': new_status}
-                )
-        
-        self.message_user(request, f'Successfully updated {updated_count} employee statuses.')
-    update_statuses.short_description = "Update automatic statuses for selected employees"
-    
-    def make_visible_in_org_chart(self, request, queryset):
-        """Admin action to make employees visible in org chart"""
-        updated = queryset.update(is_visible_in_org_chart=True)
-        for employee in queryset:
-            EmployeeActivity.objects.create(
-                employee=employee,
-                activity_type='ORG_CHART_VISIBILITY_CHANGED',
-                description=f"Made visible in org chart via admin bulk action",
-                performed_by=request.user,
-                metadata={'admin_bulk_action': True, 'new_visibility': True}
-            )
-        self.message_user(request, f'Successfully made {updated} employees visible in org chart.')
-    make_visible_in_org_chart.short_description = "Make selected employees visible in org chart"
-    
-    def hide_from_org_chart(self, request, queryset):
-        """Admin action to hide employees from org chart"""
-        updated = queryset.update(is_visible_in_org_chart=False)
-        for employee in queryset:
-            EmployeeActivity.objects.create(
-                employee=employee,
-                activity_type='ORG_CHART_VISIBILITY_CHANGED',
-                description=f"Hidden from org chart via admin bulk action",
-                performed_by=request.user,
-                metadata={'admin_bulk_action': True, 'new_visibility': False}
-            )
-        self.message_user(request, f'Successfully hid {updated} employees from org chart.')
-    hide_from_org_chart.short_description = "Hide selected employees from org chart"
+            employee.update_contract_status()
+            updated_count += 1
+        self.message_user(request, f'Successfully updated contract status for {updated_count} employees.')
+    update_contract_status.short_description = 'Update contract status'
 
-@admin.register(EmployeeDocument)
-class EmployeeDocumentAdmin(BaseModelAdmin):
-    list_display = ('name', 'employee_info', 'document_type', 'file_size_display', 'uploaded_at', 'uploaded_by')
-    list_filter = ('document_type', 'uploaded_at', 'mime_type')
-    search_fields = ('name', 'employee__employee_id', 'employee__user__first_name', 'employee__user__last_name')
-    readonly_fields = ('uploaded_at', 'uploaded_by', 'file_size', 'mime_type')
-    autocomplete_fields = ['employee']
-    ordering = ('-uploaded_at',)
+# Employee Activity Admin
+@admin.register(EmployeeActivity)
+class EmployeeActivityAdmin(admin.ModelAdmin):
+    list_display = ('employee_display', 'activity_type', 'description_short', 'performed_by_display', 'created_at')
+    list_filter = ('activity_type', 'created_at', 'performed_by')
+    search_fields = ('employee__full_name', 'employee__employee_id', 'description')
+    ordering = ('-created_at',)
+    readonly_fields = ('created_at',)
     
-    def employee_info(self, obj):
+    def employee_display(self, obj):
+        url = reverse('admin:api_employee_change', args=[obj.employee.id])
         return format_html(
-            '<a href="/admin/api/employee/{}/change/" style="color: #417690; text-decoration: none;">{} - {}</a>',
-            obj.employee.id, obj.employee.employee_id, obj.employee.full_name
+            '<a href="{}" style="color: #417690;">{}</a><br><small style="color: #666;">{}</small>',
+            url, obj.employee.full_name, obj.employee.employee_id
         )
-    employee_info.short_description = 'Employee'
-    employee_info.admin_order_field = 'employee__employee_id'
+    employee_display.short_description = 'Employee'
+    
+    def description_short(self, obj):
+        if len(obj.description) > 60:
+            return f"{obj.description[:60]}..."
+        return obj.description
+    description_short.short_description = 'Description'
+    
+    def performed_by_display(self, obj):
+        if obj.performed_by:
+            return obj.performed_by.username
+        return format_html('<span style="color: #999;">System</span>')
+    performed_by_display.short_description = 'Performed By'
+    
+    def has_add_permission(self, request):
+        return False
+    
+    def has_change_permission(self, request, obj=None):
+        return False
+    
+    def has_delete_permission(self, request, obj=None):
+        return request.user.is_superuser
+
+# Employee Document Admin - FIXED: All missing methods added
+@admin.register(EmployeeDocument)
+class EmployeeDocumentAdmin(admin.ModelAdmin):
+    list_display = ('name', 'employee_display', 'document_type', 'file_size_display', 'uploaded_by_display', 'uploaded_at')
+    list_filter = ('document_type', 'uploaded_at', 'uploaded_by')
+    search_fields = ('name', 'employee__full_name', 'employee__employee_id')
+    ordering = ('-uploaded_at',)
+    readonly_fields = ('uploaded_at', 'file_size', 'mime_type')
+    autocomplete_fields = ['employee', 'uploaded_by']
+    
+    def employee_display(self, obj):
+        """Display employee with link to their profile"""
+        url = reverse('admin:api_employee_change', args=[obj.employee.id])
+        return format_html(
+            '<a href="{}" style="color: #417690;">{}</a><br><small style="color: #666;">{}</small>',
+            url, obj.employee.full_name, obj.employee.employee_id
+        )
+    employee_display.short_description = 'Employee'
     
     def file_size_display(self, obj):
+        """Display file size in human readable format"""
         if obj.file_size:
             if obj.file_size < 1024:
                 return f"{obj.file_size} B"
@@ -442,88 +552,45 @@ class EmployeeDocumentAdmin(BaseModelAdmin):
                 return f"{obj.file_size / 1024:.1f} KB"
             else:
                 return f"{obj.file_size / (1024 * 1024):.1f} MB"
-        return '-'
+        return "Unknown"
     file_size_display.short_description = 'File Size'
     
-    def save_model(self, request, obj, form, change):
-        if not change:
-            obj.uploaded_by = request.user
-        super().save_model(request, obj, form, change)
+    def uploaded_by_display(self, obj):
+        """Display who uploaded the document"""
+        if obj.uploaded_by:
+            return obj.uploaded_by.username
+        return format_html('<span style="color: #999;">Unknown</span>')
+    uploaded_by_display.short_description = 'Uploaded By'
 
-@admin.register(EmployeeActivity)
-class EmployeeActivityAdmin(admin.ModelAdmin):
-    list_display = ('employee_info', 'activity_type', 'timestamp', 'performed_by', 'description_short')
-    list_filter = ('activity_type', 'timestamp', 'performed_by')
-    search_fields = ('employee__employee_id', 'employee__user__first_name', 'employee__user__last_name', 'description')
-    readonly_fields = ('timestamp', 'metadata')
-    ordering = ('-timestamp',)
-    date_hierarchy = 'timestamp'
+# If VacantPosition and HeadcountSummary models exist, add their admins
+try:
+    from .models import VacantPosition
     
-    def employee_info(self, obj):
-        return format_html(
-            '<a href="/admin/api/employee/{}/change/" style="color: #417690; text-decoration: none;">{} - {}</a>',
-            obj.employee.id, obj.employee.employee_id, obj.employee.full_name
-        )
-    employee_info.short_description = 'Employee'
-    employee_info.admin_order_field = 'employee__employee_id'
-    
-    def description_short(self, obj):
-        if len(obj.description) > 100:
-            return f"{obj.description[:100]}..."
-        return obj.description
-    description_short.short_description = 'Description'
-    
-    def has_add_permission(self, request):
-        return False  # Activities should be created automatically
-    
-    def has_change_permission(self, request, obj=None):
-        return False  # Activities should not be editable
-    
-    def has_delete_permission(self, request, obj=None):
-        return request.user.is_superuser  # Only superusers can delete activities
+    @admin.register(VacantPosition)
+    class VacantPositionAdmin(admin.ModelAdmin):
+        list_display = ('position_id', 'title', 'business_function', 'department', 'urgency', 'is_filled', 'created_at')
+        list_filter = ('urgency', 'is_filled', 'business_function', 'department', 'created_at')
+        search_fields = ('position_id', 'title', 'description')
+        ordering = ('-created_at',)
+        readonly_fields = ('created_at', 'updated_at')
+        
+except ImportError:
+    pass
 
-# Customize admin site headers
-admin.site.site_header = "Employee Management System"
-admin.site.site_title = "EMS Admin"
-admin.site.index_title = "Welcome to Employee Management System Administration"
-
-# Add custom CSS for better styling
-class Media:
-    css = {
-        'all': ('admin/css/custom_admin.css',)
-    }
-
-# Custom admin actions for bulk operations
-def export_employees_csv(modeladmin, request, queryset):
-    """Export selected employees to CSV"""
-    import csv
-    from django.http import HttpResponse
+try:
+    from .models import HeadcountSummary
     
-    response = HttpResponse(content_type='text/csv')
-    response['Content-Disposition'] = 'attachment; filename="employees.csv"'
-    
-    writer = csv.writer(response)
-    writer.writerow([
-        'Employee ID', 'Full Name', 'Email', 'Department', 'Position', 
-        'Start Date', 'Contract Duration', 'Status', 'Line Manager'
-    ])
-    
-    for employee in queryset:
-        writer.writerow([
-            employee.employee_id,
-            employee.full_name,
-            employee.user.email if employee.user else '',
-            employee.department.name,
-            employee.position_group.get_name_display(),
-            employee.start_date,
-            employee.get_contract_duration_display(),
-            employee.status.name if employee.status else '',
-            employee.line_manager.full_name if employee.line_manager else ''
-        ])
-    
-    return response
+    @admin.register(HeadcountSummary)
+    class HeadcountSummaryAdmin(admin.ModelAdmin):
+        list_display = ('summary_date', 'total_employees', 'active_employees', 'vacant_positions', 'created_at')
+        list_filter = ('summary_date', 'created_at')
+        ordering = ('-summary_date',)
+        readonly_fields = ('created_at',)
+        
+except ImportError:
+    pass
 
-export_employees_csv.short_description = "Export selected employees to CSV"
-
-# Add the action to EmployeeAdmin
-EmployeeAdmin.actions.append(export_employees_csv)
+# Admin customizations
+admin.site.site_header = "Almet HRIS Administration"
+admin.site.site_title = "Almet HRIS Admin"
+admin.site.index_title = "HR Management System"

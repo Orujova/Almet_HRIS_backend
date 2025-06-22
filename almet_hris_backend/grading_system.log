@@ -1,0 +1,1281 @@
+ERROR 2025-06-20 17:24:39,506 apps 2908 8884 Error initializing API app: cannot import name 'signals' from 'api' (C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\almet_hris_backend\api\__init__.py)
+ERROR 2025-06-20 17:25:02,252 apps 14520 22264 Error initializing API app: cannot import name 'signals' from 'api' (C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\almet_hris_backend\api\__init__.py)
+ERROR 2025-06-20 17:25:40,509 apps 19624 3052 Error initializing API app: cannot import name 'signals' from 'api' (C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\almet_hris_backend\api\__init__.py)
+ERROR 2025-06-20 17:32:47,007 apps 14148 25568 Error initializing API app: cannot import name 'signals' from 'api' (C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\almet_hris_backend\api\__init__.py)
+ERROR 2025-06-20 17:44:09,184 apps 27372 12252 Error initializing API app: cannot import name 'signals' from 'api' (C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\almet_hris_backend\api\__init__.py)
+ERROR 2025-06-20 17:51:47,293 apps 26580 19408 Error initializing API app: cannot import name 'signals' from 'api' (C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\almet_hris_backend\api\__init__.py)
+ERROR 2025-06-20 17:51:56,126 apps 26400 8 Error initializing API app: cannot import name 'signals' from 'api' (C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\almet_hris_backend\api\__init__.py)
+ERROR 2025-06-20 17:52:04,691 apps 7096 23184 Error initializing API app: cannot import name 'signals' from 'api' (C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\almet_hris_backend\api\__init__.py)
+INFO 2025-06-20 17:53:04,362 views 7096 23580 === Microsoft authentication request received ===
+INFO 2025-06-20 17:53:04,363 views 7096 23580 Microsoft authentication attempt - validating token
+INFO 2025-06-20 17:53:04,365 auth 7096 23580 === Starting Microsoft token validation ===
+INFO 2025-06-20 17:53:04,365 auth 7096 23580 Received token: eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiIsImtpZCI6IkNOdj...
+INFO 2025-06-20 17:53:04,367 auth 7096 23580 === Token payload ===
+INFO 2025-06-20 17:53:04,369 auth 7096 23580 {
+  "aud": "230458ff-ed69-4abb-8496-3888067116f6",
+  "iss": "https://login.microsoftonline.com/b3222ef7-242d-4724-a665-97b0a764f2d0/v2.0",
+  "iat": 1750427283,
+  "nbf": 1750427283,
+  "exp": 1750431183,
+  "email": "n.orujova@almettrading.com",
+  "name": "Narmin Orujova",
+  "nonce": "01978d9d-35b5-7084-9217-d6cce4a974e4",
+  "oid": "2c74167f-d69a-43a5-a1e6-910fd8560625",
+  "preferred_username": "n.orujova@almettrading.com",
+  "rh": "1.ATkA9y4isy0kJEemZZewp2Ty0P9YBCNp7btKhJY4iAZxFvaqARM5AA.",
+  "sid": "005023b9-f899-0bf0-952a-8ebc4e9da951",
+  "sub": "i7rUkArSkR21ADRGNhKBNmJkwt25_DaBfDeIyBhUpf4",
+  "tid": "b3222ef7-242d-4724-a665-97b0a764f2d0",
+  "uti": "4XyeuXTZ5UqWiKfr1RorAA",
+  "ver": "2.0"
+}
+INFO 2025-06-20 17:53:04,372 auth 7096 23580 Audience from token: 230458ff-ed69-4abb-8496-3888067116f6
+INFO 2025-06-20 17:53:04,372 auth 7096 23580 Expected audience: 230458ff-ed69-4abb-8496-3888067116f6
+INFO 2025-06-20 17:53:04,373 auth 7096 23580 Microsoft ID (sub): i7rUkArSkR21ADRGNhKBNmJkwt25_DaBfDeIyBhUpf4
+INFO 2025-06-20 17:53:04,374 auth 7096 23580 Full name from token: Narmin Orujova
+INFO 2025-06-20 17:53:04,374 auth 7096 23580 Extracted user info: email=n.orujova@almettrading.com, first_name=Narmin, last_name=Orujova
+ERROR 2025-06-20 17:53:04,482 auth 7096 23580 Token validation error: column api_microsoftuser.tenant_id does not exist
+LINE 1: ...r"."user_id", "api_microsoftuser"."microsoft_id", "api_micro...
+                                                             ^
+
+ERROR 2025-06-20 17:53:04,483 auth 7096 23580 Exception type: ProgrammingError
+ERROR 2025-06-20 17:53:04,746 auth 7096 23580 Traceback: Traceback (most recent call last):
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\backends\utils.py", line 105, in _execute
+    return self.cursor.execute(sql, params)
+           ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+psycopg2.errors.UndefinedColumn: column api_microsoftuser.tenant_id does not exist
+LINE 1: ...r"."user_id", "api_microsoftuser"."microsoft_id", "api_micro...
+                                                             ^
+
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\almet_hris_backend\api\auth.py", line 73, in validate_token
+    microsoft_user = MicrosoftUser.objects.get(microsoft_id=microsoft_id)
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\manager.py", line 87, in manager_method
+    return getattr(self.get_queryset(), name)(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\query.py", line 629, in get
+    num = len(clone)
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\query.py", line 366, in __len__
+    self._fetch_all()
+    ~~~~~~~~~~~~~~~^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\query.py", line 1945, in _fetch_all
+    self._result_cache = list(self._iterable_class(self))
+                         ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\query.py", line 91, in __iter__
+    results = compiler.execute_sql(
+        chunked_fetch=self.chunked_fetch, chunk_size=self.chunk_size
+    )
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\sql\compiler.py", line 1623, in execute_sql
+    cursor.execute(sql, params)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\backends\utils.py", line 122, in execute
+    return super().execute(sql, params)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\backends\utils.py", line 79, in execute
+    return self._execute_with_wrappers(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        sql, params, many=False, executor=self._execute
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\backends\utils.py", line 92, in _execute_with_wrappers
+    return executor(sql, params, many, context)
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\backends\utils.py", line 100, in _execute
+    with self.db.wrap_database_errors:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\utils.py", line 91, in __exit__
+    raise dj_exc_value.with_traceback(traceback) from exc_value
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\backends\utils.py", line 105, in _execute
+    return self.cursor.execute(sql, params)
+           ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+django.db.utils.ProgrammingError: column api_microsoftuser.tenant_id does not exist
+LINE 1: ...r"."user_id", "api_microsoftuser"."microsoft_id", "api_micro...
+                                                             ^
+
+
+ERROR 2025-06-20 17:53:04,750 views 7096 23580 Microsoft authentication error: Token validation failed: column api_microsoftuser.tenant_id does not exist
+LINE 1: ...r"."user_id", "api_microsoftuser"."microsoft_id", "api_micro...
+                                                             ^
+
+ERROR 2025-06-20 17:53:04,757 views 7096 23580 Traceback: Traceback (most recent call last):
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\backends\utils.py", line 105, in _execute
+    return self.cursor.execute(sql, params)
+           ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+psycopg2.errors.UndefinedColumn: column api_microsoftuser.tenant_id does not exist
+LINE 1: ...r"."user_id", "api_microsoftuser"."microsoft_id", "api_micro...
+                                                             ^
+
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\almet_hris_backend\api\auth.py", line 73, in validate_token
+    microsoft_user = MicrosoftUser.objects.get(microsoft_id=microsoft_id)
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\manager.py", line 87, in manager_method
+    return getattr(self.get_queryset(), name)(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\query.py", line 629, in get
+    num = len(clone)
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\query.py", line 366, in __len__
+    self._fetch_all()
+    ~~~~~~~~~~~~~~~^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\query.py", line 1945, in _fetch_all
+    self._result_cache = list(self._iterable_class(self))
+                         ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\query.py", line 91, in __iter__
+    results = compiler.execute_sql(
+        chunked_fetch=self.chunked_fetch, chunk_size=self.chunk_size
+    )
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\sql\compiler.py", line 1623, in execute_sql
+    cursor.execute(sql, params)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\backends\utils.py", line 122, in execute
+    return super().execute(sql, params)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\backends\utils.py", line 79, in execute
+    return self._execute_with_wrappers(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        sql, params, many=False, executor=self._execute
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\backends\utils.py", line 92, in _execute_with_wrappers
+    return executor(sql, params, many, context)
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\backends\utils.py", line 100, in _execute
+    with self.db.wrap_database_errors:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\utils.py", line 91, in __exit__
+    raise dj_exc_value.with_traceback(traceback) from exc_value
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\backends\utils.py", line 105, in _execute
+    return self.cursor.execute(sql, params)
+           ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+django.db.utils.ProgrammingError: column api_microsoftuser.tenant_id does not exist
+LINE 1: ...r"."user_id", "api_microsoftuser"."microsoft_id", "api_micro...
+                                                             ^
+
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\almet_hris_backend\api\views.py", line 152, in authenticate_microsoft
+    user = MicrosoftTokenValidator.validate_token(id_token)
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\almet_hris_backend\api\auth.py", line 133, in validate_token
+    raise AuthenticationFailed(f'Token validation failed: {str(e)}')
+rest_framework.exceptions.AuthenticationFailed: Token validation failed: column api_microsoftuser.tenant_id does not exist
+LINE 1: ...r"."user_id", "api_microsoftuser"."microsoft_id", "api_micro...
+                                                             ^
+
+
+ERROR 2025-06-20 17:53:55,990 apps 23196 17344 Error initializing API app: cannot import name 'signals' from 'api' (C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\almet_hris_backend\api\__init__.py)
+ERROR 2025-06-20 17:53:56,608 apps 11712 2984 Error initializing API app: cannot import name 'signals' from 'api' (C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\almet_hris_backend\api\__init__.py)
+INFO 2025-06-20 17:54:13,729 views 11712 25100 === Microsoft authentication request received ===
+INFO 2025-06-20 17:54:13,730 views 11712 25100 Microsoft authentication attempt - validating token
+INFO 2025-06-20 17:54:13,731 auth 11712 25100 === Starting Microsoft token validation ===
+INFO 2025-06-20 17:54:13,732 auth 11712 25100 Received token: eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiIsImtpZCI6IkNOdj...
+INFO 2025-06-20 17:54:13,733 auth 11712 25100 === Token payload ===
+INFO 2025-06-20 17:54:13,735 auth 11712 25100 {
+  "aud": "230458ff-ed69-4abb-8496-3888067116f6",
+  "iss": "https://login.microsoftonline.com/b3222ef7-242d-4724-a665-97b0a764f2d0/v2.0",
+  "iat": 1750427353,
+  "nbf": 1750427353,
+  "exp": 1750431253,
+  "email": "n.orujova@almettrading.com",
+  "name": "Narmin Orujova",
+  "nonce": "01978d9e-4bd5-7e62-9e29-9be726b855c7",
+  "oid": "2c74167f-d69a-43a5-a1e6-910fd8560625",
+  "preferred_username": "n.orujova@almettrading.com",
+  "rh": "1.ATkA9y4isy0kJEemZZewp2Ty0P9YBCNp7btKhJY4iAZxFvaqARM5AA.",
+  "sid": "005023b9-f899-0bf0-952a-8ebc4e9da951",
+  "sub": "i7rUkArSkR21ADRGNhKBNmJkwt25_DaBfDeIyBhUpf4",
+  "tid": "b3222ef7-242d-4724-a665-97b0a764f2d0",
+  "uti": "Y3on7aNluUK_kkTSFXIjAA",
+  "ver": "2.0"
+}
+INFO 2025-06-20 17:54:13,737 auth 11712 25100 Audience from token: 230458ff-ed69-4abb-8496-3888067116f6
+INFO 2025-06-20 17:54:13,738 auth 11712 25100 Expected audience: 230458ff-ed69-4abb-8496-3888067116f6
+INFO 2025-06-20 17:54:13,740 auth 11712 25100 Microsoft ID (sub): i7rUkArSkR21ADRGNhKBNmJkwt25_DaBfDeIyBhUpf4
+INFO 2025-06-20 17:54:13,741 auth 11712 25100 Full name from token: Narmin Orujova
+INFO 2025-06-20 17:54:13,742 auth 11712 25100 Extracted user info: email=n.orujova@almettrading.com, first_name=Narmin, last_name=Orujova
+ERROR 2025-06-20 17:54:13,812 auth 11712 25100 Token validation error: column api_microsoftuser.tenant_id does not exist
+LINE 1: ...r"."user_id", "api_microsoftuser"."microsoft_id", "api_micro...
+                                                             ^
+
+ERROR 2025-06-20 17:54:13,814 auth 11712 25100 Exception type: ProgrammingError
+ERROR 2025-06-20 17:54:13,829 auth 11712 25100 Traceback: Traceback (most recent call last):
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\backends\utils.py", line 105, in _execute
+    return self.cursor.execute(sql, params)
+           ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+psycopg2.errors.UndefinedColumn: column api_microsoftuser.tenant_id does not exist
+LINE 1: ...r"."user_id", "api_microsoftuser"."microsoft_id", "api_micro...
+                                                             ^
+
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\almet_hris_backend\api\auth.py", line 73, in validate_token
+    microsoft_user = MicrosoftUser.objects.get(microsoft_id=microsoft_id)
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\manager.py", line 87, in manager_method
+    return getattr(self.get_queryset(), name)(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\query.py", line 629, in get
+    num = len(clone)
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\query.py", line 366, in __len__
+    self._fetch_all()
+    ~~~~~~~~~~~~~~~^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\query.py", line 1945, in _fetch_all
+    self._result_cache = list(self._iterable_class(self))
+                         ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\query.py", line 91, in __iter__
+    results = compiler.execute_sql(
+        chunked_fetch=self.chunked_fetch, chunk_size=self.chunk_size
+    )
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\sql\compiler.py", line 1623, in execute_sql
+    cursor.execute(sql, params)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\backends\utils.py", line 122, in execute
+    return super().execute(sql, params)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\backends\utils.py", line 79, in execute
+    return self._execute_with_wrappers(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        sql, params, many=False, executor=self._execute
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\backends\utils.py", line 92, in _execute_with_wrappers
+    return executor(sql, params, many, context)
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\backends\utils.py", line 100, in _execute
+    with self.db.wrap_database_errors:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\utils.py", line 91, in __exit__
+    raise dj_exc_value.with_traceback(traceback) from exc_value
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\backends\utils.py", line 105, in _execute
+    return self.cursor.execute(sql, params)
+           ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+django.db.utils.ProgrammingError: column api_microsoftuser.tenant_id does not exist
+LINE 1: ...r"."user_id", "api_microsoftuser"."microsoft_id", "api_micro...
+                                                             ^
+
+
+ERROR 2025-06-20 17:54:13,834 views 11712 25100 Microsoft authentication error: Token validation failed: column api_microsoftuser.tenant_id does not exist
+LINE 1: ...r"."user_id", "api_microsoftuser"."microsoft_id", "api_micro...
+                                                             ^
+
+ERROR 2025-06-20 17:54:13,848 views 11712 25100 Traceback: Traceback (most recent call last):
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\backends\utils.py", line 105, in _execute
+    return self.cursor.execute(sql, params)
+           ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+psycopg2.errors.UndefinedColumn: column api_microsoftuser.tenant_id does not exist
+LINE 1: ...r"."user_id", "api_microsoftuser"."microsoft_id", "api_micro...
+                                                             ^
+
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\almet_hris_backend\api\auth.py", line 73, in validate_token
+    microsoft_user = MicrosoftUser.objects.get(microsoft_id=microsoft_id)
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\manager.py", line 87, in manager_method
+    return getattr(self.get_queryset(), name)(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\query.py", line 629, in get
+    num = len(clone)
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\query.py", line 366, in __len__
+    self._fetch_all()
+    ~~~~~~~~~~~~~~~^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\query.py", line 1945, in _fetch_all
+    self._result_cache = list(self._iterable_class(self))
+                         ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\query.py", line 91, in __iter__
+    results = compiler.execute_sql(
+        chunked_fetch=self.chunked_fetch, chunk_size=self.chunk_size
+    )
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\sql\compiler.py", line 1623, in execute_sql
+    cursor.execute(sql, params)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\backends\utils.py", line 122, in execute
+    return super().execute(sql, params)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\backends\utils.py", line 79, in execute
+    return self._execute_with_wrappers(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        sql, params, many=False, executor=self._execute
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\backends\utils.py", line 92, in _execute_with_wrappers
+    return executor(sql, params, many, context)
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\backends\utils.py", line 100, in _execute
+    with self.db.wrap_database_errors:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\utils.py", line 91, in __exit__
+    raise dj_exc_value.with_traceback(traceback) from exc_value
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\backends\utils.py", line 105, in _execute
+    return self.cursor.execute(sql, params)
+           ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+django.db.utils.ProgrammingError: column api_microsoftuser.tenant_id does not exist
+LINE 1: ...r"."user_id", "api_microsoftuser"."microsoft_id", "api_micro...
+                                                             ^
+
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\almet_hris_backend\api\views.py", line 152, in authenticate_microsoft
+    user = MicrosoftTokenValidator.validate_token(id_token)
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\almet_hris_backend\api\auth.py", line 133, in validate_token
+    raise AuthenticationFailed(f'Token validation failed: {str(e)}')
+rest_framework.exceptions.AuthenticationFailed: Token validation failed: column api_microsoftuser.tenant_id does not exist
+LINE 1: ...r"."user_id", "api_microsoftuser"."microsoft_id", "api_micro...
+                                                             ^
+
+
+ERROR 2025-06-20 17:54:49,521 apps 25436 22912 Error initializing API app: cannot import name 'signals' from 'api' (C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\almet_hris_backend\api\__init__.py)
+ERROR 2025-06-20 17:55:50,419 apps 27264 26152 Error initializing API app: cannot import name 'signals' from 'api' (C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\almet_hris_backend\api\__init__.py)
+INFO 2025-06-20 17:56:01,496 views 27264 24104 === Microsoft authentication request received ===
+INFO 2025-06-20 17:56:01,497 views 27264 24104 Request method: POST
+INFO 2025-06-20 17:56:01,499 views 27264 24104 Request headers: {'Content-Length': '1289', 'Content-Type': 'application/json', 'Host': 'localhost:8000', 'Connection': 'keep-alive', 'Sec-Ch-Ua-Platform': '"Windows"', 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36', 'Accept': 'application/json, text/plain, */*', 'Sec-Ch-Ua': '"Google Chrome";v="137", "Chromium";v="137", "Not/A)Brand";v="24"', 'Sec-Ch-Ua-Mobile': '?0', 'Origin': 'http://localhost:3000', 'Sec-Fetch-Site': 'same-site', 'Sec-Fetch-Mode': 'cors', 'Sec-Fetch-Dest': 'empty', 'Referer': 'http://localhost:3000/', 'Accept-Encoding': 'gzip, deflate, br, zstd', 'Accept-Language': 'en-CA,en;q=0.9,az-AZ;q=0.8,az;q=0.7,en-GB;q=0.6,en-US;q=0.5'}
+INFO 2025-06-20 17:56:01,501 views 27264 24104 Request data keys: ['id_token']
+INFO 2025-06-20 17:56:01,503 views 27264 24104 Microsoft authentication attempt - validating token
+INFO 2025-06-20 17:56:01,505 views 27264 24104 Token length: 1274
+INFO 2025-06-20 17:56:01,506 auth 27264 24104 === Starting Microsoft token validation ===
+INFO 2025-06-20 17:56:01,509 auth 27264 24104 Received token: eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiIsImtpZCI6IkNOdj...
+INFO 2025-06-20 17:56:01,510 auth 27264 24104 === Token payload ===
+INFO 2025-06-20 17:56:01,511 auth 27264 24104 {
+  "aud": "230458ff-ed69-4abb-8496-3888067116f6",
+  "iss": "https://login.microsoftonline.com/b3222ef7-242d-4724-a665-97b0a764f2d0/v2.0",
+  "iat": 1750427461,
+  "nbf": 1750427461,
+  "exp": 1750431361,
+  "email": "n.orujova@almettrading.com",
+  "name": "Narmin Orujova",
+  "nonce": "01978d9f-f15b-7774-945b-7c9fcbb4674a",
+  "oid": "2c74167f-d69a-43a5-a1e6-910fd8560625",
+  "preferred_username": "n.orujova@almettrading.com",
+  "rh": "1.ATkA9y4isy0kJEemZZewp2Ty0P9YBCNp7btKhJY4iAZxFvaqARM5AA.",
+  "sid": "005023b9-f899-0bf0-952a-8ebc4e9da951",
+  "sub": "i7rUkArSkR21ADRGNhKBNmJkwt25_DaBfDeIyBhUpf4",
+  "tid": "b3222ef7-242d-4724-a665-97b0a764f2d0",
+  "uti": "Y3on7aNluUK_kkTSyIcjAA",
+  "ver": "2.0"
+}
+INFO 2025-06-20 17:56:01,514 auth 27264 24104 Audience from token: 230458ff-ed69-4abb-8496-3888067116f6
+INFO 2025-06-20 17:56:01,516 auth 27264 24104 Expected audience: 230458ff-ed69-4abb-8496-3888067116f6
+INFO 2025-06-20 17:56:01,517 auth 27264 24104 Microsoft ID (sub): i7rUkArSkR21ADRGNhKBNmJkwt25_DaBfDeIyBhUpf4
+INFO 2025-06-20 17:56:01,519 auth 27264 24104 Full name from token: Narmin Orujova
+INFO 2025-06-20 17:56:01,521 auth 27264 24104 Extracted user info: email=n.orujova@almettrading.com, first_name=Narmin, last_name=Orujova
+ERROR 2025-06-20 17:56:01,589 auth 27264 24104 Token validation error: column api_microsoftuser.tenant_id does not exist
+LINE 1: ...r"."user_id", "api_microsoftuser"."microsoft_id", "api_micro...
+                                                             ^
+
+ERROR 2025-06-20 17:56:01,591 auth 27264 24104 Exception type: ProgrammingError
+ERROR 2025-06-20 17:56:01,602 auth 27264 24104 Traceback: Traceback (most recent call last):
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\backends\utils.py", line 105, in _execute
+    return self.cursor.execute(sql, params)
+           ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+psycopg2.errors.UndefinedColumn: column api_microsoftuser.tenant_id does not exist
+LINE 1: ...r"."user_id", "api_microsoftuser"."microsoft_id", "api_micro...
+                                                             ^
+
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\almet_hris_backend\api\auth.py", line 73, in validate_token
+    microsoft_user = MicrosoftUser.objects.get(microsoft_id=microsoft_id)
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\manager.py", line 87, in manager_method
+    return getattr(self.get_queryset(), name)(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\query.py", line 629, in get
+    num = len(clone)
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\query.py", line 366, in __len__
+    self._fetch_all()
+    ~~~~~~~~~~~~~~~^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\query.py", line 1945, in _fetch_all
+    self._result_cache = list(self._iterable_class(self))
+                         ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\query.py", line 91, in __iter__
+    results = compiler.execute_sql(
+        chunked_fetch=self.chunked_fetch, chunk_size=self.chunk_size
+    )
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\sql\compiler.py", line 1623, in execute_sql
+    cursor.execute(sql, params)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\backends\utils.py", line 122, in execute
+    return super().execute(sql, params)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\backends\utils.py", line 79, in execute
+    return self._execute_with_wrappers(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        sql, params, many=False, executor=self._execute
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\backends\utils.py", line 92, in _execute_with_wrappers
+    return executor(sql, params, many, context)
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\backends\utils.py", line 100, in _execute
+    with self.db.wrap_database_errors:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\utils.py", line 91, in __exit__
+    raise dj_exc_value.with_traceback(traceback) from exc_value
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\backends\utils.py", line 105, in _execute
+    return self.cursor.execute(sql, params)
+           ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+django.db.utils.ProgrammingError: column api_microsoftuser.tenant_id does not exist
+LINE 1: ...r"."user_id", "api_microsoftuser"."microsoft_id", "api_micro...
+                                                             ^
+
+
+ERROR 2025-06-20 17:56:01,606 views 27264 24104 Microsoft authentication error: Token validation failed: column api_microsoftuser.tenant_id does not exist
+LINE 1: ...r"."user_id", "api_microsoftuser"."microsoft_id", "api_micro...
+                                                             ^
+
+ERROR 2025-06-20 17:56:01,607 views 27264 24104 Exception type: AuthenticationFailed
+ERROR 2025-06-20 17:56:01,616 views 27264 24104 Traceback: Traceback (most recent call last):
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\backends\utils.py", line 105, in _execute
+    return self.cursor.execute(sql, params)
+           ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+psycopg2.errors.UndefinedColumn: column api_microsoftuser.tenant_id does not exist
+LINE 1: ...r"."user_id", "api_microsoftuser"."microsoft_id", "api_micro...
+                                                             ^
+
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\almet_hris_backend\api\auth.py", line 73, in validate_token
+    microsoft_user = MicrosoftUser.objects.get(microsoft_id=microsoft_id)
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\manager.py", line 87, in manager_method
+    return getattr(self.get_queryset(), name)(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\query.py", line 629, in get
+    num = len(clone)
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\query.py", line 366, in __len__
+    self._fetch_all()
+    ~~~~~~~~~~~~~~~^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\query.py", line 1945, in _fetch_all
+    self._result_cache = list(self._iterable_class(self))
+                         ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\query.py", line 91, in __iter__
+    results = compiler.execute_sql(
+        chunked_fetch=self.chunked_fetch, chunk_size=self.chunk_size
+    )
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\sql\compiler.py", line 1623, in execute_sql
+    cursor.execute(sql, params)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\backends\utils.py", line 122, in execute
+    return super().execute(sql, params)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\backends\utils.py", line 79, in execute
+    return self._execute_with_wrappers(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        sql, params, many=False, executor=self._execute
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\backends\utils.py", line 92, in _execute_with_wrappers
+    return executor(sql, params, many, context)
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\backends\utils.py", line 100, in _execute
+    with self.db.wrap_database_errors:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\utils.py", line 91, in __exit__
+    raise dj_exc_value.with_traceback(traceback) from exc_value
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\backends\utils.py", line 105, in _execute
+    return self.cursor.execute(sql, params)
+           ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+django.db.utils.ProgrammingError: column api_microsoftuser.tenant_id does not exist
+LINE 1: ...r"."user_id", "api_microsoftuser"."microsoft_id", "api_micro...
+                                                             ^
+
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\almet_hris_backend\api\views.py", line 162, in authenticate_microsoft
+    user = MicrosoftTokenValidator.validate_token(id_token)
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\almet_hris_backend\api\auth.py", line 133, in validate_token
+    raise AuthenticationFailed(f'Token validation failed: {str(e)}')
+rest_framework.exceptions.AuthenticationFailed: Token validation failed: column api_microsoftuser.tenant_id does not exist
+LINE 1: ...r"."user_id", "api_microsoftuser"."microsoft_id", "api_micro...
+                                                             ^
+
+
+ERROR 2025-06-20 17:56:13,647 apps 12272 4440 Error initializing API app: cannot import name 'signals' from 'api' (C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\almet_hris_backend\api\__init__.py)
+ERROR 2025-06-20 17:56:27,342 apps 27252 5036 Error initializing API app: cannot import name 'signals' from 'api' (C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\almet_hris_backend\api\__init__.py)
+ERROR 2025-06-20 17:57:37,109 apps 14688 8556 Error initializing API app: cannot import name 'signals' from 'api' (C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\almet_hris_backend\api\__init__.py)
+ERROR 2025-06-20 17:57:37,654 apps 27596 24740 Error initializing API app: cannot import name 'signals' from 'api' (C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\almet_hris_backend\api\__init__.py)
+ERROR 2025-06-20 17:57:53,436 apps 11512 22360 Error initializing API app: cannot import name 'signals' from 'api' (C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\almet_hris_backend\api\__init__.py)
+ERROR 2025-06-20 17:58:35,806 apps 16852 27192 Error initializing API app: cannot import name 'signals' from 'api' (C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\almet_hris_backend\api\__init__.py)
+ERROR 2025-06-20 17:59:15,127 apps 16252 24676 Error initializing API app: cannot import name 'signals' from 'api' (C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\almet_hris_backend\api\__init__.py)
+ERROR 2025-06-20 17:59:55,452 apps 26056 5040 Error initializing API app: cannot import name 'signals' from 'api' (C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\almet_hris_backend\api\__init__.py)
+ERROR 2025-06-20 18:00:53,659 apps 21796 17396 Error initializing API app: cannot import name 'signals' from 'api' (C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\almet_hris_backend\api\__init__.py)
+ERROR 2025-06-20 18:01:00,458 apps 26088 17176 Error initializing API app: cannot import name 'signals' from 'api' (C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\almet_hris_backend\api\__init__.py)
+ERROR 2025-06-20 18:01:06,240 apps 26904 25964 Error initializing API app: cannot import name 'signals' from 'api' (C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\almet_hris_backend\api\__init__.py)
+ERROR 2025-06-21 00:13:47,055 apps 24776 10328 Error initializing API app: cannot import name 'signals' from 'api' (C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\almet_hris_backend\api\__init__.py)
+INFO 2025-06-22 13:29:57,382 views 31776 26352 === Microsoft authentication request received ===
+INFO 2025-06-22 13:29:57,385 views 31776 26352 Microsoft authentication attempt - validating token
+INFO 2025-06-22 13:29:57,388 auth 31776 26352 === Starting Microsoft token validation ===
+INFO 2025-06-22 13:29:57,389 auth 31776 26352 Received token: eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiIsImtpZCI6IkNOdj...
+INFO 2025-06-22 13:29:57,393 auth 31776 26352 === Token payload ===
+INFO 2025-06-22 13:29:57,396 auth 31776 26352 {
+  "aud": "230458ff-ed69-4abb-8496-3888067116f6",
+  "iss": "https://login.microsoftonline.com/b3222ef7-242d-4724-a665-97b0a764f2d0/v2.0",
+  "iat": 1750584296,
+  "nbf": 1750584296,
+  "exp": 1750588196,
+  "email": "n.orujova@almettrading.com",
+  "name": "Narmin Orujova",
+  "nonce": "019796f9-04aa-7cc5-a212-f4ea69380ad6",
+  "oid": "2c74167f-d69a-43a5-a1e6-910fd8560625",
+  "preferred_username": "n.orujova@almettrading.com",
+  "rh": "1.ATkA9y4isy0kJEemZZewp2Ty0P9YBCNp7btKhJY4iAZxFvaqARM5AA.",
+  "sid": "005023b9-f899-0bf0-952a-8ebc4e9da951",
+  "sub": "i7rUkArSkR21ADRGNhKBNmJkwt25_DaBfDeIyBhUpf4",
+  "tid": "b3222ef7-242d-4724-a665-97b0a764f2d0",
+  "uti": "llK9Z9atbUOvgI37tuooAA",
+  "ver": "2.0"
+}
+INFO 2025-06-22 13:29:57,399 auth 31776 26352 Audience from token: 230458ff-ed69-4abb-8496-3888067116f6
+INFO 2025-06-22 13:29:57,401 auth 31776 26352 Expected audience: 230458ff-ed69-4abb-8496-3888067116f6
+INFO 2025-06-22 13:29:57,402 auth 31776 26352 Microsoft ID (sub): i7rUkArSkR21ADRGNhKBNmJkwt25_DaBfDeIyBhUpf4
+INFO 2025-06-22 13:29:57,403 auth 31776 26352 Full name from token: Narmin Orujova
+INFO 2025-06-22 13:29:57,404 auth 31776 26352 Extracted user info: email=n.orujova@almettrading.com, first_name=Narmin, last_name=Orujova
+INFO 2025-06-22 13:29:57,503 auth 31776 26352 Found existing Microsoft user: n.orujova
+INFO 2025-06-22 13:29:57,504 auth 31776 26352 === Token validation successful for user: n.orujova ===
+INFO 2025-06-22 13:29:57,505 views 31776 26352 Token validated successfully for user: n.orujova
+INFO 2025-06-22 13:29:57,513 views 31776 26352 JWT tokens generated for user: n.orujova
+INFO 2025-06-22 13:29:57,514 views 31776 26352 Returning successful response for user: n.orujova
+INFO 2025-06-22 13:30:02,502 managers 31776 26352 Position groups order (ASC): [('VC', 1), ('Director', 2), ('HOD', 3), ('Manager', 4), ('Senior Specialist', 5), ('Specialist', 6), ('Junior Specialist', 7), ('Blue Colar ', 8), ('Blue Colar (GEO)', 9)]
+INFO 2025-06-22 13:30:02,504 managers 31776 26352 Total position groups found: 9
+ERROR 2025-06-22 13:30:02,514 views 31776 26352 Error getting position groups: column api_positiongroup.color does not exist
+LINE 1: ...p"."name", "api_positiongroup"."hierarchy_level", "api_posit...
+                                                             ^
+
+INFO 2025-06-22 13:30:02,553 serializers 31776 26352 === DETAIL SERIALIZER for Scenario 6/19/2025 2:50:21 PM ===
+INFO 2025-06-22 13:30:02,554 serializers 31776 26352 DETAIL: Extracted vertical inputs: {'Vice Chairman': 54.0, 'Director': 34.0, 'HOD': 34.0, 'Manager': 34.0, 'Senior Specialist': 34.0, 'Specialist': 34.0, 'Junior Specialist': 34.0, 'Blue Colar ': 34.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:30:02,555 serializers 31776 26352 DETAIL: Global horizontal intervals: {'LD_to_LQ': 10.0, 'LQ_to_M': 9.0, 'M_to_UQ': 8.0, 'UQ_to_UD': 10.0}
+INFO 2025-06-22 13:30:02,556 serializers 31776 26352 DETAIL: Final result input data:
+INFO 2025-06-22 13:30:02,558 serializers 31776 26352   positionVerticalInputs: {'Vice Chairman': 54.0, 'Director': 34.0, 'HOD': 34.0, 'Manager': 34.0, 'Senior Specialist': 34.0, 'Specialist': 34.0, 'Junior Specialist': 34.0, 'Blue Colar ': 34.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:30:02,559 serializers 31776 26352   inputRates preserved: True
+INFO 2025-06-22 13:30:02,561 serializers 31776 26352 === DETAIL SERIALIZER END ===
+INFO 2025-06-22 13:30:02,562 managers 31776 6572 Creating current structure from DB...
+INFO 2025-06-22 13:30:02,571 managers 31776 6572 Position groups order (ASC): [('VC', 1), ('Director', 2), ('HOD', 3), ('Manager', 4), ('Senior Specialist', 5), ('Specialist', 6), ('Junior Specialist', 7), ('Blue Colar ', 8), ('Blue Colar (GEO)', 9)]
+INFO 2025-06-22 13:30:02,574 managers 31776 6572 Total position groups found: 9
+INFO 2025-06-22 13:30:02,585 managers 31776 6572 Found current scenario: Scenario 6/19/2025 2:50:21 PM
+ERROR 2025-06-22 13:30:02,587 views 31776 6572 Error getting current structure: column api_positiongroup.color does not exist
+LINE 1: ...p"."name", "api_positiongroup"."hierarchy_level", "api_posit...
+                                                             ^
+
+INFO 2025-06-22 13:30:02,599 managers 31776 6572 Position groups order (ASC): [('VC', 1), ('Director', 2), ('HOD', 3), ('Manager', 4), ('Senior Specialist', 5), ('Specialist', 6), ('Junior Specialist', 7), ('Blue Colar ', 8), ('Blue Colar (GEO)', 9)]
+INFO 2025-06-22 13:30:02,604 managers 31776 26352 Creating current structure from DB...
+INFO 2025-06-22 13:30:02,604 managers 31776 6572 Total position groups found: 9
+INFO 2025-06-22 13:30:02,607 managers 31776 26352 Position groups order (ASC): [('VC', 1), ('Director', 2), ('HOD', 3), ('Manager', 4), ('Senior Specialist', 5), ('Specialist', 6), ('Junior Specialist', 7), ('Blue Colar ', 8), ('Blue Colar (GEO)', 9)]
+ERROR 2025-06-22 13:30:02,609 views 31776 6572 Error getting position groups: column api_positiongroup.color does not exist
+LINE 1: ...p"."name", "api_positiongroup"."hierarchy_level", "api_posit...
+                                                             ^
+
+INFO 2025-06-22 13:30:02,610 managers 31776 26352 Total position groups found: 9
+INFO 2025-06-22 13:30:02,619 managers 31776 26352 Found current scenario: Scenario 6/19/2025 2:50:21 PM
+ERROR 2025-06-22 13:30:02,623 views 31776 26352 Error getting current structure: column api_positiongroup.color does not exist
+LINE 1: ...p"."name", "api_positiongroup"."hierarchy_level", "api_posit...
+                                                             ^
+
+INFO 2025-06-22 13:30:02,629 serializers 31776 6572 === DETAIL SERIALIZER for Scenario 6/19/2025 2:50:21 PM ===
+INFO 2025-06-22 13:30:02,632 serializers 31776 6572 DETAIL: Extracted vertical inputs: {'Vice Chairman': 54.0, 'Director': 34.0, 'HOD': 34.0, 'Manager': 34.0, 'Senior Specialist': 34.0, 'Specialist': 34.0, 'Junior Specialist': 34.0, 'Blue Colar ': 34.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:30:02,637 serializers 31776 6572 DETAIL: Global horizontal intervals: {'LD_to_LQ': 10.0, 'LQ_to_M': 9.0, 'M_to_UQ': 8.0, 'UQ_to_UD': 10.0}
+INFO 2025-06-22 13:30:02,641 serializers 31776 6572 DETAIL: Final result input data:
+INFO 2025-06-22 13:30:02,642 serializers 31776 6572   positionVerticalInputs: {'Vice Chairman': 54.0, 'Director': 34.0, 'HOD': 34.0, 'Manager': 34.0, 'Senior Specialist': 34.0, 'Specialist': 34.0, 'Junior Specialist': 34.0, 'Blue Colar ': 34.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:30:02,642 serializers 31776 6572   inputRates preserved: True
+INFO 2025-06-22 13:30:02,643 serializers 31776 6572 === DETAIL SERIALIZER END ===
+INFO 2025-06-22 13:30:02,651 serializers 31776 26352 === LIST SERIALIZER for Scenario 6/18/2025 3:07:51 PM ===
+INFO 2025-06-22 13:30:02,654 serializers 31776 26352 LIST: Extracted vertical inputs: {'Vice Chairman': 13.0, 'Director': 64.0, 'HOD': 88.0, 'Manager': 36.0, 'Senior Specialist': 46.0, 'Specialist': 54.0, 'Junior Specialist': 29.0, 'Blue Colar ': 90.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:30:02,660 serializers 31776 26352 LIST: Global horizontal intervals: {'LD_to_LQ': 63.0, 'LQ_to_M': 48.0, 'M_to_UQ': 20.0, 'UQ_to_UD': 76.0}
+INFO 2025-06-22 13:30:02,663 serializers 31776 26352 === LIST SERIALIZER for Scenario 6/18/2025 3:07:33 PM ===
+INFO 2025-06-22 13:30:02,664 serializers 31776 26352 LIST: Extracted vertical inputs: {'Vice Chairman': 13.0, 'Director': 78.0, 'HOD': 57.0, 'Manager': 36.0, 'Senior Specialist': 62.0, 'Specialist': 92.0, 'Junior Specialist': 19.0, 'Blue Colar ': 50.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:30:02,667 serializers 31776 26352 LIST: Global horizontal intervals: {'LD_to_LQ': 98.0, 'LQ_to_M': 30.0, 'M_to_UQ': 12.0, 'UQ_to_UD': 56.0}
+INFO 2025-06-22 13:30:02,667 serializers 31776 6572 === LIST SERIALIZER for Scenario 6/18/2025 11:29:40 AM ===
+INFO 2025-06-22 13:30:02,669 serializers 31776 26352 === LIST SERIALIZER for Scenario 6/18/2025 2:37:02 PM ===
+INFO 2025-06-22 13:30:02,670 serializers 31776 6572 LIST: Extracted vertical inputs: {'Vice Chairman': 67.0, 'Director': 90.0, 'HOD': 49.0, 'Manager': 28.0, 'Senior Specialist': 95.0, 'Specialist': 27.0, 'Junior Specialist': 24.0, 'Blue Colar ': 39.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:30:02,670 serializers 31776 26352 LIST: Extracted vertical inputs: {'Vice Chairman': 24.0, 'Director': 78.0, 'HOD': 79.0, 'Manager': 46.0, 'Senior Specialist': 21.0, 'Specialist': 63.0, 'Junior Specialist': 66.0, 'Blue Colar ': 7.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:30:02,672 serializers 31776 6572 LIST: Global horizontal intervals: {'LD_to_LQ': 33.0, 'LQ_to_M': 5.0, 'M_to_UQ': 33.0, 'UQ_to_UD': 86.0}
+INFO 2025-06-22 13:30:02,672 serializers 31776 26352 LIST: Global horizontal intervals: {'LD_to_LQ': 68.0, 'LQ_to_M': 50.0, 'M_to_UQ': 7.0, 'UQ_to_UD': 24.0}
+INFO 2025-06-22 13:30:02,674 serializers 31776 6572 === LIST SERIALIZER for Scenario 6/13/2025 4:08:02 PM ===
+INFO 2025-06-22 13:30:02,675 serializers 31776 26352 === LIST SERIALIZER for Scenario 6/18/2025 11:27:54 AM ===
+INFO 2025-06-22 13:30:02,676 serializers 31776 6572 LIST: Extracted vertical inputs: {'Vice Chairman': 67.0, 'Director': 38.0, 'HOD': 56.0, 'Manager': 77.0, 'Senior Specialist': 97.0, 'Specialist': 87.0, 'Junior Specialist': 97.0, 'Blue Colar ': 15.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:30:02,677 serializers 31776 26352 LIST: Extracted vertical inputs: {'Vice Chairman': 79.0, 'Director': 26.0, 'HOD': 6.0, 'Manager': 20.0, 'Senior Specialist': 1.0, 'Specialist': 36.0, 'Junior Specialist': 35.0, 'Blue Colar ': 58.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:30:02,678 serializers 31776 6572 LIST: Global horizontal intervals: {'LD_to_LQ': 98.0, 'LQ_to_M': 72.0, 'M_to_UQ': 60.0, 'UQ_to_UD': 43.0}
+INFO 2025-06-22 13:30:02,678 serializers 31776 26352 LIST: Global horizontal intervals: {'LD_to_LQ': 76.0, 'LQ_to_M': 49.0, 'M_to_UQ': 20.0, 'UQ_to_UD': 6.0}
+INFO 2025-06-22 13:30:02,679 serializers 31776 6572 === LIST SERIALIZER for Scenario 6/13/2025 3:59:44 PM ===
+INFO 2025-06-22 13:30:02,680 serializers 31776 26352 === LIST SERIALIZER for Scenario 6/17/2025 4:18:52 PM ===
+INFO 2025-06-22 13:30:02,681 serializers 31776 6572 LIST: Extracted vertical inputs: {'Vice Chairman': 98.0, 'Director': 27.0, 'HOD': 18.0, 'Manager': 68.0, 'Senior Specialist': 11.0, 'Specialist': 54.0, 'Junior Specialist': 42.0, 'Blue Colar ': 43.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:30:02,682 serializers 31776 26352 LIST: Extracted vertical inputs: {'Vice Chairman': 85.0, 'Director': 54.0, 'HOD': 47.0, 'Manager': 72.0, 'Senior Specialist': 100.0, 'Specialist': 2.0, 'Junior Specialist': 61.0, 'Blue Colar ': 57.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:30:02,682 serializers 31776 6572 LIST: Global horizontal intervals: {'LD_to_LQ': 5.0, 'LQ_to_M': 18.0, 'M_to_UQ': 76.0, 'UQ_to_UD': 74.0}
+INFO 2025-06-22 13:30:02,684 serializers 31776 26352 LIST: Global horizontal intervals: {'LD_to_LQ': 23.0, 'LQ_to_M': 41.0, 'M_to_UQ': 84.0, 'UQ_to_UD': 25.0}
+INFO 2025-06-22 13:30:02,691 serializers 31776 26352 === LIST SERIALIZER for Scenario 6/17/2025 2:40:50 PM ===
+INFO 2025-06-22 13:30:02,695 serializers 31776 26352 LIST: Extracted vertical inputs: {'Vice Chairman': 95.0, 'Director': 71.0, 'HOD': 1.0, 'Manager': 82.0, 'Senior Specialist': 53.0, 'Specialist': 53.0, 'Junior Specialist': 22.0, 'Blue Colar ': 40.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:30:02,698 serializers 31776 26352 LIST: Global horizontal intervals: {'LD_to_LQ': 3.0, 'LQ_to_M': 90.0, 'M_to_UQ': 8.0, 'UQ_to_UD': 75.0}
+INFO 2025-06-22 13:30:02,699 serializers 31776 26352 === LIST SERIALIZER for Scenario 6/17/2025 2:23:29 PM ===
+INFO 2025-06-22 13:30:02,702 serializers 31776 6572 === LIST SERIALIZER for Scenario 6/18/2025 11:29:40 AM ===
+INFO 2025-06-22 13:30:02,703 serializers 31776 26352 LIST: Extracted vertical inputs: {'Vice Chairman': 2.0, 'Director': None, 'HOD': None, 'Manager': None, 'Senior Specialist': None, 'Specialist': None, 'Junior Specialist': None, 'Blue Colar ': None, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:30:02,704 serializers 31776 6572 LIST: Extracted vertical inputs: {'Vice Chairman': 67.0, 'Director': 90.0, 'HOD': 49.0, 'Manager': 28.0, 'Senior Specialist': 95.0, 'Specialist': 27.0, 'Junior Specialist': 24.0, 'Blue Colar ': 39.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:30:02,705 serializers 31776 26352 LIST: Global horizontal intervals: {'LD_to_LQ': 20.0, 'LQ_to_M': 7.0, 'M_to_UQ': 6.0, 'UQ_to_UD': 6.0}
+INFO 2025-06-22 13:30:02,706 serializers 31776 6572 LIST: Global horizontal intervals: {'LD_to_LQ': 33.0, 'LQ_to_M': 5.0, 'M_to_UQ': 33.0, 'UQ_to_UD': 86.0}
+INFO 2025-06-22 13:30:02,707 serializers 31776 26352 === LIST SERIALIZER for Scenario 6/17/2025 12:26:06 PM ===
+INFO 2025-06-22 13:30:02,708 serializers 31776 6572 === LIST SERIALIZER for Scenario 6/13/2025 4:08:02 PM ===
+INFO 2025-06-22 13:30:02,709 serializers 31776 26352 LIST: Extracted vertical inputs: {'Vice Chairman': 91.0, 'Director': 15.0, 'HOD': 4.0, 'Manager': 40.0, 'Senior Specialist': 26.0, 'Specialist': 9.0, 'Junior Specialist': 23.0, 'Blue Colar ': 11.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:30:02,711 serializers 31776 26352 LIST: Global horizontal intervals: {'LD_to_LQ': 50.0, 'LQ_to_M': 14.0, 'M_to_UQ': 79.0, 'UQ_to_UD': 52.0}
+INFO 2025-06-22 13:30:02,710 serializers 31776 6572 LIST: Extracted vertical inputs: {'Vice Chairman': 67.0, 'Director': 38.0, 'HOD': 56.0, 'Manager': 77.0, 'Senior Specialist': 97.0, 'Specialist': 87.0, 'Junior Specialist': 97.0, 'Blue Colar ': 15.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:30:02,712 serializers 31776 26352 === LIST SERIALIZER for Scenario 6/17/2025 12:14:48 PM ===
+INFO 2025-06-22 13:30:02,713 serializers 31776 6572 LIST: Global horizontal intervals: {'LD_to_LQ': 98.0, 'LQ_to_M': 72.0, 'M_to_UQ': 60.0, 'UQ_to_UD': 43.0}
+INFO 2025-06-22 13:30:02,714 serializers 31776 26352 LIST: Extracted vertical inputs: {'Vice Chairman': 16.0, 'Director': 18.0, 'HOD': 4.0, 'Manager': 22.0, 'Senior Specialist': 8.0, 'Specialist': 83.0, 'Junior Specialist': 16.0, 'Blue Colar ': 13.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:30:02,714 serializers 31776 6572 === LIST SERIALIZER for Scenario 6/13/2025 3:59:44 PM ===
+INFO 2025-06-22 13:30:02,716 serializers 31776 26352 LIST: Global horizontal intervals: {'LD_to_LQ': 46.0, 'LQ_to_M': 20.0, 'M_to_UQ': 37.0, 'UQ_to_UD': 70.0}
+INFO 2025-06-22 13:30:02,716 serializers 31776 6572 LIST: Extracted vertical inputs: {'Vice Chairman': 98.0, 'Director': 27.0, 'HOD': 18.0, 'Manager': 68.0, 'Senior Specialist': 11.0, 'Specialist': 54.0, 'Junior Specialist': 42.0, 'Blue Colar ': 43.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:30:02,718 serializers 31776 26352 === LIST SERIALIZER for Scenario 6/17/2025 12:13:24 PM ===
+INFO 2025-06-22 13:30:02,718 serializers 31776 6572 LIST: Global horizontal intervals: {'LD_to_LQ': 5.0, 'LQ_to_M': 18.0, 'M_to_UQ': 76.0, 'UQ_to_UD': 74.0}
+INFO 2025-06-22 13:30:02,721 serializers 31776 26352 LIST: Extracted vertical inputs: {'Vice Chairman': 2.0, 'Director': 49.0, 'HOD': 50.0, 'Manager': 25.0, 'Senior Specialist': 41.0, 'Specialist': 14.0, 'Junior Specialist': 33.0, 'Blue Colar ': 30.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:30:02,722 serializers 31776 26352 LIST: Global horizontal intervals: {'LD_to_LQ': 89.0, 'LQ_to_M': 16.0, 'M_to_UQ': 44.0, 'UQ_to_UD': 70.0}
+INFO 2025-06-22 13:30:02,723 serializers 31776 26352 === LIST SERIALIZER for Scenario 6/13/2025 4:04:49 PM ===
+INFO 2025-06-22 13:30:02,724 serializers 31776 26352 LIST: Extracted vertical inputs: {'Vice Chairman': 50.0, 'Director': 68.0, 'HOD': 49.0, 'Manager': 55.0, 'Senior Specialist': 97.0, 'Specialist': 32.0, 'Junior Specialist': 68.0, 'Blue Colar ': 42.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:30:02,725 serializers 31776 26352 LIST: Global horizontal intervals: {'LD_to_LQ': 75.0, 'LQ_to_M': 79.0, 'M_to_UQ': 20.0, 'UQ_to_UD': 39.0}
+INFO 2025-06-22 13:30:02,726 serializers 31776 26352 === LIST SERIALIZER for Scenario 6/13/2025 4:04:39 PM ===
+INFO 2025-06-22 13:30:02,726 serializers 31776 26352 LIST: Extracted vertical inputs: {'Vice Chairman': 37.0, 'Director': 36.0, 'HOD': 58.0, 'Manager': 93.0, 'Senior Specialist': 37.0, 'Specialist': 21.0, 'Junior Specialist': 96.0, 'Blue Colar ': 74.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:30:02,727 serializers 31776 26352 LIST: Global horizontal intervals: {'LD_to_LQ': 97.0, 'LQ_to_M': 96.0, 'M_to_UQ': 0.0, 'UQ_to_UD': 44.0}
+INFO 2025-06-22 13:30:02,746 serializers 31776 6572 === LIST SERIALIZER for Scenario 6/18/2025 3:07:51 PM ===
+INFO 2025-06-22 13:30:02,747 serializers 31776 6572 LIST: Extracted vertical inputs: {'Vice Chairman': 13.0, 'Director': 64.0, 'HOD': 88.0, 'Manager': 36.0, 'Senior Specialist': 46.0, 'Specialist': 54.0, 'Junior Specialist': 29.0, 'Blue Colar ': 90.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:30:02,748 serializers 31776 6572 LIST: Global horizontal intervals: {'LD_to_LQ': 63.0, 'LQ_to_M': 48.0, 'M_to_UQ': 20.0, 'UQ_to_UD': 76.0}
+INFO 2025-06-22 13:30:02,749 serializers 31776 6572 === LIST SERIALIZER for Scenario 6/18/2025 3:07:33 PM ===
+INFO 2025-06-22 13:30:02,749 serializers 31776 6572 LIST: Extracted vertical inputs: {'Vice Chairman': 13.0, 'Director': 78.0, 'HOD': 57.0, 'Manager': 36.0, 'Senior Specialist': 62.0, 'Specialist': 92.0, 'Junior Specialist': 19.0, 'Blue Colar ': 50.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:30:02,750 serializers 31776 6572 LIST: Global horizontal intervals: {'LD_to_LQ': 98.0, 'LQ_to_M': 30.0, 'M_to_UQ': 12.0, 'UQ_to_UD': 56.0}
+INFO 2025-06-22 13:30:02,751 serializers 31776 6572 === LIST SERIALIZER for Scenario 6/18/2025 2:37:02 PM ===
+INFO 2025-06-22 13:30:02,752 serializers 31776 6572 LIST: Extracted vertical inputs: {'Vice Chairman': 24.0, 'Director': 78.0, 'HOD': 79.0, 'Manager': 46.0, 'Senior Specialist': 21.0, 'Specialist': 63.0, 'Junior Specialist': 66.0, 'Blue Colar ': 7.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:30:02,752 serializers 31776 6572 LIST: Global horizontal intervals: {'LD_to_LQ': 68.0, 'LQ_to_M': 50.0, 'M_to_UQ': 7.0, 'UQ_to_UD': 24.0}
+INFO 2025-06-22 13:30:02,753 serializers 31776 6572 === LIST SERIALIZER for Scenario 6/18/2025 11:27:54 AM ===
+INFO 2025-06-22 13:30:02,754 serializers 31776 6572 LIST: Extracted vertical inputs: {'Vice Chairman': 79.0, 'Director': 26.0, 'HOD': 6.0, 'Manager': 20.0, 'Senior Specialist': 1.0, 'Specialist': 36.0, 'Junior Specialist': 35.0, 'Blue Colar ': 58.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:30:02,755 serializers 31776 6572 LIST: Global horizontal intervals: {'LD_to_LQ': 76.0, 'LQ_to_M': 49.0, 'M_to_UQ': 20.0, 'UQ_to_UD': 6.0}
+INFO 2025-06-22 13:30:02,756 serializers 31776 6572 === LIST SERIALIZER for Scenario 6/17/2025 4:18:52 PM ===
+INFO 2025-06-22 13:30:02,756 serializers 31776 6572 LIST: Extracted vertical inputs: {'Vice Chairman': 85.0, 'Director': 54.0, 'HOD': 47.0, 'Manager': 72.0, 'Senior Specialist': 100.0, 'Specialist': 2.0, 'Junior Specialist': 61.0, 'Blue Colar ': 57.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:30:02,757 serializers 31776 6572 LIST: Global horizontal intervals: {'LD_to_LQ': 23.0, 'LQ_to_M': 41.0, 'M_to_UQ': 84.0, 'UQ_to_UD': 25.0}
+INFO 2025-06-22 13:30:02,758 serializers 31776 6572 === LIST SERIALIZER for Scenario 6/17/2025 2:40:50 PM ===
+INFO 2025-06-22 13:30:02,758 serializers 31776 6572 LIST: Extracted vertical inputs: {'Vice Chairman': 95.0, 'Director': 71.0, 'HOD': 1.0, 'Manager': 82.0, 'Senior Specialist': 53.0, 'Specialist': 53.0, 'Junior Specialist': 22.0, 'Blue Colar ': 40.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:30:02,759 serializers 31776 6572 LIST: Global horizontal intervals: {'LD_to_LQ': 3.0, 'LQ_to_M': 90.0, 'M_to_UQ': 8.0, 'UQ_to_UD': 75.0}
+INFO 2025-06-22 13:30:02,760 serializers 31776 6572 === LIST SERIALIZER for Scenario 6/17/2025 2:23:29 PM ===
+INFO 2025-06-22 13:30:02,761 serializers 31776 6572 LIST: Extracted vertical inputs: {'Vice Chairman': 2.0, 'Director': None, 'HOD': None, 'Manager': None, 'Senior Specialist': None, 'Specialist': None, 'Junior Specialist': None, 'Blue Colar ': None, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:30:02,762 serializers 31776 6572 LIST: Global horizontal intervals: {'LD_to_LQ': 20.0, 'LQ_to_M': 7.0, 'M_to_UQ': 6.0, 'UQ_to_UD': 6.0}
+INFO 2025-06-22 13:30:02,762 serializers 31776 6572 === LIST SERIALIZER for Scenario 6/17/2025 12:26:06 PM ===
+INFO 2025-06-22 13:30:02,763 serializers 31776 6572 LIST: Extracted vertical inputs: {'Vice Chairman': 91.0, 'Director': 15.0, 'HOD': 4.0, 'Manager': 40.0, 'Senior Specialist': 26.0, 'Specialist': 9.0, 'Junior Specialist': 23.0, 'Blue Colar ': 11.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:30:02,763 serializers 31776 6572 LIST: Global horizontal intervals: {'LD_to_LQ': 50.0, 'LQ_to_M': 14.0, 'M_to_UQ': 79.0, 'UQ_to_UD': 52.0}
+INFO 2025-06-22 13:30:02,764 serializers 31776 6572 === LIST SERIALIZER for Scenario 6/17/2025 12:14:48 PM ===
+INFO 2025-06-22 13:30:02,765 serializers 31776 6572 LIST: Extracted vertical inputs: {'Vice Chairman': 16.0, 'Director': 18.0, 'HOD': 4.0, 'Manager': 22.0, 'Senior Specialist': 8.0, 'Specialist': 83.0, 'Junior Specialist': 16.0, 'Blue Colar ': 13.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:30:02,766 serializers 31776 6572 LIST: Global horizontal intervals: {'LD_to_LQ': 46.0, 'LQ_to_M': 20.0, 'M_to_UQ': 37.0, 'UQ_to_UD': 70.0}
+INFO 2025-06-22 13:30:02,767 serializers 31776 6572 === LIST SERIALIZER for Scenario 6/17/2025 12:13:24 PM ===
+INFO 2025-06-22 13:30:02,767 serializers 31776 6572 LIST: Extracted vertical inputs: {'Vice Chairman': 2.0, 'Director': 49.0, 'HOD': 50.0, 'Manager': 25.0, 'Senior Specialist': 41.0, 'Specialist': 14.0, 'Junior Specialist': 33.0, 'Blue Colar ': 30.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:30:02,768 serializers 31776 6572 LIST: Global horizontal intervals: {'LD_to_LQ': 89.0, 'LQ_to_M': 16.0, 'M_to_UQ': 44.0, 'UQ_to_UD': 70.0}
+INFO 2025-06-22 13:30:02,769 serializers 31776 6572 === LIST SERIALIZER for Scenario 6/13/2025 4:04:49 PM ===
+INFO 2025-06-22 13:30:02,770 serializers 31776 6572 LIST: Extracted vertical inputs: {'Vice Chairman': 50.0, 'Director': 68.0, 'HOD': 49.0, 'Manager': 55.0, 'Senior Specialist': 97.0, 'Specialist': 32.0, 'Junior Specialist': 68.0, 'Blue Colar ': 42.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:30:02,770 serializers 31776 6572 LIST: Global horizontal intervals: {'LD_to_LQ': 75.0, 'LQ_to_M': 79.0, 'M_to_UQ': 20.0, 'UQ_to_UD': 39.0}
+INFO 2025-06-22 13:30:02,771 serializers 31776 6572 === LIST SERIALIZER for Scenario 6/13/2025 4:04:39 PM ===
+INFO 2025-06-22 13:30:02,772 serializers 31776 6572 LIST: Extracted vertical inputs: {'Vice Chairman': 37.0, 'Director': 36.0, 'HOD': 58.0, 'Manager': 93.0, 'Senior Specialist': 37.0, 'Specialist': 21.0, 'Junior Specialist': 96.0, 'Blue Colar ': 74.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:30:02,773 serializers 31776 6572 LIST: Global horizontal intervals: {'LD_to_LQ': 97.0, 'LQ_to_M': 96.0, 'M_to_UQ': 0.0, 'UQ_to_UD': 44.0}
+INFO 2025-06-22 13:30:05,801 managers 31776 6572 Creating current structure from DB...
+INFO 2025-06-22 13:30:05,804 managers 31776 26352 Position groups order (ASC): [('VC', 1), ('Director', 2), ('HOD', 3), ('Manager', 4), ('Senior Specialist', 5), ('Specialist', 6), ('Junior Specialist', 7), ('Blue Colar ', 8), ('Blue Colar (GEO)', 9)]
+INFO 2025-06-22 13:30:05,805 managers 31776 6572 Position groups order (ASC): [('VC', 1), ('Director', 2), ('HOD', 3), ('Manager', 4), ('Senior Specialist', 5), ('Specialist', 6), ('Junior Specialist', 7), ('Blue Colar ', 8), ('Blue Colar (GEO)', 9)]
+INFO 2025-06-22 13:30:05,808 managers 31776 26352 Total position groups found: 9
+INFO 2025-06-22 13:30:05,808 managers 31776 6572 Total position groups found: 9
+ERROR 2025-06-22 13:30:05,811 views 31776 26352 Error getting position groups: column api_positiongroup.color does not exist
+LINE 1: ...p"."name", "api_positiongroup"."hierarchy_level", "api_posit...
+                                                             ^
+
+INFO 2025-06-22 13:30:05,815 managers 31776 6572 Found current scenario: Scenario 6/19/2025 2:50:21 PM
+ERROR 2025-06-22 13:30:05,817 views 31776 6572 Error getting current structure: column api_positiongroup.color does not exist
+LINE 1: ...p"."name", "api_positiongroup"."hierarchy_level", "api_posit...
+                                                             ^
+
+INFO 2025-06-22 13:30:05,903 serializers 31776 12232 === DETAIL SERIALIZER for Scenario 6/19/2025 2:50:21 PM ===
+INFO 2025-06-22 13:30:05,904 serializers 31776 12232 DETAIL: Extracted vertical inputs: {'Vice Chairman': 54.0, 'Director': 34.0, 'HOD': 34.0, 'Manager': 34.0, 'Senior Specialist': 34.0, 'Specialist': 34.0, 'Junior Specialist': 34.0, 'Blue Colar ': 34.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:30:05,905 serializers 31776 12232 DETAIL: Global horizontal intervals: {'LD_to_LQ': 10.0, 'LQ_to_M': 9.0, 'M_to_UQ': 8.0, 'UQ_to_UD': 10.0}
+INFO 2025-06-22 13:30:05,905 serializers 31776 12232 DETAIL: Final result input data:
+INFO 2025-06-22 13:30:05,906 serializers 31776 12232   positionVerticalInputs: {'Vice Chairman': 54.0, 'Director': 34.0, 'HOD': 34.0, 'Manager': 34.0, 'Senior Specialist': 34.0, 'Specialist': 34.0, 'Junior Specialist': 34.0, 'Blue Colar ': 34.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:30:05,907 serializers 31776 12232   inputRates preserved: True
+INFO 2025-06-22 13:30:05,907 serializers 31776 12232 === DETAIL SERIALIZER END ===
+INFO 2025-06-22 13:30:05,962 serializers 31776 12232 === LIST SERIALIZER for Scenario 6/18/2025 3:07:51 PM ===
+INFO 2025-06-22 13:30:05,965 serializers 31776 6572 === LIST SERIALIZER for Scenario 6/18/2025 11:29:40 AM ===
+INFO 2025-06-22 13:30:05,966 serializers 31776 6572 LIST: Extracted vertical inputs: {'Vice Chairman': 67.0, 'Director': 90.0, 'HOD': 49.0, 'Manager': 28.0, 'Senior Specialist': 95.0, 'Specialist': 27.0, 'Junior Specialist': 24.0, 'Blue Colar ': 39.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:30:05,966 serializers 31776 12232 LIST: Extracted vertical inputs: {'Vice Chairman': 13.0, 'Director': 64.0, 'HOD': 88.0, 'Manager': 36.0, 'Senior Specialist': 46.0, 'Specialist': 54.0, 'Junior Specialist': 29.0, 'Blue Colar ': 90.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:30:05,968 serializers 31776 12232 LIST: Global horizontal intervals: {'LD_to_LQ': 63.0, 'LQ_to_M': 48.0, 'M_to_UQ': 20.0, 'UQ_to_UD': 76.0}
+INFO 2025-06-22 13:30:05,969 serializers 31776 6572 LIST: Global horizontal intervals: {'LD_to_LQ': 33.0, 'LQ_to_M': 5.0, 'M_to_UQ': 33.0, 'UQ_to_UD': 86.0}
+INFO 2025-06-22 13:30:05,969 serializers 31776 12232 === LIST SERIALIZER for Scenario 6/18/2025 3:07:33 PM ===
+INFO 2025-06-22 13:30:05,972 serializers 31776 12232 LIST: Extracted vertical inputs: {'Vice Chairman': 13.0, 'Director': 78.0, 'HOD': 57.0, 'Manager': 36.0, 'Senior Specialist': 62.0, 'Specialist': 92.0, 'Junior Specialist': 19.0, 'Blue Colar ': 50.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:30:05,971 serializers 31776 6572 === LIST SERIALIZER for Scenario 6/13/2025 4:08:02 PM ===
+INFO 2025-06-22 13:30:05,973 serializers 31776 12232 LIST: Global horizontal intervals: {'LD_to_LQ': 98.0, 'LQ_to_M': 30.0, 'M_to_UQ': 12.0, 'UQ_to_UD': 56.0}
+INFO 2025-06-22 13:30:05,974 serializers 31776 6572 LIST: Extracted vertical inputs: {'Vice Chairman': 67.0, 'Director': 38.0, 'HOD': 56.0, 'Manager': 77.0, 'Senior Specialist': 97.0, 'Specialist': 87.0, 'Junior Specialist': 97.0, 'Blue Colar ': 15.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:30:05,974 serializers 31776 12232 === LIST SERIALIZER for Scenario 6/18/2025 2:37:02 PM ===
+INFO 2025-06-22 13:30:05,976 serializers 31776 6572 LIST: Global horizontal intervals: {'LD_to_LQ': 98.0, 'LQ_to_M': 72.0, 'M_to_UQ': 60.0, 'UQ_to_UD': 43.0}
+INFO 2025-06-22 13:30:05,976 serializers 31776 12232 LIST: Extracted vertical inputs: {'Vice Chairman': 24.0, 'Director': 78.0, 'HOD': 79.0, 'Manager': 46.0, 'Senior Specialist': 21.0, 'Specialist': 63.0, 'Junior Specialist': 66.0, 'Blue Colar ': 7.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:30:05,978 serializers 31776 6572 === LIST SERIALIZER for Scenario 6/13/2025 3:59:44 PM ===
+INFO 2025-06-22 13:30:05,979 serializers 31776 12232 LIST: Global horizontal intervals: {'LD_to_LQ': 68.0, 'LQ_to_M': 50.0, 'M_to_UQ': 7.0, 'UQ_to_UD': 24.0}
+INFO 2025-06-22 13:30:05,980 serializers 31776 6572 LIST: Extracted vertical inputs: {'Vice Chairman': 98.0, 'Director': 27.0, 'HOD': 18.0, 'Manager': 68.0, 'Senior Specialist': 11.0, 'Specialist': 54.0, 'Junior Specialist': 42.0, 'Blue Colar ': 43.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:30:05,981 serializers 31776 6572 LIST: Global horizontal intervals: {'LD_to_LQ': 5.0, 'LQ_to_M': 18.0, 'M_to_UQ': 76.0, 'UQ_to_UD': 74.0}
+INFO 2025-06-22 13:30:05,982 serializers 31776 12232 === LIST SERIALIZER for Scenario 6/18/2025 11:27:54 AM ===
+INFO 2025-06-22 13:30:05,985 serializers 31776 12232 LIST: Extracted vertical inputs: {'Vice Chairman': 79.0, 'Director': 26.0, 'HOD': 6.0, 'Manager': 20.0, 'Senior Specialist': 1.0, 'Specialist': 36.0, 'Junior Specialist': 35.0, 'Blue Colar ': 58.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:30:05,986 serializers 31776 12232 LIST: Global horizontal intervals: {'LD_to_LQ': 76.0, 'LQ_to_M': 49.0, 'M_to_UQ': 20.0, 'UQ_to_UD': 6.0}
+INFO 2025-06-22 13:30:05,987 serializers 31776 12232 === LIST SERIALIZER for Scenario 6/17/2025 4:18:52 PM ===
+INFO 2025-06-22 13:30:05,988 serializers 31776 12232 LIST: Extracted vertical inputs: {'Vice Chairman': 85.0, 'Director': 54.0, 'HOD': 47.0, 'Manager': 72.0, 'Senior Specialist': 100.0, 'Specialist': 2.0, 'Junior Specialist': 61.0, 'Blue Colar ': 57.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:30:05,989 serializers 31776 12232 LIST: Global horizontal intervals: {'LD_to_LQ': 23.0, 'LQ_to_M': 41.0, 'M_to_UQ': 84.0, 'UQ_to_UD': 25.0}
+INFO 2025-06-22 13:30:05,990 serializers 31776 12232 === LIST SERIALIZER for Scenario 6/17/2025 2:40:50 PM ===
+INFO 2025-06-22 13:30:05,991 serializers 31776 12232 LIST: Extracted vertical inputs: {'Vice Chairman': 95.0, 'Director': 71.0, 'HOD': 1.0, 'Manager': 82.0, 'Senior Specialist': 53.0, 'Specialist': 53.0, 'Junior Specialist': 22.0, 'Blue Colar ': 40.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:30:05,991 serializers 31776 12232 LIST: Global horizontal intervals: {'LD_to_LQ': 3.0, 'LQ_to_M': 90.0, 'M_to_UQ': 8.0, 'UQ_to_UD': 75.0}
+INFO 2025-06-22 13:30:05,993 serializers 31776 12232 === LIST SERIALIZER for Scenario 6/17/2025 2:23:29 PM ===
+INFO 2025-06-22 13:30:05,993 serializers 31776 12232 LIST: Extracted vertical inputs: {'Vice Chairman': 2.0, 'Director': None, 'HOD': None, 'Manager': None, 'Senior Specialist': None, 'Specialist': None, 'Junior Specialist': None, 'Blue Colar ': None, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:30:05,994 serializers 31776 12232 LIST: Global horizontal intervals: {'LD_to_LQ': 20.0, 'LQ_to_M': 7.0, 'M_to_UQ': 6.0, 'UQ_to_UD': 6.0}
+INFO 2025-06-22 13:30:05,995 serializers 31776 12232 === LIST SERIALIZER for Scenario 6/17/2025 12:26:06 PM ===
+INFO 2025-06-22 13:30:05,995 serializers 31776 12232 LIST: Extracted vertical inputs: {'Vice Chairman': 91.0, 'Director': 15.0, 'HOD': 4.0, 'Manager': 40.0, 'Senior Specialist': 26.0, 'Specialist': 9.0, 'Junior Specialist': 23.0, 'Blue Colar ': 11.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:30:05,996 serializers 31776 12232 LIST: Global horizontal intervals: {'LD_to_LQ': 50.0, 'LQ_to_M': 14.0, 'M_to_UQ': 79.0, 'UQ_to_UD': 52.0}
+INFO 2025-06-22 13:30:05,997 serializers 31776 12232 === LIST SERIALIZER for Scenario 6/17/2025 12:14:48 PM ===
+INFO 2025-06-22 13:30:05,997 serializers 31776 12232 LIST: Extracted vertical inputs: {'Vice Chairman': 16.0, 'Director': 18.0, 'HOD': 4.0, 'Manager': 22.0, 'Senior Specialist': 8.0, 'Specialist': 83.0, 'Junior Specialist': 16.0, 'Blue Colar ': 13.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:30:05,999 serializers 31776 12232 LIST: Global horizontal intervals: {'LD_to_LQ': 46.0, 'LQ_to_M': 20.0, 'M_to_UQ': 37.0, 'UQ_to_UD': 70.0}
+INFO 2025-06-22 13:30:05,999 serializers 31776 12232 === LIST SERIALIZER for Scenario 6/17/2025 12:13:24 PM ===
+INFO 2025-06-22 13:30:06,000 serializers 31776 12232 LIST: Extracted vertical inputs: {'Vice Chairman': 2.0, 'Director': 49.0, 'HOD': 50.0, 'Manager': 25.0, 'Senior Specialist': 41.0, 'Specialist': 14.0, 'Junior Specialist': 33.0, 'Blue Colar ': 30.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:30:06,000 serializers 31776 12232 LIST: Global horizontal intervals: {'LD_to_LQ': 89.0, 'LQ_to_M': 16.0, 'M_to_UQ': 44.0, 'UQ_to_UD': 70.0}
+INFO 2025-06-22 13:30:06,001 serializers 31776 12232 === LIST SERIALIZER for Scenario 6/13/2025 4:04:49 PM ===
+INFO 2025-06-22 13:30:06,002 serializers 31776 12232 LIST: Extracted vertical inputs: {'Vice Chairman': 50.0, 'Director': 68.0, 'HOD': 49.0, 'Manager': 55.0, 'Senior Specialist': 97.0, 'Specialist': 32.0, 'Junior Specialist': 68.0, 'Blue Colar ': 42.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:30:06,002 serializers 31776 12232 LIST: Global horizontal intervals: {'LD_to_LQ': 75.0, 'LQ_to_M': 79.0, 'M_to_UQ': 20.0, 'UQ_to_UD': 39.0}
+INFO 2025-06-22 13:30:06,003 serializers 31776 12232 === LIST SERIALIZER for Scenario 6/13/2025 4:04:39 PM ===
+INFO 2025-06-22 13:30:06,004 serializers 31776 12232 LIST: Extracted vertical inputs: {'Vice Chairman': 37.0, 'Director': 36.0, 'HOD': 58.0, 'Manager': 93.0, 'Senior Specialist': 37.0, 'Specialist': 21.0, 'Junior Specialist': 96.0, 'Blue Colar ': 74.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:30:06,004 serializers 31776 12232 LIST: Global horizontal intervals: {'LD_to_LQ': 97.0, 'LQ_to_M': 96.0, 'M_to_UQ': 0.0, 'UQ_to_UD': 44.0}
+INFO 2025-06-22 13:30:06,742 managers 31776 12232 Creating current structure from DB...
+INFO 2025-06-22 13:30:06,743 managers 31776 6572 Position groups order (ASC): [('VC', 1), ('Director', 2), ('HOD', 3), ('Manager', 4), ('Senior Specialist', 5), ('Specialist', 6), ('Junior Specialist', 7), ('Blue Colar ', 8), ('Blue Colar (GEO)', 9)]
+INFO 2025-06-22 13:30:06,751 managers 31776 12232 Position groups order (ASC): [('VC', 1), ('Director', 2), ('HOD', 3), ('Manager', 4), ('Senior Specialist', 5), ('Specialist', 6), ('Junior Specialist', 7), ('Blue Colar ', 8), ('Blue Colar (GEO)', 9)]
+INFO 2025-06-22 13:30:06,752 serializers 31776 26352 === DETAIL SERIALIZER for Scenario 6/19/2025 2:50:21 PM ===
+INFO 2025-06-22 13:30:06,752 managers 31776 6572 Total position groups found: 9
+INFO 2025-06-22 13:30:06,755 serializers 31776 26352 DETAIL: Extracted vertical inputs: {'Vice Chairman': 54.0, 'Director': 34.0, 'HOD': 34.0, 'Manager': 34.0, 'Senior Specialist': 34.0, 'Specialist': 34.0, 'Junior Specialist': 34.0, 'Blue Colar ': 34.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:30:06,756 managers 31776 12232 Total position groups found: 9
+INFO 2025-06-22 13:30:06,759 serializers 31776 26352 DETAIL: Global horizontal intervals: {'LD_to_LQ': 10.0, 'LQ_to_M': 9.0, 'M_to_UQ': 8.0, 'UQ_to_UD': 10.0}
+ERROR 2025-06-22 13:30:06,759 views 31776 6572 Error getting position groups: column api_positiongroup.color does not exist
+LINE 1: ...p"."name", "api_positiongroup"."hierarchy_level", "api_posit...
+                                                             ^
+
+INFO 2025-06-22 13:30:06,763 serializers 31776 26352 DETAIL: Final result input data:
+INFO 2025-06-22 13:30:06,764 managers 31776 12232 Found current scenario: Scenario 6/19/2025 2:50:21 PM
+INFO 2025-06-22 13:30:06,768 serializers 31776 26352   positionVerticalInputs: {'Vice Chairman': 54.0, 'Director': 34.0, 'HOD': 34.0, 'Manager': 34.0, 'Senior Specialist': 34.0, 'Specialist': 34.0, 'Junior Specialist': 34.0, 'Blue Colar ': 34.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:30:06,770 serializers 31776 26352   inputRates preserved: True
+ERROR 2025-06-22 13:30:06,771 views 31776 12232 Error getting current structure: column api_positiongroup.color does not exist
+LINE 1: ...p"."name", "api_positiongroup"."hierarchy_level", "api_posit...
+                                                             ^
+
+INFO 2025-06-22 13:30:06,773 serializers 31776 26352 === DETAIL SERIALIZER END ===
+INFO 2025-06-22 13:30:06,875 serializers 31776 12232 === LIST SERIALIZER for Scenario 6/18/2025 11:29:40 AM ===
+INFO 2025-06-22 13:30:06,879 serializers 31776 26352 === LIST SERIALIZER for Scenario 6/18/2025 3:07:51 PM ===
+INFO 2025-06-22 13:30:06,880 serializers 31776 12232 LIST: Extracted vertical inputs: {'Vice Chairman': 67.0, 'Director': 90.0, 'HOD': 49.0, 'Manager': 28.0, 'Senior Specialist': 95.0, 'Specialist': 27.0, 'Junior Specialist': 24.0, 'Blue Colar ': 39.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:30:06,882 serializers 31776 12232 LIST: Global horizontal intervals: {'LD_to_LQ': 33.0, 'LQ_to_M': 5.0, 'M_to_UQ': 33.0, 'UQ_to_UD': 86.0}
+INFO 2025-06-22 13:30:06,881 serializers 31776 26352 LIST: Extracted vertical inputs: {'Vice Chairman': 13.0, 'Director': 64.0, 'HOD': 88.0, 'Manager': 36.0, 'Senior Specialist': 46.0, 'Specialist': 54.0, 'Junior Specialist': 29.0, 'Blue Colar ': 90.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:30:06,883 serializers 31776 26352 LIST: Global horizontal intervals: {'LD_to_LQ': 63.0, 'LQ_to_M': 48.0, 'M_to_UQ': 20.0, 'UQ_to_UD': 76.0}
+INFO 2025-06-22 13:30:06,883 serializers 31776 12232 === LIST SERIALIZER for Scenario 6/13/2025 4:08:02 PM ===
+INFO 2025-06-22 13:30:06,885 serializers 31776 12232 LIST: Extracted vertical inputs: {'Vice Chairman': 67.0, 'Director': 38.0, 'HOD': 56.0, 'Manager': 77.0, 'Senior Specialist': 97.0, 'Specialist': 87.0, 'Junior Specialist': 97.0, 'Blue Colar ': 15.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:30:06,886 serializers 31776 26352 === LIST SERIALIZER for Scenario 6/18/2025 3:07:33 PM ===
+INFO 2025-06-22 13:30:06,887 serializers 31776 12232 LIST: Global horizontal intervals: {'LD_to_LQ': 98.0, 'LQ_to_M': 72.0, 'M_to_UQ': 60.0, 'UQ_to_UD': 43.0}
+INFO 2025-06-22 13:30:06,888 serializers 31776 26352 LIST: Extracted vertical inputs: {'Vice Chairman': 13.0, 'Director': 78.0, 'HOD': 57.0, 'Manager': 36.0, 'Senior Specialist': 62.0, 'Specialist': 92.0, 'Junior Specialist': 19.0, 'Blue Colar ': 50.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:30:06,890 serializers 31776 12232 === LIST SERIALIZER for Scenario 6/13/2025 3:59:44 PM ===
+INFO 2025-06-22 13:30:06,890 serializers 31776 26352 LIST: Global horizontal intervals: {'LD_to_LQ': 98.0, 'LQ_to_M': 30.0, 'M_to_UQ': 12.0, 'UQ_to_UD': 56.0}
+INFO 2025-06-22 13:30:06,891 serializers 31776 12232 LIST: Extracted vertical inputs: {'Vice Chairman': 98.0, 'Director': 27.0, 'HOD': 18.0, 'Manager': 68.0, 'Senior Specialist': 11.0, 'Specialist': 54.0, 'Junior Specialist': 42.0, 'Blue Colar ': 43.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:30:06,892 serializers 31776 26352 === LIST SERIALIZER for Scenario 6/18/2025 2:37:02 PM ===
+INFO 2025-06-22 13:30:06,893 serializers 31776 12232 LIST: Global horizontal intervals: {'LD_to_LQ': 5.0, 'LQ_to_M': 18.0, 'M_to_UQ': 76.0, 'UQ_to_UD': 74.0}
+INFO 2025-06-22 13:30:06,894 serializers 31776 26352 LIST: Extracted vertical inputs: {'Vice Chairman': 24.0, 'Director': 78.0, 'HOD': 79.0, 'Manager': 46.0, 'Senior Specialist': 21.0, 'Specialist': 63.0, 'Junior Specialist': 66.0, 'Blue Colar ': 7.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:30:06,896 serializers 31776 26352 LIST: Global horizontal intervals: {'LD_to_LQ': 68.0, 'LQ_to_M': 50.0, 'M_to_UQ': 7.0, 'UQ_to_UD': 24.0}
+INFO 2025-06-22 13:30:06,898 serializers 31776 26352 === LIST SERIALIZER for Scenario 6/18/2025 11:27:54 AM ===
+INFO 2025-06-22 13:30:06,899 serializers 31776 26352 LIST: Extracted vertical inputs: {'Vice Chairman': 79.0, 'Director': 26.0, 'HOD': 6.0, 'Manager': 20.0, 'Senior Specialist': 1.0, 'Specialist': 36.0, 'Junior Specialist': 35.0, 'Blue Colar ': 58.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:30:06,899 serializers 31776 26352 LIST: Global horizontal intervals: {'LD_to_LQ': 76.0, 'LQ_to_M': 49.0, 'M_to_UQ': 20.0, 'UQ_to_UD': 6.0}
+INFO 2025-06-22 13:30:06,900 serializers 31776 26352 === LIST SERIALIZER for Scenario 6/17/2025 4:18:52 PM ===
+INFO 2025-06-22 13:30:06,901 serializers 31776 26352 LIST: Extracted vertical inputs: {'Vice Chairman': 85.0, 'Director': 54.0, 'HOD': 47.0, 'Manager': 72.0, 'Senior Specialist': 100.0, 'Specialist': 2.0, 'Junior Specialist': 61.0, 'Blue Colar ': 57.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:30:06,902 serializers 31776 26352 LIST: Global horizontal intervals: {'LD_to_LQ': 23.0, 'LQ_to_M': 41.0, 'M_to_UQ': 84.0, 'UQ_to_UD': 25.0}
+INFO 2025-06-22 13:30:06,903 serializers 31776 26352 === LIST SERIALIZER for Scenario 6/17/2025 2:40:50 PM ===
+INFO 2025-06-22 13:30:06,903 serializers 31776 26352 LIST: Extracted vertical inputs: {'Vice Chairman': 95.0, 'Director': 71.0, 'HOD': 1.0, 'Manager': 82.0, 'Senior Specialist': 53.0, 'Specialist': 53.0, 'Junior Specialist': 22.0, 'Blue Colar ': 40.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:30:06,904 serializers 31776 26352 LIST: Global horizontal intervals: {'LD_to_LQ': 3.0, 'LQ_to_M': 90.0, 'M_to_UQ': 8.0, 'UQ_to_UD': 75.0}
+INFO 2025-06-22 13:30:06,905 serializers 31776 26352 === LIST SERIALIZER for Scenario 6/17/2025 2:23:29 PM ===
+INFO 2025-06-22 13:30:06,906 serializers 31776 26352 LIST: Extracted vertical inputs: {'Vice Chairman': 2.0, 'Director': None, 'HOD': None, 'Manager': None, 'Senior Specialist': None, 'Specialist': None, 'Junior Specialist': None, 'Blue Colar ': None, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:30:06,906 serializers 31776 26352 LIST: Global horizontal intervals: {'LD_to_LQ': 20.0, 'LQ_to_M': 7.0, 'M_to_UQ': 6.0, 'UQ_to_UD': 6.0}
+INFO 2025-06-22 13:30:06,907 serializers 31776 26352 === LIST SERIALIZER for Scenario 6/17/2025 12:26:06 PM ===
+INFO 2025-06-22 13:30:06,907 serializers 31776 26352 LIST: Extracted vertical inputs: {'Vice Chairman': 91.0, 'Director': 15.0, 'HOD': 4.0, 'Manager': 40.0, 'Senior Specialist': 26.0, 'Specialist': 9.0, 'Junior Specialist': 23.0, 'Blue Colar ': 11.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:30:06,907 serializers 31776 26352 LIST: Global horizontal intervals: {'LD_to_LQ': 50.0, 'LQ_to_M': 14.0, 'M_to_UQ': 79.0, 'UQ_to_UD': 52.0}
+INFO 2025-06-22 13:30:06,908 serializers 31776 26352 === LIST SERIALIZER for Scenario 6/17/2025 12:14:48 PM ===
+INFO 2025-06-22 13:30:06,909 serializers 31776 26352 LIST: Extracted vertical inputs: {'Vice Chairman': 16.0, 'Director': 18.0, 'HOD': 4.0, 'Manager': 22.0, 'Senior Specialist': 8.0, 'Specialist': 83.0, 'Junior Specialist': 16.0, 'Blue Colar ': 13.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:30:06,910 serializers 31776 26352 LIST: Global horizontal intervals: {'LD_to_LQ': 46.0, 'LQ_to_M': 20.0, 'M_to_UQ': 37.0, 'UQ_to_UD': 70.0}
+INFO 2025-06-22 13:30:06,911 serializers 31776 26352 === LIST SERIALIZER for Scenario 6/17/2025 12:13:24 PM ===
+INFO 2025-06-22 13:30:06,911 serializers 31776 26352 LIST: Extracted vertical inputs: {'Vice Chairman': 2.0, 'Director': 49.0, 'HOD': 50.0, 'Manager': 25.0, 'Senior Specialist': 41.0, 'Specialist': 14.0, 'Junior Specialist': 33.0, 'Blue Colar ': 30.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:30:06,912 serializers 31776 26352 LIST: Global horizontal intervals: {'LD_to_LQ': 89.0, 'LQ_to_M': 16.0, 'M_to_UQ': 44.0, 'UQ_to_UD': 70.0}
+INFO 2025-06-22 13:30:06,913 serializers 31776 26352 === LIST SERIALIZER for Scenario 6/13/2025 4:04:49 PM ===
+INFO 2025-06-22 13:30:06,914 serializers 31776 26352 LIST: Extracted vertical inputs: {'Vice Chairman': 50.0, 'Director': 68.0, 'HOD': 49.0, 'Manager': 55.0, 'Senior Specialist': 97.0, 'Specialist': 32.0, 'Junior Specialist': 68.0, 'Blue Colar ': 42.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:30:06,915 serializers 31776 26352 LIST: Global horizontal intervals: {'LD_to_LQ': 75.0, 'LQ_to_M': 79.0, 'M_to_UQ': 20.0, 'UQ_to_UD': 39.0}
+INFO 2025-06-22 13:30:06,916 serializers 31776 26352 === LIST SERIALIZER for Scenario 6/13/2025 4:04:39 PM ===
+INFO 2025-06-22 13:30:06,916 serializers 31776 26352 LIST: Extracted vertical inputs: {'Vice Chairman': 37.0, 'Director': 36.0, 'HOD': 58.0, 'Manager': 93.0, 'Senior Specialist': 37.0, 'Specialist': 21.0, 'Junior Specialist': 96.0, 'Blue Colar ': 74.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:30:06,917 serializers 31776 26352 LIST: Global horizontal intervals: {'LD_to_LQ': 97.0, 'LQ_to_M': 96.0, 'M_to_UQ': 0.0, 'UQ_to_UD': 44.0}
+INFO 2025-06-22 13:30:53,197 views 31776 12232 === Microsoft authentication request received ===
+INFO 2025-06-22 13:30:53,200 views 31776 12232 Microsoft authentication attempt - validating token
+INFO 2025-06-22 13:30:53,201 auth 31776 12232 === Starting Microsoft token validation ===
+INFO 2025-06-22 13:30:53,202 auth 31776 12232 Received token: eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiIsImtpZCI6IkNOdj...
+INFO 2025-06-22 13:30:53,204 auth 31776 12232 === Token payload ===
+INFO 2025-06-22 13:30:53,206 auth 31776 12232 {
+  "aud": "230458ff-ed69-4abb-8496-3888067116f6",
+  "iss": "https://login.microsoftonline.com/b3222ef7-242d-4724-a665-97b0a764f2d0/v2.0",
+  "iat": 1750584296,
+  "nbf": 1750584296,
+  "exp": 1750588196,
+  "email": "n.orujova@almettrading.com",
+  "name": "Narmin Orujova",
+  "nonce": "019796f9-04aa-7cc5-a212-f4ea69380ad6",
+  "oid": "2c74167f-d69a-43a5-a1e6-910fd8560625",
+  "preferred_username": "n.orujova@almettrading.com",
+  "rh": "1.ATkA9y4isy0kJEemZZewp2Ty0P9YBCNp7btKhJY4iAZxFvaqARM5AA.",
+  "sid": "005023b9-f899-0bf0-952a-8ebc4e9da951",
+  "sub": "i7rUkArSkR21ADRGNhKBNmJkwt25_DaBfDeIyBhUpf4",
+  "tid": "b3222ef7-242d-4724-a665-97b0a764f2d0",
+  "uti": "llK9Z9atbUOvgI37tuooAA",
+  "ver": "2.0"
+}
+INFO 2025-06-22 13:30:53,208 auth 31776 12232 Audience from token: 230458ff-ed69-4abb-8496-3888067116f6
+INFO 2025-06-22 13:30:53,209 auth 31776 12232 Expected audience: 230458ff-ed69-4abb-8496-3888067116f6
+INFO 2025-06-22 13:30:53,211 auth 31776 12232 Microsoft ID (sub): i7rUkArSkR21ADRGNhKBNmJkwt25_DaBfDeIyBhUpf4
+INFO 2025-06-22 13:30:53,212 auth 31776 12232 Full name from token: Narmin Orujova
+INFO 2025-06-22 13:30:53,212 auth 31776 12232 Extracted user info: email=n.orujova@almettrading.com, first_name=Narmin, last_name=Orujova
+INFO 2025-06-22 13:30:53,217 auth 31776 12232 Found existing Microsoft user: n.orujova
+INFO 2025-06-22 13:30:53,218 auth 31776 12232 === Token validation successful for user: n.orujova ===
+INFO 2025-06-22 13:30:53,218 views 31776 12232 Token validated successfully for user: n.orujova
+INFO 2025-06-22 13:30:53,220 views 31776 12232 JWT tokens generated for user: n.orujova
+INFO 2025-06-22 13:30:53,221 views 31776 12232 Returning successful response for user: n.orujova
+INFO 2025-06-22 13:30:58,726 views 31776 12232 === Microsoft authentication request received ===
+INFO 2025-06-22 13:30:58,727 views 31776 12232 Microsoft authentication attempt - validating token
+INFO 2025-06-22 13:30:58,727 auth 31776 12232 === Starting Microsoft token validation ===
+INFO 2025-06-22 13:30:58,728 auth 31776 12232 Received token: eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiIsImtpZCI6IkNOdj...
+INFO 2025-06-22 13:30:58,728 auth 31776 12232 === Token payload ===
+INFO 2025-06-22 13:30:58,729 auth 31776 12232 {
+  "aud": "230458ff-ed69-4abb-8496-3888067116f6",
+  "iss": "https://login.microsoftonline.com/b3222ef7-242d-4724-a665-97b0a764f2d0/v2.0",
+  "iat": 1750584296,
+  "nbf": 1750584296,
+  "exp": 1750588196,
+  "email": "n.orujova@almettrading.com",
+  "name": "Narmin Orujova",
+  "nonce": "019796f9-04aa-7cc5-a212-f4ea69380ad6",
+  "oid": "2c74167f-d69a-43a5-a1e6-910fd8560625",
+  "preferred_username": "n.orujova@almettrading.com",
+  "rh": "1.ATkA9y4isy0kJEemZZewp2Ty0P9YBCNp7btKhJY4iAZxFvaqARM5AA.",
+  "sid": "005023b9-f899-0bf0-952a-8ebc4e9da951",
+  "sub": "i7rUkArSkR21ADRGNhKBNmJkwt25_DaBfDeIyBhUpf4",
+  "tid": "b3222ef7-242d-4724-a665-97b0a764f2d0",
+  "uti": "llK9Z9atbUOvgI37tuooAA",
+  "ver": "2.0"
+}
+INFO 2025-06-22 13:30:58,730 auth 31776 12232 Audience from token: 230458ff-ed69-4abb-8496-3888067116f6
+INFO 2025-06-22 13:30:58,730 auth 31776 12232 Expected audience: 230458ff-ed69-4abb-8496-3888067116f6
+INFO 2025-06-22 13:30:58,730 auth 31776 12232 Microsoft ID (sub): i7rUkArSkR21ADRGNhKBNmJkwt25_DaBfDeIyBhUpf4
+INFO 2025-06-22 13:30:58,731 auth 31776 12232 Full name from token: Narmin Orujova
+INFO 2025-06-22 13:30:58,732 auth 31776 12232 Extracted user info: email=n.orujova@almettrading.com, first_name=Narmin, last_name=Orujova
+INFO 2025-06-22 13:30:58,736 auth 31776 12232 Found existing Microsoft user: n.orujova
+INFO 2025-06-22 13:30:58,737 auth 31776 12232 === Token validation successful for user: n.orujova ===
+INFO 2025-06-22 13:30:58,738 views 31776 12232 Token validated successfully for user: n.orujova
+INFO 2025-06-22 13:30:58,740 views 31776 12232 JWT tokens generated for user: n.orujova
+INFO 2025-06-22 13:30:58,741 views 31776 12232 Returning successful response for user: n.orujova
+INFO 2025-06-22 13:34:28,341 managers 30592 3240 Creating current structure from DB...
+INFO 2025-06-22 13:34:28,345 managers 30592 6008 Position groups order (ASC): [('VC', 1), ('Director', 2), ('HOD', 3), ('Manager', 4), ('Senior Specialist', 5), ('Specialist', 6), ('Junior Specialist', 7), ('Blue Colar ', 8), ('Blue Colar (GEO)', 9)]
+INFO 2025-06-22 13:34:28,347 managers 30592 3240 Position groups order (ASC): [('VC', 1), ('Director', 2), ('HOD', 3), ('Manager', 4), ('Senior Specialist', 5), ('Specialist', 6), ('Junior Specialist', 7), ('Blue Colar ', 8), ('Blue Colar (GEO)', 9)]
+INFO 2025-06-22 13:34:28,347 managers 30592 6008 Total position groups found: 9
+INFO 2025-06-22 13:34:28,348 managers 30592 3240 Total position groups found: 9
+INFO 2025-06-22 13:34:28,359 serializers 30592 29868 === DETAIL SERIALIZER for Scenario 6/19/2025 2:50:21 PM ===
+INFO 2025-06-22 13:34:28,360 serializers 30592 29868 DETAIL: Extracted vertical inputs: {'Vice Chairman': 54.0, 'Director': 34.0, 'HOD': 34.0, 'Manager': 34.0, 'Senior Specialist': 34.0, 'Specialist': 34.0, 'Junior Specialist': 34.0, 'Blue Colar ': 34.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:34:28,360 managers 30592 6008 Position groups order (ASC): [('VC', 1), ('Director', 2), ('HOD', 3), ('Manager', 4), ('Senior Specialist', 5), ('Specialist', 6), ('Junior Specialist', 7), ('Blue Colar ', 8), ('Blue Colar (GEO)', 9)]
+INFO 2025-06-22 13:34:28,360 serializers 30592 29868 DETAIL: Global horizontal intervals: {'LD_to_LQ': 10.0, 'LQ_to_M': 9.0, 'M_to_UQ': 8.0, 'UQ_to_UD': 10.0}
+INFO 2025-06-22 13:34:28,362 managers 30592 6008 Total position groups found: 9
+INFO 2025-06-22 13:34:28,362 serializers 30592 29868 DETAIL: Final result input data:
+INFO 2025-06-22 13:34:28,364 serializers 30592 29868   positionVerticalInputs: {'Vice Chairman': 54.0, 'Director': 34.0, 'HOD': 34.0, 'Manager': 34.0, 'Senior Specialist': 34.0, 'Specialist': 34.0, 'Junior Specialist': 34.0, 'Blue Colar ': 34.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:34:28,364 managers 30592 3240 Found current scenario: Scenario 6/19/2025 2:50:21 PM
+INFO 2025-06-22 13:34:28,366 serializers 30592 29868   inputRates preserved: True
+INFO 2025-06-22 13:34:28,368 serializers 30592 29868 === DETAIL SERIALIZER END ===
+INFO 2025-06-22 13:34:28,369 managers 30592 3240 Current structure grade order: ['Vice Chairman', 'Director', 'HOD', 'Manager', 'Senior Specialist', 'Specialist', 'Junior Specialist', 'Blue Colar ', 'Blue Colar (GEO)']
+INFO 2025-06-22 13:34:28,371 managers 30592 3240 Base value position: Blue Colar (GEO) (last = lowest hierarchy)
+INFO 2025-06-22 13:34:28,376 managers 30592 3240 Creating current structure from DB...
+INFO 2025-06-22 13:34:28,379 managers 30592 3240 Position groups order (ASC): [('VC', 1), ('Director', 2), ('HOD', 3), ('Manager', 4), ('Senior Specialist', 5), ('Specialist', 6), ('Junior Specialist', 7), ('Blue Colar ', 8), ('Blue Colar (GEO)', 9)]
+INFO 2025-06-22 13:34:28,381 managers 30592 3240 Total position groups found: 9
+INFO 2025-06-22 13:34:28,385 managers 30592 3240 Found current scenario: Scenario 6/19/2025 2:50:21 PM
+INFO 2025-06-22 13:34:28,387 managers 30592 3240 Current structure grade order: ['Vice Chairman', 'Director', 'HOD', 'Manager', 'Senior Specialist', 'Specialist', 'Junior Specialist', 'Blue Colar ', 'Blue Colar (GEO)']
+INFO 2025-06-22 13:34:28,388 managers 30592 3240 Base value position: Blue Colar (GEO) (last = lowest hierarchy)
+INFO 2025-06-22 13:34:28,402 serializers 30592 6008 === DETAIL SERIALIZER for Scenario 6/19/2025 2:50:21 PM ===
+INFO 2025-06-22 13:34:28,403 serializers 30592 6008 DETAIL: Extracted vertical inputs: {'Vice Chairman': 54.0, 'Director': 34.0, 'HOD': 34.0, 'Manager': 34.0, 'Senior Specialist': 34.0, 'Specialist': 34.0, 'Junior Specialist': 34.0, 'Blue Colar ': 34.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:34:28,403 serializers 30592 6008 DETAIL: Global horizontal intervals: {'LD_to_LQ': 10.0, 'LQ_to_M': 9.0, 'M_to_UQ': 8.0, 'UQ_to_UD': 10.0}
+INFO 2025-06-22 13:34:28,404 serializers 30592 6008 DETAIL: Final result input data:
+INFO 2025-06-22 13:34:28,404 serializers 30592 6008   positionVerticalInputs: {'Vice Chairman': 54.0, 'Director': 34.0, 'HOD': 34.0, 'Manager': 34.0, 'Senior Specialist': 34.0, 'Specialist': 34.0, 'Junior Specialist': 34.0, 'Blue Colar ': 34.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:34:28,405 serializers 30592 6008   inputRates preserved: True
+INFO 2025-06-22 13:34:28,406 serializers 30592 6008 === DETAIL SERIALIZER END ===
+INFO 2025-06-22 13:34:28,420 serializers 30592 29868 === LIST SERIALIZER for Scenario 6/18/2025 11:29:40 AM ===
+INFO 2025-06-22 13:34:28,420 serializers 30592 29868 LIST: Extracted vertical inputs: {'Vice Chairman': 67.0, 'Director': 90.0, 'HOD': 49.0, 'Manager': 28.0, 'Senior Specialist': 95.0, 'Specialist': 27.0, 'Junior Specialist': 24.0, 'Blue Colar ': 39.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:34:28,421 serializers 30592 29868 LIST: Global horizontal intervals: {'LD_to_LQ': 33.0, 'LQ_to_M': 5.0, 'M_to_UQ': 33.0, 'UQ_to_UD': 86.0}
+INFO 2025-06-22 13:34:28,421 serializers 30592 29868 === LIST SERIALIZER for Scenario 6/13/2025 4:08:02 PM ===
+INFO 2025-06-22 13:34:28,422 serializers 30592 29868 LIST: Extracted vertical inputs: {'Vice Chairman': 67.0, 'Director': 38.0, 'HOD': 56.0, 'Manager': 77.0, 'Senior Specialist': 97.0, 'Specialist': 87.0, 'Junior Specialist': 97.0, 'Blue Colar ': 15.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:34:28,423 serializers 30592 3240 === LIST SERIALIZER for Scenario 6/18/2025 3:07:51 PM ===
+INFO 2025-06-22 13:34:28,424 serializers 30592 29868 LIST: Global horizontal intervals: {'LD_to_LQ': 98.0, 'LQ_to_M': 72.0, 'M_to_UQ': 60.0, 'UQ_to_UD': 43.0}
+INFO 2025-06-22 13:34:28,424 serializers 30592 3240 LIST: Extracted vertical inputs: {'Vice Chairman': 13.0, 'Director': 64.0, 'HOD': 88.0, 'Manager': 36.0, 'Senior Specialist': 46.0, 'Specialist': 54.0, 'Junior Specialist': 29.0, 'Blue Colar ': 90.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:34:28,425 serializers 30592 29868 === LIST SERIALIZER for Scenario 6/13/2025 3:59:44 PM ===
+INFO 2025-06-22 13:34:28,426 serializers 30592 3240 LIST: Global horizontal intervals: {'LD_to_LQ': 63.0, 'LQ_to_M': 48.0, 'M_to_UQ': 20.0, 'UQ_to_UD': 76.0}
+INFO 2025-06-22 13:34:28,426 serializers 30592 29868 LIST: Extracted vertical inputs: {'Vice Chairman': 98.0, 'Director': 27.0, 'HOD': 18.0, 'Manager': 68.0, 'Senior Specialist': 11.0, 'Specialist': 54.0, 'Junior Specialist': 42.0, 'Blue Colar ': 43.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:34:28,427 serializers 30592 3240 === LIST SERIALIZER for Scenario 6/18/2025 3:07:33 PM ===
+INFO 2025-06-22 13:34:28,428 serializers 30592 29868 LIST: Global horizontal intervals: {'LD_to_LQ': 5.0, 'LQ_to_M': 18.0, 'M_to_UQ': 76.0, 'UQ_to_UD': 74.0}
+INFO 2025-06-22 13:34:28,428 serializers 30592 3240 LIST: Extracted vertical inputs: {'Vice Chairman': 13.0, 'Director': 78.0, 'HOD': 57.0, 'Manager': 36.0, 'Senior Specialist': 62.0, 'Specialist': 92.0, 'Junior Specialist': 19.0, 'Blue Colar ': 50.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:34:28,431 serializers 30592 3240 LIST: Global horizontal intervals: {'LD_to_LQ': 98.0, 'LQ_to_M': 30.0, 'M_to_UQ': 12.0, 'UQ_to_UD': 56.0}
+INFO 2025-06-22 13:34:28,431 serializers 30592 3240 === LIST SERIALIZER for Scenario 6/18/2025 2:37:02 PM ===
+INFO 2025-06-22 13:34:28,432 serializers 30592 3240 LIST: Extracted vertical inputs: {'Vice Chairman': 24.0, 'Director': 78.0, 'HOD': 79.0, 'Manager': 46.0, 'Senior Specialist': 21.0, 'Specialist': 63.0, 'Junior Specialist': 66.0, 'Blue Colar ': 7.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:34:28,432 serializers 30592 3240 LIST: Global horizontal intervals: {'LD_to_LQ': 68.0, 'LQ_to_M': 50.0, 'M_to_UQ': 7.0, 'UQ_to_UD': 24.0}
+INFO 2025-06-22 13:34:28,433 serializers 30592 3240 === LIST SERIALIZER for Scenario 6/18/2025 11:27:54 AM ===
+INFO 2025-06-22 13:34:28,435 serializers 30592 3240 LIST: Extracted vertical inputs: {'Vice Chairman': 79.0, 'Director': 26.0, 'HOD': 6.0, 'Manager': 20.0, 'Senior Specialist': 1.0, 'Specialist': 36.0, 'Junior Specialist': 35.0, 'Blue Colar ': 58.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:34:28,436 serializers 30592 3240 LIST: Global horizontal intervals: {'LD_to_LQ': 76.0, 'LQ_to_M': 49.0, 'M_to_UQ': 20.0, 'UQ_to_UD': 6.0}
+INFO 2025-06-22 13:34:28,436 serializers 30592 3240 === LIST SERIALIZER for Scenario 6/17/2025 4:18:52 PM ===
+INFO 2025-06-22 13:34:28,437 serializers 30592 3240 LIST: Extracted vertical inputs: {'Vice Chairman': 85.0, 'Director': 54.0, 'HOD': 47.0, 'Manager': 72.0, 'Senior Specialist': 100.0, 'Specialist': 2.0, 'Junior Specialist': 61.0, 'Blue Colar ': 57.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:34:28,437 serializers 30592 3240 LIST: Global horizontal intervals: {'LD_to_LQ': 23.0, 'LQ_to_M': 41.0, 'M_to_UQ': 84.0, 'UQ_to_UD': 25.0}
+INFO 2025-06-22 13:34:28,437 serializers 30592 3240 === LIST SERIALIZER for Scenario 6/17/2025 2:40:50 PM ===
+INFO 2025-06-22 13:34:28,439 serializers 30592 6008 === LIST SERIALIZER for Scenario 6/18/2025 11:29:40 AM ===
+INFO 2025-06-22 13:34:28,440 serializers 30592 6008 LIST: Extracted vertical inputs: {'Vice Chairman': 67.0, 'Director': 90.0, 'HOD': 49.0, 'Manager': 28.0, 'Senior Specialist': 95.0, 'Specialist': 27.0, 'Junior Specialist': 24.0, 'Blue Colar ': 39.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:34:28,440 serializers 30592 3240 LIST: Extracted vertical inputs: {'Vice Chairman': 95.0, 'Director': 71.0, 'HOD': 1.0, 'Manager': 82.0, 'Senior Specialist': 53.0, 'Specialist': 53.0, 'Junior Specialist': 22.0, 'Blue Colar ': 40.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:34:28,440 serializers 30592 6008 LIST: Global horizontal intervals: {'LD_to_LQ': 33.0, 'LQ_to_M': 5.0, 'M_to_UQ': 33.0, 'UQ_to_UD': 86.0}
+INFO 2025-06-22 13:34:28,440 serializers 30592 3240 LIST: Global horizontal intervals: {'LD_to_LQ': 3.0, 'LQ_to_M': 90.0, 'M_to_UQ': 8.0, 'UQ_to_UD': 75.0}
+INFO 2025-06-22 13:34:28,441 serializers 30592 6008 === LIST SERIALIZER for Scenario 6/13/2025 4:08:02 PM ===
+INFO 2025-06-22 13:34:28,442 serializers 30592 3240 === LIST SERIALIZER for Scenario 6/17/2025 2:23:29 PM ===
+INFO 2025-06-22 13:34:28,442 serializers 30592 6008 LIST: Extracted vertical inputs: {'Vice Chairman': 67.0, 'Director': 38.0, 'HOD': 56.0, 'Manager': 77.0, 'Senior Specialist': 97.0, 'Specialist': 87.0, 'Junior Specialist': 97.0, 'Blue Colar ': 15.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:34:28,442 serializers 30592 3240 LIST: Extracted vertical inputs: {'Vice Chairman': 2.0, 'Director': None, 'HOD': None, 'Manager': None, 'Senior Specialist': None, 'Specialist': None, 'Junior Specialist': None, 'Blue Colar ': None, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:34:28,443 serializers 30592 6008 LIST: Global horizontal intervals: {'LD_to_LQ': 98.0, 'LQ_to_M': 72.0, 'M_to_UQ': 60.0, 'UQ_to_UD': 43.0}
+INFO 2025-06-22 13:34:28,443 serializers 30592 6008 === LIST SERIALIZER for Scenario 6/13/2025 3:59:44 PM ===
+INFO 2025-06-22 13:34:28,444 serializers 30592 3240 LIST: Global horizontal intervals: {'LD_to_LQ': 20.0, 'LQ_to_M': 7.0, 'M_to_UQ': 6.0, 'UQ_to_UD': 6.0}
+INFO 2025-06-22 13:34:28,444 serializers 30592 6008 LIST: Extracted vertical inputs: {'Vice Chairman': 98.0, 'Director': 27.0, 'HOD': 18.0, 'Manager': 68.0, 'Senior Specialist': 11.0, 'Specialist': 54.0, 'Junior Specialist': 42.0, 'Blue Colar ': 43.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:34:28,445 serializers 30592 3240 === LIST SERIALIZER for Scenario 6/17/2025 12:26:06 PM ===
+INFO 2025-06-22 13:34:28,445 serializers 30592 6008 LIST: Global horizontal intervals: {'LD_to_LQ': 5.0, 'LQ_to_M': 18.0, 'M_to_UQ': 76.0, 'UQ_to_UD': 74.0}
+INFO 2025-06-22 13:34:28,446 serializers 30592 3240 LIST: Extracted vertical inputs: {'Vice Chairman': 91.0, 'Director': 15.0, 'HOD': 4.0, 'Manager': 40.0, 'Senior Specialist': 26.0, 'Specialist': 9.0, 'Junior Specialist': 23.0, 'Blue Colar ': 11.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:34:28,448 serializers 30592 3240 LIST: Global horizontal intervals: {'LD_to_LQ': 50.0, 'LQ_to_M': 14.0, 'M_to_UQ': 79.0, 'UQ_to_UD': 52.0}
+INFO 2025-06-22 13:34:28,448 serializers 30592 3240 === LIST SERIALIZER for Scenario 6/17/2025 12:14:48 PM ===
+INFO 2025-06-22 13:34:28,448 serializers 30592 3240 LIST: Extracted vertical inputs: {'Vice Chairman': 16.0, 'Director': 18.0, 'HOD': 4.0, 'Manager': 22.0, 'Senior Specialist': 8.0, 'Specialist': 83.0, 'Junior Specialist': 16.0, 'Blue Colar ': 13.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:34:28,448 serializers 30592 3240 LIST: Global horizontal intervals: {'LD_to_LQ': 46.0, 'LQ_to_M': 20.0, 'M_to_UQ': 37.0, 'UQ_to_UD': 70.0}
+INFO 2025-06-22 13:34:28,449 serializers 30592 3240 === LIST SERIALIZER for Scenario 6/17/2025 12:13:24 PM ===
+INFO 2025-06-22 13:34:28,449 serializers 30592 3240 LIST: Extracted vertical inputs: {'Vice Chairman': 2.0, 'Director': 49.0, 'HOD': 50.0, 'Manager': 25.0, 'Senior Specialist': 41.0, 'Specialist': 14.0, 'Junior Specialist': 33.0, 'Blue Colar ': 30.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:34:28,449 serializers 30592 3240 LIST: Global horizontal intervals: {'LD_to_LQ': 89.0, 'LQ_to_M': 16.0, 'M_to_UQ': 44.0, 'UQ_to_UD': 70.0}
+INFO 2025-06-22 13:34:28,450 serializers 30592 3240 === LIST SERIALIZER for Scenario 6/13/2025 4:04:49 PM ===
+INFO 2025-06-22 13:34:28,450 serializers 30592 3240 LIST: Extracted vertical inputs: {'Vice Chairman': 50.0, 'Director': 68.0, 'HOD': 49.0, 'Manager': 55.0, 'Senior Specialist': 97.0, 'Specialist': 32.0, 'Junior Specialist': 68.0, 'Blue Colar ': 42.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:34:28,451 serializers 30592 3240 LIST: Global horizontal intervals: {'LD_to_LQ': 75.0, 'LQ_to_M': 79.0, 'M_to_UQ': 20.0, 'UQ_to_UD': 39.0}
+INFO 2025-06-22 13:34:28,451 serializers 30592 3240 === LIST SERIALIZER for Scenario 6/13/2025 4:04:39 PM ===
+INFO 2025-06-22 13:34:28,452 serializers 30592 3240 LIST: Extracted vertical inputs: {'Vice Chairman': 37.0, 'Director': 36.0, 'HOD': 58.0, 'Manager': 93.0, 'Senior Specialist': 37.0, 'Specialist': 21.0, 'Junior Specialist': 96.0, 'Blue Colar ': 74.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:34:28,452 serializers 30592 3240 LIST: Global horizontal intervals: {'LD_to_LQ': 97.0, 'LQ_to_M': 96.0, 'M_to_UQ': 0.0, 'UQ_to_UD': 44.0}
+INFO 2025-06-22 13:34:28,465 serializers 30592 6008 === LIST SERIALIZER for Scenario 6/18/2025 3:07:51 PM ===
+INFO 2025-06-22 13:34:28,466 serializers 30592 6008 LIST: Extracted vertical inputs: {'Vice Chairman': 13.0, 'Director': 64.0, 'HOD': 88.0, 'Manager': 36.0, 'Senior Specialist': 46.0, 'Specialist': 54.0, 'Junior Specialist': 29.0, 'Blue Colar ': 90.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:34:28,466 serializers 30592 6008 LIST: Global horizontal intervals: {'LD_to_LQ': 63.0, 'LQ_to_M': 48.0, 'M_to_UQ': 20.0, 'UQ_to_UD': 76.0}
+INFO 2025-06-22 13:34:28,467 serializers 30592 6008 === LIST SERIALIZER for Scenario 6/18/2025 3:07:33 PM ===
+INFO 2025-06-22 13:34:28,467 serializers 30592 6008 LIST: Extracted vertical inputs: {'Vice Chairman': 13.0, 'Director': 78.0, 'HOD': 57.0, 'Manager': 36.0, 'Senior Specialist': 62.0, 'Specialist': 92.0, 'Junior Specialist': 19.0, 'Blue Colar ': 50.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:34:28,468 serializers 30592 6008 LIST: Global horizontal intervals: {'LD_to_LQ': 98.0, 'LQ_to_M': 30.0, 'M_to_UQ': 12.0, 'UQ_to_UD': 56.0}
+INFO 2025-06-22 13:34:28,468 serializers 30592 6008 === LIST SERIALIZER for Scenario 6/18/2025 2:37:02 PM ===
+INFO 2025-06-22 13:34:28,468 serializers 30592 6008 LIST: Extracted vertical inputs: {'Vice Chairman': 24.0, 'Director': 78.0, 'HOD': 79.0, 'Manager': 46.0, 'Senior Specialist': 21.0, 'Specialist': 63.0, 'Junior Specialist': 66.0, 'Blue Colar ': 7.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:34:28,469 serializers 30592 6008 LIST: Global horizontal intervals: {'LD_to_LQ': 68.0, 'LQ_to_M': 50.0, 'M_to_UQ': 7.0, 'UQ_to_UD': 24.0}
+INFO 2025-06-22 13:34:28,469 serializers 30592 6008 === LIST SERIALIZER for Scenario 6/18/2025 11:27:54 AM ===
+INFO 2025-06-22 13:34:28,470 serializers 30592 6008 LIST: Extracted vertical inputs: {'Vice Chairman': 79.0, 'Director': 26.0, 'HOD': 6.0, 'Manager': 20.0, 'Senior Specialist': 1.0, 'Specialist': 36.0, 'Junior Specialist': 35.0, 'Blue Colar ': 58.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:34:28,470 serializers 30592 6008 LIST: Global horizontal intervals: {'LD_to_LQ': 76.0, 'LQ_to_M': 49.0, 'M_to_UQ': 20.0, 'UQ_to_UD': 6.0}
+INFO 2025-06-22 13:34:28,471 serializers 30592 6008 === LIST SERIALIZER for Scenario 6/17/2025 4:18:52 PM ===
+INFO 2025-06-22 13:34:28,472 serializers 30592 6008 LIST: Extracted vertical inputs: {'Vice Chairman': 85.0, 'Director': 54.0, 'HOD': 47.0, 'Manager': 72.0, 'Senior Specialist': 100.0, 'Specialist': 2.0, 'Junior Specialist': 61.0, 'Blue Colar ': 57.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:34:28,472 serializers 30592 6008 LIST: Global horizontal intervals: {'LD_to_LQ': 23.0, 'LQ_to_M': 41.0, 'M_to_UQ': 84.0, 'UQ_to_UD': 25.0}
+INFO 2025-06-22 13:34:28,473 serializers 30592 6008 === LIST SERIALIZER for Scenario 6/17/2025 2:40:50 PM ===
+INFO 2025-06-22 13:34:28,473 serializers 30592 6008 LIST: Extracted vertical inputs: {'Vice Chairman': 95.0, 'Director': 71.0, 'HOD': 1.0, 'Manager': 82.0, 'Senior Specialist': 53.0, 'Specialist': 53.0, 'Junior Specialist': 22.0, 'Blue Colar ': 40.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:34:28,474 serializers 30592 6008 LIST: Global horizontal intervals: {'LD_to_LQ': 3.0, 'LQ_to_M': 90.0, 'M_to_UQ': 8.0, 'UQ_to_UD': 75.0}
+INFO 2025-06-22 13:34:28,474 serializers 30592 6008 === LIST SERIALIZER for Scenario 6/17/2025 2:23:29 PM ===
+INFO 2025-06-22 13:34:28,475 serializers 30592 6008 LIST: Extracted vertical inputs: {'Vice Chairman': 2.0, 'Director': None, 'HOD': None, 'Manager': None, 'Senior Specialist': None, 'Specialist': None, 'Junior Specialist': None, 'Blue Colar ': None, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:34:28,475 serializers 30592 6008 LIST: Global horizontal intervals: {'LD_to_LQ': 20.0, 'LQ_to_M': 7.0, 'M_to_UQ': 6.0, 'UQ_to_UD': 6.0}
+INFO 2025-06-22 13:34:28,476 serializers 30592 6008 === LIST SERIALIZER for Scenario 6/17/2025 12:26:06 PM ===
+INFO 2025-06-22 13:34:28,476 serializers 30592 6008 LIST: Extracted vertical inputs: {'Vice Chairman': 91.0, 'Director': 15.0, 'HOD': 4.0, 'Manager': 40.0, 'Senior Specialist': 26.0, 'Specialist': 9.0, 'Junior Specialist': 23.0, 'Blue Colar ': 11.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:34:28,476 serializers 30592 6008 LIST: Global horizontal intervals: {'LD_to_LQ': 50.0, 'LQ_to_M': 14.0, 'M_to_UQ': 79.0, 'UQ_to_UD': 52.0}
+INFO 2025-06-22 13:34:28,477 serializers 30592 6008 === LIST SERIALIZER for Scenario 6/17/2025 12:14:48 PM ===
+INFO 2025-06-22 13:34:28,477 serializers 30592 6008 LIST: Extracted vertical inputs: {'Vice Chairman': 16.0, 'Director': 18.0, 'HOD': 4.0, 'Manager': 22.0, 'Senior Specialist': 8.0, 'Specialist': 83.0, 'Junior Specialist': 16.0, 'Blue Colar ': 13.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:34:28,477 serializers 30592 6008 LIST: Global horizontal intervals: {'LD_to_LQ': 46.0, 'LQ_to_M': 20.0, 'M_to_UQ': 37.0, 'UQ_to_UD': 70.0}
+INFO 2025-06-22 13:34:28,478 serializers 30592 6008 === LIST SERIALIZER for Scenario 6/17/2025 12:13:24 PM ===
+INFO 2025-06-22 13:34:28,478 serializers 30592 6008 LIST: Extracted vertical inputs: {'Vice Chairman': 2.0, 'Director': 49.0, 'HOD': 50.0, 'Manager': 25.0, 'Senior Specialist': 41.0, 'Specialist': 14.0, 'Junior Specialist': 33.0, 'Blue Colar ': 30.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:34:28,478 serializers 30592 6008 LIST: Global horizontal intervals: {'LD_to_LQ': 89.0, 'LQ_to_M': 16.0, 'M_to_UQ': 44.0, 'UQ_to_UD': 70.0}
+INFO 2025-06-22 13:34:28,479 serializers 30592 6008 === LIST SERIALIZER for Scenario 6/13/2025 4:04:49 PM ===
+INFO 2025-06-22 13:34:28,479 serializers 30592 6008 LIST: Extracted vertical inputs: {'Vice Chairman': 50.0, 'Director': 68.0, 'HOD': 49.0, 'Manager': 55.0, 'Senior Specialist': 97.0, 'Specialist': 32.0, 'Junior Specialist': 68.0, 'Blue Colar ': 42.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:34:28,480 serializers 30592 6008 LIST: Global horizontal intervals: {'LD_to_LQ': 75.0, 'LQ_to_M': 79.0, 'M_to_UQ': 20.0, 'UQ_to_UD': 39.0}
+INFO 2025-06-22 13:34:28,480 serializers 30592 6008 === LIST SERIALIZER for Scenario 6/13/2025 4:04:39 PM ===
+INFO 2025-06-22 13:34:28,481 serializers 30592 6008 LIST: Extracted vertical inputs: {'Vice Chairman': 37.0, 'Director': 36.0, 'HOD': 58.0, 'Manager': 93.0, 'Senior Specialist': 37.0, 'Specialist': 21.0, 'Junior Specialist': 96.0, 'Blue Colar ': 74.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 13:34:28,481 serializers 30592 6008 LIST: Global horizontal intervals: {'LD_to_LQ': 97.0, 'LQ_to_M': 96.0, 'M_to_UQ': 0.0, 'UQ_to_UD': 44.0}
+INFO 2025-06-22 23:38:45,901 views 3136 27156 === Microsoft authentication request received ===
+INFO 2025-06-22 23:38:45,907 views 3136 27156 Request method: POST
+INFO 2025-06-22 23:38:45,911 views 3136 27156 Request headers: {'Content-Length': '1289', 'Content-Type': 'application/json', 'Host': 'localhost:8000', 'Connection': 'keep-alive', 'Sec-Ch-Ua-Platform': '"Windows"', 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36', 'Accept': 'application/json, text/plain, */*', 'Sec-Ch-Ua': '"Google Chrome";v="137", "Chromium";v="137", "Not/A)Brand";v="24"', 'Sec-Ch-Ua-Mobile': '?0', 'Origin': 'http://localhost:3000', 'Sec-Fetch-Site': 'same-site', 'Sec-Fetch-Mode': 'cors', 'Sec-Fetch-Dest': 'empty', 'Referer': 'http://localhost:3000/', 'Accept-Encoding': 'gzip, deflate, br, zstd', 'Accept-Language': 'en-CA,en;q=0.9,az-AZ;q=0.8,az;q=0.7,en-GB;q=0.6,en-US;q=0.5'}
+INFO 2025-06-22 23:38:45,915 views 3136 27156 Request data keys: ['id_token']
+INFO 2025-06-22 23:38:45,917 views 3136 27156 Microsoft authentication attempt - validating token
+INFO 2025-06-22 23:38:45,920 views 3136 27156 Token length: 1274
+INFO 2025-06-22 23:38:45,922 auth 3136 27156 === Starting Microsoft token validation ===
+INFO 2025-06-22 23:38:45,923 auth 3136 27156 Received token: eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiIsImtpZCI6IkNOdj...
+INFO 2025-06-22 23:38:45,926 auth 3136 27156 === Token payload ===
+INFO 2025-06-22 23:38:45,929 auth 3136 27156 {
+  "aud": "230458ff-ed69-4abb-8496-3888067116f6",
+  "iss": "https://login.microsoftonline.com/b3222ef7-242d-4724-a665-97b0a764f2d0/v2.0",
+  "iat": 1750620825,
+  "nbf": 1750620825,
+  "exp": 1750624725,
+  "email": "n.orujova@almettrading.com",
+  "name": "Narmin Orujova",
+  "nonce": "01979926-715b-7bab-8907-d2a9fbcd4a1a",
+  "oid": "2c74167f-d69a-43a5-a1e6-910fd8560625",
+  "preferred_username": "n.orujova@almettrading.com",
+  "rh": "1.ATkA9y4isy0kJEemZZewp2Ty0P9YBCNp7btKhJY4iAZxFvaqARM5AA.",
+  "sid": "005ef0c9-ed38-f364-8888-2932f3d4b243",
+  "sub": "i7rUkArSkR21ADRGNhKBNmJkwt25_DaBfDeIyBhUpf4",
+  "tid": "b3222ef7-242d-4724-a665-97b0a764f2d0",
+  "uti": "zZ9fqchgHkuax3h5E9ZTAA",
+  "ver": "2.0"
+}
+INFO 2025-06-22 23:38:45,931 auth 3136 27156 Audience from token: 230458ff-ed69-4abb-8496-3888067116f6
+INFO 2025-06-22 23:38:45,932 auth 3136 27156 Expected audience: 230458ff-ed69-4abb-8496-3888067116f6
+INFO 2025-06-22 23:38:45,936 auth 3136 27156 Microsoft ID (sub): i7rUkArSkR21ADRGNhKBNmJkwt25_DaBfDeIyBhUpf4
+INFO 2025-06-22 23:38:45,937 auth 3136 27156 Full name from token: Narmin Orujova
+INFO 2025-06-22 23:38:45,939 auth 3136 27156 Extracted user info: email=n.orujova@almettrading.com, first_name=Narmin, last_name=Orujova
+INFO 2025-06-22 23:38:46,030 auth 3136 27156 Found existing Microsoft user: n.orujova
+INFO 2025-06-22 23:38:46,032 auth 3136 27156 === Token validation successful for user: n.orujova ===
+INFO 2025-06-22 23:38:46,033 views 3136 27156 Token validated successfully for user: n.orujova
+INFO 2025-06-22 23:38:46,042 views 3136 27156 JWT tokens generated for user: n.orujova
+INFO 2025-06-22 23:38:46,043 views 3136 27156 Returning successful response for user: n.orujova
+INFO 2025-06-22 23:38:50,643 views 3136 27156 User info request for user: n.orujova
+INFO 2025-06-22 23:38:50,683 views 3136 27156 [n.orujova] No employee profile found
+INFO 2025-06-22 23:38:50,686 views 3136 27156 [n.orujova] User info response prepared successfully
+INFO 2025-06-22 23:58:20,694 managers 3136 7980 Creating current structure from DB...
+INFO 2025-06-22 23:58:20,701 managers 3136 15324 Position groups order (ASC): [('VC', 1), ('Director', 2), ('HOD', 3), ('Manager', 4), ('Senior Specialist', 5), ('Specialist', 6), ('Junior Specialist', 7), ('Blue Colar ', 8), ('Blue Colar (GEO)', 9)]
+INFO 2025-06-22 23:58:20,702 managers 3136 7980 Position groups order (ASC): [('VC', 1), ('Director', 2), ('HOD', 3), ('Manager', 4), ('Senior Specialist', 5), ('Specialist', 6), ('Junior Specialist', 7), ('Blue Colar ', 8), ('Blue Colar (GEO)', 9)]
+INFO 2025-06-22 23:58:20,705 managers 3136 15324 Total position groups found: 9
+INFO 2025-06-22 23:58:20,705 managers 3136 7980 Total position groups found: 9
+INFO 2025-06-22 23:58:20,722 managers 3136 15324 Position groups order (ASC): [('VC', 1), ('Director', 2), ('HOD', 3), ('Manager', 4), ('Senior Specialist', 5), ('Specialist', 6), ('Junior Specialist', 7), ('Blue Colar ', 8), ('Blue Colar (GEO)', 9)]
+INFO 2025-06-22 23:58:20,725 serializers 3136 33420 === DETAIL SERIALIZER for Scenario 6/19/2025 2:50:21 PM ===
+INFO 2025-06-22 23:58:20,725 managers 3136 7980 Found current scenario: Scenario 6/19/2025 2:50:21 PM
+INFO 2025-06-22 23:58:20,726 managers 3136 15324 Total position groups found: 9
+INFO 2025-06-22 23:58:20,727 serializers 3136 33420 DETAIL: Extracted vertical inputs: {'Vice Chairman': 54.0, 'Director': 34.0, 'HOD': 34.0, 'Manager': 34.0, 'Senior Specialist': 34.0, 'Specialist': 34.0, 'Junior Specialist': 34.0, 'Blue Colar ': 34.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 23:58:20,730 managers 3136 7980 Current structure grade order: ['Vice Chairman', 'Director', 'HOD', 'Manager', 'Senior Specialist', 'Specialist', 'Junior Specialist', 'Blue Colar ', 'Blue Colar (GEO)']
+INFO 2025-06-22 23:58:20,736 serializers 3136 33420 DETAIL: Global horizontal intervals: {'LD_to_LQ': 10.0, 'LQ_to_M': 9.0, 'M_to_UQ': 8.0, 'UQ_to_UD': 10.0}
+INFO 2025-06-22 23:58:20,737 managers 3136 7980 Base value position: Blue Colar (GEO) (last = lowest hierarchy)
+INFO 2025-06-22 23:58:20,737 serializers 3136 33420 DETAIL: Final result input data:
+INFO 2025-06-22 23:58:20,739 serializers 3136 33420   positionVerticalInputs: {'Vice Chairman': 54.0, 'Director': 34.0, 'HOD': 34.0, 'Manager': 34.0, 'Senior Specialist': 34.0, 'Specialist': 34.0, 'Junior Specialist': 34.0, 'Blue Colar ': 34.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 23:58:20,743 serializers 3136 33420   inputRates preserved: True
+INFO 2025-06-22 23:58:20,744 serializers 3136 33420 === DETAIL SERIALIZER END ===
+INFO 2025-06-22 23:58:20,754 managers 3136 7980 Creating current structure from DB...
+INFO 2025-06-22 23:58:20,760 managers 3136 7980 Position groups order (ASC): [('VC', 1), ('Director', 2), ('HOD', 3), ('Manager', 4), ('Senior Specialist', 5), ('Specialist', 6), ('Junior Specialist', 7), ('Blue Colar ', 8), ('Blue Colar (GEO)', 9)]
+INFO 2025-06-22 23:58:20,763 managers 3136 7980 Total position groups found: 9
+INFO 2025-06-22 23:58:20,767 managers 3136 7980 Found current scenario: Scenario 6/19/2025 2:50:21 PM
+INFO 2025-06-22 23:58:20,770 managers 3136 7980 Current structure grade order: ['Vice Chairman', 'Director', 'HOD', 'Manager', 'Senior Specialist', 'Specialist', 'Junior Specialist', 'Blue Colar ', 'Blue Colar (GEO)']
+INFO 2025-06-22 23:58:20,771 managers 3136 7980 Base value position: Blue Colar (GEO) (last = lowest hierarchy)
+INFO 2025-06-22 23:58:20,784 serializers 3136 15324 === DETAIL SERIALIZER for Scenario 6/19/2025 2:50:21 PM ===
+INFO 2025-06-22 23:58:20,785 serializers 3136 15324 DETAIL: Extracted vertical inputs: {'Vice Chairman': 54.0, 'Director': 34.0, 'HOD': 34.0, 'Manager': 34.0, 'Senior Specialist': 34.0, 'Specialist': 34.0, 'Junior Specialist': 34.0, 'Blue Colar ': 34.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 23:58:20,785 serializers 3136 15324 DETAIL: Global horizontal intervals: {'LD_to_LQ': 10.0, 'LQ_to_M': 9.0, 'M_to_UQ': 8.0, 'UQ_to_UD': 10.0}
+INFO 2025-06-22 23:58:20,786 serializers 3136 15324 DETAIL: Final result input data:
+INFO 2025-06-22 23:58:20,787 serializers 3136 15324   positionVerticalInputs: {'Vice Chairman': 54.0, 'Director': 34.0, 'HOD': 34.0, 'Manager': 34.0, 'Senior Specialist': 34.0, 'Specialist': 34.0, 'Junior Specialist': 34.0, 'Blue Colar ': 34.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 23:58:20,788 serializers 3136 15324   inputRates preserved: True
+INFO 2025-06-22 23:58:20,789 serializers 3136 15324 === DETAIL SERIALIZER END ===
+INFO 2025-06-22 23:58:20,874 serializers 3136 15324 === LIST SERIALIZER for Scenario 6/18/2025 11:29:40 AM ===
+INFO 2025-06-22 23:58:20,875 serializers 3136 15324 LIST: Extracted vertical inputs: {'Vice Chairman': 67.0, 'Director': 90.0, 'HOD': 49.0, 'Manager': 28.0, 'Senior Specialist': 95.0, 'Specialist': 27.0, 'Junior Specialist': 24.0, 'Blue Colar ': 39.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 23:58:20,875 serializers 3136 15324 LIST: Global horizontal intervals: {'LD_to_LQ': 33.0, 'LQ_to_M': 5.0, 'M_to_UQ': 33.0, 'UQ_to_UD': 86.0}
+INFO 2025-06-22 23:58:20,876 serializers 3136 15324 === LIST SERIALIZER for Scenario 6/13/2025 4:08:02 PM ===
+INFO 2025-06-22 23:58:20,891 serializers 3136 7980 === LIST SERIALIZER for Scenario 6/18/2025 3:07:51 PM ===
+INFO 2025-06-22 23:58:20,891 serializers 3136 15324 LIST: Extracted vertical inputs: {'Vice Chairman': 67.0, 'Director': 38.0, 'HOD': 56.0, 'Manager': 77.0, 'Senior Specialist': 97.0, 'Specialist': 87.0, 'Junior Specialist': 97.0, 'Blue Colar ': 15.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 23:58:20,893 serializers 3136 7980 LIST: Extracted vertical inputs: {'Vice Chairman': 13.0, 'Director': 64.0, 'HOD': 88.0, 'Manager': 36.0, 'Senior Specialist': 46.0, 'Specialist': 54.0, 'Junior Specialist': 29.0, 'Blue Colar ': 90.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 23:58:20,893 serializers 3136 15324 LIST: Global horizontal intervals: {'LD_to_LQ': 98.0, 'LQ_to_M': 72.0, 'M_to_UQ': 60.0, 'UQ_to_UD': 43.0}
+INFO 2025-06-22 23:58:20,894 serializers 3136 7980 LIST: Global horizontal intervals: {'LD_to_LQ': 63.0, 'LQ_to_M': 48.0, 'M_to_UQ': 20.0, 'UQ_to_UD': 76.0}
+INFO 2025-06-22 23:58:20,895 serializers 3136 15324 === LIST SERIALIZER for Scenario 6/13/2025 3:59:44 PM ===
+INFO 2025-06-22 23:58:20,896 serializers 3136 7980 === LIST SERIALIZER for Scenario 6/18/2025 3:07:33 PM ===
+INFO 2025-06-22 23:58:20,897 serializers 3136 15324 LIST: Extracted vertical inputs: {'Vice Chairman': 98.0, 'Director': 27.0, 'HOD': 18.0, 'Manager': 68.0, 'Senior Specialist': 11.0, 'Specialist': 54.0, 'Junior Specialist': 42.0, 'Blue Colar ': 43.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 23:58:20,898 serializers 3136 7980 LIST: Extracted vertical inputs: {'Vice Chairman': 13.0, 'Director': 78.0, 'HOD': 57.0, 'Manager': 36.0, 'Senior Specialist': 62.0, 'Specialist': 92.0, 'Junior Specialist': 19.0, 'Blue Colar ': 50.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 23:58:20,900 serializers 3136 15324 LIST: Global horizontal intervals: {'LD_to_LQ': 5.0, 'LQ_to_M': 18.0, 'M_to_UQ': 76.0, 'UQ_to_UD': 74.0}
+INFO 2025-06-22 23:58:20,900 serializers 3136 7980 LIST: Global horizontal intervals: {'LD_to_LQ': 98.0, 'LQ_to_M': 30.0, 'M_to_UQ': 12.0, 'UQ_to_UD': 56.0}
+INFO 2025-06-22 23:58:20,906 serializers 3136 7980 === LIST SERIALIZER for Scenario 6/18/2025 2:37:02 PM ===
+INFO 2025-06-22 23:58:20,909 serializers 3136 7980 LIST: Extracted vertical inputs: {'Vice Chairman': 24.0, 'Director': 78.0, 'HOD': 79.0, 'Manager': 46.0, 'Senior Specialist': 21.0, 'Specialist': 63.0, 'Junior Specialist': 66.0, 'Blue Colar ': 7.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 23:58:20,913 serializers 3136 7980 LIST: Global horizontal intervals: {'LD_to_LQ': 68.0, 'LQ_to_M': 50.0, 'M_to_UQ': 7.0, 'UQ_to_UD': 24.0}
+INFO 2025-06-22 23:58:20,917 serializers 3136 7980 === LIST SERIALIZER for Scenario 6/18/2025 11:27:54 AM ===
+INFO 2025-06-22 23:58:20,919 serializers 3136 7980 LIST: Extracted vertical inputs: {'Vice Chairman': 79.0, 'Director': 26.0, 'HOD': 6.0, 'Manager': 20.0, 'Senior Specialist': 1.0, 'Specialist': 36.0, 'Junior Specialist': 35.0, 'Blue Colar ': 58.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 23:58:20,922 serializers 3136 33420 === LIST SERIALIZER for Scenario 6/18/2025 11:29:40 AM ===
+INFO 2025-06-22 23:58:20,923 serializers 3136 7980 LIST: Global horizontal intervals: {'LD_to_LQ': 76.0, 'LQ_to_M': 49.0, 'M_to_UQ': 20.0, 'UQ_to_UD': 6.0}
+INFO 2025-06-22 23:58:20,923 serializers 3136 33420 LIST: Extracted vertical inputs: {'Vice Chairman': 67.0, 'Director': 90.0, 'HOD': 49.0, 'Manager': 28.0, 'Senior Specialist': 95.0, 'Specialist': 27.0, 'Junior Specialist': 24.0, 'Blue Colar ': 39.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 23:58:20,925 serializers 3136 7980 === LIST SERIALIZER for Scenario 6/17/2025 4:18:52 PM ===
+INFO 2025-06-22 23:58:20,925 serializers 3136 33420 LIST: Global horizontal intervals: {'LD_to_LQ': 33.0, 'LQ_to_M': 5.0, 'M_to_UQ': 33.0, 'UQ_to_UD': 86.0}
+INFO 2025-06-22 23:58:20,927 serializers 3136 7980 LIST: Extracted vertical inputs: {'Vice Chairman': 85.0, 'Director': 54.0, 'HOD': 47.0, 'Manager': 72.0, 'Senior Specialist': 100.0, 'Specialist': 2.0, 'Junior Specialist': 61.0, 'Blue Colar ': 57.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 23:58:20,927 serializers 3136 33420 === LIST SERIALIZER for Scenario 6/13/2025 4:08:02 PM ===
+INFO 2025-06-22 23:58:20,929 serializers 3136 7980 LIST: Global horizontal intervals: {'LD_to_LQ': 23.0, 'LQ_to_M': 41.0, 'M_to_UQ': 84.0, 'UQ_to_UD': 25.0}
+INFO 2025-06-22 23:58:20,929 serializers 3136 33420 LIST: Extracted vertical inputs: {'Vice Chairman': 67.0, 'Director': 38.0, 'HOD': 56.0, 'Manager': 77.0, 'Senior Specialist': 97.0, 'Specialist': 87.0, 'Junior Specialist': 97.0, 'Blue Colar ': 15.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 23:58:20,932 serializers 3136 33420 LIST: Global horizontal intervals: {'LD_to_LQ': 98.0, 'LQ_to_M': 72.0, 'M_to_UQ': 60.0, 'UQ_to_UD': 43.0}
+INFO 2025-06-22 23:58:20,931 serializers 3136 7980 === LIST SERIALIZER for Scenario 6/17/2025 2:40:50 PM ===
+INFO 2025-06-22 23:58:20,934 serializers 3136 33420 === LIST SERIALIZER for Scenario 6/13/2025 3:59:44 PM ===
+INFO 2025-06-22 23:58:20,935 serializers 3136 7980 LIST: Extracted vertical inputs: {'Vice Chairman': 95.0, 'Director': 71.0, 'HOD': 1.0, 'Manager': 82.0, 'Senior Specialist': 53.0, 'Specialist': 53.0, 'Junior Specialist': 22.0, 'Blue Colar ': 40.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 23:58:20,936 serializers 3136 33420 LIST: Extracted vertical inputs: {'Vice Chairman': 98.0, 'Director': 27.0, 'HOD': 18.0, 'Manager': 68.0, 'Senior Specialist': 11.0, 'Specialist': 54.0, 'Junior Specialist': 42.0, 'Blue Colar ': 43.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 23:58:20,938 serializers 3136 7980 LIST: Global horizontal intervals: {'LD_to_LQ': 3.0, 'LQ_to_M': 90.0, 'M_to_UQ': 8.0, 'UQ_to_UD': 75.0}
+INFO 2025-06-22 23:58:20,938 serializers 3136 33420 LIST: Global horizontal intervals: {'LD_to_LQ': 5.0, 'LQ_to_M': 18.0, 'M_to_UQ': 76.0, 'UQ_to_UD': 74.0}
+INFO 2025-06-22 23:58:20,940 serializers 3136 7980 === LIST SERIALIZER for Scenario 6/17/2025 2:23:29 PM ===
+INFO 2025-06-22 23:58:20,943 serializers 3136 7980 LIST: Extracted vertical inputs: {'Vice Chairman': 2.0, 'Director': None, 'HOD': None, 'Manager': None, 'Senior Specialist': None, 'Specialist': None, 'Junior Specialist': None, 'Blue Colar ': None, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 23:58:20,944 serializers 3136 7980 LIST: Global horizontal intervals: {'LD_to_LQ': 20.0, 'LQ_to_M': 7.0, 'M_to_UQ': 6.0, 'UQ_to_UD': 6.0}
+INFO 2025-06-22 23:58:20,945 serializers 3136 7980 === LIST SERIALIZER for Scenario 6/17/2025 12:26:06 PM ===
+INFO 2025-06-22 23:58:20,945 serializers 3136 7980 LIST: Extracted vertical inputs: {'Vice Chairman': 91.0, 'Director': 15.0, 'HOD': 4.0, 'Manager': 40.0, 'Senior Specialist': 26.0, 'Specialist': 9.0, 'Junior Specialist': 23.0, 'Blue Colar ': 11.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 23:58:20,946 serializers 3136 7980 LIST: Global horizontal intervals: {'LD_to_LQ': 50.0, 'LQ_to_M': 14.0, 'M_to_UQ': 79.0, 'UQ_to_UD': 52.0}
+INFO 2025-06-22 23:58:20,947 serializers 3136 7980 === LIST SERIALIZER for Scenario 6/17/2025 12:14:48 PM ===
+INFO 2025-06-22 23:58:20,948 serializers 3136 7980 LIST: Extracted vertical inputs: {'Vice Chairman': 16.0, 'Director': 18.0, 'HOD': 4.0, 'Manager': 22.0, 'Senior Specialist': 8.0, 'Specialist': 83.0, 'Junior Specialist': 16.0, 'Blue Colar ': 13.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 23:58:20,950 serializers 3136 7980 LIST: Global horizontal intervals: {'LD_to_LQ': 46.0, 'LQ_to_M': 20.0, 'M_to_UQ': 37.0, 'UQ_to_UD': 70.0}
+INFO 2025-06-22 23:58:20,951 serializers 3136 7980 === LIST SERIALIZER for Scenario 6/17/2025 12:13:24 PM ===
+INFO 2025-06-22 23:58:20,952 serializers 3136 7980 LIST: Extracted vertical inputs: {'Vice Chairman': 2.0, 'Director': 49.0, 'HOD': 50.0, 'Manager': 25.0, 'Senior Specialist': 41.0, 'Specialist': 14.0, 'Junior Specialist': 33.0, 'Blue Colar ': 30.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 23:58:20,955 serializers 3136 7980 LIST: Global horizontal intervals: {'LD_to_LQ': 89.0, 'LQ_to_M': 16.0, 'M_to_UQ': 44.0, 'UQ_to_UD': 70.0}
+INFO 2025-06-22 23:58:20,956 serializers 3136 7980 === LIST SERIALIZER for Scenario 6/13/2025 4:04:49 PM ===
+INFO 2025-06-22 23:58:20,957 serializers 3136 7980 LIST: Extracted vertical inputs: {'Vice Chairman': 50.0, 'Director': 68.0, 'HOD': 49.0, 'Manager': 55.0, 'Senior Specialist': 97.0, 'Specialist': 32.0, 'Junior Specialist': 68.0, 'Blue Colar ': 42.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 23:58:20,958 serializers 3136 7980 LIST: Global horizontal intervals: {'LD_to_LQ': 75.0, 'LQ_to_M': 79.0, 'M_to_UQ': 20.0, 'UQ_to_UD': 39.0}
+INFO 2025-06-22 23:58:20,959 serializers 3136 7980 === LIST SERIALIZER for Scenario 6/13/2025 4:04:39 PM ===
+INFO 2025-06-22 23:58:20,960 serializers 3136 7980 LIST: Extracted vertical inputs: {'Vice Chairman': 37.0, 'Director': 36.0, 'HOD': 58.0, 'Manager': 93.0, 'Senior Specialist': 37.0, 'Specialist': 21.0, 'Junior Specialist': 96.0, 'Blue Colar ': 74.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 23:58:20,961 serializers 3136 7980 LIST: Global horizontal intervals: {'LD_to_LQ': 97.0, 'LQ_to_M': 96.0, 'M_to_UQ': 0.0, 'UQ_to_UD': 44.0}
+INFO 2025-06-22 23:58:20,985 serializers 3136 7980 === LIST SERIALIZER for Scenario 6/18/2025 3:07:51 PM ===
+INFO 2025-06-22 23:58:20,986 serializers 3136 7980 LIST: Extracted vertical inputs: {'Vice Chairman': 13.0, 'Director': 64.0, 'HOD': 88.0, 'Manager': 36.0, 'Senior Specialist': 46.0, 'Specialist': 54.0, 'Junior Specialist': 29.0, 'Blue Colar ': 90.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 23:58:20,987 serializers 3136 7980 LIST: Global horizontal intervals: {'LD_to_LQ': 63.0, 'LQ_to_M': 48.0, 'M_to_UQ': 20.0, 'UQ_to_UD': 76.0}
+INFO 2025-06-22 23:58:20,988 serializers 3136 7980 === LIST SERIALIZER for Scenario 6/18/2025 3:07:33 PM ===
+INFO 2025-06-22 23:58:20,989 serializers 3136 7980 LIST: Extracted vertical inputs: {'Vice Chairman': 13.0, 'Director': 78.0, 'HOD': 57.0, 'Manager': 36.0, 'Senior Specialist': 62.0, 'Specialist': 92.0, 'Junior Specialist': 19.0, 'Blue Colar ': 50.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 23:58:20,990 serializers 3136 7980 LIST: Global horizontal intervals: {'LD_to_LQ': 98.0, 'LQ_to_M': 30.0, 'M_to_UQ': 12.0, 'UQ_to_UD': 56.0}
+INFO 2025-06-22 23:58:20,991 serializers 3136 7980 === LIST SERIALIZER for Scenario 6/18/2025 2:37:02 PM ===
+INFO 2025-06-22 23:58:20,992 serializers 3136 7980 LIST: Extracted vertical inputs: {'Vice Chairman': 24.0, 'Director': 78.0, 'HOD': 79.0, 'Manager': 46.0, 'Senior Specialist': 21.0, 'Specialist': 63.0, 'Junior Specialist': 66.0, 'Blue Colar ': 7.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 23:58:20,992 serializers 3136 7980 LIST: Global horizontal intervals: {'LD_to_LQ': 68.0, 'LQ_to_M': 50.0, 'M_to_UQ': 7.0, 'UQ_to_UD': 24.0}
+INFO 2025-06-22 23:58:20,994 serializers 3136 7980 === LIST SERIALIZER for Scenario 6/18/2025 11:27:54 AM ===
+INFO 2025-06-22 23:58:20,994 serializers 3136 7980 LIST: Extracted vertical inputs: {'Vice Chairman': 79.0, 'Director': 26.0, 'HOD': 6.0, 'Manager': 20.0, 'Senior Specialist': 1.0, 'Specialist': 36.0, 'Junior Specialist': 35.0, 'Blue Colar ': 58.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 23:58:20,995 serializers 3136 7980 LIST: Global horizontal intervals: {'LD_to_LQ': 76.0, 'LQ_to_M': 49.0, 'M_to_UQ': 20.0, 'UQ_to_UD': 6.0}
+INFO 2025-06-22 23:58:20,996 serializers 3136 7980 === LIST SERIALIZER for Scenario 6/17/2025 4:18:52 PM ===
+INFO 2025-06-22 23:58:20,997 serializers 3136 7980 LIST: Extracted vertical inputs: {'Vice Chairman': 85.0, 'Director': 54.0, 'HOD': 47.0, 'Manager': 72.0, 'Senior Specialist': 100.0, 'Specialist': 2.0, 'Junior Specialist': 61.0, 'Blue Colar ': 57.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 23:58:20,998 serializers 3136 7980 LIST: Global horizontal intervals: {'LD_to_LQ': 23.0, 'LQ_to_M': 41.0, 'M_to_UQ': 84.0, 'UQ_to_UD': 25.0}
+INFO 2025-06-22 23:58:20,999 serializers 3136 7980 === LIST SERIALIZER for Scenario 6/17/2025 2:40:50 PM ===
+INFO 2025-06-22 23:58:21,000 serializers 3136 7980 LIST: Extracted vertical inputs: {'Vice Chairman': 95.0, 'Director': 71.0, 'HOD': 1.0, 'Manager': 82.0, 'Senior Specialist': 53.0, 'Specialist': 53.0, 'Junior Specialist': 22.0, 'Blue Colar ': 40.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 23:58:21,001 serializers 3136 7980 LIST: Global horizontal intervals: {'LD_to_LQ': 3.0, 'LQ_to_M': 90.0, 'M_to_UQ': 8.0, 'UQ_to_UD': 75.0}
+INFO 2025-06-22 23:58:21,002 serializers 3136 7980 === LIST SERIALIZER for Scenario 6/17/2025 2:23:29 PM ===
+INFO 2025-06-22 23:58:21,004 serializers 3136 7980 LIST: Extracted vertical inputs: {'Vice Chairman': 2.0, 'Director': None, 'HOD': None, 'Manager': None, 'Senior Specialist': None, 'Specialist': None, 'Junior Specialist': None, 'Blue Colar ': None, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 23:58:21,005 serializers 3136 7980 LIST: Global horizontal intervals: {'LD_to_LQ': 20.0, 'LQ_to_M': 7.0, 'M_to_UQ': 6.0, 'UQ_to_UD': 6.0}
+INFO 2025-06-22 23:58:21,006 serializers 3136 7980 === LIST SERIALIZER for Scenario 6/17/2025 12:26:06 PM ===
+INFO 2025-06-22 23:58:21,006 serializers 3136 7980 LIST: Extracted vertical inputs: {'Vice Chairman': 91.0, 'Director': 15.0, 'HOD': 4.0, 'Manager': 40.0, 'Senior Specialist': 26.0, 'Specialist': 9.0, 'Junior Specialist': 23.0, 'Blue Colar ': 11.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 23:58:21,007 serializers 3136 7980 LIST: Global horizontal intervals: {'LD_to_LQ': 50.0, 'LQ_to_M': 14.0, 'M_to_UQ': 79.0, 'UQ_to_UD': 52.0}
+INFO 2025-06-22 23:58:21,008 serializers 3136 7980 === LIST SERIALIZER for Scenario 6/17/2025 12:14:48 PM ===
+INFO 2025-06-22 23:58:21,008 serializers 3136 7980 LIST: Extracted vertical inputs: {'Vice Chairman': 16.0, 'Director': 18.0, 'HOD': 4.0, 'Manager': 22.0, 'Senior Specialist': 8.0, 'Specialist': 83.0, 'Junior Specialist': 16.0, 'Blue Colar ': 13.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 23:58:21,009 serializers 3136 7980 LIST: Global horizontal intervals: {'LD_to_LQ': 46.0, 'LQ_to_M': 20.0, 'M_to_UQ': 37.0, 'UQ_to_UD': 70.0}
+INFO 2025-06-22 23:58:21,010 serializers 3136 7980 === LIST SERIALIZER for Scenario 6/17/2025 12:13:24 PM ===
+INFO 2025-06-22 23:58:21,011 serializers 3136 7980 LIST: Extracted vertical inputs: {'Vice Chairman': 2.0, 'Director': 49.0, 'HOD': 50.0, 'Manager': 25.0, 'Senior Specialist': 41.0, 'Specialist': 14.0, 'Junior Specialist': 33.0, 'Blue Colar ': 30.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 23:58:21,011 serializers 3136 7980 LIST: Global horizontal intervals: {'LD_to_LQ': 89.0, 'LQ_to_M': 16.0, 'M_to_UQ': 44.0, 'UQ_to_UD': 70.0}
+INFO 2025-06-22 23:58:21,012 serializers 3136 7980 === LIST SERIALIZER for Scenario 6/13/2025 4:04:49 PM ===
+INFO 2025-06-22 23:58:21,013 serializers 3136 7980 LIST: Extracted vertical inputs: {'Vice Chairman': 50.0, 'Director': 68.0, 'HOD': 49.0, 'Manager': 55.0, 'Senior Specialist': 97.0, 'Specialist': 32.0, 'Junior Specialist': 68.0, 'Blue Colar ': 42.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 23:58:21,014 serializers 3136 7980 LIST: Global horizontal intervals: {'LD_to_LQ': 75.0, 'LQ_to_M': 79.0, 'M_to_UQ': 20.0, 'UQ_to_UD': 39.0}
+INFO 2025-06-22 23:58:21,015 serializers 3136 7980 === LIST SERIALIZER for Scenario 6/13/2025 4:04:39 PM ===
+INFO 2025-06-22 23:58:21,015 serializers 3136 7980 LIST: Extracted vertical inputs: {'Vice Chairman': 37.0, 'Director': 36.0, 'HOD': 58.0, 'Manager': 93.0, 'Senior Specialist': 37.0, 'Specialist': 21.0, 'Junior Specialist': 96.0, 'Blue Colar ': 74.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 23:58:21,016 serializers 3136 7980 LIST: Global horizontal intervals: {'LD_to_LQ': 97.0, 'LQ_to_M': 96.0, 'M_to_UQ': 0.0, 'UQ_to_UD': 44.0}
+INFO 2025-06-22 23:58:40,257 managers 3136 33420 Creating current structure from DB...
+INFO 2025-06-22 23:58:40,264 managers 3136 33420 Position groups order (ASC): [('VC', 1), ('Director', 2), ('HOD', 3), ('Manager', 4), ('Senior Specialist', 5), ('Specialist', 6), ('Junior Specialist', 7), ('Blue Colar ', 8), ('Blue Colar (GEO)', 9)]
+INFO 2025-06-22 23:58:40,264 serializers 3136 15324 === DETAIL SERIALIZER for Scenario 6/19/2025 2:50:21 PM ===
+INFO 2025-06-22 23:58:40,265 managers 3136 27516 Position groups order (ASC): [('VC', 1), ('Director', 2), ('HOD', 3), ('Manager', 4), ('Senior Specialist', 5), ('Specialist', 6), ('Junior Specialist', 7), ('Blue Colar ', 8), ('Blue Colar (GEO)', 9)]
+INFO 2025-06-22 23:58:40,267 managers 3136 33420 Total position groups found: 9
+INFO 2025-06-22 23:58:40,267 serializers 3136 15324 DETAIL: Extracted vertical inputs: {'Vice Chairman': 54.0, 'Director': 34.0, 'HOD': 34.0, 'Manager': 34.0, 'Senior Specialist': 34.0, 'Specialist': 34.0, 'Junior Specialist': 34.0, 'Blue Colar ': 34.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 23:58:40,270 managers 3136 27516 Total position groups found: 9
+INFO 2025-06-22 23:58:40,271 serializers 3136 15324 DETAIL: Global horizontal intervals: {'LD_to_LQ': 10.0, 'LQ_to_M': 9.0, 'M_to_UQ': 8.0, 'UQ_to_UD': 10.0}
+INFO 2025-06-22 23:58:40,279 serializers 3136 15324 DETAIL: Final result input data:
+INFO 2025-06-22 23:58:40,280 managers 3136 33420 Found current scenario: Scenario 6/19/2025 2:50:21 PM
+INFO 2025-06-22 23:58:40,285 serializers 3136 15324   positionVerticalInputs: {'Vice Chairman': 54.0, 'Director': 34.0, 'HOD': 34.0, 'Manager': 34.0, 'Senior Specialist': 34.0, 'Specialist': 34.0, 'Junior Specialist': 34.0, 'Blue Colar ': 34.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 23:58:40,286 managers 3136 27516 Position groups order (ASC): [('VC', 1), ('Director', 2), ('HOD', 3), ('Manager', 4), ('Senior Specialist', 5), ('Specialist', 6), ('Junior Specialist', 7), ('Blue Colar ', 8), ('Blue Colar (GEO)', 9)]
+INFO 2025-06-22 23:58:40,288 managers 3136 33420 Current structure grade order: ['Vice Chairman', 'Director', 'HOD', 'Manager', 'Senior Specialist', 'Specialist', 'Junior Specialist', 'Blue Colar ', 'Blue Colar (GEO)']
+INFO 2025-06-22 23:58:40,288 managers 3136 33420 Base value position: Blue Colar (GEO) (last = lowest hierarchy)
+INFO 2025-06-22 23:58:40,288 serializers 3136 15324   inputRates preserved: True
+INFO 2025-06-22 23:58:40,295 serializers 3136 15324 === DETAIL SERIALIZER END ===
+INFO 2025-06-22 23:58:40,296 managers 3136 33420 Creating current structure from DB...
+INFO 2025-06-22 23:58:40,304 managers 3136 27516 Total position groups found: 9
+INFO 2025-06-22 23:58:40,305 managers 3136 33420 Position groups order (ASC): [('VC', 1), ('Director', 2), ('HOD', 3), ('Manager', 4), ('Senior Specialist', 5), ('Specialist', 6), ('Junior Specialist', 7), ('Blue Colar ', 8), ('Blue Colar (GEO)', 9)]
+INFO 2025-06-22 23:58:40,319 serializers 3136 7980 === DETAIL SERIALIZER for Scenario 6/19/2025 2:50:21 PM ===
+INFO 2025-06-22 23:58:40,320 managers 3136 33420 Total position groups found: 9
+INFO 2025-06-22 23:58:40,321 serializers 3136 7980 DETAIL: Extracted vertical inputs: {'Vice Chairman': 54.0, 'Director': 34.0, 'HOD': 34.0, 'Manager': 34.0, 'Senior Specialist': 34.0, 'Specialist': 34.0, 'Junior Specialist': 34.0, 'Blue Colar ': 34.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 23:58:40,324 serializers 3136 7980 DETAIL: Global horizontal intervals: {'LD_to_LQ': 10.0, 'LQ_to_M': 9.0, 'M_to_UQ': 8.0, 'UQ_to_UD': 10.0}
+INFO 2025-06-22 23:58:40,326 serializers 3136 7980 DETAIL: Final result input data:
+INFO 2025-06-22 23:58:40,327 managers 3136 33420 Found current scenario: Scenario 6/19/2025 2:50:21 PM
+INFO 2025-06-22 23:58:40,328 serializers 3136 7980   positionVerticalInputs: {'Vice Chairman': 54.0, 'Director': 34.0, 'HOD': 34.0, 'Manager': 34.0, 'Senior Specialist': 34.0, 'Specialist': 34.0, 'Junior Specialist': 34.0, 'Blue Colar ': 34.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 23:58:40,330 serializers 3136 7980   inputRates preserved: True
+INFO 2025-06-22 23:58:40,330 managers 3136 33420 Current structure grade order: ['Vice Chairman', 'Director', 'HOD', 'Manager', 'Senior Specialist', 'Specialist', 'Junior Specialist', 'Blue Colar ', 'Blue Colar (GEO)']
+INFO 2025-06-22 23:58:40,331 managers 3136 33420 Base value position: Blue Colar (GEO) (last = lowest hierarchy)
+INFO 2025-06-22 23:58:40,331 serializers 3136 7980 === DETAIL SERIALIZER END ===
+INFO 2025-06-22 23:58:40,367 serializers 3136 33420 === LIST SERIALIZER for Scenario 6/18/2025 3:07:51 PM ===
+INFO 2025-06-22 23:58:40,371 serializers 3136 33420 LIST: Extracted vertical inputs: {'Vice Chairman': 13.0, 'Director': 64.0, 'HOD': 88.0, 'Manager': 36.0, 'Senior Specialist': 46.0, 'Specialist': 54.0, 'Junior Specialist': 29.0, 'Blue Colar ': 90.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 23:58:40,371 serializers 3136 33420 LIST: Global horizontal intervals: {'LD_to_LQ': 63.0, 'LQ_to_M': 48.0, 'M_to_UQ': 20.0, 'UQ_to_UD': 76.0}
+INFO 2025-06-22 23:58:40,373 serializers 3136 33420 === LIST SERIALIZER for Scenario 6/18/2025 3:07:33 PM ===
+INFO 2025-06-22 23:58:40,374 serializers 3136 33420 LIST: Extracted vertical inputs: {'Vice Chairman': 13.0, 'Director': 78.0, 'HOD': 57.0, 'Manager': 36.0, 'Senior Specialist': 62.0, 'Specialist': 92.0, 'Junior Specialist': 19.0, 'Blue Colar ': 50.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 23:58:40,375 serializers 3136 33420 LIST: Global horizontal intervals: {'LD_to_LQ': 98.0, 'LQ_to_M': 30.0, 'M_to_UQ': 12.0, 'UQ_to_UD': 56.0}
+INFO 2025-06-22 23:58:40,376 serializers 3136 33420 === LIST SERIALIZER for Scenario 6/18/2025 2:37:02 PM ===
+INFO 2025-06-22 23:58:40,379 serializers 3136 27516 === LIST SERIALIZER for Scenario 6/18/2025 11:29:40 AM ===
+INFO 2025-06-22 23:58:40,379 serializers 3136 33420 LIST: Extracted vertical inputs: {'Vice Chairman': 24.0, 'Director': 78.0, 'HOD': 79.0, 'Manager': 46.0, 'Senior Specialist': 21.0, 'Specialist': 63.0, 'Junior Specialist': 66.0, 'Blue Colar ': 7.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 23:58:40,381 serializers 3136 27516 LIST: Extracted vertical inputs: {'Vice Chairman': 67.0, 'Director': 90.0, 'HOD': 49.0, 'Manager': 28.0, 'Senior Specialist': 95.0, 'Specialist': 27.0, 'Junior Specialist': 24.0, 'Blue Colar ': 39.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 23:58:40,382 serializers 3136 33420 LIST: Global horizontal intervals: {'LD_to_LQ': 68.0, 'LQ_to_M': 50.0, 'M_to_UQ': 7.0, 'UQ_to_UD': 24.0}
+INFO 2025-06-22 23:58:40,383 serializers 3136 27516 LIST: Global horizontal intervals: {'LD_to_LQ': 33.0, 'LQ_to_M': 5.0, 'M_to_UQ': 33.0, 'UQ_to_UD': 86.0}
+INFO 2025-06-22 23:58:40,384 serializers 3136 33420 === LIST SERIALIZER for Scenario 6/18/2025 11:27:54 AM ===
+INFO 2025-06-22 23:58:40,385 serializers 3136 27516 === LIST SERIALIZER for Scenario 6/13/2025 4:08:02 PM ===
+INFO 2025-06-22 23:58:40,386 serializers 3136 33420 LIST: Extracted vertical inputs: {'Vice Chairman': 79.0, 'Director': 26.0, 'HOD': 6.0, 'Manager': 20.0, 'Senior Specialist': 1.0, 'Specialist': 36.0, 'Junior Specialist': 35.0, 'Blue Colar ': 58.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 23:58:40,387 serializers 3136 27516 LIST: Extracted vertical inputs: {'Vice Chairman': 67.0, 'Director': 38.0, 'HOD': 56.0, 'Manager': 77.0, 'Senior Specialist': 97.0, 'Specialist': 87.0, 'Junior Specialist': 97.0, 'Blue Colar ': 15.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 23:58:40,387 serializers 3136 33420 LIST: Global horizontal intervals: {'LD_to_LQ': 76.0, 'LQ_to_M': 49.0, 'M_to_UQ': 20.0, 'UQ_to_UD': 6.0}
+INFO 2025-06-22 23:58:40,389 serializers 3136 27516 LIST: Global horizontal intervals: {'LD_to_LQ': 98.0, 'LQ_to_M': 72.0, 'M_to_UQ': 60.0, 'UQ_to_UD': 43.0}
+INFO 2025-06-22 23:58:40,390 serializers 3136 33420 === LIST SERIALIZER for Scenario 6/17/2025 4:18:52 PM ===
+INFO 2025-06-22 23:58:40,391 serializers 3136 27516 === LIST SERIALIZER for Scenario 6/13/2025 3:59:44 PM ===
+INFO 2025-06-22 23:58:40,392 serializers 3136 33420 LIST: Extracted vertical inputs: {'Vice Chairman': 85.0, 'Director': 54.0, 'HOD': 47.0, 'Manager': 72.0, 'Senior Specialist': 100.0, 'Specialist': 2.0, 'Junior Specialist': 61.0, 'Blue Colar ': 57.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 23:58:40,394 serializers 3136 27516 LIST: Extracted vertical inputs: {'Vice Chairman': 98.0, 'Director': 27.0, 'HOD': 18.0, 'Manager': 68.0, 'Senior Specialist': 11.0, 'Specialist': 54.0, 'Junior Specialist': 42.0, 'Blue Colar ': 43.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 23:58:40,394 serializers 3136 33420 LIST: Global horizontal intervals: {'LD_to_LQ': 23.0, 'LQ_to_M': 41.0, 'M_to_UQ': 84.0, 'UQ_to_UD': 25.0}
+INFO 2025-06-22 23:58:40,395 serializers 3136 27516 LIST: Global horizontal intervals: {'LD_to_LQ': 5.0, 'LQ_to_M': 18.0, 'M_to_UQ': 76.0, 'UQ_to_UD': 74.0}
+INFO 2025-06-22 23:58:40,396 serializers 3136 33420 === LIST SERIALIZER for Scenario 6/17/2025 2:40:50 PM ===
+INFO 2025-06-22 23:58:40,400 serializers 3136 33420 LIST: Extracted vertical inputs: {'Vice Chairman': 95.0, 'Director': 71.0, 'HOD': 1.0, 'Manager': 82.0, 'Senior Specialist': 53.0, 'Specialist': 53.0, 'Junior Specialist': 22.0, 'Blue Colar ': 40.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 23:58:40,401 serializers 3136 33420 LIST: Global horizontal intervals: {'LD_to_LQ': 3.0, 'LQ_to_M': 90.0, 'M_to_UQ': 8.0, 'UQ_to_UD': 75.0}
+INFO 2025-06-22 23:58:40,406 serializers 3136 33420 === LIST SERIALIZER for Scenario 6/17/2025 2:23:29 PM ===
+INFO 2025-06-22 23:58:40,410 serializers 3136 33420 LIST: Extracted vertical inputs: {'Vice Chairman': 2.0, 'Director': None, 'HOD': None, 'Manager': None, 'Senior Specialist': None, 'Specialist': None, 'Junior Specialist': None, 'Blue Colar ': None, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 23:58:40,415 serializers 3136 33420 LIST: Global horizontal intervals: {'LD_to_LQ': 20.0, 'LQ_to_M': 7.0, 'M_to_UQ': 6.0, 'UQ_to_UD': 6.0}
+INFO 2025-06-22 23:58:40,419 serializers 3136 7980 === LIST SERIALIZER for Scenario 6/18/2025 11:29:40 AM ===
+INFO 2025-06-22 23:58:40,420 serializers 3136 33420 === LIST SERIALIZER for Scenario 6/17/2025 12:26:06 PM ===
+INFO 2025-06-22 23:58:40,421 serializers 3136 7980 LIST: Extracted vertical inputs: {'Vice Chairman': 67.0, 'Director': 90.0, 'HOD': 49.0, 'Manager': 28.0, 'Senior Specialist': 95.0, 'Specialist': 27.0, 'Junior Specialist': 24.0, 'Blue Colar ': 39.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 23:58:40,422 serializers 3136 33420 LIST: Extracted vertical inputs: {'Vice Chairman': 91.0, 'Director': 15.0, 'HOD': 4.0, 'Manager': 40.0, 'Senior Specialist': 26.0, 'Specialist': 9.0, 'Junior Specialist': 23.0, 'Blue Colar ': 11.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 23:58:40,423 serializers 3136 33420 LIST: Global horizontal intervals: {'LD_to_LQ': 50.0, 'LQ_to_M': 14.0, 'M_to_UQ': 79.0, 'UQ_to_UD': 52.0}
+INFO 2025-06-22 23:58:40,423 serializers 3136 7980 LIST: Global horizontal intervals: {'LD_to_LQ': 33.0, 'LQ_to_M': 5.0, 'M_to_UQ': 33.0, 'UQ_to_UD': 86.0}
+INFO 2025-06-22 23:58:40,425 serializers 3136 33420 === LIST SERIALIZER for Scenario 6/17/2025 12:14:48 PM ===
+INFO 2025-06-22 23:58:40,426 serializers 3136 7980 === LIST SERIALIZER for Scenario 6/13/2025 4:08:02 PM ===
+INFO 2025-06-22 23:58:40,427 serializers 3136 33420 LIST: Extracted vertical inputs: {'Vice Chairman': 16.0, 'Director': 18.0, 'HOD': 4.0, 'Manager': 22.0, 'Senior Specialist': 8.0, 'Specialist': 83.0, 'Junior Specialist': 16.0, 'Blue Colar ': 13.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 23:58:40,428 serializers 3136 7980 LIST: Extracted vertical inputs: {'Vice Chairman': 67.0, 'Director': 38.0, 'HOD': 56.0, 'Manager': 77.0, 'Senior Specialist': 97.0, 'Specialist': 87.0, 'Junior Specialist': 97.0, 'Blue Colar ': 15.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 23:58:40,428 serializers 3136 33420 LIST: Global horizontal intervals: {'LD_to_LQ': 46.0, 'LQ_to_M': 20.0, 'M_to_UQ': 37.0, 'UQ_to_UD': 70.0}
+INFO 2025-06-22 23:58:40,430 serializers 3136 33420 === LIST SERIALIZER for Scenario 6/17/2025 12:13:24 PM ===
+INFO 2025-06-22 23:58:40,431 serializers 3136 7980 LIST: Global horizontal intervals: {'LD_to_LQ': 98.0, 'LQ_to_M': 72.0, 'M_to_UQ': 60.0, 'UQ_to_UD': 43.0}
+INFO 2025-06-22 23:58:40,433 serializers 3136 33420 LIST: Extracted vertical inputs: {'Vice Chairman': 2.0, 'Director': 49.0, 'HOD': 50.0, 'Manager': 25.0, 'Senior Specialist': 41.0, 'Specialist': 14.0, 'Junior Specialist': 33.0, 'Blue Colar ': 30.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 23:58:40,434 serializers 3136 7980 === LIST SERIALIZER for Scenario 6/13/2025 3:59:44 PM ===
+INFO 2025-06-22 23:58:40,435 serializers 3136 33420 LIST: Global horizontal intervals: {'LD_to_LQ': 89.0, 'LQ_to_M': 16.0, 'M_to_UQ': 44.0, 'UQ_to_UD': 70.0}
+INFO 2025-06-22 23:58:40,435 serializers 3136 7980 LIST: Extracted vertical inputs: {'Vice Chairman': 98.0, 'Director': 27.0, 'HOD': 18.0, 'Manager': 68.0, 'Senior Specialist': 11.0, 'Specialist': 54.0, 'Junior Specialist': 42.0, 'Blue Colar ': 43.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 23:58:40,437 serializers 3136 7980 LIST: Global horizontal intervals: {'LD_to_LQ': 5.0, 'LQ_to_M': 18.0, 'M_to_UQ': 76.0, 'UQ_to_UD': 74.0}
+INFO 2025-06-22 23:58:40,437 serializers 3136 33420 === LIST SERIALIZER for Scenario 6/13/2025 4:04:49 PM ===
+INFO 2025-06-22 23:58:40,440 serializers 3136 33420 LIST: Extracted vertical inputs: {'Vice Chairman': 50.0, 'Director': 68.0, 'HOD': 49.0, 'Manager': 55.0, 'Senior Specialist': 97.0, 'Specialist': 32.0, 'Junior Specialist': 68.0, 'Blue Colar ': 42.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 23:58:40,441 serializers 3136 33420 LIST: Global horizontal intervals: {'LD_to_LQ': 75.0, 'LQ_to_M': 79.0, 'M_to_UQ': 20.0, 'UQ_to_UD': 39.0}
+INFO 2025-06-22 23:58:40,442 serializers 3136 33420 === LIST SERIALIZER for Scenario 6/13/2025 4:04:39 PM ===
+INFO 2025-06-22 23:58:40,443 serializers 3136 33420 LIST: Extracted vertical inputs: {'Vice Chairman': 37.0, 'Director': 36.0, 'HOD': 58.0, 'Manager': 93.0, 'Senior Specialist': 37.0, 'Specialist': 21.0, 'Junior Specialist': 96.0, 'Blue Colar ': 74.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 23:58:40,444 serializers 3136 33420 LIST: Global horizontal intervals: {'LD_to_LQ': 97.0, 'LQ_to_M': 96.0, 'M_to_UQ': 0.0, 'UQ_to_UD': 44.0}
+INFO 2025-06-22 23:58:40,468 serializers 3136 33420 === LIST SERIALIZER for Scenario 6/18/2025 3:07:51 PM ===
+INFO 2025-06-22 23:58:40,469 serializers 3136 33420 LIST: Extracted vertical inputs: {'Vice Chairman': 13.0, 'Director': 64.0, 'HOD': 88.0, 'Manager': 36.0, 'Senior Specialist': 46.0, 'Specialist': 54.0, 'Junior Specialist': 29.0, 'Blue Colar ': 90.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 23:58:40,470 serializers 3136 33420 LIST: Global horizontal intervals: {'LD_to_LQ': 63.0, 'LQ_to_M': 48.0, 'M_to_UQ': 20.0, 'UQ_to_UD': 76.0}
+INFO 2025-06-22 23:58:40,471 serializers 3136 33420 === LIST SERIALIZER for Scenario 6/18/2025 3:07:33 PM ===
+INFO 2025-06-22 23:58:40,471 serializers 3136 33420 LIST: Extracted vertical inputs: {'Vice Chairman': 13.0, 'Director': 78.0, 'HOD': 57.0, 'Manager': 36.0, 'Senior Specialist': 62.0, 'Specialist': 92.0, 'Junior Specialist': 19.0, 'Blue Colar ': 50.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 23:58:40,472 serializers 3136 33420 LIST: Global horizontal intervals: {'LD_to_LQ': 98.0, 'LQ_to_M': 30.0, 'M_to_UQ': 12.0, 'UQ_to_UD': 56.0}
+INFO 2025-06-22 23:58:40,473 serializers 3136 33420 === LIST SERIALIZER for Scenario 6/18/2025 2:37:02 PM ===
+INFO 2025-06-22 23:58:40,474 serializers 3136 33420 LIST: Extracted vertical inputs: {'Vice Chairman': 24.0, 'Director': 78.0, 'HOD': 79.0, 'Manager': 46.0, 'Senior Specialist': 21.0, 'Specialist': 63.0, 'Junior Specialist': 66.0, 'Blue Colar ': 7.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 23:58:40,474 serializers 3136 33420 LIST: Global horizontal intervals: {'LD_to_LQ': 68.0, 'LQ_to_M': 50.0, 'M_to_UQ': 7.0, 'UQ_to_UD': 24.0}
+INFO 2025-06-22 23:58:40,476 serializers 3136 33420 === LIST SERIALIZER for Scenario 6/18/2025 11:27:54 AM ===
+INFO 2025-06-22 23:58:40,476 serializers 3136 33420 LIST: Extracted vertical inputs: {'Vice Chairman': 79.0, 'Director': 26.0, 'HOD': 6.0, 'Manager': 20.0, 'Senior Specialist': 1.0, 'Specialist': 36.0, 'Junior Specialist': 35.0, 'Blue Colar ': 58.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 23:58:40,477 serializers 3136 33420 LIST: Global horizontal intervals: {'LD_to_LQ': 76.0, 'LQ_to_M': 49.0, 'M_to_UQ': 20.0, 'UQ_to_UD': 6.0}
+INFO 2025-06-22 23:58:40,478 serializers 3136 33420 === LIST SERIALIZER for Scenario 6/17/2025 4:18:52 PM ===
+INFO 2025-06-22 23:58:40,478 serializers 3136 33420 LIST: Extracted vertical inputs: {'Vice Chairman': 85.0, 'Director': 54.0, 'HOD': 47.0, 'Manager': 72.0, 'Senior Specialist': 100.0, 'Specialist': 2.0, 'Junior Specialist': 61.0, 'Blue Colar ': 57.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 23:58:40,479 serializers 3136 33420 LIST: Global horizontal intervals: {'LD_to_LQ': 23.0, 'LQ_to_M': 41.0, 'M_to_UQ': 84.0, 'UQ_to_UD': 25.0}
+INFO 2025-06-22 23:58:40,480 serializers 3136 33420 === LIST SERIALIZER for Scenario 6/17/2025 2:40:50 PM ===
+INFO 2025-06-22 23:58:40,481 serializers 3136 33420 LIST: Extracted vertical inputs: {'Vice Chairman': 95.0, 'Director': 71.0, 'HOD': 1.0, 'Manager': 82.0, 'Senior Specialist': 53.0, 'Specialist': 53.0, 'Junior Specialist': 22.0, 'Blue Colar ': 40.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 23:58:40,482 serializers 3136 33420 LIST: Global horizontal intervals: {'LD_to_LQ': 3.0, 'LQ_to_M': 90.0, 'M_to_UQ': 8.0, 'UQ_to_UD': 75.0}
+INFO 2025-06-22 23:58:40,483 serializers 3136 33420 === LIST SERIALIZER for Scenario 6/17/2025 2:23:29 PM ===
+INFO 2025-06-22 23:58:40,483 serializers 3136 33420 LIST: Extracted vertical inputs: {'Vice Chairman': 2.0, 'Director': None, 'HOD': None, 'Manager': None, 'Senior Specialist': None, 'Specialist': None, 'Junior Specialist': None, 'Blue Colar ': None, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 23:58:40,484 serializers 3136 33420 LIST: Global horizontal intervals: {'LD_to_LQ': 20.0, 'LQ_to_M': 7.0, 'M_to_UQ': 6.0, 'UQ_to_UD': 6.0}
+INFO 2025-06-22 23:58:40,485 serializers 3136 33420 === LIST SERIALIZER for Scenario 6/17/2025 12:26:06 PM ===
+INFO 2025-06-22 23:58:40,485 serializers 3136 33420 LIST: Extracted vertical inputs: {'Vice Chairman': 91.0, 'Director': 15.0, 'HOD': 4.0, 'Manager': 40.0, 'Senior Specialist': 26.0, 'Specialist': 9.0, 'Junior Specialist': 23.0, 'Blue Colar ': 11.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 23:58:40,486 serializers 3136 33420 LIST: Global horizontal intervals: {'LD_to_LQ': 50.0, 'LQ_to_M': 14.0, 'M_to_UQ': 79.0, 'UQ_to_UD': 52.0}
+INFO 2025-06-22 23:58:40,487 serializers 3136 33420 === LIST SERIALIZER for Scenario 6/17/2025 12:14:48 PM ===
+INFO 2025-06-22 23:58:40,488 serializers 3136 33420 LIST: Extracted vertical inputs: {'Vice Chairman': 16.0, 'Director': 18.0, 'HOD': 4.0, 'Manager': 22.0, 'Senior Specialist': 8.0, 'Specialist': 83.0, 'Junior Specialist': 16.0, 'Blue Colar ': 13.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 23:58:40,488 serializers 3136 33420 LIST: Global horizontal intervals: {'LD_to_LQ': 46.0, 'LQ_to_M': 20.0, 'M_to_UQ': 37.0, 'UQ_to_UD': 70.0}
+INFO 2025-06-22 23:58:40,489 serializers 3136 33420 === LIST SERIALIZER for Scenario 6/17/2025 12:13:24 PM ===
+INFO 2025-06-22 23:58:40,490 serializers 3136 33420 LIST: Extracted vertical inputs: {'Vice Chairman': 2.0, 'Director': 49.0, 'HOD': 50.0, 'Manager': 25.0, 'Senior Specialist': 41.0, 'Specialist': 14.0, 'Junior Specialist': 33.0, 'Blue Colar ': 30.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 23:58:40,490 serializers 3136 33420 LIST: Global horizontal intervals: {'LD_to_LQ': 89.0, 'LQ_to_M': 16.0, 'M_to_UQ': 44.0, 'UQ_to_UD': 70.0}
+INFO 2025-06-22 23:58:40,491 serializers 3136 33420 === LIST SERIALIZER for Scenario 6/13/2025 4:04:49 PM ===
+INFO 2025-06-22 23:58:40,492 serializers 3136 33420 LIST: Extracted vertical inputs: {'Vice Chairman': 50.0, 'Director': 68.0, 'HOD': 49.0, 'Manager': 55.0, 'Senior Specialist': 97.0, 'Specialist': 32.0, 'Junior Specialist': 68.0, 'Blue Colar ': 42.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 23:58:40,493 serializers 3136 33420 LIST: Global horizontal intervals: {'LD_to_LQ': 75.0, 'LQ_to_M': 79.0, 'M_to_UQ': 20.0, 'UQ_to_UD': 39.0}
+INFO 2025-06-22 23:58:40,495 serializers 3136 33420 === LIST SERIALIZER for Scenario 6/13/2025 4:04:39 PM ===
+INFO 2025-06-22 23:58:40,496 serializers 3136 33420 LIST: Extracted vertical inputs: {'Vice Chairman': 37.0, 'Director': 36.0, 'HOD': 58.0, 'Manager': 93.0, 'Senior Specialist': 37.0, 'Specialist': 21.0, 'Junior Specialist': 96.0, 'Blue Colar ': 74.0, 'Blue Colar (GEO)': None}
+INFO 2025-06-22 23:58:40,497 serializers 3136 33420 LIST: Global horizontal intervals: {'LD_to_LQ': 97.0, 'LQ_to_M': 96.0, 'M_to_UQ': 0.0, 'UQ_to_UD': 44.0}

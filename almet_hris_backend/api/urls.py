@@ -1,3 +1,8 @@
+# api/urls.py - ENHANCED: Complete URL Configuration with All Endpoints
+
+from django.urls import path, include
+from rest_framework.routers import DefaultRouter
+from . import views
 # api/urls.py
 
 from django.urls import path, include
@@ -5,164 +10,292 @@ from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenRefreshView
 from . import views
 
-# Create router and register viewsets
+# Create router for viewsets
 router = DefaultRouter()
 
-# Reference data endpoints with full CRUD
+# Business Structure URLs
 router.register(r'business-functions', views.BusinessFunctionViewSet, basename='businessfunction')
 router.register(r'departments', views.DepartmentViewSet, basename='department')
 router.register(r'units', views.UnitViewSet, basename='unit')
 router.register(r'job-functions', views.JobFunctionViewSet, basename='jobfunction')
 router.register(r'position-groups', views.PositionGroupViewSet, basename='positiongroup')
-router.register(r'employee-statuses', views.EmployeeStatusViewSet, basename='employeestatus')
-router.register(r'employee-tags', views.EmployeeTagViewSet, basename='employeetag')
 
-# Main employee endpoints
+# Employee Management URLs
 router.register(r'employees', views.EmployeeViewSet, basename='employee')
-router.register(r'employee-documents', views.EmployeeDocumentViewSet, basename='employeedocument')
-router.register(r'employee-activities', views.EmployeeActivityViewSet, basename='employeeactivity')
+router.register(r'employee-tags', views.EmployeeTagViewSet, basename='employeetag')
+router.register(r'employee-statuses', views.EmployeeStatusViewSet, basename='employeestatus')
+
+# Vacancy Management URLs
+router.register(r'vacant-positions', views.VacantPositionViewSet, basename='vacantposition')
+
+# Organizational Chart URLs
+router.register(r'org-chart', views.OrgChartViewSet, basename='orgchart')
+
+# Headcount Analytics URLs
+router.register(r'headcount-summaries', views.HeadcountSummaryViewSet, basename='headcountsummary')
+
+# Employee Grading Integration URLs
+router.register(r'employee-grading', views.EmployeeGradingViewSet, basename='employeegrading')
 
 urlpatterns = [
-    # Authentication endpoints
-    path('auth/microsoft/', views.authenticate_microsoft, name='auth_microsoft'),
+    
+     path('auth/microsoft/', views.authenticate_microsoft, name='auth_microsoft'),
     path('auth/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
-    path('employees/status-dashboard/', views.status_dashboard, name='status_dashboard'),
+   
     # User endpoints
     path('me/', views.user_info, name='user_info'),
-    
-    # ViewSet endpoints (includes all CRUD operations and custom actions)
+    # Include all router URLs
     path('', include(router.urls)),
+    
+    # Additional custom endpoints can be added here if needed
 ]
 
-# Available endpoints after this configuration:
+# API Endpoint Documentation
+"""
+ENHANCED HR HEADCOUNT SYSTEM API ENDPOINTS
 
-# Authentication & User:
-# POST /api/auth/microsoft/ - Microsoft authentication
-# POST /api/auth/refresh/ - Refresh JWT token
-# GET /api/me/ - Get current user info
+=== BUSINESS STRUCTURE ===
+GET    /api/business-functions/              - List all business functions
+POST   /api/business-functions/              - Create business function
+GET    /api/business-functions/{id}/         - Get business function details
+PUT    /api/business-functions/{id}/         - Update business function
+DELETE /api/business-functions/{id}/         - Delete business function
 
-# Business Functions:
-# GET /api/business-functions/ - List all business functions (with pagination, search, filters)
-# POST /api/business-functions/ - Create new business function
-# GET /api/business-functions/{id}/ - Get specific business function
-# PUT /api/business-functions/{id}/ - Update business function (full)
-# PATCH /api/business-functions/{id}/ - Update business function (partial)
-# DELETE /api/business-functions/{id}/ - Delete business function
-# GET /api/business-functions/dropdown_options/ - Get simplified dropdown data
+GET    /api/departments/                     - List all departments
+POST   /api/departments/                     - Create department
+GET    /api/departments/{id}/                - Get department details
+PUT    /api/departments/{id}/                - Update department
+DELETE /api/departments/{id}/                - Delete department
 
-# Departments:
-# GET /api/departments/ - List all departments (with pagination, search, filters)
-# POST /api/departments/ - Create new department
-# GET /api/departments/{id}/ - Get specific department
-# PUT /api/departments/{id}/ - Update department (full)
-# PATCH /api/departments/{id}/ - Update department (partial)
-# DELETE /api/departments/{id}/ - Delete department
-# GET /api/departments/dropdown_options/?business_function={id} - Get departments for dropdown
+GET    /api/units/                          - List all units
+POST   /api/units/                          - Create unit
+GET    /api/units/{id}/                     - Get unit details
+PUT    /api/units/{id}/                     - Update unit
+DELETE /api/units/{id}/                     - Delete unit
 
-# Units:
-# GET /api/units/ - List all units (with pagination, search, filters)
-# POST /api/units/ - Create new unit
-# GET /api/units/{id}/ - Get specific unit
-# PUT /api/units/{id}/ - Update unit (full)
-# PATCH /api/units/{id}/ - Update unit (partial)
-# DELETE /api/units/{id}/ - Delete unit
-# GET /api/units/dropdown_options/?department={id} - Get units for dropdown
+GET    /api/job-functions/                  - List all job functions
+POST   /api/job-functions/                  - Create job function
+GET    /api/job-functions/{id}/             - Get job function details
+PUT    /api/job-functions/{id}/             - Update job function
+DELETE /api/job-functions/{id}/             - Delete job function
 
-# Job Functions:
-# GET /api/job-functions/ - List all job functions (with pagination, search, filters)
-# POST /api/job-functions/ - Create new job function
-# GET /api/job-functions/{id}/ - Get specific job function
-# PUT /api/job-functions/{id}/ - Update job function (full)
-# PATCH /api/job-functions/{id}/ - Update job function (partial)
-# DELETE /api/job-functions/{id}/ - Delete job function
-# GET /api/job-functions/dropdown_options/ - Get simplified dropdown data
+GET    /api/position-groups/                - List all position groups
+POST   /api/position-groups/                - Create position group
+GET    /api/position-groups/{id}/           - Get position group details
+PUT    /api/position-groups/{id}/           - Update position group
+DELETE /api/position-groups/{id}/           - Delete position group
+GET    /api/position-groups/{id}/grading-levels/ - Get grading levels for position
 
-# Position Groups:
-# GET /api/position-groups/ - List all position groups (with pagination, search, filters)
-# POST /api/position-groups/ - Create new position group
-# GET /api/position-groups/{id}/ - Get specific position group
-# PUT /api/position-groups/{id}/ - Update position group (full)
-# PATCH /api/position-groups/{id}/ - Update position group (partial)
-# DELETE /api/position-groups/{id}/ - Delete position group
-# GET /api/position-groups/by_hierarchy/ - Get position groups ordered by hierarchy
-# GET /api/position-groups/dropdown_options/ - Get simplified dropdown data ordered by hierarchy
+=== EMPLOYEE MANAGEMENT ===
+GET    /api/employees/                      - List employees (with advanced filtering & sorting)
+POST   /api/employees/                      - Create new employee
+GET    /api/employees/{id}/                 - Get employee details
+PUT    /api/employees/{id}/                 - Update employee
+DELETE /api/employees/{id}/                 - Delete employee
 
-# Employee Statuses:
-# GET /api/employee-statuses/ - List all employee statuses (with pagination, search, filters)
-# POST /api/employee-statuses/ - Create new employee status
-# GET /api/employee-statuses/{id}/ - Get specific employee status
-# PUT /api/employee-statuses/{id}/ - Update employee status (full)
-# PATCH /api/employee-statuses/{id}/ - Update employee status (partial)
-# DELETE /api/employee-statuses/{id}/ - Delete employee status
-# GET /api/employee-statuses/dropdown_options/ - Get simplified dropdown data
+POST   /api/employees/bulk_update/          - Bulk update multiple employees
+POST   /api/employees/bulk_delete/          - Bulk delete multiple employees
+POST   /api/employees/update_org_chart_visibility/ - Update org chart visibility
+GET    /api/employees/export_csv/           - Export employees to CSV
+GET    /api/employees/statistics/           - Get employee statistics
+GET    /api/employees/line_managers/        - Get potential line managers list
+GET    /api/employees/{id}/activities/      - Get employee activity history
+POST   /api/employees/{id}/update_contract/ - Update employee contract
 
-# Employee Tags:
-# GET /api/employee-tags/ - List all employee tags (with pagination, search, filters)
-# POST /api/employee-tags/ - Create new employee tag
-# GET /api/employee-tags/{id}/ - Get specific employee tag
-# PUT /api/employee-tags/{id}/ - Update employee tag (full)
-# PATCH /api/employee-tags/{id}/ - Update employee tag (partial)
-# DELETE /api/employee-tags/{id}/ - Delete employee tag
-# GET /api/employee-tags/dropdown_options/?tag_type={type} - Get tags for dropdown
+GET    /api/employee-tags/                  - List all employee tags
+POST   /api/employee-tags/                  - Create employee tag
+GET    /api/employee-tags/{id}/             - Get tag details
+PUT    /api/employee-tags/{id}/             - Update tag
+DELETE /api/employee-tags/{id}/             - Delete tag
 
-# Employees (Main Entity):
-# GET /api/employees/ - List employees with advanced filtering, search, pagination, sorting
-# POST /api/employees/ - Create new employee
-# GET /api/employees/{id}/ - Get specific employee with full details
-# PUT /api/employees/{id}/ - Update employee (full)
-# PATCH /api/employees/{id}/ - Update employee (partial)
-# DELETE /api/employees/{id}/ - Delete employee
-# GET /api/employees/filter_options/ - Get all filter dropdown options
-# GET /api/employees/dropdown_search/?field={field}&search={term} - Advanced dropdown search
-# GET /api/employees/org_chart/ - Get organizational chart data
-# PATCH /api/employees/update_org_chart_visibility/ - Bulk update org chart visibility
-# PATCH /api/employees/{id}/org_chart_visibility/ - Update single employee org chart visibility
-# GET /api/employees/statistics/ - Get employee statistics for dashboard
-# POST /api/employees/bulk_update/ - Bulk update multiple employees
-# GET /api/employees/export_data/?format={csv|excel} - Export employee data
+GET    /api/employee-statuses/              - List all employee statuses
+POST   /api/employee-statuses/              - Create employee status
+GET    /api/employee-statuses/{id}/         - Get status details
+PUT    /api/employee-statuses/{id}/         - Update status
+DELETE /api/employee-statuses/{id}/         - Delete status
 
-# Employee Documents:
-# GET /api/employee-documents/ - List all documents (with pagination, search, filters)
-# POST /api/employee-documents/ - Upload new document
-# GET /api/employee-documents/{id}/ - Get specific document
-# PUT /api/employee-documents/{id}/ - Update document (full)
-# PATCH /api/employee-documents/{id}/ - Update document (partial)
-# DELETE /api/employee-documents/{id}/ - Delete document
+=== VACANCY MANAGEMENT ===
+GET    /api/vacant-positions/               - List vacant positions
+POST   /api/vacant-positions/               - Create vacant position
+GET    /api/vacant-positions/{id}/          - Get vacancy details
+PUT    /api/vacant-positions/{id}/          - Update vacancy
+DELETE /api/vacant-positions/{id}/          - Delete vacancy
+POST   /api/vacant-positions/{id}/mark_filled/ - Mark position as filled
+GET    /api/vacant-positions/statistics/    - Get vacancy statistics
 
-# Employee Activities:
-# GET /api/employee-activities/ - List all activities (with pagination, search, filters)
-# GET /api/employee-activities/{id}/ - Get specific activity
-# GET /api/employee-activities/recent_activities/?limit={number} - Get recent activities
-# GET /api/employee-activities/activity_summary/ - Get activity statistics
+=== ORGANIZATIONAL CHART ===
+GET    /api/org-chart/                      - Get org chart root nodes
+GET    /api/org-chart/full_tree/            - Get complete organizational chart
 
-# Query Parameters for Filtering (Employees):
-# ?search={term} - Global search across multiple fields
-# ?employee_id={id} - Filter by employee ID
-# ?name={name} - Filter by employee name
-# ?email={email} - Filter by email
-# ?business_function={id,id,id} - Filter by business functions (multiple)
-# ?department={id,id,id} - Filter by departments (multiple)
-# ?unit={id,id,id} - Filter by units (multiple)
-# ?job_function={id,id,id} - Filter by job functions (multiple)
-# ?position_group={id,id,id} - Filter by position groups (multiple)
-# ?status={id,id,id} - Filter by statuses (multiple)
-# ?tags={id,id,id} - Filter by tags (multiple)
-# ?line_manager={id} - Filter by line manager
-# ?line_manager_name={name} - Filter by line manager name
-# ?grade={1,2,3} - Filter by grades (multiple)
-# ?grade_min={number} - Filter by minimum grade
-# ?grade_max={number} - Filter by maximum grade
-# ?gender={MALE,FEMALE} - Filter by gender (multiple)
-# ?start_date_from={YYYY-MM-DD} - Filter by start date from
-# ?start_date_to={YYYY-MM-DD} - Filter by start date to
-# ?end_date_from={YYYY-MM-DD} - Filter by end date from
-# ?end_date_to={YYYY-MM-DD} - Filter by end date to
-# ?is_visible_in_org_chart={true|false} - Filter by org chart visibility
-# ?ordering={field1,field2,-field3} - Multi-level sorting (- for descending)
-# ?page={number} - Page number for pagination
-# ?page_size={number} - Number of items per page
+=== HEADCOUNT ANALYTICS ===
+GET    /api/headcount-summaries/            - List headcount summaries
+GET    /api/headcount-summaries/{id}/       - Get summary details
+POST   /api/headcount-summaries/generate_current/ - Generate current summary
+GET    /api/headcount-summaries/latest/     - Get latest summary
 
-# Examples of Multi-field Sorting:
-# ?ordering=position_group__hierarchy_level,start_date - Sort by hierarchy level, then start date
-# ?ordering=-grade,user__last_name,user__first_name - Sort by grade desc, then last name, then first name
-# ?ordering=department__name,-start_date - Sort by department name, then start date descending
+=== EMPLOYEE GRADING INTEGRATION ===
+GET    /api/employee-grading/               - List employees with grading info
+POST   /api/employee-grading/bulk_update_grades/ - Bulk update employee grades
+
+=== ADVANCED FILTERING OPTIONS ===
+
+Employee List Filtering:
+- search: Text search across name, employee_id, email, job_title, etc.
+- status: Filter by status names (multiple values supported)
+- business_function: Filter by business function IDs
+- department: Filter by department IDs
+- position_group: Filter by position group IDs
+- line_manager: Filter by line manager IDs
+- tags: Filter by tag IDs
+- contract_duration: Filter by contract duration types
+- start_date_from: Filter employees starting from date
+- start_date_to: Filter employees starting until date
+- active_only: Show only active headcount (true/false)
+- org_chart_visible: Show only org chart visible employees (true/false)
+
+Employee List Sorting:
+- ordering: Comma-separated list of fields to sort by
+- Prefix with '-' for descending order
+- Available fields: employee_id, name, email, start_date, end_date, 
+  business_function, department, job_title, position_group, status, 
+  line_manager, created_at, updated_at
+
+Examples:
+GET /api/employees/?search=john&status=ACTIVE&ordering=start_date,-name
+GET /api/employees/?business_function=1,2&active_only=true&ordering=position_group,name
+GET /api/employees/?contract_duration=PERMANENT&start_date_from=2024-01-01
+
+=== GRADING SYSTEM INTEGRATION ===
+
+Position Group Grading Levels:
+Each position group has shorthand codes:
+- VC (Vice Chairman): VC_LD, VC_LQ, VC_M, VC_UQ, VC_UD
+- DIR (Director): DIR_LD, DIR_LQ, DIR_M, DIR_UQ, DIR_UD
+- MGR (Manager): MGR_LD, MGR_LQ, MGR_M, MGR_UQ, MGR_UD
+- HOD (Head of Department): HOD_LD, HOD_LQ, HOD_M, HOD_UQ, HOD_UD
+- SS (Senior Specialist): SS_LD, SS_LQ, SS_M, SS_UQ, SS_UD
+- SP (Specialist): SP_LD, SP_LQ, SP_M, SP_UQ, SP_UD
+- JS (Junior Specialist): JS_LD, JS_LQ, JS_M, JS_UQ, JS_UD
+- BC (Blue Collar): BC_LD, BC_LQ, BC_M, BC_UQ, BC_UD
+
+Where:
+- LD = Lower Decile
+- LQ = Lower Quartile
+- M = Median
+- UQ = Upper Quartile
+- UD = Upper Decile
+
+=== CONTRACT MANAGEMENT ===
+
+Contract Duration Options:
+- 3_MONTHS: 3 Months
+- 6_MONTHS: 6 Months
+- 1_YEAR: 1 Year
+- 2_YEARS: 2 Years
+- 3_YEARS: 3 Years
+- PERMANENT: Permanent
+
+Auto-calculated fields:
+- contract_end_date: Automatically calculated based on contract_start_date and duration
+- full_name: Auto-generated from user first_name + last_name
+- grading_level: Auto-assigned based on position_group (defaults to median)
+
+=== STATUS MANAGEMENT WITH COLOR HIERARCHY ===
+
+Employee Status Types with Auto-assigned Colors:
+- ACTIVE: #10B981 (Green)
+- ONBOARDING: #3B82F6 (Blue)
+- PROBATION: #F59E0B (Yellow)
+- NOTICE_PERIOD: #EF4444 (Red)
+- TERMINATED: #6B7280 (Gray)
+- RESIGNED: #6B7280 (Gray)
+- SUSPENDED: #DC2626 (Dark Red)
+- LEAVE: #8B5CF6 (Purple)
+- VACANT: #F97316 (Orange)
+- INACTIVE: #9CA3AF (Light Gray)
+
+Status Properties:
+- affects_headcount: Whether status counts toward active headcount
+- allows_org_chart: Whether employees appear in organizational chart
+
+=== BULK OPERATIONS ===
+
+Bulk Update Employee Data:
+POST /api/employees/bulk_update/
+{
+  "employee_ids": [1, 2, 3],
+  "updates": {
+    "status": 2,
+    "line_manager": 5,
+    "is_visible_in_org_chart": true
+  }
+}
+
+Bulk Delete Employees:
+POST /api/employees/bulk_delete/
+{
+  "employee_ids": [1, 2, 3]
+}
+
+Bulk Update Grades:
+POST /api/employee-grading/bulk_update_grades/
+{
+  "updates": [
+    {"employee_id": 1, "grade": "5000", "grading_level": "MGR_UQ"},
+    {"employee_id": 2, "grade": "4500", "grading_level": "MGR_M"}
+  ]
+}
+
+=== VACANCY INTEGRATION ===
+
+When creating an employee, you can link them to a vacant position:
+POST /api/employees/
+{
+  "vacancy_id": 123,
+  "employee_id": "HC001",
+  "first_name": "John",
+  "last_name": "Doe",
+  "email": "john.doe@company.com",
+  ...
+}
+
+This will automatically:
+- Mark the vacant position as filled
+- Link the employee to the vacancy
+- Log the activity
+
+=== ACTIVITY LOGGING ===
+
+All significant employee changes are automatically logged:
+- Employee creation/updates
+- Status changes
+- Manager changes
+- Position changes
+- Contract updates
+- Document uploads
+- Grade changes
+- Tag additions/removals
+- Bulk operations
+
+=== CSV EXPORT ===
+
+Export filtered employee data to CSV:
+GET /api/employees/export_csv/?status=ACTIVE&business_function=1
+
+Includes all major employee fields in a spreadsheet-friendly format.
+
+=== ANALYTICS & REPORTING ===
+
+Employee Statistics:
+GET /api/employees/statistics/
+Returns comprehensive breakdown by status, business function, position group, 
+contract types, recent hires, upcoming contract endings, etc.
+
+Vacancy Statistics:
+GET /api/vacant-positions/statistics/
+Returns open/filled vacancy counts by urgency and business function.
+
+Headcount Summary:
+GET /api/headcount-summaries/latest/
+Returns latest comprehensive headcount analytics including trends and breakdowns.
+"""

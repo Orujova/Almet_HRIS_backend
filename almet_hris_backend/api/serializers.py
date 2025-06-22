@@ -8,6 +8,20 @@ from .models import (
     EmployeeActivity, MicrosoftUser
 )
 
+from rest_framework import serializers
+from django.contrib.auth.models import User
+from django.db import transaction
+from django.utils import timezone
+from datetime import date, timedelta  # FIX: Import əlavə edildi
+from .models import (
+    Employee, BusinessFunction, Department, Unit, JobFunction,
+    PositionGroup, EmployeeTag, EmployeeStatus, EmployeeDocument,
+    VacantPosition, EmployeeActivity, HeadcountSummary
+)
+import logging
+
+logger = logging.getLogger(__name__)
+
 class UserSerializer(serializers.ModelSerializer):
     full_name = serializers.SerializerMethodField()
     
@@ -27,132 +41,202 @@ class MicrosoftUserSerializer(serializers.ModelSerializer):
         fields = ['id', 'user', 'microsoft_id']
         read_only_fields = ['id', 'microsoft_id']
 
-# Reference Models Serializers with CRUD
+
 class BusinessFunctionSerializer(serializers.ModelSerializer):
     employee_count = serializers.SerializerMethodField()
     
     class Meta:
         model = BusinessFunction
-        fields = ['id', 'name', 'code', 'is_active', 'employee_count', 'created_at', 'updated_at']
-        read_only_fields = ['id', 'created_at', 'updated_at']
+        fields = ['id', 'name', 'code', 'description', 'is_active', 'employee_count', 'created_at']
     
     def get_employee_count(self, obj):
-        return obj.employees.count()
+        return obj.employees.filter(status__affects_headcount=True).count()
 
 class DepartmentSerializer(serializers.ModelSerializer):
     business_function_name = serializers.CharField(source='business_function.name', read_only=True)
     business_function_code = serializers.CharField(source='business_function.code', read_only=True)
+    head_name = serializers.CharField(source='head_of_department.full_name', read_only=True)
     employee_count = serializers.SerializerMethodField()
+    unit_count = serializers.SerializerMethodField()
     
     class Meta:
         model = Department
         fields = [
-            'id', 'name', 'business_function', 'business_function_name', 
-            'business_function_code', 'is_active', 'employee_count', 'created_at', 'updated_at'
+            'id', 'name',  'business_function', 'business_function_name', 
+            'business_function_code', 'head_of_department', 'head_name', 
+            'is_active', 'employee_count', 'unit_count', 'created_at'
         ]
-        read_only_fields = ['id', 'created_at', 'updated_at']
     
     def get_employee_count(self, obj):
-        return obj.employees.count()
+        return obj.employees.filter(status__affects_headcount=True).count()
+    
+    def get_unit_count(self, obj):
+        return obj.units.filter(is_active=True).count()
 
 class UnitSerializer(serializers.ModelSerializer):
     department_name = serializers.CharField(source='department.name', read_only=True)
     business_function_name = serializers.CharField(source='department.business_function.name', read_only=True)
+    unit_head_name = serializers.CharField(source='unit_head.full_name', read_only=True)
     employee_count = serializers.SerializerMethodField()
     
     class Meta:
         model = Unit
         fields = [
-            'id', 'name', 'department', 'department_name', 'business_function_name', 
-            'is_active', 'employee_count', 'created_at', 'updated_at'
+            'id', 'name', 'department', 'department_name',
+            'business_function_name', 'unit_head', 'unit_head_name',
+            'is_active', 'employee_count', 'created_at'
         ]
-        read_only_fields = ['id', 'created_at', 'updated_at']
     
     def get_employee_count(self, obj):
-        return obj.employees.count()
+        return obj.employees.filter(status__affects_headcount=True).count()
 
 class JobFunctionSerializer(serializers.ModelSerializer):
     employee_count = serializers.SerializerMethodField()
     
     class Meta:
         model = JobFunction
-        fields = ['id', 'name', 'is_active', 'employee_count', 'created_at', 'updated_at']
-        read_only_fields = ['id', 'created_at', 'updated_at']
+        fields = ['id', 'name', 'description', 'is_active', 'employee_count', 'created_at']
     
     def get_employee_count(self, obj):
-        return obj.employees.count()
+        return obj.employees.filter(status__affects_headcount=True).count()
 
+# Enhanced Position Group Serializer with Grading Integration
 class PositionGroupSerializer(serializers.ModelSerializer):
     display_name = serializers.CharField(source='get_name_display', read_only=True)
+    grading_levels = serializers.SerializerMethodField()
     employee_count = serializers.SerializerMethodField()
+    grading_shorthand = serializers.CharField(read_only=True)
     
     class Meta:
         model = PositionGroup
         fields = [
-            'id', 'name', 'display_name', 'hierarchy_level', 'is_active', 
-            'employee_count', 'created_at', 'updated_at'
+            'id', 'name', 'display_name', 'hierarchy_level', 'grading_shorthand',
+            'grading_levels', 'is_active', 'employee_count', 'created_at'
         ]
-        read_only_fields = ['id', 'created_at', 'updated_at']
+    
+    def get_grading_levels(self, obj):
+        """Get grading level options for this position"""
+        levels = obj.get_grading_levels()
+        return [
+            {'code': f'{obj.grading_shorthand}_{level}', 'display': f'{obj.grading_shorthand}-{level}'}
+            for level in ['LD', 'LQ', 'M', 'UQ', 'UD']
+        ]
     
     def get_employee_count(self, obj):
-        return obj.employees.count()
+        return obj.employees.filter(status__affects_headcount=True).count()
 
+# Employee Tag Serializer
 class EmployeeTagSerializer(serializers.ModelSerializer):
     employee_count = serializers.SerializerMethodField()
     
     class Meta:
         model = EmployeeTag
-        fields = [
-            'id', 'name', 'tag_type', 'color', 'is_active', 
-            'employee_count', 'created_at', 'updated_at'
-        ]
-        read_only_fields = ['id', 'created_at', 'updated_at']
+        fields = ['id', 'name', 'tag_type', 'color', 'is_active', 'employee_count', 'created_at']
     
     def get_employee_count(self, obj):
-        return obj.employees.count()
+        return obj.employees.filter(status__affects_headcount=True).count()
 
+# Employee Status Serializer with Enhanced Features
 class EmployeeStatusSerializer(serializers.ModelSerializer):
     employee_count = serializers.SerializerMethodField()
     
     class Meta:
         model = EmployeeStatus
         fields = [
-            'id', 'name', 'color', 'is_active', 'employee_count', 'created_at', 'updated_at'
+            'id', 'name', 'status_type', 'color', 'affects_headcount', 
+            'allows_org_chart', 'is_active', 'employee_count', 'created_at'
         ]
-        read_only_fields = ['id', 'created_at', 'updated_at']
     
     def get_employee_count(self, obj):
         return obj.employees.count()
 
+# Vacant Position Serializers
+class VacantPositionListSerializer(serializers.ModelSerializer):
+    business_function_name = serializers.CharField(source='business_function.name', read_only=True)
+    department_name = serializers.CharField(source='department.name', read_only=True)
+    unit_name = serializers.CharField(source='unit.name', read_only=True)
+    job_function_name = serializers.CharField(source='job_function.name', read_only=True)
+    position_group_name = serializers.CharField(source='position_group.get_name_display', read_only=True)
+    reporting_to_name = serializers.CharField(source='reporting_to.full_name', read_only=True)
+    filled_by_name = serializers.CharField(source='filled_by.full_name', read_only=True)
+    days_open = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = VacantPosition
+        fields = [
+            'id', 'position_id', 'title', 'business_function_name', 'department_name',
+            'unit_name', 'job_function_name', 'position_group_name', 'vacancy_type',
+            'urgency', 'expected_start_date', 'reporting_to_name', 'is_filled',
+            'filled_by_name', 'filled_date', 'days_open', 'created_at'
+        ]
+    
+    def get_days_open(self, obj):
+        if obj.is_filled and obj.filled_date:
+            delta = obj.filled_date - obj.created_at.date()
+        else:
+            delta = timezone.now().date() - obj.created_at.date()
+        return delta.days
+
+class VacantPositionDetailSerializer(serializers.ModelSerializer):
+    business_function_name = serializers.CharField(source='business_function.name', read_only=True)
+    department_name = serializers.CharField(source='department.name', read_only=True)
+    unit_name = serializers.CharField(source='unit.name', read_only=True)
+    job_function_name = serializers.CharField(source='job_function.name', read_only=True)
+    position_group_name = serializers.CharField(source='position_group.get_name_display', read_only=True)
+    reporting_to_name = serializers.CharField(source='reporting_to.full_name', read_only=True)
+    filled_by_name = serializers.CharField(source='filled_by.full_name', read_only=True)
+    created_by_name = serializers.CharField(source='created_by.username', read_only=True)
+    
+    class Meta:
+        model = VacantPosition
+        fields = '__all__'
+
+class VacantPositionCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = VacantPosition
+        exclude = ['filled_by', 'filled_date', 'is_filled']
+    
+    def create(self, validated_data):
+        validated_data['created_by'] = self.context['request'].user
+        return super().create(validated_data)
+
+# Employee Document Serializer
 class EmployeeDocumentSerializer(serializers.ModelSerializer):
-    uploaded_by_name = serializers.CharField(source='uploaded_by.get_full_name', read_only=True)
-    employee_name = serializers.CharField(source='employee.full_name', read_only=True)
-    employee_id = serializers.CharField(source='employee.employee_id', read_only=True)
+    uploaded_by_name = serializers.CharField(source='uploaded_by.username', read_only=True)
+    file_size_display = serializers.SerializerMethodField()
     
     class Meta:
         model = EmployeeDocument
         fields = [
-            'id', 'employee', 'employee_name', 'employee_id', 'name', 'document_type', 
-            'file_path', 'file_size', 'mime_type', 'uploaded_at', 'uploaded_by', 'uploaded_by_name'
+            'id', 'name', 'document_type', 'file_path', 'file_size',
+            'file_size_display', 'mime_type', 'uploaded_at', 'uploaded_by_name'
         ]
-        read_only_fields = ['id', 'uploaded_at', 'uploaded_by']
+    
+    def get_file_size_display(self, obj):
+        if obj.file_size:
+            if obj.file_size < 1024:
+                return f"{obj.file_size} B"
+            elif obj.file_size < 1024 * 1024:
+                return f"{obj.file_size / 1024:.1f} KB"
+            else:
+                return f"{obj.file_size / (1024 * 1024):.1f} MB"
+        return "Unknown"
 
+# Employee Activity Serializer
 class EmployeeActivitySerializer(serializers.ModelSerializer):
-    performed_by_name = serializers.CharField(source='performed_by.get_full_name', read_only=True)
+    performed_by_name = serializers.CharField(source='performed_by.username', read_only=True)
     employee_name = serializers.CharField(source='employee.full_name', read_only=True)
-    employee_id = serializers.CharField(source='employee.employee_id', read_only=True)
     
     class Meta:
         model = EmployeeActivity
         fields = [
-            'id', 'employee', 'employee_name', 'employee_id', 'activity_type', 
-            'description', 'timestamp', 'performed_by', 'performed_by_name', 'metadata'
+            'id', 'employee', 'employee_name', 'activity_type', 'description',
+            'performed_by', 'performed_by_name', 'metadata', 'created_at'
         ]
-        read_only_fields = ['id', 'timestamp', 'performed_by']
 
-# Employee Serializers
+# Main Employee Serializers
 class EmployeeListSerializer(serializers.ModelSerializer):
-    """Simplified serializer for employee list views"""
+    """Enhanced serializer for employee list views with grading integration"""
     name = serializers.CharField(source='full_name', read_only=True)
     email = serializers.CharField(source='user.email', read_only=True)
     business_function_name = serializers.CharField(source='business_function.name', read_only=True)
@@ -170,54 +254,72 @@ class EmployeeListSerializer(serializers.ModelSerializer):
     years_of_service = serializers.ReadOnlyField()
     current_status_display = serializers.ReadOnlyField()
     contract_duration_display = serializers.CharField(source='get_contract_duration_display', read_only=True)
+    grading_display = serializers.CharField(source='get_grading_display', read_only=True)
+    contract_end_date = serializers.DateField(read_only=True)
+    direct_reports_count = serializers.SerializerMethodField()
     
     class Meta:
         model = Employee
         fields = [
-            'id', 'employee_id', 'name', 'email', 'date_of_birth', 'gender', 'phone', 
-            'business_function_name', 'business_function_code', 'department_name', 'unit_name', 
-            'job_function_name', 'job_title', 'position_group_name', 'position_group_level', 'grade',
-            'start_date', 'end_date', 'contract_duration', 'contract_duration_display', 'contract_start_date',
-            'line_manager_name', 'line_manager_hc_number', 'status_name', 'status_color', 
-            'current_status_display', 'tag_names', 'years_of_service', 'is_visible_in_org_chart'
+            'id', 'employee_id', 'name', 'email', 'date_of_birth', 'gender', 'phone',
+            'business_function_name', 'business_function_code', 'department_name', 'unit_name',
+            'job_function_name', 'job_title', 'position_group_name', 'position_group_level',
+            'grade', 'grading_level', 'grading_display', 'start_date', 'end_date',
+            'contract_duration', 'contract_duration_display', 'contract_start_date', 'contract_end_date',
+            'line_manager_name', 'line_manager_hc_number', 'status_name', 'status_color',
+            'tag_names', 'years_of_service', 'current_status_display', 'is_visible_in_org_chart',
+            'direct_reports_count', 'created_at', 'updated_at'
         ]
     
     def get_tag_names(self, obj):
-        return [{'id': tag.id, 'name': tag.name, 'color': tag.color, 'type': tag.tag_type} for tag in obj.tags.all()]
+        return [
+            {
+                'id': tag.id,
+                'name': tag.name,
+                'color': tag.color,
+                'type': tag.tag_type
+            }
+            for tag in obj.tags.filter(is_active=True)
+        ]
+    
+    def get_direct_reports_count(self, obj):
+        return obj.get_direct_reports_count()
 
 class EmployeeDetailSerializer(serializers.ModelSerializer):
-    """Detailed serializer for single employee views"""
-    user = UserSerializer(read_only=True)
+    """Detailed employee serializer for individual views"""
     name = serializers.CharField(source='full_name', read_only=True)
-    business_function = BusinessFunctionSerializer(read_only=True)
-    department = DepartmentSerializer(read_only=True)
-    unit = UnitSerializer(read_only=True)
-    job_function = JobFunctionSerializer(read_only=True)
-    position_group = PositionGroupSerializer(read_only=True)
-    status = EmployeeStatusSerializer(read_only=True)
-    current_status_display = serializers.ReadOnlyField()
-    line_manager = serializers.SerializerMethodField()
-    direct_reports = serializers.SerializerMethodField()
-    tags = EmployeeTagSerializer(many=True, read_only=True)
+    email = serializers.CharField(source='user.email', read_only=True)
+    first_name = serializers.CharField(source='user.first_name', read_only=True)
+    last_name = serializers.CharField(source='user.last_name', read_only=True)
+    
+    # Related objects
+    business_function_detail = BusinessFunctionSerializer(source='business_function', read_only=True)
+    department_detail = DepartmentSerializer(source='department', read_only=True)
+    unit_detail = UnitSerializer(source='unit', read_only=True)
+    job_function_detail = JobFunctionSerializer(source='job_function', read_only=True)
+    position_group_detail = PositionGroupSerializer(source='position_group', read_only=True)
+    status_detail = EmployeeStatusSerializer(source='status', read_only=True)
+    line_manager_detail = serializers.SerializerMethodField()
+    
+    # Enhanced fields
     documents = EmployeeDocumentSerializer(many=True, read_only=True)
-    recent_activities = serializers.SerializerMethodField()
+    activities = EmployeeActivitySerializer(many=True, read_only=True)
+    tag_details = EmployeeTagSerializer(source='tags', many=True, read_only=True)
+    direct_reports = serializers.SerializerMethodField()
+    
+    # Calculated fields
     years_of_service = serializers.ReadOnlyField()
+    grading_display = serializers.CharField(source='get_grading_display', read_only=True)
     contract_duration_display = serializers.CharField(source='get_contract_duration_display', read_only=True)
-    direct_reports_count = serializers.ReadOnlyField()
+    
+    # Vacancy information
+    filled_vacancy_detail = VacantPositionListSerializer(source='filled_vacancy', read_only=True)
     
     class Meta:
         model = Employee
-        fields = [
-            'id', 'employee_id', 'user', 'name', 'date_of_birth', 'gender', 'address', 
-            'phone', 'emergency_contact', 'profile_image', 'business_function', 
-            'department', 'unit', 'job_function', 'job_title', 'position_group', 
-            'grade', 'start_date', 'end_date', 'contract_duration', 'contract_duration_display',
-            'contract_start_date', 'line_manager', 'direct_reports', 'direct_reports_count',
-            'status', 'current_status_display', 'tags', 'notes', 'documents', 'recent_activities', 
-            'years_of_service', 'is_visible_in_org_chart', 'created_at', 'updated_at'
-        ]
+        fields = '__all__'
     
-    def get_line_manager(self, obj):
+    def get_line_manager_detail(self, obj):
         if obj.line_manager:
             return {
                 'id': obj.line_manager.id,
@@ -229,341 +331,184 @@ class EmployeeDetailSerializer(serializers.ModelSerializer):
         return None
     
     def get_direct_reports(self, obj):
-        reports = obj.direct_reports.filter(status__name__in=['ACTIVE', 'ONBOARDING', 'PROBATION'])
+        reports = obj.direct_reports.filter(status__affects_headcount=True)[:5]  # Limit to 5
         return [
             {
                 'id': emp.id,
                 'employee_id': emp.employee_id,
                 'name': emp.full_name,
-                'job_title': emp.job_title,
-                'status': emp.status.name if emp.status else None,
-                'email': emp.user.email if emp.user else None
+                'job_title': emp.job_title
             }
             for emp in reports
         ]
-    
-    def get_recent_activities(self, obj):
-        activities = obj.activities.all()[:10]  # Last 10 activities
-        return EmployeeActivitySerializer(activities, many=True).data
 
 class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
-    """Serializer for creating and updating employees"""
-    # User fields
+    """Serializer for creating and updating employees with enhanced validation"""
     first_name = serializers.CharField(write_only=True)
     last_name = serializers.CharField(write_only=True)
     email = serializers.EmailField(write_only=True)
-    
-    # Tag IDs for many-to-many relationship
-    tag_ids = serializers.ListField(
-        child=serializers.IntegerField(),
-        write_only=True,
-        required=False,
-        allow_empty=True
-    )
-    
-    # Documents for upload during creation/update
-    documents = serializers.ListField(
-        child=serializers.DictField(),
-        write_only=True,
-        required=False,
-        allow_empty=True,
-        help_text="List of documents to upload. Each document should have: name, document_type, file_path"
-    )
-    
-    # Unit and Line Manager optional
-    unit = serializers.PrimaryKeyRelatedField(
-        queryset=Unit.objects.all(),
-        required=False,
-        allow_null=True
-    )
-    
-    line_manager = serializers.PrimaryKeyRelatedField(
-        queryset=Employee.objects.all(),
-        required=False,
-        allow_null=True
-    )
-    
-    # Contract fields
-    contract_duration = serializers.ChoiceField(
-        choices=Employee.CONTRACT_DURATION_CHOICES,
-        default='PERMANENT'
-    )
-    
-    contract_start_date = serializers.DateField(
-        required=False,
-        allow_null=True,
-        help_text="Contract start date, defaults to start_date if not provided"
-    )
+    tag_ids = serializers.ListField(child=serializers.IntegerField(), write_only=True, required=False)
+    vacancy_id = serializers.IntegerField(write_only=True, required=False, help_text="Link to vacant position")
     
     class Meta:
         model = Employee
-        fields = [
-            'employee_id', 'first_name', 'last_name', 'email', 'date_of_birth', 
-            'gender', 'address', 'phone', 'emergency_contact', 'profile_image',
-            'business_function', 'department', 'unit', 'job_function', 
-            'job_title', 'position_group', 'grade', 'start_date', 
-            'end_date', 'contract_duration', 'contract_start_date', 
-            'line_manager', 'tag_ids', 'notes', 'documents'
-        ]
+        exclude = ['user', 'full_name', 'tags', 'filled_vacancy']
     
     def validate_employee_id(self, value):
-        # Check if employee_id is unique (excluding current instance for updates)
-        queryset = Employee.objects.filter(employee_id=value)
         if self.instance:
-            queryset = queryset.exclude(pk=self.instance.pk)
-        if queryset.exists():
-            raise serializers.ValidationError("Employee ID must be unique.")
+            # Updating existing employee
+            if Employee.objects.filter(employee_id=value).exclude(id=self.instance.id).exists():
+                raise serializers.ValidationError("Employee ID already exists.")
+        else:
+            # Creating new employee
+            if Employee.objects.filter(employee_id=value).exists():
+                raise serializers.ValidationError("Employee ID already exists.")
         return value
     
     def validate_email(self, value):
-        # Check if email is unique (excluding current instance for updates)
-        queryset = User.objects.filter(email=value)
         if self.instance and self.instance.user:
-            queryset = queryset.exclude(pk=self.instance.user.pk)
-        if queryset.exists():
-            raise serializers.ValidationError("Email must be unique.")
+            # Updating existing employee
+            if User.objects.filter(email=value).exclude(id=self.instance.user.id).exists():
+                raise serializers.ValidationError("Email already exists.")
+        else:
+            # Creating new employee
+            if User.objects.filter(email=value).exists():
+                raise serializers.ValidationError("Email already exists.")
         return value
     
-    def validate_documents(self, value):
-        """Validate document data"""
-        if not value:
-            return value
-            
-        valid_document_types = [choice[0] for choice in EmployeeDocument.DOCUMENT_TYPES]
-        
-        for doc in value:
-            # Check required fields
-            if not all(key in doc for key in ['name', 'document_type', 'file_path']):
+    def validate_grading_level(self, value):
+        """Validate grading level matches position group"""
+        position_group = self.validated_data.get('position_group') or (self.instance.position_group if self.instance else None)
+        if value and position_group:
+            expected_prefix = position_group.grading_shorthand
+            if not value.startswith(expected_prefix):
                 raise serializers.ValidationError(
-                    "Each document must have 'name', 'document_type', and 'file_path' fields"
+                    f"Grading level must start with {expected_prefix} for this position group."
                 )
-            
-            # Validate document type
-            if doc['document_type'] not in valid_document_types:
-                raise serializers.ValidationError(
-                    f"Invalid document_type '{doc['document_type']}'. Valid types: {valid_document_types}"
-                )
-        
         return value
     
-    def validate(self, data):
-        # Validate that end_date is after start_date
-        if data.get('end_date') and data.get('start_date'):
-            if data['end_date'] <= data['start_date']:
-                raise serializers.ValidationError("End date must be after start date.")
-        
-        # Validate contract_start_date
-        if data.get('contract_start_date') and data.get('start_date'):
-            if data['contract_start_date'] < data['start_date']:
-                raise serializers.ValidationError("Contract start date cannot be before employment start date.")
-        
-        # Validate line manager is not the employee themselves
-        if self.instance and data.get('line_manager') == self.instance:
-            raise serializers.ValidationError("Employee cannot be their own line manager.")
-        
-        # Validate contract duration and dates consistency
-        contract_duration = data.get('contract_duration', 'PERMANENT')
-        if contract_duration != 'PERMANENT' and not data.get('contract_start_date') and not data.get('start_date'):
-            raise serializers.ValidationError(
-                "Contract start date or employment start date is required for non-permanent contracts."
-            )
-        
-        return data
-    
+    @transaction.atomic
     def create(self, validated_data):
         # Extract user data
-        user_data = {
-            'first_name': validated_data.pop('first_name'),
-            'last_name': validated_data.pop('last_name'),
-            'email': validated_data.pop('email'),
-            'username': validated_data['employee_id']  # Use employee_id as username
-        }
-        
-        # Extract tag IDs and documents
+        first_name = validated_data.pop('first_name')
+        last_name = validated_data.pop('last_name')
+        email = validated_data.pop('email')
         tag_ids = validated_data.pop('tag_ids', [])
-        documents_data = validated_data.pop('documents', [])
-        
-        # Handle contract_start_date default
-        if not validated_data.get('contract_start_date'):
-            validated_data['contract_start_date'] = validated_data.get('start_date')
+        vacancy_id = validated_data.pop('vacancy_id', None)
         
         # Create user
-        user = User.objects.create_user(**user_data)
-        
-        # Create employee - explicit None handling for unit and line_manager
-        unit = validated_data.pop('unit', None)
-        line_manager = validated_data.pop('line_manager', None)
-        
-        # Status avtomatik təyin ediləcək (signal vasitəsilə)
-        employee = Employee.objects.create(
-            user=user, 
-            unit=unit,
-            line_manager=line_manager,
-            **validated_data
+        user = User.objects.create_user(
+            username=email,
+            email=email,
+            first_name=first_name,
+            last_name=last_name
         )
         
-        # Set tags
+        # Create employee
+        validated_data['user'] = user
+        if vacancy_id:
+            validated_data['_vacancy_id'] = vacancy_id
+        
+        employee = super().create(validated_data)
+        
+        # Add tags
         if tag_ids:
             employee.tags.set(tag_ids)
         
-        # Create documents
-        if documents_data:
-            self._create_documents(employee, documents_data)
-        
-        # Log activity (signal-da da log edilir, amma bu daha detallı)
+        # Log activity
         EmployeeActivity.objects.create(
             employee=employee,
             activity_type='CREATED',
-            description=f"Employee {employee.full_name} yaradıldı - Contract: {employee.get_contract_duration_display()}",
-            performed_by=self.context['request'].user if 'request' in self.context else None,
-            metadata={
-                'contract_duration': employee.contract_duration,
-                'contract_start_date': str(employee.contract_start_date) if employee.contract_start_date else None,
-                'created_via_api': True
-            }
+            description=f"Employee {employee.full_name} was created",
+            performed_by=self.context['request'].user
         )
         
         return employee
     
+    @transaction.atomic
     def update(self, instance, validated_data):
-        # Track changes for logging
-        changes = {}
-        
         # Extract user data
-        user_data = {}
-        for field in ['first_name', 'last_name', 'email']:
-            if field in validated_data:
-                user_data[field] = validated_data.pop(field)
-                if hasattr(instance.user, field):
-                    old_value = getattr(instance.user, field)
-                    new_value = user_data[field]
-                    if old_value != new_value:
-                        changes[f'user_{field}'] = {'old': old_value, 'new': new_value}
-        
-        # Extract tag IDs and documents
+        first_name = validated_data.pop('first_name', None)
+        last_name = validated_data.pop('last_name', None)
+        email = validated_data.pop('email', None)
         tag_ids = validated_data.pop('tag_ids', None)
-        documents_data = validated_data.pop('documents', [])
+        vacancy_id = validated_data.pop('vacancy_id', None)
         
-        # Track contract changes
-        if 'contract_duration' in validated_data:
-            old_duration = instance.contract_duration
-            new_duration = validated_data['contract_duration']
-            if old_duration != new_duration:
-                changes['contract_duration'] = {
-                    'old': instance.get_contract_duration_display(),
-                    'new': dict(Employee.CONTRACT_DURATION_CHOICES)[new_duration]
-                }
+        # Track changes for activity log
+        changes = []
         
-        if 'contract_start_date' in validated_data:
-            old_date = instance.contract_start_date
-            new_date = validated_data['contract_start_date']
-            if old_date != new_date:
-                changes['contract_start_date'] = {
-                    'old': str(old_date) if old_date else None,
-                    'new': str(new_date) if new_date else None
-                }
+        # Update user if data provided
+        if any([first_name, last_name, email]):
+            user = instance.user
+            if first_name and user.first_name != first_name:
+                user.first_name = first_name
+                changes.append(f"First name changed to {first_name}")
+            if last_name and user.last_name != last_name:
+                user.last_name = last_name
+                changes.append(f"Last name changed to {last_name}")
+            if email and user.email != email:
+                user.email = email
+                user.username = email
+                changes.append(f"Email changed to {email}")
+            user.save()
         
-        # Track status və manager changes
-        if 'line_manager' in validated_data and instance.line_manager != validated_data['line_manager']:
-            changes['line_manager'] = {
-                'old': instance.line_manager.full_name if instance.line_manager else None,
-                'new': validated_data['line_manager'].full_name if validated_data['line_manager'] else None
-            }
+        # Track other significant changes
+        if 'status' in validated_data and validated_data['status'] != instance.status:
+            changes.append(f"Status changed from {instance.status.name} to {validated_data['status'].name}")
         
-        # Update user
-        if user_data:
-            for field, value in user_data.items():
-                setattr(instance.user, field, value)
-            instance.user.save()
+        if 'line_manager' in validated_data and validated_data['line_manager'] != instance.line_manager:
+            old_manager = instance.line_manager.full_name if instance.line_manager else "None"
+            new_manager = validated_data['line_manager'].full_name if validated_data['line_manager'] else "None"
+            changes.append(f"Line manager changed from {old_manager} to {new_manager}")
+        
+        if 'position_group' in validated_data and validated_data['position_group'] != instance.position_group:
+            changes.append(f"Position changed from {instance.position_group.get_name_display()} to {validated_data['position_group'].get_name_display()}")
         
         # Update employee
-        for field, value in validated_data.items():
-            setattr(instance, field, value)
-        instance.save()
+        employee = super().update(instance, validated_data)
         
         # Update tags
         if tag_ids is not None:
-            old_tags = set(instance.tags.values_list('name', flat=True))
-            instance.tags.set(tag_ids)
-            new_tags = set(instance.tags.values_list('name', flat=True))
-            if old_tags != new_tags:
-                changes['tags'] = {
-                    'old': list(old_tags),
-                    'new': list(new_tags)
-                }
+            employee.tags.set(tag_ids)
+            changes.append("Tags updated")
         
-        # Create new documents (if any)
-        if documents_data:
-            self._create_documents(instance, documents_data)
+        # Link to vacancy if provided
+        if vacancy_id:
+            try:
+                vacancy = VacantPosition.objects.get(id=vacancy_id, is_filled=False)
+                vacancy.mark_as_filled(employee)
+                changes.append(f"Linked to vacant position {vacancy.position_id}")
+            except VacantPosition.DoesNotExist:
+                pass
         
-        # Log activity with changes
+        # Log activity
         if changes:
-            change_descriptions = []
-            for field, change in changes.items():
-                change_descriptions.append(f"{field}: {change['old']} → {change['new']}")
-            
-            activity_type = 'CONTRACT_UPDATED' if any('contract' in key for key in changes.keys()) else 'UPDATED'
-            
             EmployeeActivity.objects.create(
-                employee=instance,
-                activity_type=activity_type,
-                description=f"Employee {instance.full_name} was updated: {'; '.join(change_descriptions)}",
-                performed_by=self.context['request'].user if 'request' in self.context else None,
+                employee=employee,
+                activity_type='UPDATED',
+                description=f"Employee {employee.full_name} was updated: {'; '.join(changes)}",
+                performed_by=self.context['request'].user,
                 metadata={'changes': changes}
             )
         
-        return instance
-    
-    def _create_documents(self, employee, documents_data):
-        """Helper method to create documents for an employee"""
-        request_user = self.context.get('request').user if 'request' in self.context else None
-        
-        for doc_data in documents_data:
-            EmployeeDocument.objects.create(
-                employee=employee,
-                name=doc_data['name'],
-                document_type=doc_data['document_type'],
-                file_path=doc_data['file_path'],
-                file_size=doc_data.get('file_size'),
-                mime_type=doc_data.get('mime_type'),
-                uploaded_by=request_user
-            )
-            
-            # Log document upload activity
-            if request_user:
-                EmployeeActivity.objects.create(
-                    employee=employee,
-                    activity_type='DOCUMENT_UPLOADED',
-                    description=f"Document '{doc_data['name']}' was uploaded for {employee.full_name}",
-                    performed_by=request_user,
-                    metadata={'document_name': doc_data['name'], 'document_type': doc_data['document_type']}
-                )
+        return employee
 
-# Organizational Structure Serializers
-class OrgChartNodeSerializer(serializers.ModelSerializer):
-    """Serializer for organizational chart nodes"""
-    name = serializers.CharField(source='full_name', read_only=True)
-    children = serializers.SerializerMethodField()
-    status_color = serializers.CharField(source='status.color', read_only=True)
-    position_level = serializers.IntegerField(source='position_group.hierarchy_level', read_only=True)
+# Bulk Operations Serializers
+class BulkEmployeeUpdateSerializer(serializers.Serializer):
+    employee_ids = serializers.ListField(child=serializers.IntegerField())
+    updates = serializers.DictField()
     
-    class Meta:
-        model = Employee
-        fields = [
-            'id', 'employee_id', 'name', 'job_title', 'position_group', 
-            'position_level', 'department', 'business_function', 'profile_image', 
-            'status_color', 'children'
-        ]
-    
-    def get_children(self, obj):
-        children = obj.direct_reports.filter(
-            status__name__in=['ACTIVE', 'ONBOARDING', 'PROBATION'], 
-            is_visible_in_org_chart=True
-        ).order_by('position_group__hierarchy_level', 'employee_id')
+    def validate_employee_ids(self, value):
+        if not value:
+            raise serializers.ValidationError("At least one employee ID is required.")
         
-        return OrgChartNodeSerializer(children, many=True, context=self.context).data
+        # Validate all employee IDs exist
+        existing_count = Employee.objects.filter(id__in=value).count()
+        if existing_count != len(value):
+            raise serializers.ValidationError("Some employee IDs do not exist.")
+        
+        return value
 
-# Org Chart Visibility Serializer
 class EmployeeOrgChartVisibilitySerializer(serializers.ModelSerializer):
     """Serializer for updating org chart visibility"""
     
@@ -571,48 +516,118 @@ class EmployeeOrgChartVisibilitySerializer(serializers.ModelSerializer):
         model = Employee
         fields = ['id', 'employee_id', 'is_visible_in_org_chart']
         read_only_fields = ['id', 'employee_id']
+
+# Organizational Chart Serializers
+class OrgChartNodeSerializer(serializers.ModelSerializer):
+    """Serializer for organizational chart nodes"""
+    name = serializers.CharField(source='full_name', read_only=True)
+    children = serializers.SerializerMethodField()
+    status_color = serializers.CharField(source='status.color', read_only=True)
+    position_level = serializers.IntegerField(source='position_group.hierarchy_level', read_only=True)
+    grading_display = serializers.CharField(source='get_grading_display', read_only=True)
     
-    def update(self, instance, validated_data):
-        old_visibility = instance.is_visible_in_org_chart
-        new_visibility = validated_data.get('is_visible_in_org_chart', old_visibility)
+    class Meta:
+        model = Employee
+        fields = [
+            'id', 'employee_id', 'name', 'job_title', 'position_group', 
+            'position_level', 'department', 'business_function', 'profile_image', 
+            'status_color', 'grading_display', 'children'
+        ]
+    
+    def get_children(self, obj):
+        children = obj.direct_reports.filter(
+            status__allows_org_chart=True,
+            is_visible_in_org_chart=True
+        ).order_by('position_group__hierarchy_level', 'employee_id')
         
-        instance.is_visible_in_org_chart = new_visibility
-        instance.save()
-        
-        # Log activity if visibility changed
-        if old_visibility != new_visibility:
-            EmployeeActivity.objects.create(
-                employee=instance,
-                activity_type='ORG_CHART_VISIBILITY_CHANGED',
-                description=f"Org chart visibility changed from {old_visibility} to {new_visibility} for {instance.full_name}",
-                performed_by=self.context['request'].user if 'request' in self.context else None,
-                metadata={'old_visibility': old_visibility, 'new_visibility': new_visibility}
-            )
-        
-        return instance
+        return OrgChartNodeSerializer(children, many=True, context=self.context).data
 
-# Dropdown Options Serializers
-class DropdownOptionSerializer(serializers.Serializer):
-    """Generic serializer for dropdown options"""
-    id = serializers.IntegerField()
-    name = serializers.CharField()
-    code = serializers.CharField(required=False)
-    color = serializers.CharField(required=False)
-    hierarchy_level = serializers.IntegerField(required=False)
-    parent_id = serializers.IntegerField(required=False)
-    parent_name = serializers.CharField(required=False)
+# Headcount Summary Serializer
+class HeadcountSummarySerializer(serializers.ModelSerializer):
+    """Serializer for headcount summaries and analytics"""
+    
+    class Meta:
+        model = HeadcountSummary
+        fields = '__all__'
 
-# Filter Options Serializer
-class FilterOptionsSerializer(serializers.Serializer):
-    """Serializer for filter options response"""
-    business_functions = DropdownOptionSerializer(many=True)
-    departments = DropdownOptionSerializer(many=True)
-    units = DropdownOptionSerializer(many=True)
-    job_functions = DropdownOptionSerializer(many=True)
-    position_groups = DropdownOptionSerializer(many=True)
-    statuses = DropdownOptionSerializer(many=True)
-    tags = DropdownOptionSerializer(many=True)
-    grades = serializers.ListField(child=serializers.DictField())
-    genders = serializers.ListField(child=serializers.DictField())
-    contract_durations = serializers.ListField(child=serializers.DictField())
-    line_managers = DropdownOptionSerializer(many=True)
+# Grading Integration Serializers
+class EmployeeGradingUpdateSerializer(serializers.Serializer):
+    """Serializer for updating employee grading information"""
+    employee_id = serializers.IntegerField()
+    grade = serializers.CharField(required=False)
+    grading_level = serializers.CharField(required=False)
+    
+    def validate_grading_level(self, value):
+        """Validate grading level format"""
+        if value and '_' not in value:
+            raise serializers.ValidationError("Grading level must be in format POSITION_LEVEL (e.g., MGR_UQ)")
+        return value
+
+class EmployeeGradingListSerializer(serializers.ModelSerializer):
+    """Serializer for employee grading information display"""
+    name = serializers.CharField(source='full_name', read_only=True)
+    position_group_name = serializers.CharField(source='position_group.get_name_display', read_only=True)
+    grading_display = serializers.CharField(source='get_grading_display', read_only=True)
+    available_levels = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = Employee
+        fields = [
+            'id', 'employee_id', 'name', 'job_title', 'position_group_name',
+            'grade', 'grading_level', 'grading_display', 'available_levels'
+        ]
+    
+    def get_available_levels(self, obj):
+        """Get available grading levels for this employee's position"""
+        if obj.position_group:
+            return obj.position_group.get_grading_levels()
+        return {}
+
+# Additional Employee Serializers for specific use cases
+class EmployeeMinimalSerializer(serializers.ModelSerializer):
+    """Minimal employee serializer for dropdowns and references"""
+    name = serializers.CharField(source='full_name', read_only=True)
+    position_display = serializers.CharField(source='position_group.get_name_display', read_only=True)
+    
+    class Meta:
+        model = Employee
+        fields = ['id', 'employee_id', 'name', 'job_title', 'position_display']
+
+class EmployeeSearchSerializer(serializers.ModelSerializer):
+    """Optimized serializer for search results"""
+    name = serializers.CharField(source='full_name', read_only=True)
+    business_function_name = serializers.CharField(source='business_function.name', read_only=True)
+    department_name = serializers.CharField(source='department.name', read_only=True)
+    position_group_name = serializers.CharField(source='position_group.get_name_display', read_only=True)
+    status_name = serializers.CharField(source='status.name', read_only=True)
+    status_color = serializers.CharField(source='status.color', read_only=True)
+    
+    class Meta:
+        model = Employee
+        fields = [
+            'id', 'employee_id', 'name', 'job_title', 'business_function_name',
+            'department_name', 'position_group_name', 'status_name', 'status_color'
+        ]
+
+# Contract Expiry Serializer
+class ContractExpirySerializer(serializers.ModelSerializer):
+    """Serializer for contract expiry tracking"""
+    name = serializers.CharField(source='full_name', read_only=True)
+    business_function_name = serializers.CharField(source='business_function.name', read_only=True)
+    department_name = serializers.CharField(source='department.name', read_only=True)
+    position_group_name = serializers.CharField(source='position_group.get_name_display', read_only=True)
+    days_until_expiry = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = Employee
+        fields = [
+            'id', 'employee_id', 'name', 'job_title', 'business_function_name',
+            'department_name', 'position_group_name', 'contract_duration',
+            'contract_end_date', 'days_until_expiry'
+        ]
+    
+    def get_days_until_expiry(self, obj):
+        if obj.contract_end_date:
+            delta = obj.contract_end_date - date.today()
+            return delta.days
+        return None
