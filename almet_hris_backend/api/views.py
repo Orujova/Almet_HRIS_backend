@@ -1,4 +1,4 @@
-# api/views.py
+# api/views.py - ENHANCED: Complete Employee Management with Soft Delete & Advanced Features
 
 from django.shortcuts import render
 from django.utils import timezone
@@ -16,63 +16,38 @@ from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 import logging
 import traceback
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from django.utils.dateparse import parse_date
+from django.db import transaction
+from django.http import HttpResponse
+import csv
+import openpyxl
+from openpyxl.styles import Font, PatternFill, Alignment
+from openpyxl.utils.dataframe import dataframe_to_rows
+import io
 
 from .models import (
     Employee, BusinessFunction, Department, Unit, JobFunction, 
     PositionGroup, EmployeeTag, EmployeeDocument, EmployeeStatus,
-    EmployeeActivity, MicrosoftUser
+    EmployeeActivity, VacantPosition, HeadcountSummary
 )
 from .serializers import (
     EmployeeListSerializer, EmployeeDetailSerializer, EmployeeCreateUpdateSerializer,
     BusinessFunctionSerializer, DepartmentSerializer, UnitSerializer,
     JobFunctionSerializer, PositionGroupSerializer, EmployeeTagSerializer,
     EmployeeStatusSerializer, EmployeeDocumentSerializer, EmployeeActivitySerializer,
-    UserSerializer, OrgChartNodeSerializer, EmployeeOrgChartVisibilitySerializer
+    UserSerializer, OrgChartNodeSerializer, EmployeeOrgChartVisibilitySerializer,
+    VacantPositionListSerializer, VacantPositionDetailSerializer, VacantPositionCreateSerializer,
+    BulkEmployeeUpdateSerializer, BulkLineManagerUpdateSerializer, SingleLineManagerUpdateSerializer,
+    EmployeeTagOperationSerializer, BulkEmployeeTagOperationSerializer,
+    EmployeeGradingUpdateSerializer, EmployeeGradingListSerializer,
+    HeadcountSummarySerializer, SoftDeleteSerializer, RestoreEmployeeSerializer,
+    EmployeeExportSerializer, EmployeeStatusUpdateSerializer, AutoStatusUpdateSerializer
 )
 from .auth import MicrosoftTokenValidator
 
 # Set up logger
 logger = logging.getLogger(__name__)
-
-
-# api/views.py - ENHANCED: Complete Views with Headcount & Vacancy Management
-
-from rest_framework import viewsets, status, filters
-from rest_framework.decorators import action
-from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
-from django_filters.rest_framework import DjangoFilterBackend
-from django.db import transaction
-from django.db.models import Q, Count, Prefetch
-from django.utils import timezone
-from django.http import HttpResponse
-from django.core.paginator import Paginator
-from datetime import date, timedelta
-import csv
-import json
-import logging
-
-from .models import (
-    Employee, BusinessFunction, Department, Unit, JobFunction,
-    PositionGroup, EmployeeTag, EmployeeStatus, EmployeeDocument,
-    VacantPosition, EmployeeActivity, HeadcountSummary
-)
-from .serializers import (
-    EmployeeListSerializer, EmployeeDetailSerializer, EmployeeCreateUpdateSerializer,
-    BusinessFunctionSerializer, DepartmentSerializer, UnitSerializer,
-    JobFunctionSerializer, PositionGroupSerializer, EmployeeTagSerializer,
-    EmployeeStatusSerializer, VacantPositionListSerializer, VacantPositionDetailSerializer,
-    VacantPositionCreateSerializer, EmployeeDocumentSerializer, EmployeeActivitySerializer,
-    BulkEmployeeUpdateSerializer, EmployeeOrgChartVisibilitySerializer,
-    OrgChartNodeSerializer, HeadcountSummarySerializer, EmployeeGradingUpdateSerializer,
-    EmployeeGradingListSerializer
-)
-
-logger = logging.getLogger(__name__)
-
-
 
 # Enhanced Pagination with multiple page size options
 class StandardResultsSetPagination(PageNumberPagination):
@@ -92,8 +67,7 @@ class StandardResultsSetPagination(PageNumberPagination):
             'results': data
         })
 
-
-# Existing authentication views remain the same
+# Microsoft Authentication Views (unchanged)
 @swagger_auto_schema(
     method='post',
     operation_description="Authenticate with Microsoft ID token and get JWT tokens",
@@ -123,9 +97,7 @@ class StandardResultsSetPagination(PageNumberPagination):
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def authenticate_microsoft(request):
-    """
-    Authenticate with Microsoft token from frontend
-    """
+    """Authenticate with Microsoft token from frontend"""
     try:
         logger.info('=== Microsoft authentication request received ===')
         logger.info(f'Request method: {request.method}')
@@ -205,9 +177,7 @@ def authenticate_microsoft(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def user_info(request):
-    """
-    Get current user info
-    """
+    """Get current user info"""
     try:
         logger.info(f'User info request for user: {request.user.username}')
         serializer = UserSerializer(request.user)
@@ -247,8 +217,7 @@ def user_info(request):
             "success": False
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-
-# Employee Filter Class for Advanced Filtering
+# Enhanced Employee Filter Class for Advanced Filtering
 class EmployeeFilter:
     def __init__(self, queryset, params):
         self.queryset = queryset
@@ -269,37 +238,37 @@ class EmployeeFilter:
                 Q(department__name__icontains=search)
             )
         
-        # Status filtering
+        # Multiple status filtering
         status_names = self.params.getlist('status')
         if status_names:
             queryset = queryset.filter(status__name__in=status_names)
         
-        # Business function filtering
+        # Multiple business function filtering
         business_functions = self.params.getlist('business_function')
         if business_functions:
             queryset = queryset.filter(business_function__id__in=business_functions)
         
-        # Department filtering
+        # Multiple department filtering
         departments = self.params.getlist('department')
         if departments:
             queryset = queryset.filter(department__id__in=departments)
         
-        # Position group filtering
+        # Multiple position group filtering
         position_groups = self.params.getlist('position_group')
         if position_groups:
             queryset = queryset.filter(position_group__id__in=position_groups)
         
-        # Line manager filtering
+        # Multiple line manager filtering
         line_managers = self.params.getlist('line_manager')
         if line_managers:
             queryset = queryset.filter(line_manager__id__in=line_managers)
         
-        # Tag filtering
+        # Multiple tag filtering
         tags = self.params.getlist('tags')
         if tags:
             queryset = queryset.filter(tags__id__in=tags)
         
-        # Contract duration filtering
+        # Multiple contract duration filtering
         contract_durations = self.params.getlist('contract_duration')
         if contract_durations:
             queryset = queryset.filter(contract_duration__in=contract_durations)
@@ -322,9 +291,17 @@ class EmployeeFilter:
         if org_chart_visible and org_chart_visible.lower() == 'true':
             queryset = queryset.filter(is_visible_in_org_chart=True)
         
+        # Include deleted filter
+        include_deleted = self.params.get('include_deleted')
+        if include_deleted and include_deleted.lower() == 'true':
+            # Use all_objects manager to include soft-deleted employees
+            queryset = Employee.all_objects.filter(
+                pk__in=queryset.values_list('pk', flat=True)
+            )
+        
         return queryset
 
-# Multi-field Sorting Class
+# Multi-field Sorting Class with Excel-like functionality
 class EmployeeSorter:
     SORTABLE_FIELDS = {
         'employee_id': 'employee_id',
@@ -334,12 +311,17 @@ class EmployeeSorter:
         'end_date': 'end_date',
         'business_function': 'business_function__name',
         'department': 'department__name',
+        'unit': 'unit__name',
         'job_title': 'job_title',
         'position_group': 'position_group__hierarchy_level',
+        'grading_level': 'grading_level',
         'status': 'status__name',
         'line_manager': 'line_manager__full_name',
+        'contract_duration': 'contract_duration',
+        'contract_end_date': 'contract_end_date',
         'created_at': 'created_at',
         'updated_at': 'updated_at',
+        'years_of_service': 'start_date',  # Will be calculated
     }
     
     def __init__(self, queryset, sort_params):
@@ -369,7 +351,7 @@ class EmployeeSorter:
             return self.queryset.order_by(*order_fields)
         return self.queryset.order_by('employee_id')
 
-# Business Structure ViewSets
+# Business Structure ViewSets (unchanged)
 class BusinessFunctionViewSet(viewsets.ModelViewSet):
     queryset = BusinessFunction.objects.all()
     serializer_class = BusinessFunctionSerializer
@@ -423,10 +405,7 @@ class PositionGroupViewSet(viewsets.ModelViewSet):
         return Response({
             'position_group': position_group.get_name_display(),
             'shorthand': position_group.grading_shorthand,
-            'levels': [
-                {'code': f'{position_group.grading_shorthand}_{level}', 'display': f'{position_group.grading_shorthand}-{level}'}
-                for level in ['LD', 'LQ', 'M', 'UQ', 'UD']
-            ]
+            'levels': levels
         })
 
 class EmployeeTagViewSet(viewsets.ModelViewSet):
@@ -578,168 +557,525 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data)
     
+    def destroy(self, request, *args, **kwargs):
+        """Override destroy to use soft delete"""
+        instance = self.get_object()
+        instance.soft_delete(user=request.user)
+        
+        # Log activity
+        EmployeeActivity.objects.create(
+            employee=instance,
+            activity_type='SOFT_DELETED',
+            description=f"Employee {instance.full_name} was soft deleted",
+            performed_by=request.user
+        )
+        
+        return Response(status=status.HTTP_204_NO_CONTENT)
+    
+    # Line Manager Management Actions
     @action(detail=False, methods=['post'])
-    def bulk_update(self, request):
-        """Bulk update multiple employees"""
-        serializer = BulkEmployeeUpdateSerializer(data=request.data)
+    def bulk_update_line_manager(self, request):
+        """Bulk update line manager for multiple employees"""
+        serializer = BulkLineManagerUpdateSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         
         employee_ids = serializer.validated_data['employee_ids']
-        updates = serializer.validated_data['updates']
+        line_manager_id = serializer.validated_data['line_manager_id']
         
         try:
+            line_manager = Employee.objects.get(id=line_manager_id) if line_manager_id else None
+            
             with transaction.atomic():
                 employees = Employee.objects.filter(id__in=employee_ids)
                 updated_count = 0
                 
                 for employee in employees:
-                    has_changes = False
-                    changes = []
-                    
-                    # Apply updates
-                    for field, value in updates.items():
-                        if hasattr(employee, field):
-                            old_value = getattr(employee, field)
-                            if str(old_value) != str(value):
-                                setattr(employee, field, value)
-                                changes.append(f"{field}: {old_value} → {value}")
-                                has_changes = True
-                    
-                    if has_changes:
-                        employee.save()
-                        updated_count += 1
-                        
-                        # Log activity
-                        EmployeeActivity.objects.create(
-                            employee=employee,
-                            activity_type='UPDATED',
-                            description=f"Bulk update: {'; '.join(changes)}",
-                            performed_by=request.user,
-                            metadata={'bulk_update': True, 'changes': changes}
-                        )
+                    employee.change_line_manager(line_manager, request.user)
+                    updated_count += 1
                 
                 return Response({
-                    'message': f'Successfully updated {updated_count} employees',
-                    'updated_count': updated_count
+                    'message': f'Successfully updated line manager for {updated_count} employees',
+                    'updated_count': updated_count,
+                    'new_line_manager': line_manager.full_name if line_manager else 'None'
                 })
-        except Exception as e:
-            logger.error(f"Bulk update failed: {str(e)}")
+        except Employee.DoesNotExist:
             return Response(
-                {'error': 'Bulk update failed', 'details': str(e)},
+                {'error': 'Line manager not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            logger.error(f"Bulk line manager update failed: {str(e)}")
+            return Response(
+                {'error': 'Bulk line manager update failed', 'details': str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
     
     @action(detail=False, methods=['post'])
-    def bulk_delete(self, request):
-        """Bulk delete multiple employees"""
-        employee_ids = request.data.get('employee_ids', [])
+    def update_single_line_manager(self, request):
+        """Update line manager for a single employee"""
+        serializer = SingleLineManagerUpdateSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         
-        if not employee_ids:
+        employee_id = serializer.validated_data['employee_id']
+        line_manager_id = serializer.validated_data['line_manager_id']
+        
+        try:
+            employee = Employee.objects.get(id=employee_id)
+            line_manager = Employee.objects.get(id=line_manager_id) if line_manager_id else None
+            
+            employee.change_line_manager(line_manager, request.user)
+            
+            return Response({
+                'message': 'Line manager updated successfully',
+                'employee': employee.full_name,
+                'new_line_manager': line_manager.full_name if line_manager else 'None'
+            })
+        except Employee.DoesNotExist:
             return Response(
-                {'error': 'employee_ids list is required'},
-                status=status.HTTP_400_BAD_REQUEST
+                {'error': 'Employee or line manager not found'},
+                status=status.HTTP_404_NOT_FOUND
             )
+    
+    # Tag Management Actions
+    @action(detail=False, methods=['post'])
+    def add_tag(self, request):
+        """Add tag to employee"""
+        serializer = EmployeeTagOperationSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        employee_id = serializer.validated_data['employee_id']
+        tag_id = serializer.validated_data['tag_id']
+        
+        try:
+            employee = Employee.objects.get(id=employee_id)
+            tag = EmployeeTag.objects.get(id=tag_id)
+            
+            if employee.add_tag(tag, request.user):
+                return Response({
+                    'message': f'Tag "{tag.name}" added to {employee.full_name}',
+                    'employee': employee.full_name,
+                    'tag': tag.name
+                })
+            else:
+                return Response({
+                    'message': f'Tag "{tag.name}" already exists on {employee.full_name}',
+                    'employee': employee.full_name,
+                    'tag': tag.name
+                })
+        except Employee.DoesNotExist:
+            return Response({'error': 'Employee not found'}, status=status.HTTP_404_NOT_FOUND)
+        except EmployeeTag.DoesNotExist:
+            return Response({'error': 'Tag not found'}, status=status.HTTP_404_NOT_FOUND)
+    
+    @action(detail=False, methods=['post'])
+    def remove_tag(self, request):
+        """Remove tag from employee"""
+        serializer = EmployeeTagOperationSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        employee_id = serializer.validated_data['employee_id']
+        tag_id = serializer.validated_data['tag_id']
+        
+        try:
+            employee = Employee.objects.get(id=employee_id)
+            tag = EmployeeTag.objects.get(id=tag_id)
+            
+            if employee.remove_tag(tag, request.user):
+                return Response({
+                    'message': f'Tag "{tag.name}" removed from {employee.full_name}',
+                    'employee': employee.full_name,
+                    'tag': tag.name
+                })
+            else:
+                return Response({
+                    'message': f'Tag "{tag.name}" was not found on {employee.full_name}',
+                    'employee': employee.full_name,
+                    'tag': tag.name
+                })
+        except Employee.DoesNotExist:
+            return Response({'error': 'Employee not found'}, status=status.HTTP_404_NOT_FOUND)
+        except EmployeeTag.DoesNotExist:
+            return Response({'error': 'Tag not found'}, status=status.HTTP_404_NOT_FOUND)
+    
+    @action(detail=False, methods=['post'])
+    def bulk_add_tag(self, request):
+        """Add tag to multiple employees"""
+        serializer = BulkEmployeeTagOperationSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        employee_ids = serializer.validated_data['employee_ids']
+        tag_id = serializer.validated_data['tag_id']
+        
+        try:
+            tag = EmployeeTag.objects.get(id=tag_id)
+            employees = Employee.objects.filter(id__in=employee_ids)
+            
+            added_count = 0
+            for employee in employees:
+                if employee.add_tag(tag, request.user):
+                    added_count += 1
+            
+            return Response({
+                'message': f'Tag "{tag.name}" added to {added_count} employees',
+                'added_count': added_count,
+                'total_employees': len(employee_ids),
+                'tag': tag.name
+            })
+        except EmployeeTag.DoesNotExist:
+            return Response({'error': 'Tag not found'}, status=status.HTTP_404_NOT_FOUND)
+    
+    @action(detail=False, methods=['post'])
+    def bulk_remove_tag(self, request):
+        """Remove tag from multiple employees"""
+        serializer = BulkEmployeeTagOperationSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        employee_ids = serializer.validated_data['employee_ids']
+        tag_id = serializer.validated_data['tag_id']
+        
+        try:
+            tag = EmployeeTag.objects.get(id=tag_id)
+            employees = Employee.objects.filter(id__in=employee_ids)
+            
+            removed_count = 0
+            for employee in employees:
+                if employee.remove_tag(tag, request.user):
+                    removed_count += 1
+            
+            return Response({
+                'message': f'Tag "{tag.name}" removed from {removed_count} employees',
+                'removed_count': removed_count,
+                'total_employees': len(employee_ids),
+                'tag': tag.name
+            })
+        except EmployeeTag.DoesNotExist:
+            return Response({'error': 'Tag not found'}, status=status.HTTP_404_NOT_FOUND)
+    
+    # Soft Delete Management
+    @action(detail=False, methods=['post'])
+    def soft_delete(self, request):
+        """Soft delete multiple employees"""
+        serializer = SoftDeleteSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        employee_ids = serializer.validated_data['employee_ids']
         
         try:
             with transaction.atomic():
                 employees = Employee.objects.filter(id__in=employee_ids)
-                deleted_count = employees.count()
+                deleted_count = 0
                 
-                # Log activities before deletion
                 for employee in employees:
+                    employee.soft_delete(user=request.user)
+                    deleted_count += 1
+                    
+                    # Log activity
                     EmployeeActivity.objects.create(
                         employee=employee,
-                        activity_type='UPDATED',  # Can't use after deletion
-                        description=f"Employee {employee.full_name} was deleted",
+                        activity_type='SOFT_DELETED',
+                        description=f"Employee {employee.full_name} was soft deleted",
                         performed_by=request.user,
                         metadata={'bulk_delete': True}
                     )
                 
-                employees.delete()
-                
                 return Response({
-                    'message': f'Successfully deleted {deleted_count} employees',
+                    'message': f'Successfully soft deleted {deleted_count} employees',
                     'deleted_count': deleted_count
                 })
         except Exception as e:
-            logger.error(f"Bulk delete failed: {str(e)}")
+            logger.error(f"Soft delete failed: {str(e)}")
             return Response(
-                {'error': 'Bulk delete failed', 'details': str(e)},
+                {'error': 'Soft delete failed', 'details': str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
     
     @action(detail=False, methods=['post'])
-    def update_org_chart_visibility(self, request):
-        """Update org chart visibility for multiple employees"""
-        employee_ids = request.data.get('employee_ids', [])
-        is_visible = request.data.get('is_visible', True)
+    def restore(self, request):
+        """Restore soft-deleted employees"""
+        serializer = RestoreEmployeeSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         
-        if not employee_ids:
-            return Response(
-                {'error': 'employee_ids list is required'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        employee_ids = serializer.validated_data['employee_ids']
         
         try:
-            updated_count = Employee.objects.filter(
-                id__in=employee_ids
-            ).update(is_visible_in_org_chart=is_visible)
-            
-            return Response({
-                'message': f'Successfully updated org chart visibility for {updated_count} employees',
-                'updated_count': updated_count
-            })
+            with transaction.atomic():
+                employees = Employee.all_objects.filter(id__in=employee_ids, is_deleted=True)
+                restored_count = 0
+                
+                for employee in employees:
+                    employee.restore()
+                    restored_count += 1
+                    
+                    # Log activity
+                    EmployeeActivity.objects.create(
+                        employee=employee,
+                        activity_type='RESTORED',
+                        description=f"Employee {employee.full_name} was restored",
+                        performed_by=request.user,
+                        metadata={'bulk_restore': True}
+                    )
+                
+                return Response({
+                    'message': f'Successfully restored {restored_count} employees',
+                    'restored_count': restored_count
+                })
         except Exception as e:
-            logger.error(f"Org chart visibility update failed: {str(e)}")
+            logger.error(f"Restore failed: {str(e)}")
             return Response(
-                {'error': 'Update failed', 'details': str(e)},
+                {'error': 'Restore failed', 'details': str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
     
-    @action(detail=False, methods=['get'])
-    def export_csv(self, request):
-        """Export employees to CSV"""
-        queryset = self.get_queryset()
+    # Enhanced Export Functionality
+    @action(detail=False, methods=['post'])
+    def export_selected(self, request):
+        """Export selected employees to Excel or CSV"""
+        serializer = EmployeeExportSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         
-        # Apply same filtering as list view
-        employee_filter = EmployeeFilter(queryset, request.query_params)
-        queryset = employee_filter.filter()
+        employee_ids = serializer.validated_data.get('employee_ids', [])
+        export_format = serializer.validated_data.get('export_format', 'excel')
+        include_fields = serializer.validated_data.get('include_fields', None)
         
-        # Create CSV response
-        response = HttpResponse(content_type='text/csv')
-        response['Content-Disposition'] = f'attachment; filename="employees_{date.today()}.csv"'
+        # Get queryset
+        if employee_ids:
+            queryset = Employee.objects.filter(id__in=employee_ids)
+        else:
+            # If no specific IDs, use filtered results
+            queryset = self.get_queryset()
+            employee_filter = EmployeeFilter(queryset, request.query_params)
+            queryset = employee_filter.filter()
         
-        writer = csv.writer(response)
+        # Apply sorting
+        sort_params = request.query_params.get('ordering', '').split(',')
+        sort_params = [param.strip() for param in sort_params if param.strip()]
+        employee_sorter = EmployeeSorter(queryset, sort_params)
+        queryset = employee_sorter.sort()
         
-        # Write header
-        writer.writerow([
-            'Employee ID', 'Name', 'Email', 'Job Title', 'Business Function',
-            'Department', 'Unit', 'Position Group', 'Grade', 'Status',
-            'Line Manager', 'Start Date', 'Contract Duration', 'Phone'
-        ])
+        # Define default fields for export
+        default_fields = [
+            'employee_id', 'name', 'email', 'job_title', 'business_function_name',
+            'department_name', 'unit_name', 'position_group_name', 'grading_display',
+            'status_name', 'line_manager_name', 'start_date', 'contract_duration_display',
+            'phone', 'years_of_service'
+        ]
+        
+        # Use custom fields if provided
+        fields_to_include = include_fields if include_fields else default_fields
+        
+        if export_format == 'excel':
+            return self._export_to_excel(queryset, fields_to_include)
+        else:
+            return self._export_to_csv(queryset, fields_to_include)
+    
+    def _export_to_excel(self, queryset, fields):
+        """Export employees to Excel format with styling"""
+        from openpyxl import Workbook
+        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+        
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Employees Export"
+        
+        # Field mappings for headers
+        field_headers = {
+            'employee_id': 'Employee ID',
+            'name': 'Full Name',
+            'email': 'Email',
+            'job_title': 'Job Title',
+            'business_function_name': 'Business Function',
+            'department_name': 'Department',
+            'unit_name': 'Unit',
+            'position_group_name': 'Position Group',
+            'grading_display': 'Grade',
+            'status_name': 'Status',
+            'line_manager_name': 'Line Manager',
+            'start_date': 'Start Date',
+            'contract_duration_display': 'Contract Duration',
+            'phone': 'Phone',
+            'years_of_service': 'Years of Service'
+        }
+        
+        # Write headers
+        headers = [field_headers.get(field, field.replace('_', ' ').title()) for field in fields]
+        ws.append(headers)
+        
+        # Style headers
+        header_font = Font(bold=True, color="FFFFFF")
+        header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+        header_alignment = Alignment(horizontal="center", vertical="center")
+        
+        for cell in ws[1]:
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = header_alignment
         
         # Write data
-        for employee in queryset:
-            writer.writerow([
-                employee.employee_id,
-                employee.full_name,
-                employee.user.email if employee.user else '',
-                employee.job_title,
-                employee.business_function.name,
-                employee.department.name,
-                employee.unit.name if employee.unit else '',
-                employee.position_group.get_name_display(),
-                employee.get_grading_display(),
-                employee.status.name,
-                employee.line_manager.full_name if employee.line_manager else '',
-                employee.start_date,
-                employee.get_contract_duration_display(),
-                employee.phone or ''
-            ])
+        serializer = EmployeeListSerializer(queryset, many=True)
+        for employee_data in serializer.data:
+            row_data = []
+            for field in fields:
+                value = employee_data.get(field, '')
+                if value is None:
+                    value = ''
+                row_data.append(str(value))
+            ws.append(row_data)
+        
+        # Auto-adjust column widths
+        for column in ws.columns:
+            max_length = 0
+            column_letter = column[0].column_letter
+            for cell in column:
+                try:
+                    if len(str(cell.value)) > max_length:
+                        max_length = len(str(cell.value))
+                except:
+                    pass
+            adjusted_width = min(max_length + 2, 50)
+            ws.column_dimensions[column_letter].width = adjusted_width
+        
+        # Save to BytesIO
+        output = io.BytesIO()
+        wb.save(output)
+        output.seek(0)
+        
+        response = HttpResponse(
+            output.getvalue(),
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+        response['Content-Disposition'] = f'attachment; filename="employees_export_{date.today()}.xlsx"'
         
         return response
     
+    def _export_to_csv(self, queryset, fields):
+        """Export employees to CSV format"""
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = f'attachment; filename="employees_export_{date.today()}.csv"'
+        
+        writer = csv.writer(response)
+        
+        # Field mappings for headers
+        field_headers = {
+            'employee_id': 'Employee ID',
+            'name': 'Full Name',
+            'email': 'Email',
+            'job_title': 'Job Title',
+            'business_function_name': 'Business Function',
+            'department_name': 'Department',
+            'unit_name': 'Unit',
+            'position_group_name': 'Position Group',
+            'grading_display': 'Grade',
+            'status_name': 'Status',
+            'line_manager_name': 'Line Manager',
+            'start_date': 'Start Date',
+            'contract_duration_display': 'Contract Duration',
+            'phone': 'Phone',
+            'years_of_service': 'Years of Service'
+        }
+        
+        # Write headers
+        headers = [field_headers.get(field, field.replace('_', ' ').title()) for field in fields]
+        writer.writerow(headers)
+        
+        # Write data
+        serializer = EmployeeListSerializer(queryset, many=True)
+        for employee_data in serializer.data:
+            row_data = []
+            for field in fields:
+                value = employee_data.get(field, '')
+                if value is None:
+                    value = ''
+                row_data.append(str(value))
+            writer.writerow(row_data)
+        
+        return response
+    
+    # Status Management
+    @action(detail=False, methods=['post'])
+    def update_status(self, request):
+        """Update status for multiple employees"""
+        serializer = EmployeeStatusUpdateSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        employee_ids = serializer.validated_data['employee_ids']
+        status_id = serializer.validated_data['status_id']
+        
+        try:
+            new_status = EmployeeStatus.objects.get(id=status_id)
+            employees = Employee.objects.filter(id__in=employee_ids)
+            
+            updated_count = 0
+            for employee in employees:
+                old_status = employee.status
+                employee.status = new_status
+                employee.save()
+                updated_count += 1
+                
+                # Log activity
+                EmployeeActivity.objects.create(
+                    employee=employee,
+                    activity_type='STATUS_CHANGED',
+                    description=f"Status manually changed from {old_status.name} to {new_status.name}",
+                    performed_by=request.user,
+                    metadata={
+                        'old_status': old_status.name,
+                        'new_status': new_status.name,
+                        'manual_update': True
+                    }
+                )
+            
+            return Response({
+                'message': f'Successfully updated status for {updated_count} employees',
+                'updated_count': updated_count,
+                'new_status': new_status.name
+            })
+        except EmployeeStatus.DoesNotExist:
+            return Response({'error': 'Status not found'}, status=status.HTTP_404_NOT_FOUND)
+    
+    @action(detail=False, methods=['post'])
+    def auto_update_status(self, request):
+        """Automatically update employee statuses based on contract and dates"""
+        serializer = AutoStatusUpdateSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        employee_ids = serializer.validated_data.get('employee_ids', [])
+        force_update = serializer.validated_data.get('force_update', False)
+        
+        try:
+            if employee_ids:
+                employees = Employee.objects.filter(id__in=employee_ids)
+            else:
+                employees = Employee.objects.all()
+            
+            updated_count = 0
+            for employee in employees:
+                if employee.update_status_automatically() or force_update:
+                    updated_count += 1
+            
+            return Response({
+                'message': f'Successfully auto-updated status for {updated_count} employees',
+                'updated_count': updated_count,
+                'total_processed': employees.count()
+            })
+        except Exception as e:
+            logger.error(f"Auto status update failed: {str(e)}")
+            return Response(
+                {'error': 'Auto status update failed', 'details': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    # Other existing actions...
     @action(detail=False, methods=['get'])
     def statistics(self, request):
         """Get comprehensive employee statistics"""
@@ -809,7 +1145,6 @@ class EmployeeViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'])
     def line_managers(self, request):
         """Get list of potential line managers"""
-        # Get employees who can be line managers (active status, certain position levels)
         managers = Employee.objects.filter(
             status__affects_headcount=True,
             position_group__hierarchy_level__lte=4  # Manager level and above
@@ -837,98 +1172,6 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         activities = employee.activities.all()[:50]  # Last 50 activities
         serializer = EmployeeActivitySerializer(activities, many=True)
         return Response(serializer.data)
-    
-    @action(detail=True, methods=['post'])
-    def update_contract(self, request, pk=None):
-        """Update employee contract information"""
-        employee = self.get_object()
-        
-        contract_duration = request.data.get('contract_duration')
-        contract_start_date = request.data.get('contract_start_date')
-        
-        if contract_duration:
-            old_duration = employee.get_contract_duration_display()
-            employee.contract_duration = contract_duration
-            
-        if contract_start_date:
-            employee.contract_start_date = contract_start_date
-        
-        employee.save()
-        
-        # Log activity
-        EmployeeActivity.objects.create(
-            employee=employee,
-            activity_type='CONTRACT_UPDATED',
-            description=f"Contract updated: Duration changed to {employee.get_contract_duration_display()}",
-            performed_by=request.user,
-            metadata={
-                'old_duration': old_duration if contract_duration else None,
-                'new_duration': employee.get_contract_duration_display(),
-                'contract_start_date': str(contract_start_date) if contract_start_date else None
-            }
-        )
-        
-        return Response({
-            'message': 'Contract updated successfully',
-            'contract_duration_display': employee.get_contract_duration_display(),
-            'contract_end_date': employee.contract_end_date
-        })
-
-# Organizational Chart ViewSet
-class OrgChartViewSet(viewsets.ReadOnlyModelViewSet):
-    """ViewSet for organizational chart data"""
-    permission_classes = [IsAuthenticated]
-    serializer_class = OrgChartNodeSerializer
-    
-    def get_queryset(self):
-        return Employee.objects.filter(
-            line_manager__isnull=True,  # Top-level employees
-            status__allows_org_chart=True,
-            is_visible_in_org_chart=True
-        ).select_related(
-            'business_function', 'department', 'position_group', 'status'
-        ).order_by('position_group__hierarchy_level', 'employee_id')
-    
-    @action(detail=False, methods=['get'])
-    def full_tree(self, request):
-        """Get complete organizational chart tree"""
-        top_level = self.get_queryset()
-        serializer = self.get_serializer(top_level, many=True)
-        return Response({
-            'org_chart': serializer.data,
-            'total_employees': Employee.objects.filter(
-                status__allows_org_chart=True,
-                is_visible_in_org_chart=True
-            ).count()
-        })
-
-# Headcount Summary ViewSet
-class HeadcountSummaryViewSet(viewsets.ReadOnlyModelViewSet):
-    """ViewSet for headcount summaries and analytics"""
-    queryset = HeadcountSummary.objects.all()
-    serializer_class = HeadcountSummarySerializer
-    permission_classes = [IsAuthenticated]
-    ordering = ['-summary_date']
-    
-    @action(detail=False, methods=['post'])
-    def generate_current(self, request):
-        """Generate headcount summary for today"""
-        summary = HeadcountSummary.generate_summary()
-        serializer = self.get_serializer(summary)
-        return Response(serializer.data)
-    
-    @action(detail=False, methods=['get'])
-    def latest(self, request):
-        """Get latest headcount summary"""
-        try:
-            latest = HeadcountSummary.objects.latest('summary_date')
-            serializer = self.get_serializer(latest)
-            return Response(serializer.data)
-        except HeadcountSummary.DoesNotExist:
-            # Generate if none exists
-            summary = HeadcountSummary.generate_summary()
-            serializer = self.get_serializer(summary)
-            return Response(serializer.data)
 
 # Employee Grading Integration ViewSet
 class EmployeeGradingViewSet(viewsets.ViewSet):
@@ -963,22 +1206,14 @@ class EmployeeGradingViewSet(viewsets.ViewSet):
                     serializer = EmployeeGradingUpdateSerializer(data=update)
                     if serializer.is_valid():
                         employee_id = serializer.validated_data['employee_id']
-                        grade = serializer.validated_data.get('grade')
-                        grading_level = serializer.validated_data.get('grading_level')
+                        grading_level = serializer.validated_data['grading_level']
                         
                         try:
                             employee = Employee.objects.get(id=employee_id)
                             
-                            changes = []
-                            if grade and employee.grade != grade:
-                                employee.grade = grade
-                                changes.append(f"Grade: {employee.grade} → {grade}")
-                            
-                            if grading_level and employee.grading_level != grading_level:
+                            if employee.grading_level != grading_level:
+                                old_grading = employee.grading_level
                                 employee.grading_level = grading_level
-                                changes.append(f"Grading Level: {employee.grading_level} → {grading_level}")
-                            
-                            if changes:
                                 employee.save()
                                 updated_count += 1
                                 
@@ -986,9 +1221,12 @@ class EmployeeGradingViewSet(viewsets.ViewSet):
                                 EmployeeActivity.objects.create(
                                     employee=employee,
                                     activity_type='GRADE_CHANGED',
-                                    description=f"Grading updated: {'; '.join(changes)}",
+                                    description=f"Grading level updated from {old_grading} to {grading_level}",
                                     performed_by=request.user,
-                                    metadata={'changes': changes}
+                                    metadata={
+                                        'old_grading_level': old_grading,
+                                        'new_grading_level': grading_level
+                                    }
                                 )
                                 
                         except Employee.DoesNotExist:
@@ -1004,3 +1242,61 @@ class EmployeeGradingViewSet(viewsets.ViewSet):
                 {'error': 'Bulk grade update failed', 'details': str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+# Organizational Chart ViewSet
+class OrgChartViewSet(viewsets.ReadOnlyModelViewSet):
+    """ViewSet for organizational chart data"""
+    permission_classes = [IsAuthenticated]
+    serializer_class = OrgChartNodeSerializer
+    
+    def get_queryset(self):
+        return Employee.objects.filter(
+            line_manager__isnull=True,  # Top-level employees
+            status__allows_org_chart=True,
+            is_visible_in_org_chart=True,
+            is_deleted=False
+        ).select_related(
+            'business_function', 'department', 'position_group', 'status'
+        ).order_by('position_group__hierarchy_level', 'employee_id')
+    
+    @action(detail=False, methods=['get'])
+    def full_tree(self, request):
+        """Get complete organizational chart tree"""
+        top_level = self.get_queryset()
+        serializer = self.get_serializer(top_level, many=True)
+        return Response({
+            'org_chart': serializer.data,
+            'total_employees': Employee.objects.filter(
+                status__allows_org_chart=True,
+                is_visible_in_org_chart=True,
+                is_deleted=False
+            ).count()
+        })
+
+# Headcount Summary ViewSet
+class HeadcountSummaryViewSet(viewsets.ReadOnlyModelViewSet):
+    """ViewSet for headcount summaries and analytics"""
+    queryset = HeadcountSummary.objects.all()
+    serializer_class = HeadcountSummarySerializer
+    permission_classes = [IsAuthenticated]
+    ordering = ['-summary_date']
+    
+    @action(detail=False, methods=['post'])
+    def generate_current(self, request):
+        """Generate headcount summary for today"""
+        summary = HeadcountSummary.generate_summary()
+        serializer = self.get_serializer(summary)
+        return Response(serializer.data)
+    
+    @action(detail=False, methods=['get'])
+    def latest(self, request):
+        """Get latest headcount summary"""
+        try:
+            latest = HeadcountSummary.objects.latest('summary_date')
+            serializer = self.get_serializer(latest)
+            return Response(serializer.data)
+        except HeadcountSummary.DoesNotExist:
+            # Generate if none exists
+            summary = HeadcountSummary.generate_summary()
+            serializer = self.get_serializer(summary)
+            return Response(serializer.data)

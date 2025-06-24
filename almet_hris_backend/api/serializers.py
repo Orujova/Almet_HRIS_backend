@@ -1,18 +1,10 @@
-# api/serializers.py
-
-from rest_framework import serializers
-from django.contrib.auth.models import User
-from .models import (
-    Employee, BusinessFunction, Department, Unit, JobFunction, 
-    PositionGroup, EmployeeTag, EmployeeDocument, EmployeeStatus,
-    EmployeeActivity, MicrosoftUser
-)
+# api/serializers.py - ENHANCED: Complete Employee Management with Grading Integration
 
 from rest_framework import serializers
 from django.contrib.auth.models import User
 from django.db import transaction
 from django.utils import timezone
-from datetime import date, timedelta  # FIX: Import əlavə edildi
+from datetime import date, timedelta
 from .models import (
     Employee, BusinessFunction, Department, Unit, JobFunction,
     PositionGroup, EmployeeTag, EmployeeStatus, EmployeeDocument,
@@ -32,15 +24,6 @@ class UserSerializer(serializers.ModelSerializer):
     
     def get_full_name(self, obj):
         return f"{obj.first_name} {obj.last_name}".strip()
-
-class MicrosoftUserSerializer(serializers.ModelSerializer):
-    user = UserSerializer(read_only=True)
-    
-    class Meta:
-        model = MicrosoftUser
-        fields = ['id', 'user', 'microsoft_id']
-        read_only_fields = ['id', 'microsoft_id']
-
 
 class BusinessFunctionSerializer(serializers.ModelSerializer):
     employee_count = serializers.SerializerMethodField()
@@ -62,7 +45,7 @@ class DepartmentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Department
         fields = [
-            'id', 'name',  'business_function', 'business_function_name', 
+            'id', 'name', 'business_function', 'business_function_name', 
             'business_function_code', 'head_of_department', 'head_name', 
             'is_active', 'employee_count', 'unit_count', 'created_at'
         ]
@@ -116,11 +99,7 @@ class PositionGroupSerializer(serializers.ModelSerializer):
     
     def get_grading_levels(self, obj):
         """Get grading level options for this position"""
-        levels = obj.get_grading_levels()
-        return [
-            {'code': f'{obj.grading_shorthand}_{level}', 'display': f'{obj.grading_shorthand}-{level}'}
-            for level in ['LD', 'LQ', 'M', 'UQ', 'UD']
-        ]
+        return obj.get_grading_levels()
     
     def get_employee_count(self, obj):
         return obj.employees.filter(status__affects_headcount=True).count()
@@ -144,7 +123,10 @@ class EmployeeStatusSerializer(serializers.ModelSerializer):
         model = EmployeeStatus
         fields = [
             'id', 'name', 'status_type', 'color', 'affects_headcount', 
-            'allows_org_chart', 'is_active', 'employee_count', 'created_at'
+            'allows_org_chart', 'is_active', 'employee_count', 'created_at',
+            'onboarding_duration', 'probation_duration_3m', 'probation_duration_6m',
+            'probation_duration_1y', 'probation_duration_2y', 'probation_duration_3y',
+            'probation_duration_permanent'
         ]
     
     def get_employee_count(self, obj):
@@ -264,7 +246,7 @@ class EmployeeListSerializer(serializers.ModelSerializer):
             'id', 'employee_id', 'name', 'email', 'date_of_birth', 'gender', 'phone',
             'business_function_name', 'business_function_code', 'department_name', 'unit_name',
             'job_function_name', 'job_title', 'position_group_name', 'position_group_level',
-            'grade', 'grading_level', 'grading_display', 'start_date', 'end_date',
+            'grading_level', 'grading_display', 'start_date', 'end_date',
             'contract_duration', 'contract_duration_display', 'contract_start_date', 'contract_end_date',
             'line_manager_name', 'line_manager_hc_number', 'status_name', 'status_color',
             'tag_names', 'years_of_service', 'current_status_display', 'is_visible_in_org_chart',
@@ -352,7 +334,7 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Employee
-        exclude = ['user', 'full_name', 'tags', 'filled_vacancy']
+        exclude = ['user', 'full_name', 'tags', 'filled_vacancy', 'status']  # Status auto-assigned
     
     def validate_employee_id(self, value):
         if self.instance:
@@ -409,6 +391,10 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
         if vacancy_id:
             validated_data['_vacancy_id'] = vacancy_id
         
+        # Set contract_start_date to start_date if not provided
+        if not validated_data.get('contract_start_date'):
+            validated_data['contract_start_date'] = validated_data.get('start_date')
+        
         employee = super().create(validated_data)
         
         # Add tags
@@ -453,9 +439,6 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
             user.save()
         
         # Track other significant changes
-        if 'status' in validated_data and validated_data['status'] != instance.status:
-            changes.append(f"Status changed from {instance.status.name} to {validated_data['status'].name}")
-        
         if 'line_manager' in validated_data and validated_data['line_manager'] != instance.line_manager:
             old_manager = instance.line_manager.full_name if instance.line_manager else "None"
             new_manager = validated_data['line_manager'].full_name if validated_data['line_manager'] else "None"
@@ -463,6 +446,9 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
         
         if 'position_group' in validated_data and validated_data['position_group'] != instance.position_group:
             changes.append(f"Position changed from {instance.position_group.get_name_display()} to {validated_data['position_group'].get_name_display()}")
+        
+        if 'grading_level' in validated_data and validated_data['grading_level'] != instance.grading_level:
+            changes.append(f"Grading level changed from {instance.grading_level} to {validated_data['grading_level']}")
         
         # Update employee
         employee = super().update(instance, validated_data)
@@ -509,13 +495,126 @@ class BulkEmployeeUpdateSerializer(serializers.Serializer):
         
         return value
 
-class EmployeeOrgChartVisibilitySerializer(serializers.ModelSerializer):
-    """Serializer for updating org chart visibility"""
+# Line Manager Operations
+class BulkLineManagerUpdateSerializer(serializers.Serializer):
+    employee_ids = serializers.ListField(child=serializers.IntegerField())
+    line_manager_id = serializers.IntegerField(allow_null=True)
+    
+    def validate_employee_ids(self, value):
+        if not value:
+            raise serializers.ValidationError("At least one employee ID is required.")
+        
+        existing_count = Employee.objects.filter(id__in=value).count()
+        if existing_count != len(value):
+            raise serializers.ValidationError("Some employee IDs do not exist.")
+        
+        return value
+    
+    def validate_line_manager_id(self, value):
+        if value is not None:
+            try:
+                Employee.objects.get(id=value)
+            except Employee.DoesNotExist:
+                raise serializers.ValidationError("Line manager not found.")
+        return value
+
+class SingleLineManagerUpdateSerializer(serializers.Serializer):
+    employee_id = serializers.IntegerField()
+    line_manager_id = serializers.IntegerField(allow_null=True)
+    
+    def validate_employee_id(self, value):
+        try:
+            Employee.objects.get(id=value)
+        except Employee.DoesNotExist:
+            raise serializers.ValidationError("Employee not found.")
+        return value
+    
+    def validate_line_manager_id(self, value):
+        if value is not None:
+            try:
+                Employee.objects.get(id=value)
+            except Employee.DoesNotExist:
+                raise serializers.ValidationError("Line manager not found.")
+        return value
+
+# Tag Operations
+class EmployeeTagOperationSerializer(serializers.Serializer):
+    employee_id = serializers.IntegerField()
+    tag_id = serializers.IntegerField()
+    
+    def validate_employee_id(self, value):
+        try:
+            Employee.objects.get(id=value)
+        except Employee.DoesNotExist:
+            raise serializers.ValidationError("Employee not found.")
+        return value
+    
+    def validate_tag_id(self, value):
+        try:
+            EmployeeTag.objects.get(id=value)
+        except EmployeeTag.DoesNotExist:
+            raise serializers.ValidationError("Tag not found.")
+        return value
+
+class BulkEmployeeTagOperationSerializer(serializers.Serializer):
+    employee_ids = serializers.ListField(child=serializers.IntegerField())
+    tag_id = serializers.IntegerField()
+    
+    def validate_employee_ids(self, value):
+        if not value:
+            raise serializers.ValidationError("At least one employee ID is required.")
+        
+        existing_count = Employee.objects.filter(id__in=value).count()
+        if existing_count != len(value):
+            raise serializers.ValidationError("Some employee IDs do not exist.")
+        
+        return value
+    
+    def validate_tag_id(self, value):
+        try:
+            EmployeeTag.objects.get(id=value)
+        except EmployeeTag.DoesNotExist:
+            raise serializers.ValidationError("Tag not found.")
+        return value
+
+# Enhanced Grading Serializers
+class EmployeeGradingUpdateSerializer(serializers.Serializer):
+    """Serializer for updating employee grading information"""
+    employee_id = serializers.IntegerField()
+    grading_level = serializers.CharField()
+    
+    def validate_grading_level(self, value):
+        """Validate grading level format"""
+        if value and '_' not in value:
+            raise serializers.ValidationError("Grading level must be in format POSITION_LEVEL (e.g., MGR_UQ)")
+        return value
+    
+    def validate_employee_id(self, value):
+        try:
+            Employee.objects.get(id=value)
+        except Employee.DoesNotExist:
+            raise serializers.ValidationError("Employee not found.")
+        return value
+
+class EmployeeGradingListSerializer(serializers.ModelSerializer):
+    """Serializer for employee grading information display"""
+    name = serializers.CharField(source='full_name', read_only=True)
+    position_group_name = serializers.CharField(source='position_group.get_name_display', read_only=True)
+    grading_display = serializers.CharField(source='get_grading_display', read_only=True)
+    available_levels = serializers.SerializerMethodField()
     
     class Meta:
         model = Employee
-        fields = ['id', 'employee_id', 'is_visible_in_org_chart']
-        read_only_fields = ['id', 'employee_id']
+        fields = [
+            'id', 'employee_id', 'name', 'job_title', 'position_group_name',
+            'grading_level', 'grading_display', 'available_levels'
+        ]
+    
+    def get_available_levels(self, obj):
+        """Get available grading levels for this employee's position"""
+        if obj.position_group:
+            return obj.position_group.get_grading_levels()
+        return []
 
 # Organizational Chart Serializers
 class OrgChartNodeSerializer(serializers.ModelSerializer):
@@ -537,10 +636,20 @@ class OrgChartNodeSerializer(serializers.ModelSerializer):
     def get_children(self, obj):
         children = obj.direct_reports.filter(
             status__allows_org_chart=True,
-            is_visible_in_org_chart=True
+            is_visible_in_org_chart=True,
+            is_deleted=False
         ).order_by('position_group__hierarchy_level', 'employee_id')
         
         return OrgChartNodeSerializer(children, many=True, context=self.context).data
+
+# Employee Visibility Serializer
+class EmployeeOrgChartVisibilitySerializer(serializers.ModelSerializer):
+    """Serializer for updating org chart visibility"""
+    
+    class Meta:
+        model = Employee
+        fields = ['id', 'employee_id', 'is_visible_in_org_chart']
+        read_only_fields = ['id', 'employee_id']
 
 # Headcount Summary Serializer
 class HeadcountSummarySerializer(serializers.ModelSerializer):
@@ -549,39 +658,6 @@ class HeadcountSummarySerializer(serializers.ModelSerializer):
     class Meta:
         model = HeadcountSummary
         fields = '__all__'
-
-# Grading Integration Serializers
-class EmployeeGradingUpdateSerializer(serializers.Serializer):
-    """Serializer for updating employee grading information"""
-    employee_id = serializers.IntegerField()
-    grade = serializers.CharField(required=False)
-    grading_level = serializers.CharField(required=False)
-    
-    def validate_grading_level(self, value):
-        """Validate grading level format"""
-        if value and '_' not in value:
-            raise serializers.ValidationError("Grading level must be in format POSITION_LEVEL (e.g., MGR_UQ)")
-        return value
-
-class EmployeeGradingListSerializer(serializers.ModelSerializer):
-    """Serializer for employee grading information display"""
-    name = serializers.CharField(source='full_name', read_only=True)
-    position_group_name = serializers.CharField(source='position_group.get_name_display', read_only=True)
-    grading_display = serializers.CharField(source='get_grading_display', read_only=True)
-    available_levels = serializers.SerializerMethodField()
-    
-    class Meta:
-        model = Employee
-        fields = [
-            'id', 'employee_id', 'name', 'job_title', 'position_group_name',
-            'grade', 'grading_level', 'grading_display', 'available_levels'
-        ]
-    
-    def get_available_levels(self, obj):
-        """Get available grading levels for this employee's position"""
-        if obj.position_group:
-            return obj.position_group.get_grading_levels()
-        return {}
 
 # Additional Employee Serializers for specific use cases
 class EmployeeMinimalSerializer(serializers.ModelSerializer):
@@ -631,3 +707,82 @@ class ContractExpirySerializer(serializers.ModelSerializer):
             delta = obj.contract_end_date - date.today()
             return delta.days
         return None
+
+# Soft Delete Operations
+class SoftDeleteSerializer(serializers.Serializer):
+    employee_ids = serializers.ListField(child=serializers.IntegerField())
+    
+    def validate_employee_ids(self, value):
+        if not value:
+            raise serializers.ValidationError("At least one employee ID is required.")
+        
+        # Use all_objects to include soft-deleted employees for validation
+        existing_count = Employee.all_objects.filter(id__in=value, is_deleted=False).count()
+        if existing_count != len(value):
+            raise serializers.ValidationError("Some employee IDs do not exist or are already deleted.")
+        
+        return value
+
+class RestoreEmployeeSerializer(serializers.Serializer):
+    employee_ids = serializers.ListField(child=serializers.IntegerField())
+    
+    def validate_employee_ids(self, value):
+        if not value:
+            raise serializers.ValidationError("At least one employee ID is required.")
+        
+        # Check that all employees exist and are soft-deleted
+        existing_count = Employee.all_objects.filter(id__in=value, is_deleted=True).count()
+        if existing_count != len(value):
+            raise serializers.ValidationError("Some employee IDs do not exist or are not deleted.")
+        
+        return value
+
+# Export Serializer for selected data
+class EmployeeExportSerializer(serializers.Serializer):
+    employee_ids = serializers.ListField(
+        child=serializers.IntegerField(), 
+        required=False,
+        help_text="List of employee IDs to export. If empty, exports filtered results."
+    )
+    export_format = serializers.ChoiceField(
+        choices=[('csv', 'CSV'), ('excel', 'Excel')],
+        default='excel'
+    )
+    include_fields = serializers.ListField(
+        child=serializers.CharField(),
+        required=False,
+        help_text="List of fields to include in export"
+    )
+
+# Status Management Serializers
+class EmployeeStatusUpdateSerializer(serializers.Serializer):
+    employee_ids = serializers.ListField(child=serializers.IntegerField())
+    status_id = serializers.IntegerField()
+    
+    def validate_employee_ids(self, value):
+        if not value:
+            raise serializers.ValidationError("At least one employee ID is required.")
+        
+        existing_count = Employee.objects.filter(id__in=value).count()
+        if existing_count != len(value):
+            raise serializers.ValidationError("Some employee IDs do not exist.")
+        
+        return value
+    
+    def validate_status_id(self, value):
+        try:
+            EmployeeStatus.objects.get(id=value)
+        except EmployeeStatus.DoesNotExist:
+            raise serializers.ValidationError("Status not found.")
+        return value
+
+class AutoStatusUpdateSerializer(serializers.Serializer):
+    employee_ids = serializers.ListField(
+        child=serializers.IntegerField(), 
+        required=False,
+        help_text="Employee IDs to update. If empty, updates all employees."
+    )
+    force_update = serializers.BooleanField(
+        default=False,
+        help_text="Force update even if status appears correct"
+    )

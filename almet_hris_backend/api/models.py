@@ -1,24 +1,23 @@
-
-
+# api/models.py - ENHANCED: Complete Employee Management System with Soft Delete & Auto Status
 
 from django.contrib.postgres.indexes import GinIndex
-
 from django.db import models
 from django.contrib.auth.models import User
 from django.utils import timezone
 from django.core.validators import MinValueValidator, MaxValueValidator
-from django.contrib.postgres.indexes import GinIndex
 from datetime import date, timedelta
 import uuid
 import logging
 
 # dateutil əvəzinə Python built-in datetime istifadə edəcəyik
 from datetime import datetime, timedelta
-from dateutil.relativedelta import relativedelta  # Bu package install edilməlidir
-
+try:
+    from dateutil.relativedelta import relativedelta
+except ImportError:
+    # Fallback if dateutil is not available
+    relativedelta = None
 
 logger = logging.getLogger(__name__)
-
 
 class MicrosoftUser(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='microsoft_user')
@@ -34,12 +33,45 @@ class MicrosoftUser(models.Model):
         verbose_name = "Microsoft User"
         verbose_name_plural = "Microsoft Users"
 
+# Soft Delete Manager
+class ActiveManager(models.Manager):
+    """Manager that excludes soft-deleted objects"""
+    def get_queryset(self):
+        return super().get_queryset().filter(is_deleted=False)
 
+class AllObjectsManager(models.Manager):
+    """Manager that includes soft-deleted objects"""
+    def get_queryset(self):
+        return super().get_queryset()
 
-
+# Base model with soft delete functionality
+class SoftDeleteModel(models.Model):
+    is_deleted = models.BooleanField(default=False, db_index=True)
+    deleted_at = models.DateTimeField(null=True, blank=True)
+    deleted_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='deleted_%(class)ss')
+    
+    objects = ActiveManager()  # Default manager excludes deleted
+    all_objects = AllObjectsManager()  # Manager that includes deleted
+    
+    class Meta:
+        abstract = True
+    
+    def soft_delete(self, user=None):
+        """Soft delete the object"""
+        self.is_deleted = True
+        self.deleted_at = timezone.now()
+        self.deleted_by = user
+        self.save()
+    
+    def restore(self):
+        """Restore a soft-deleted object"""
+        self.is_deleted = False
+        self.deleted_at = None
+        self.deleted_by = None
+        self.save()
 
 # Business Structure Models
-class BusinessFunction(models.Model):
+class BusinessFunction(SoftDeleteModel):
     name = models.CharField(max_length=100, unique=True)
     code = models.CharField(max_length=10, unique=True)
     description = models.TextField(blank=True)
@@ -53,7 +85,7 @@ class BusinessFunction(models.Model):
     class Meta:
         ordering = ['code']
 
-class Department(models.Model):
+class Department(SoftDeleteModel):
     name = models.CharField(max_length=100)
     business_function = models.ForeignKey(BusinessFunction, on_delete=models.CASCADE, related_name='departments')
     head_of_department = models.ForeignKey('Employee', on_delete=models.SET_NULL, null=True, blank=True, related_name='departments_headed')
@@ -66,10 +98,9 @@ class Department(models.Model):
 
     class Meta:
         ordering = ['business_function__code']
-        # Fix: Make department names unique within each business function
         unique_together = ['business_function', 'name']
 
-class Unit(models.Model):
+class Unit(SoftDeleteModel):
     name = models.CharField(max_length=100)
     department = models.ForeignKey(Department, on_delete=models.CASCADE, related_name='units')
     unit_head = models.ForeignKey('Employee', on_delete=models.SET_NULL, null=True, blank=True, related_name='units_headed')
@@ -82,10 +113,9 @@ class Unit(models.Model):
 
     class Meta:
         ordering = ['department__business_function__code']
-        # Fix: Make unit names unique within each department
         unique_together = ['department', 'name']
 
-class JobFunction(models.Model):
+class JobFunction(SoftDeleteModel):
     name = models.CharField(max_length=100, unique=True)
     description = models.TextField(blank=True)
     is_active = models.BooleanField(default=True)
@@ -99,7 +129,7 @@ class JobFunction(models.Model):
         ordering = ['name']
 
 # Position Groups with enhanced grading integration
-class PositionGroup(models.Model):
+class PositionGroup(SoftDeleteModel):
     POSITION_LEVELS = [
         ('VC', 'Vice Chairman'),
         ('DIRECTOR', 'Director'),
@@ -123,6 +153,15 @@ class PositionGroup(models.Model):
         'BLUE COLLAR': 'BC',
     }
     
+    # Grading level mappings
+    GRADING_LEVEL_MAPPINGS = {
+        'LOWER_DECILE': 'LD',
+        'LOWER_QUARTILE': 'LQ', 
+        'MEDIAN': 'M',
+        'UPPER_QUARTILE': 'UQ',
+        'UPPER_DECILE': 'UD'
+    }
+    
     name = models.CharField(max_length=50, choices=POSITION_LEVELS, unique=True)
     hierarchy_level = models.IntegerField(unique=True)
     grading_shorthand = models.CharField(max_length=10, editable=False)  # Auto-generated
@@ -137,8 +176,13 @@ class PositionGroup(models.Model):
 
     def get_grading_levels(self):
         """Returns grading levels with shortcuts for this position"""
-        base_levels = ['LD', 'LQ', 'M', 'UQ', 'UD']
-        return {level: f"{self.grading_shorthand}_{level}" for level in base_levels}
+        return [
+            {'code': f"{self.grading_shorthand}_LD", 'display': f"{self.grading_shorthand}-LD", 'full_name': 'Lower Decile'},
+            {'code': f"{self.grading_shorthand}_LQ", 'display': f"{self.grading_shorthand}-LQ", 'full_name': 'Lower Quartile'},
+            {'code': f"{self.grading_shorthand}_M", 'display': f"{self.grading_shorthand}-M", 'full_name': 'Median'},
+            {'code': f"{self.grading_shorthand}_UQ", 'display': f"{self.grading_shorthand}-UQ", 'full_name': 'Upper Quartile'},
+            {'code': f"{self.grading_shorthand}_UD", 'display': f"{self.grading_shorthand}-UD", 'full_name': 'Upper Decile'},
+        ]
 
     def __str__(self):
         return self.get_name_display()
@@ -147,7 +191,7 @@ class PositionGroup(models.Model):
         ordering = ['hierarchy_level']
 
 # Employee Tags for categorization
-class EmployeeTag(models.Model):
+class EmployeeTag(SoftDeleteModel):
     TAG_TYPES = [
         ('LEAVE', 'Leave Related'),
         ('STATUS', 'Status Related'),
@@ -170,8 +214,8 @@ class EmployeeTag(models.Model):
     class Meta:
         ordering = ['tag_type', 'name']
 
-# Employee Status with color hierarchy management
-class EmployeeStatus(models.Model):
+# Enhanced Employee Status with automatic status transitions
+class EmployeeStatus(SoftDeleteModel):
     STATUS_TYPES = [
         ('ACTIVE', 'Active'),
         ('INACTIVE', 'Inactive'),
@@ -182,7 +226,7 @@ class EmployeeStatus(models.Model):
         ('RESIGNED', 'Resigned'),
         ('SUSPENDED', 'Suspended'),
         ('LEAVE', 'On Leave'),
-        ('VACANT', 'Vacant Position'),  # New for vacancy management
+        ('VACANT', 'Vacant Position'),
     ]
     
     # Color hierarchy for automatic assignment
@@ -199,11 +243,32 @@ class EmployeeStatus(models.Model):
         'INACTIVE': '#9CA3AF',    # Light Gray
     }
     
+    # Default status durations (in days) - can be customized
+    DEFAULT_STATUS_DURATIONS = {
+        'ONBOARDING': 7,        # First 7 days
+        'PROBATION_3_MONTHS': 7,    # 7 days for 3-month contracts
+        'PROBATION_6_MONTHS': 14,   # 14 days for 6-month contracts  
+        'PROBATION_1_YEAR': 90,     # 90 days for 1-year contracts
+        'PROBATION_2_YEARS': 90,    # 90 days for 2-year contracts
+        'PROBATION_3_YEARS': 90,    # 90 days for 3-year contracts
+        'PROBATION_PERMANENT': 0,   # No probation for permanent
+    }
+    
     name = models.CharField(max_length=50, unique=True)
     status_type = models.CharField(max_length=20, choices=STATUS_TYPES, default='ACTIVE')
     color = models.CharField(max_length=7, default='#6B7280')
     affects_headcount = models.BooleanField(default=True, help_text="Whether this status counts toward active headcount")
     allows_org_chart = models.BooleanField(default=True, help_text="Whether employees with this status appear in org chart")
+    
+    # Configurable status durations
+    onboarding_duration = models.IntegerField(default=7, help_text="Onboarding duration in days")
+    probation_duration_3m = models.IntegerField(default=7, help_text="Probation duration for 3-month contracts")
+    probation_duration_6m = models.IntegerField(default=14, help_text="Probation duration for 6-month contracts")
+    probation_duration_1y = models.IntegerField(default=90, help_text="Probation duration for 1-year contracts")
+    probation_duration_2y = models.IntegerField(default=90, help_text="Probation duration for 2-year contracts")
+    probation_duration_3y = models.IntegerField(default=90, help_text="Probation duration for 3-year contracts")
+    probation_duration_permanent = models.IntegerField(default=0, help_text="Probation duration for permanent contracts")
+    
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -214,6 +279,45 @@ class EmployeeStatus(models.Model):
             self.color = self.STATUS_COLOR_HIERARCHY.get(self.status_type, '#6B7280')
         super().save(*args, **kwargs)
 
+    def get_probation_duration_for_contract(self, contract_duration):
+        """Get probation duration for specific contract type"""
+        duration_mapping = {
+            '3_MONTHS': self.probation_duration_3m,
+            '6_MONTHS': self.probation_duration_6m,
+            '1_YEAR': self.probation_duration_1y,
+            '2_YEARS': self.probation_duration_2y,
+            '3_YEARS': self.probation_duration_3y,
+            'PERMANENT': self.probation_duration_permanent,
+        }
+        return duration_mapping.get(contract_duration, 0)
+
+    @classmethod
+    def get_or_create_default_statuses(cls):
+        """Create default statuses if they don't exist"""
+        default_statuses = [
+            ('ONBOARDING', 'ONBOARDING', True, True),
+            ('PROBATION', 'PROBATION', True, True),
+            ('ACTIVE', 'ACTIVE', True, True),
+            ('INACTIVE', 'INACTIVE', False, False),
+        ]
+        
+        created_statuses = {}
+        for name, status_type, affects_headcount, allows_org_chart in default_statuses:
+            status, created = cls.objects.get_or_create(
+                name=name,
+                defaults={
+                    'status_type': status_type,
+                    'affects_headcount': affects_headcount,
+                    'allows_org_chart': allows_org_chart,
+                    'is_active': True
+                }
+            )
+            created_statuses[name] = status
+            if created:
+                logger.info(f"Created default status: {name}")
+        
+        return created_statuses
+
     def __str__(self):
         return self.name
 
@@ -222,8 +326,8 @@ class EmployeeStatus(models.Model):
         verbose_name = "Employee Status"
         verbose_name_plural = "Employee Statuses"
 
-# Vacancy Management Model
-class VacantPosition(models.Model):
+# Enhanced Vacancy Management Model
+class VacantPosition(SoftDeleteModel):
     VACANCY_TYPES = [
         ('NEW_POSITION', 'New Position'),
         ('REPLACEMENT', 'Replacement'),
@@ -285,8 +389,8 @@ class VacantPosition(models.Model):
         verbose_name = "Vacant Position"
         verbose_name_plural = "Vacant Positions"
 
-# Employee Documents
-class EmployeeDocument(models.Model):
+# Employee Documents with optional uploads
+class EmployeeDocument(SoftDeleteModel):
     DOCUMENT_TYPES = [
         ('CONTRACT', 'Employment Contract'),
         ('ID', 'ID Document'),
@@ -300,7 +404,7 @@ class EmployeeDocument(models.Model):
     employee = models.ForeignKey('Employee', on_delete=models.CASCADE, related_name='documents')
     name = models.CharField(max_length=255)
     document_type = models.CharField(max_length=20, choices=DOCUMENT_TYPES, default='OTHER')
-    file_path = models.CharField(max_length=500)
+    file_path = models.CharField(max_length=500, blank=True, null=True)  # Optional file path
     file_size = models.PositiveIntegerField(null=True, blank=True)
     mime_type = models.CharField(max_length=100, blank=True, null=True)
     uploaded_at = models.DateTimeField(auto_now_add=True)
@@ -313,7 +417,7 @@ class EmployeeDocument(models.Model):
         ordering = ['-uploaded_at']
 
 # Main Employee Model with Enhanced Features
-class Employee(models.Model):
+class Employee(SoftDeleteModel):
     GENDER_CHOICES = [
         ('MALE', 'Male'),
         ('FEMALE', 'Female'),
@@ -351,9 +455,8 @@ class Employee(models.Model):
     job_title = models.CharField(max_length=200)
     position_group = models.ForeignKey(PositionGroup, on_delete=models.PROTECT, related_name='employees')
     
-    # Enhanced grading system integration
-    grade = models.CharField(max_length=50, blank=True, help_text="Current salary grade from grading system")
-    grading_level = models.CharField(max_length=10, blank=True, help_text="Specific grading level (e.g., MGR_UQ)")
+    # Enhanced grading system integration - only grading_level (no separate grade field)
+    grading_level = models.CharField(max_length=15, blank=True, help_text="Specific grading level (e.g., MGR_UQ)")
     
     # Employment Dates with enhanced contract management
     start_date = models.DateField()
@@ -389,36 +492,44 @@ class Employee(models.Model):
             last_name = self.user.last_name or ''
             self.full_name = f"{first_name} {last_name}".strip()
         
-        # Auto-calculate contract end date - FIX: Try/except əlavə edildi
+        # Auto-calculate contract end date
         if self.contract_start_date and self.contract_duration != 'PERMANENT':
             try:
-                if self.contract_duration == '3_MONTHS':
-                    self.contract_end_date = self.contract_start_date + relativedelta(months=3)
-                elif self.contract_duration == '6_MONTHS':
-                    self.contract_end_date = self.contract_start_date + relativedelta(months=6)
-                elif self.contract_duration == '1_YEAR':
-                    self.contract_end_date = self.contract_start_date + relativedelta(years=1)
-                elif self.contract_duration == '2_YEARS':
-                    self.contract_end_date = self.contract_start_date + relativedelta(years=2)
-                elif self.contract_duration == '3_YEARS':
-                    self.contract_end_date = self.contract_start_date + relativedelta(years=3)
-            except ImportError:
-                # Fallback to approximate calculation if dateutil is not available
-                days_mapping = {
-                    '3_MONTHS': 90,
-                    '6_MONTHS': 180,
-                    '1_YEAR': 365,
-                    '2_YEARS': 730,
-                    '3_YEARS': 1095
-                }
-                days = days_mapping.get(self.contract_duration, 365)
-                self.contract_end_date = self.contract_start_date + timedelta(days=days)
+                if relativedelta:
+                    if self.contract_duration == '3_MONTHS':
+                        self.contract_end_date = self.contract_start_date + relativedelta(months=3)
+                    elif self.contract_duration == '6_MONTHS':
+                        self.contract_end_date = self.contract_start_date + relativedelta(months=6)
+                    elif self.contract_duration == '1_YEAR':
+                        self.contract_end_date = self.contract_start_date + relativedelta(years=1)
+                    elif self.contract_duration == '2_YEARS':
+                        self.contract_end_date = self.contract_start_date + relativedelta(years=2)
+                    elif self.contract_duration == '3_YEARS':
+                        self.contract_end_date = self.contract_start_date + relativedelta(years=3)
+                else:
+                    # Fallback to approximate calculation
+                    days_mapping = {
+                        '3_MONTHS': 90,
+                        '6_MONTHS': 180,
+                        '1_YEAR': 365,
+                        '2_YEARS': 730,
+                        '3_YEARS': 1095
+                    }
+                    days = days_mapping.get(self.contract_duration, 365)
+                    self.contract_end_date = self.contract_start_date + timedelta(days=days)
+            except Exception as e:
+                logger.error(f"Error calculating contract end date: {e}")
+                self.contract_end_date = None
         else:
             self.contract_end_date = None
         
-        # Auto-generate grading level based on position group
+        # Auto-generate grading level based on position group (default to median)
         if self.position_group and not self.grading_level:
             self.grading_level = f"{self.position_group.grading_shorthand}_M"  # Default to median
+        
+        # Auto-assign status if not set (during creation)
+        if not self.status_id:
+            self.auto_assign_status()
         
         # Link to vacant position if applicable
         if not self.filled_vacancy and hasattr(self, '_vacancy_id'):
@@ -430,6 +541,141 @@ class Employee(models.Model):
                 pass
         
         super().save(*args, **kwargs)
+
+    def auto_assign_status(self):
+        """Auto-assign status based on start date and contract"""
+        try:
+            default_statuses = EmployeeStatus.get_or_create_default_statuses()
+            
+            # Default to onboarding for new employees
+            self.status = default_statuses.get('ONBOARDING', 
+                                             EmployeeStatus.objects.filter(status_type='ONBOARDING').first())
+            
+            if not self.status:
+                # Fallback to any active status
+                self.status = EmployeeStatus.objects.filter(is_active=True).first()
+                
+        except Exception as e:
+            logger.error(f"Error auto-assigning status: {e}")
+
+    def calculate_required_status(self):
+        """Calculate what status employee should have based on dates and contract"""
+        current_date = timezone.now().date()
+        
+        # Check end date first
+        if self.end_date and self.end_date <= current_date:
+            try:
+                return EmployeeStatus.objects.get(name='INACTIVE')
+            except EmployeeStatus.DoesNotExist:
+                return EmployeeStatus.objects.filter(status_type='INACTIVE').first()
+        
+        # Calculate days since start
+        if not self.start_date:
+            return self.status
+            
+        days_since_start = (current_date - self.start_date).days
+        
+        # Get status configuration
+        try:
+            status_config = EmployeeStatus.objects.filter(name='ONBOARDING').first()
+            if not status_config:
+                return self.status
+                
+            # Check onboarding period
+            if days_since_start <= status_config.onboarding_duration:
+                return EmployeeStatus.objects.get_or_create(name='ONBOARDING')[0]
+            
+            # Check probation period
+            probation_days = status_config.get_probation_duration_for_contract(self.contract_duration)
+            if probation_days > 0 and days_since_start <= probation_days:
+                return EmployeeStatus.objects.get_or_create(name='PROBATION')[0]
+            
+            # Default to active
+            return EmployeeStatus.objects.get_or_create(name='ACTIVE')[0]
+            
+        except Exception as e:
+            logger.error(f"Error calculating required status for {self.employee_id}: {e}")
+            return self.status
+
+    def update_status_automatically(self):
+        """Update employee status based on current situation"""
+        required_status = self.calculate_required_status()
+        
+        if self.status != required_status:
+            old_status = self.status
+            self.status = required_status
+            self.save()
+            
+            # Log the change
+            EmployeeActivity.objects.create(
+                employee=self,
+                activity_type='STATUS_CHANGED',
+                description=f"Status automatically updated from {old_status.name} to {required_status.name}",
+                performed_by=None,  # System update
+                metadata={
+                    'automatic': True,
+                    'old_status': old_status.name,
+                    'new_status': required_status.name
+                }
+            )
+            
+            return True
+        return False
+
+    def add_tag(self, tag, user=None):
+        """Add a tag to the employee"""
+        if not self.tags.filter(id=tag.id).exists():
+            self.tags.add(tag)
+            
+            # Log activity
+            EmployeeActivity.objects.create(
+                employee=self,
+                activity_type='TAG_ADDED',
+                description=f"Tag '{tag.name}' added",
+                performed_by=user,
+                metadata={'tag_id': tag.id, 'tag_name': tag.name}
+            )
+            return True
+        return False
+
+    def remove_tag(self, tag, user=None):
+        """Remove a tag from the employee"""
+        if self.tags.filter(id=tag.id).exists():
+            self.tags.remove(tag)
+            
+            # Log activity
+            EmployeeActivity.objects.create(
+                employee=self,
+                activity_type='TAG_REMOVED',
+                description=f"Tag '{tag.name}' removed",
+                performed_by=user,
+                metadata={'tag_id': tag.id, 'tag_name': tag.name}
+            )
+            return True
+        return False
+
+    def change_line_manager(self, new_manager, user=None):
+        """Change employee's line manager"""
+        old_manager = self.line_manager
+        self.line_manager = new_manager
+        self.save()
+        
+        # Log activity
+        old_manager_name = old_manager.full_name if old_manager else 'None'
+        new_manager_name = new_manager.full_name if new_manager else 'None'
+        
+        EmployeeActivity.objects.create(
+            employee=self,
+            activity_type='MANAGER_CHANGED',
+            description=f"Line manager changed from {old_manager_name} to {new_manager_name}",
+            performed_by=user,
+            metadata={
+                'old_manager_id': old_manager.id if old_manager else None,
+                'new_manager_id': new_manager.id if new_manager else None,
+                'old_manager_name': old_manager_name,
+                'new_manager_name': new_manager_name
+            }
+        )
 
     @property
     def years_of_service(self):
@@ -452,12 +698,12 @@ class Employee(models.Model):
         if self.contract_duration == 'PERMANENT':
             return 'Permanent'
         elif self.contract_end_date:
-            return f"{self.get_contract_duration_display()} (Until {self.contract_end_date.strftime('%d/%m/%Y')})"
+            return f"{dict(self.CONTRACT_DURATION_CHOICES).get(self.contract_duration, self.contract_duration)} (Until {self.contract_end_date.strftime('%d/%m/%Y')})"
         return dict(self.CONTRACT_DURATION_CHOICES).get(self.contract_duration, self.contract_duration)
 
     def get_direct_reports_count(self):
         """Get count of direct reports"""
-        return self.direct_reports.filter(status__affects_headcount=True).count()
+        return self.direct_reports.filter(status__affects_headcount=True, is_deleted=False).count()
 
     def get_grading_display(self):
         """Get formatted grading display with shorthand"""
@@ -466,7 +712,7 @@ class Employee(models.Model):
             if len(parts) == 2:
                 position_short, level = parts
                 return f"{position_short}-{level}"
-        return self.grade or "No Grade"
+        return "No Grade"
 
     def update_contract_status(self):
         """Update employee status based on contract dates"""
@@ -492,6 +738,7 @@ class Employee(models.Model):
             models.Index(fields=['status']),
             models.Index(fields=['position_group']),
             models.Index(fields=['business_function', 'department']),
+            models.Index(fields=['is_deleted']),
         ]
 
 # Employee Activity Log for tracking changes
@@ -507,6 +754,8 @@ class EmployeeActivity(models.Model):
         ('GRADE_CHANGED', 'Grade Changed'),
         ('TAG_ADDED', 'Tag Added'),
         ('TAG_REMOVED', 'Tag Removed'),
+        ('SOFT_DELETED', 'Employee Soft Deleted'),
+        ('RESTORED', 'Employee Restored'),
     ]
     
     employee = models.ForeignKey(Employee, on_delete=models.CASCADE, related_name='activities')
@@ -566,7 +815,7 @@ class HeadcountSummary(models.Model):
         if date is None:
             date = date.today()
         
-        # Get employee counts
+        # Get employee counts (excluding soft-deleted)
         active_statuses = EmployeeStatus.objects.filter(affects_headcount=True)
         
         total_employees = Employee.objects.count()

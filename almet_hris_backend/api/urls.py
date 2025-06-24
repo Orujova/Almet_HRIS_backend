@@ -2,11 +2,6 @@
 
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from . import views
-# api/urls.py
-
-from django.urls import path, include
-from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenRefreshView
 from . import views
 
@@ -38,21 +33,25 @@ router.register(r'headcount-summaries', views.HeadcountSummaryViewSet, basename=
 router.register(r'employee-grading', views.EmployeeGradingViewSet, basename='employeegrading')
 
 urlpatterns = [
-    
-     path('auth/microsoft/', views.authenticate_microsoft, name='auth_microsoft'),
+    # Authentication endpoints
+    path('auth/microsoft/', views.authenticate_microsoft, name='auth_microsoft'),
     path('auth/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
    
     # User endpoints
     path('me/', views.user_info, name='user_info'),
+    
     # Include all router URLs
     path('', include(router.urls)),
-    
-    # Additional custom endpoints can be added here if needed
 ]
 
 # API Endpoint Documentation
 """
 ENHANCED HR HEADCOUNT SYSTEM API ENDPOINTS
+
+=== AUTHENTICATION ===
+POST   /api/auth/microsoft/                - Microsoft authentication
+POST   /api/auth/refresh/                  - Refresh JWT token
+GET    /api/me/                           - Get current user info
 
 === BUSINESS STRUCTURE ===
 GET    /api/business-functions/              - List all business functions
@@ -91,16 +90,33 @@ GET    /api/employees/                      - List employees (with advanced filt
 POST   /api/employees/                      - Create new employee
 GET    /api/employees/{id}/                 - Get employee details
 PUT    /api/employees/{id}/                 - Update employee
-DELETE /api/employees/{id}/                 - Delete employee
+DELETE /api/employees/{id}/                 - Soft delete employee
 
-POST   /api/employees/bulk_update/          - Bulk update multiple employees
-POST   /api/employees/bulk_delete/          - Bulk delete multiple employees
-POST   /api/employees/update_org_chart_visibility/ - Update org chart visibility
-GET    /api/employees/export_csv/           - Export employees to CSV
+# Line Manager Management
+POST   /api/employees/bulk_update_line_manager/    - Bulk update line manager
+POST   /api/employees/update_single_line_manager/  - Update single line manager
+
+# Tag Management
+POST   /api/employees/add_tag/              - Add tag to employee
+POST   /api/employees/remove_tag/           - Remove tag from employee
+POST   /api/employees/bulk_add_tag/         - Add tag to multiple employees
+POST   /api/employees/bulk_remove_tag/      - Remove tag from multiple employees
+
+# Soft Delete Management
+POST   /api/employees/soft_delete/          - Soft delete multiple employees
+POST   /api/employees/restore/              - Restore soft-deleted employees
+
+# Export Functions
+POST   /api/employees/export_selected/      - Export selected employees (CSV/Excel)
+
+# Status Management
+POST   /api/employees/update_status/        - Update status for multiple employees
+POST   /api/employees/auto_update_status/   - Auto-update statuses based on contract
+
+# Other Actions
 GET    /api/employees/statistics/           - Get employee statistics
 GET    /api/employees/line_managers/        - Get potential line managers list
 GET    /api/employees/{id}/activities/      - Get employee activity history
-POST   /api/employees/{id}/update_contract/ - Update employee contract
 
 GET    /api/employee-tags/                  - List all employee tags
 POST   /api/employee-tags/                  - Create employee tag
@@ -142,33 +158,35 @@ POST   /api/employee-grading/bulk_update_grades/ - Bulk update employee grades
 Employee List Filtering:
 - search: Text search across name, employee_id, email, job_title, etc.
 - status: Filter by status names (multiple values supported)
-- business_function: Filter by business function IDs
-- department: Filter by department IDs
-- position_group: Filter by position group IDs
-- line_manager: Filter by line manager IDs
-- tags: Filter by tag IDs
-- contract_duration: Filter by contract duration types
+- business_function: Filter by business function IDs (multiple values)
+- department: Filter by department IDs (multiple values)
+- position_group: Filter by position group IDs (multiple values)
+- line_manager: Filter by line manager IDs (multiple values)
+- tags: Filter by tag IDs (multiple values)
+- contract_duration: Filter by contract duration types (multiple values)
 - start_date_from: Filter employees starting from date
 - start_date_to: Filter employees starting until date
 - active_only: Show only active headcount (true/false)
 - org_chart_visible: Show only org chart visible employees (true/false)
+- include_deleted: Include soft-deleted employees (true/false)
 
-Employee List Sorting:
+Employee List Sorting (Excel-like multi-field sorting):
 - ordering: Comma-separated list of fields to sort by
 - Prefix with '-' for descending order
 - Available fields: employee_id, name, email, start_date, end_date, 
-  business_function, department, job_title, position_group, status, 
-  line_manager, created_at, updated_at
+  business_function, department, unit, job_title, position_group, 
+  grading_level, status, line_manager, contract_duration, 
+  contract_end_date, years_of_service, created_at, updated_at
 
 Examples:
-GET /api/employees/?search=john&status=ACTIVE&ordering=start_date,-name
+GET /api/employees/?search=john&status=ACTIVE,PROBATION&ordering=start_date,-name
 GET /api/employees/?business_function=1,2&active_only=true&ordering=position_group,name
-GET /api/employees/?contract_duration=PERMANENT&start_date_from=2024-01-01
+GET /api/employees/?contract_duration=PERMANENT,1_YEAR&start_date_from=2024-01-01
 
 === GRADING SYSTEM INTEGRATION ===
 
 Position Group Grading Levels:
-Each position group has shorthand codes:
+Each position group has shorthand codes with full names:
 - VC (Vice Chairman): VC_LD, VC_LQ, VC_M, VC_UQ, VC_UD
 - DIR (Director): DIR_LD, DIR_LQ, DIR_M, DIR_UQ, DIR_UD
 - MGR (Manager): MGR_LD, MGR_LQ, MGR_M, MGR_UQ, MGR_UD
@@ -185,7 +203,7 @@ Where:
 - UQ = Upper Quartile
 - UD = Upper Decile
 
-=== CONTRACT MANAGEMENT ===
+=== CONTRACT & STATUS MANAGEMENT ===
 
 Contract Duration Options:
 - 3_MONTHS: 3 Months
@@ -199,52 +217,142 @@ Auto-calculated fields:
 - contract_end_date: Automatically calculated based on contract_start_date and duration
 - full_name: Auto-generated from user first_name + last_name
 - grading_level: Auto-assigned based on position_group (defaults to median)
+- status: Auto-assigned based on start date and contract duration
 
-=== STATUS MANAGEMENT WITH COLOR HIERARCHY ===
+Automatic Status Transitions:
+- ONBOARDING: First 7 days (configurable)
+- PROBATION: Based on contract duration (configurable per contract type)
+- ACTIVE: After onboarding and probation periods
+- INACTIVE: Based on end_date
 
-Employee Status Types with Auto-assigned Colors:
-- ACTIVE: #10B981 (Green)
-- ONBOARDING: #3B82F6 (Blue)
-- PROBATION: #F59E0B (Yellow)
-- NOTICE_PERIOD: #EF4444 (Red)
-- TERMINATED: #6B7280 (Gray)
-- RESIGNED: #6B7280 (Gray)
-- SUSPENDED: #DC2626 (Dark Red)
-- LEAVE: #8B5CF6 (Purple)
-- VACANT: #F97316 (Orange)
-- INACTIVE: #9CA3AF (Light Gray)
+Default Probation Durations (configurable):
+- 3 Months Contract: 7 days
+- 6 Months Contract: 14 days
+- 1+ Year Contracts: 90 days
+- Permanent: 0 days (no probation)
 
-Status Properties:
-- affects_headcount: Whether status counts toward active headcount
-- allows_org_chart: Whether employees appear in organizational chart
+=== SOFT DELETE SYSTEM ===
+
+Soft Delete Features:
+- Employees are not permanently deleted, only marked as deleted
+- Soft-deleted employees can be restored
+- Activities are logged for all delete/restore operations
+- Filtering supports including/excluding deleted employees
+- Queries exclude soft-deleted by default
 
 === BULK OPERATIONS ===
 
-Bulk Update Employee Data:
-POST /api/employees/bulk_update/
+Line Manager Operations:
+POST /api/employees/bulk_update_line_manager/
 {
   "employee_ids": [1, 2, 3],
-  "updates": {
-    "status": 2,
-    "line_manager": 5,
-    "is_visible_in_org_chart": true
-  }
+  "line_manager_id": 5
 }
 
-Bulk Delete Employees:
-POST /api/employees/bulk_delete/
+POST /api/employees/update_single_line_manager/
+{
+  "employee_id": 1,
+  "line_manager_id": 5
+}
+
+Tag Operations:
+POST /api/employees/add_tag/
+{
+  "employee_id": 1,
+  "tag_id": 2
+}
+
+POST /api/employees/bulk_add_tag/
+{
+  "employee_ids": [1, 2, 3],
+  "tag_id": 2
+}
+
+Status Operations:
+POST /api/employees/update_status/
+{
+  "employee_ids": [1, 2, 3],
+  "status_id": 2
+}
+
+POST /api/employees/auto_update_status/
+{
+  "employee_ids": [1, 2, 3],  // Optional - if empty, updates all
+  "force_update": false
+}
+
+Soft Delete Operations:
+POST /api/employees/soft_delete/
 {
   "employee_ids": [1, 2, 3]
 }
 
-Bulk Update Grades:
+POST /api/employees/restore/
+{
+  "employee_ids": [1, 2, 3]
+}
+
+Grade Updates:
 POST /api/employee-grading/bulk_update_grades/
 {
   "updates": [
-    {"employee_id": 1, "grade": "5000", "grading_level": "MGR_UQ"},
-    {"employee_id": 2, "grade": "4500", "grading_level": "MGR_M"}
+    {"employee_id": 1, "grading_level": "MGR_UQ"},
+    {"employee_id": 2, "grading_level": "MGR_M"}
   ]
 }
+
+=== EXPORT FUNCTIONALITY ===
+
+Enhanced Export with Field Selection:
+POST /api/employees/export_selected/
+{
+  "employee_ids": [1, 2, 3],  // Optional - if empty, exports filtered results
+  "export_format": "excel",   // "excel" or "csv"
+  "include_fields": [          // Optional - uses defaults if not specified
+    "employee_id",
+    "name", 
+    "email",
+    "job_title",
+    "business_function_name",
+    "department_name",
+    "grading_display",
+    "status_name",
+    "start_date"
+  ]
+}
+
+Available Export Fields:
+- employee_id, name, email, job_title
+- business_function_name, department_name, unit_name
+- position_group_name, grading_display, status_name
+- line_manager_name, start_date, contract_duration_display
+- phone, years_of_service
+
+Excel Export Features:
+- Professional styling with headers
+- Auto-adjusted column widths
+- Proper formatting for dates and numbers
+- Clear, readable layout
+
+=== ACTIVITY LOGGING ===
+
+All significant employee changes are automatically logged:
+- Employee creation/updates
+- Status changes (manual and automatic)
+- Manager changes
+- Position changes
+- Contract updates
+- Document uploads
+- Grade changes
+- Tag additions/removals
+- Soft delete/restore operations
+- Bulk operations
+
+Activity Types:
+- CREATED, UPDATED, STATUS_CHANGED, MANAGER_CHANGED
+- POSITION_CHANGED, CONTRACT_UPDATED, DOCUMENT_UPLOADED
+- GRADE_CHANGED, TAG_ADDED, TAG_REMOVED
+- SOFT_DELETED, RESTORED
 
 === VACANCY INTEGRATION ===
 
@@ -256,33 +364,15 @@ POST /api/employees/
   "first_name": "John",
   "last_name": "Doe",
   "email": "john.doe@company.com",
-  ...
+  "position_group": 3,
+  "grading_level": "MGR_M",
+  // ... other fields
 }
 
 This will automatically:
 - Mark the vacant position as filled
 - Link the employee to the vacancy
 - Log the activity
-
-=== ACTIVITY LOGGING ===
-
-All significant employee changes are automatically logged:
-- Employee creation/updates
-- Status changes
-- Manager changes
-- Position changes
-- Contract updates
-- Document uploads
-- Grade changes
-- Tag additions/removals
-- Bulk operations
-
-=== CSV EXPORT ===
-
-Export filtered employee data to CSV:
-GET /api/employees/export_csv/?status=ACTIVE&business_function=1
-
-Includes all major employee fields in a spreadsheet-friendly format.
 
 === ANALYTICS & REPORTING ===
 
@@ -298,4 +388,44 @@ Returns open/filled vacancy counts by urgency and business function.
 Headcount Summary:
 GET /api/headcount-summaries/latest/
 Returns latest comprehensive headcount analytics including trends and breakdowns.
+
+=== EMPLOYEE CREATION FLOW ===
+
+Enhanced Employee Creation:
+1. Status is automatically assigned (ONBOARDING by default)
+2. Grading level is auto-assigned based on position group (defaults to median)
+3. Contract end date is automatically calculated
+4. Full name is auto-generated from first/last name
+5. Activity is logged
+6. Optional vacancy linking
+7. Optional document uploads (not mandatory)
+
+Required Fields:
+- employee_id, first_name, last_name, email
+- business_function, department, job_function, job_title
+- position_group, start_date, contract_duration
+- grading_level (selected from available levels for position)
+
+Optional Fields:
+- unit, line_manager, contract_start_date
+- date_of_birth, gender, address, phone
+- emergency_contact, profile_image, notes
+- tag_ids, vacancy_id
+
+=== ERROR HANDLING ===
+
+All endpoints include comprehensive error handling:
+- Validation errors with detailed field-specific messages
+- 404 errors for missing resources
+- 400 errors for bad requests
+- 500 errors for server issues (logged for debugging)
+- Transaction rollback for bulk operations on error
+
+=== PERMISSIONS ===
+
+All endpoints require authentication:
+- JWT token required in Authorization header
+- Microsoft authentication supported
+- Token refresh capability
+- User info endpoint for current user details
 """
