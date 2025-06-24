@@ -786,3 +786,16 @@ class AutoStatusUpdateSerializer(serializers.Serializer):
         default=False,
         help_text="Force update even if status appears correct"
     )
+    
+class BulkEmployeeGradingUpdateSerializer(serializers.Serializer):
+    """Serializer for bulk updating employee grades"""
+    updates = serializers.ListField(
+        child=EmployeeGradingUpdateSerializer(),
+        help_text="List of employee grading updates",
+        allow_empty=False
+    )
+    
+    def validate_updates(self, value):
+        if not value:
+            raise serializers.ValidationError("At least one update is required")
+        return value

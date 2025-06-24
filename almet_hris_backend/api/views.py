@@ -42,7 +42,7 @@ from .serializers import (
     EmployeeTagOperationSerializer, BulkEmployeeTagOperationSerializer,
     EmployeeGradingUpdateSerializer, EmployeeGradingListSerializer,
     HeadcountSummarySerializer, SoftDeleteSerializer, RestoreEmployeeSerializer,
-    EmployeeExportSerializer, EmployeeStatusUpdateSerializer, AutoStatusUpdateSerializer
+    EmployeeExportSerializer, EmployeeStatusUpdateSerializer, AutoStatusUpdateSerializer,BulkEmployeeGradingUpdateSerializer
 )
 from .auth import MicrosoftTokenValidator
 
@@ -1173,7 +1173,6 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         serializer = EmployeeActivitySerializer(activities, many=True)
         return Response(serializer.data)
 
-# Employee Grading Integration ViewSet
 class EmployeeGradingViewSet(viewsets.ViewSet):
     """ViewSet for employee grading integration"""
     permission_classes = [IsAuthenticated]
@@ -1187,10 +1186,40 @@ class EmployeeGradingViewSet(viewsets.ViewSet):
         serializer = EmployeeGradingListSerializer(employees, many=True)
         return Response(serializer.data)
     
+    @swagger_auto_schema(
+        method='post',
+        operation_description="Bulk update employee grades and grading levels",
+        request_body=BulkEmployeeGradingUpdateSerializer,
+        responses={
+            200: openapi.Response(
+                description="Successfully updated grades",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'message': openapi.Schema(type=openapi.TYPE_STRING),
+                        'updated_count': openapi.Schema(type=openapi.TYPE_INTEGER)
+                    }
+                )
+            ),
+            400: openapi.Response(
+                description="Bad request - validation errors",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'error': openapi.Schema(type=openapi.TYPE_STRING)
+                    }
+                )
+            )
+        }
+    )
     @action(detail=False, methods=['post'])
     def bulk_update_grades(self, request):
         """Bulk update employee grades"""
-        updates = request.data.get('updates', [])
+        serializer = BulkEmployeeGradingUpdateSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        updates = serializer.validated_data['updates']
         
         if not updates:
             return Response(
@@ -1203,39 +1232,44 @@ class EmployeeGradingViewSet(viewsets.ViewSet):
                 updated_count = 0
                 
                 for update in updates:
-                    serializer = EmployeeGradingUpdateSerializer(data=update)
-                    if serializer.is_valid():
-                        employee_id = serializer.validated_data['employee_id']
-                        grading_level = serializer.validated_data['grading_level']
+                    employee_id = update['employee_id']
+                    grade = update.get('grade')
+                    grading_level = update.get('grading_level')
+                    
+                    try:
+                        employee = Employee.objects.get(id=employee_id)
                         
-                        try:
-                            employee = Employee.objects.get(id=employee_id)
+                        changes = []
+                        if grade and employee.grade != grade:
+                            old_grade = employee.grade
+                            employee.grade = grade
+                            changes.append(f"Grade: {old_grade} → {grade}")
+                        
+                        if grading_level and employee.grading_level != grading_level:
+                            old_level = employee.grading_level
+                            employee.grading_level = grading_level
+                            changes.append(f"Grading Level: {old_level} → {grading_level}")
+                        
+                        if changes:
+                            employee.save()
+                            updated_count += 1
                             
-                            if employee.grading_level != grading_level:
-                                old_grading = employee.grading_level
-                                employee.grading_level = grading_level
-                                employee.save()
-                                updated_count += 1
-                                
-                                # Log activity
-                                EmployeeActivity.objects.create(
-                                    employee=employee,
-                                    activity_type='GRADE_CHANGED',
-                                    description=f"Grading level updated from {old_grading} to {grading_level}",
-                                    performed_by=request.user,
-                                    metadata={
-                                        'old_grading_level': old_grading,
-                                        'new_grading_level': grading_level
-                                    }
-                                )
-                                
-                        except Employee.DoesNotExist:
-                            continue
-                
-                return Response({
-                    'message': f'Successfully updated grades for {updated_count} employees',
-                    'updated_count': updated_count
-                })
+                            # Log activity
+                            EmployeeActivity.objects.create(
+                                employee=employee,
+                                activity_type='GRADE_CHANGED',
+                                description=f"Grading updated: {'; '.join(changes)}",
+                                performed_by=request.user,
+                                metadata={'changes': changes}
+                            )
+                            
+                    except Employee.DoesNotExist:
+                        continue
+            
+            return Response({
+                'message': f'Successfully updated grades for {updated_count} employees',
+                'updated_count': updated_count
+            })
         except Exception as e:
             logger.error(f"Bulk grade update failed: {str(e)}")
             return Response(
