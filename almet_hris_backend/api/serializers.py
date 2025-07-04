@@ -1,4 +1,4 @@
-# api/serializers.py - ENHANCED: Complete Employee Management with Grading Integration
+# api/serializers.py - ENHANCED: Complete Employee Management with Bulk Creation
 
 from rest_framework import serializers
 from django.contrib.auth.models import User
@@ -324,6 +324,8 @@ class EmployeeDetailSerializer(serializers.ModelSerializer):
             for emp in reports
         ]
 
+# Update your EmployeeCreateUpdateSerializer in serializers.py
+
 class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
     """Serializer for creating and updating employees with enhanced validation"""
     first_name = serializers.CharField(write_only=True)
@@ -358,16 +360,28 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError("Email already exists.")
         return value
     
-    def validate_grading_level(self, value):
-        """Validate grading level matches position group"""
-        position_group = self.validated_data.get('position_group') or (self.instance.position_group if self.instance else None)
-        if value and position_group:
+    # REMOVE the validate_grading_level method and move logic to validate()
+    # def validate_grading_level(self, value):  # <-- DELETE THIS METHOD
+    
+    def validate(self, data):
+        """Cross-field validation including grading level"""
+        # Validate grading level matches position group
+        grading_level = data.get('grading_level')
+        position_group = data.get('position_group')
+        
+        # If updating, get existing values if not provided
+        if self.instance:
+            if not position_group:
+                position_group = self.instance.position_group
+        
+        if grading_level and position_group:
             expected_prefix = position_group.grading_shorthand
-            if not value.startswith(expected_prefix):
-                raise serializers.ValidationError(
-                    f"Grading level must start with {expected_prefix} for this position group."
-                )
-        return value
+            if not grading_level.startswith(expected_prefix):
+                raise serializers.ValidationError({
+                    'grading_level': f"Grading level must start with {expected_prefix} for this position group."
+                })
+        
+        return data
     
     @transaction.atomic
     def create(self, validated_data):
@@ -478,6 +492,188 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
             )
         
         return employee
+
+
+# NEW: Bulk Employee Creation Serializer
+class BulkEmployeeCreateItemSerializer(serializers.Serializer):
+    """Serializer for a single employee in bulk creation"""
+    employee_id = serializers.CharField(max_length=50)
+    first_name = serializers.CharField(max_length=150)
+    last_name = serializers.CharField(max_length=150)
+    email = serializers.EmailField()
+    date_of_birth = serializers.DateField(required=False, allow_null=True)
+    gender = serializers.ChoiceField(choices=Employee.GENDER_CHOICES, required=False, allow_null=True)
+    address = serializers.CharField(required=False, allow_blank=True)
+    phone = serializers.CharField(max_length=20, required=False, allow_blank=True)
+    emergency_contact = serializers.CharField(required=False, allow_blank=True)
+    
+    # Job Information
+    business_function_id = serializers.IntegerField()
+    department_id = serializers.IntegerField()
+    unit_id = serializers.IntegerField(required=False, allow_null=True)
+    job_function_id = serializers.IntegerField()
+    job_title = serializers.CharField(max_length=200)
+    position_group_id = serializers.IntegerField()
+    grading_level = serializers.CharField(max_length=15, required=False, allow_blank=True)
+    
+    # Employment Details
+    start_date = serializers.DateField()
+    contract_duration = serializers.ChoiceField(choices=Employee.CONTRACT_DURATION_CHOICES)
+    contract_start_date = serializers.DateField(required=False, allow_null=True)
+    line_manager_id = serializers.IntegerField(required=False, allow_null=True)
+    
+    # Additional
+    is_visible_in_org_chart = serializers.BooleanField(default=True)
+    tag_ids = serializers.ListField(child=serializers.IntegerField(), required=False, default=list)
+    notes = serializers.CharField(required=False, allow_blank=True)
+    vacancy_id = serializers.IntegerField(required=False, allow_null=True)
+
+class BulkEmployeeCreateSerializer(serializers.Serializer):
+    """Serializer for bulk employee creation"""
+    employees = serializers.ListField(
+        child=BulkEmployeeCreateItemSerializer(),
+        min_length=1,
+        max_length=1000,
+        help_text="List of employees to create (max 1000)"
+    )
+    
+    def validate_employees(self, value):
+        """Validate that employee IDs and emails are unique within the batch"""
+        employee_ids = []
+        emails = []
+        
+        for i, employee_data in enumerate(value):
+            emp_id = employee_data.get('employee_id')
+            email = employee_data.get('email')
+            
+            # Check for duplicates within the batch
+            if emp_id in employee_ids:
+                raise serializers.ValidationError(
+                    f"Employee ID '{emp_id}' appears multiple times in the batch"
+                )
+            if email in emails:
+                raise serializers.ValidationError(
+                    f"Email '{email}' appears multiple times in the batch"
+                )
+            
+            employee_ids.append(emp_id)
+            emails.append(email)
+            
+            # Check for existing records in database
+            if Employee.objects.filter(employee_id=emp_id).exists():
+                raise serializers.ValidationError(
+                    f"Employee ID '{emp_id}' already exists in database"
+                )
+            if User.objects.filter(email=email).exists():
+                raise serializers.ValidationError(
+                    f"Email '{email}' already exists in database"
+                )
+        
+        return value
+    
+    def validate(self, data):
+        """Cross-validate foreign key relationships"""
+        employees = data.get('employees', [])
+        
+        # Get all referenced IDs for batch validation
+        business_function_ids = set()
+        department_ids = set()
+        unit_ids = set()
+        job_function_ids = set()
+        position_group_ids = set()
+        line_manager_ids = set()
+        tag_ids = set()
+        vacancy_ids = set()
+        
+        for employee_data in employees:
+            business_function_ids.add(employee_data['business_function_id'])
+            department_ids.add(employee_data['department_id'])
+            if employee_data.get('unit_id'):
+                unit_ids.add(employee_data['unit_id'])
+            job_function_ids.add(employee_data['job_function_id'])
+            position_group_ids.add(employee_data['position_group_id'])
+            if employee_data.get('line_manager_id'):
+                line_manager_ids.add(employee_data['line_manager_id'])
+            if employee_data.get('tag_ids'):
+                tag_ids.update(employee_data['tag_ids'])
+            if employee_data.get('vacancy_id'):
+                vacancy_ids.add(employee_data['vacancy_id'])
+        
+        # Validate all foreign keys exist
+        errors = []
+        
+        # Business Functions
+        existing_bf_ids = set(BusinessFunction.objects.filter(
+            id__in=business_function_ids, is_active=True
+        ).values_list('id', flat=True))
+        missing_bf_ids = business_function_ids - existing_bf_ids
+        if missing_bf_ids:
+            errors.append(f"Invalid Business Function IDs: {missing_bf_ids}")
+        
+        # Departments
+        existing_dept_ids = set(Department.objects.filter(
+            id__in=department_ids, is_active=True
+        ).values_list('id', flat=True))
+        missing_dept_ids = department_ids - existing_dept_ids
+        if missing_dept_ids:
+            errors.append(f"Invalid Department IDs: {missing_dept_ids}")
+        
+        # Units
+        if unit_ids:
+            existing_unit_ids = set(Unit.objects.filter(
+                id__in=unit_ids, is_active=True
+            ).values_list('id', flat=True))
+            missing_unit_ids = unit_ids - existing_unit_ids
+            if missing_unit_ids:
+                errors.append(f"Invalid Unit IDs: {missing_unit_ids}")
+        
+        # Job Functions
+        existing_jf_ids = set(JobFunction.objects.filter(
+            id__in=job_function_ids, is_active=True
+        ).values_list('id', flat=True))
+        missing_jf_ids = job_function_ids - existing_jf_ids
+        if missing_jf_ids:
+            errors.append(f"Invalid Job Function IDs: {missing_jf_ids}")
+        
+        # Position Groups
+        existing_pg_ids = set(PositionGroup.objects.filter(
+            id__in=position_group_ids, is_active=True
+        ).values_list('id', flat=True))
+        missing_pg_ids = position_group_ids - existing_pg_ids
+        if missing_pg_ids:
+            errors.append(f"Invalid Position Group IDs: {missing_pg_ids}")
+        
+        # Line Managers
+        if line_manager_ids:
+            existing_lm_ids = set(Employee.objects.filter(
+                id__in=line_manager_ids
+            ).values_list('id', flat=True))
+            missing_lm_ids = line_manager_ids - existing_lm_ids
+            if missing_lm_ids:
+                errors.append(f"Invalid Line Manager IDs: {missing_lm_ids}")
+        
+        # Tags
+        if tag_ids:
+            existing_tag_ids = set(EmployeeTag.objects.filter(
+                id__in=tag_ids, is_active=True
+            ).values_list('id', flat=True))
+            missing_tag_ids = tag_ids - existing_tag_ids
+            if missing_tag_ids:
+                errors.append(f"Invalid Tag IDs: {missing_tag_ids}")
+        
+        # Vacancies
+        if vacancy_ids:
+            existing_vacancy_ids = set(VacantPosition.objects.filter(
+                id__in=vacancy_ids, is_filled=False
+            ).values_list('id', flat=True))
+            missing_vacancy_ids = vacancy_ids - existing_vacancy_ids
+            if missing_vacancy_ids:
+                errors.append(f"Invalid or already filled Vacancy IDs: {missing_vacancy_ids}")
+        
+        if errors:
+            raise serializers.ValidationError(errors)
+        
+        return data
 
 # Bulk Operations Serializers
 class BulkEmployeeUpdateSerializer(serializers.Serializer):
@@ -616,31 +812,37 @@ class EmployeeGradingListSerializer(serializers.ModelSerializer):
             return obj.position_group.get_grading_levels()
         return []
 
-# Organizational Chart Serializers
 class OrgChartNodeSerializer(serializers.ModelSerializer):
-    """Serializer for organizational chart nodes"""
+    """Enhanced serializer for organizational chart nodes"""
     name = serializers.CharField(source='full_name', read_only=True)
     children = serializers.SerializerMethodField()
     status_color = serializers.CharField(source='status.color', read_only=True)
     position_level = serializers.IntegerField(source='position_group.hierarchy_level', read_only=True)
     grading_display = serializers.CharField(source='get_grading_display', read_only=True)
+    department_name = serializers.CharField(source='department.name', read_only=True)
+    business_function_name = serializers.CharField(source='business_function.name', read_only=True)
     
     class Meta:
         model = Employee
         fields = [
             'id', 'employee_id', 'name', 'job_title', 'position_group', 
-            'position_level', 'department', 'business_function', 'profile_image', 
+            'position_level', 'department', 'department_name', 
+            'business_function', 'business_function_name', 'profile_image', 
             'status_color', 'grading_display', 'children'
         ]
     
     def get_children(self, obj):
+        """Get direct reports as children"""
         children = obj.direct_reports.filter(
             status__allows_org_chart=True,
             is_visible_in_org_chart=True,
             is_deleted=False
-        ).order_by('position_group__hierarchy_level', 'employee_id')
+        ).select_related(
+            'status', 'position_group', 'department', 'business_function'
+        ).order_by('position_group__hierarchy_level', 'full_name')
         
         return OrgChartNodeSerializer(children, many=True, context=self.context).data
+
 
 # Employee Visibility Serializer
 class EmployeeOrgChartVisibilitySerializer(serializers.ModelSerializer):
@@ -799,3 +1001,160 @@ class BulkEmployeeGradingUpdateSerializer(serializers.Serializer):
         if not value:
             raise serializers.ValidationError("At least one update is required")
         return value
+
+# Bulk Employee Creation Result Serializers
+class BulkEmployeeCreationResultSerializer(serializers.Serializer):
+    """Serializer for bulk employee creation results"""
+    total_rows = serializers.IntegerField()
+    successful = serializers.IntegerField()
+    failed = serializers.IntegerField()
+    errors = serializers.ListField(child=serializers.CharField())
+    created_employees = serializers.ListField(
+        child=serializers.DictField()
+    )
+    
+class BulkEmployeeCreationSummarySerializer(serializers.Serializer):
+    """Serializer for bulk creation summary"""
+    employee_id = serializers.CharField()
+    name = serializers.CharField()
+    email = serializers.CharField()
+    status = serializers.CharField()
+    
+# Template Download Serializer
+class BulkTemplateDownloadSerializer(serializers.Serializer):
+    """Serializer for template download options"""
+    include_sample_data = serializers.BooleanField(
+        default=True,
+        help_text="Include sample data row in template"
+    )
+    template_type = serializers.ChoiceField(
+        choices=[('basic', 'Basic Template'), ('advanced', 'Advanced Template')],
+        default='basic',
+        help_text="Template complexity level"
+    )
+
+# File Upload Validation Serializer
+class BulkEmployeeFileUploadSerializer(serializers.Serializer):
+    """Serializer for file upload validation"""
+    file = serializers.FileField(
+        help_text="Excel file (.xlsx, .xls) containing employee data"
+    )
+    validate_only = serializers.BooleanField(
+        default=False,
+        help_text="Only validate the file without creating employees"
+    )
+    skip_duplicates = serializers.BooleanField(
+        default=False,
+        help_text="Skip rows with duplicate employee IDs or emails"
+    )
+    
+    def validate_file(self, value):
+        """Validate uploaded file"""
+        if not value.name.endswith(('.xlsx', '.xls')):
+            raise serializers.ValidationError(
+                "Invalid file format. Please upload Excel file (.xlsx or .xls)"
+            )
+        
+        # Check file size (max 10MB)
+        if value.size > 10 * 1024 * 1024:
+            raise serializers.ValidationError(
+                "File too large. Maximum size is 10MB"
+            )
+        
+        return value
+
+# Bulk Operation Progress Serializer
+class BulkOperationProgressSerializer(serializers.Serializer):
+    """Serializer for tracking bulk operation progress"""
+    operation_id = serializers.CharField()
+    status = serializers.ChoiceField(
+        choices=[
+            ('pending', 'Pending'),
+            ('processing', 'Processing'),
+            ('completed', 'Completed'),
+            ('failed', 'Failed')
+        ]
+    )
+    progress_percentage = serializers.IntegerField(min_value=0, max_value=100)
+    current_step = serializers.CharField()
+    total_items = serializers.IntegerField()
+    processed_items = serializers.IntegerField()
+    successful_items = serializers.IntegerField()
+    failed_items = serializers.IntegerField()
+    errors = serializers.ListField(child=serializers.CharField())
+    
+# Enhanced Bulk Employee Template Info Serializer
+class BulkEmployeeTemplateInfoSerializer(serializers.Serializer):
+    """Serializer providing template structure information"""
+    required_fields = serializers.ListField(child=serializers.CharField())
+    optional_fields = serializers.ListField(child=serializers.CharField())
+    field_descriptions = serializers.DictField()
+    validation_rules = serializers.DictField()
+    available_options = serializers.DictField()
+    sample_data = serializers.DictField()
+    
+    def to_representation(self, instance):
+        return {
+            'required_fields': [
+                'Employee ID', 'First Name', 'Last Name', 'Email',
+                'Business Function', 'Department', 'Job Function',
+                'Job Title', 'Position Group', 'Start Date', 'Contract Duration'
+            ],
+            'optional_fields': [
+                'Date of Birth', 'Gender', 'Address', 'Phone', 'Emergency Contact',
+                'Unit', 'Grading Level', 'Contract Start Date', 'Line Manager Employee ID',
+                'Is Visible in Org Chart', 'Tag Names', 'Notes'
+            ],
+            'field_descriptions': {
+                'Employee ID': 'Unique identifier (e.g., HC001)',
+                'First Name': 'Employee first name',
+                'Last Name': 'Employee last name',
+                'Email': 'Unique email address',
+                'Date of Birth': 'Format: YYYY-MM-DD',
+                'Gender': 'MALE or FEMALE',
+                'Business Function': 'Must match exactly from available options',
+                'Department': 'Must exist under selected Business Function',
+                'Unit': 'Must exist under selected Department (optional)',
+                'Job Function': 'Must match exactly from available options',
+                'Job Title': 'Position title',
+                'Position Group': 'Must match exactly from available options',
+                'Grading Level': 'Must be valid for Position Group (e.g., MGR_M)',
+                'Start Date': 'Format: YYYY-MM-DD',
+                'Contract Duration': 'Select from: 3_MONTHS, 6_MONTHS, 1_YEAR, 2_YEARS, 3_YEARS, PERMANENT',
+                'Contract Start Date': 'Format: YYYY-MM-DD (defaults to Start Date)',
+                'Line Manager Employee ID': 'Must be existing employee ID',
+                'Is Visible in Org Chart': 'TRUE or FALSE (default: TRUE)',
+                'Tag Names': 'Comma separated, format TYPE:Name (e.g., SKILL:Python,STATUS:New)',
+                'Notes': 'Additional information'
+            },
+            'validation_rules': {
+                'Employee ID': 'Must be unique across all employees',
+                'Email': 'Must be unique and valid email format',
+                'Dates': 'Must be in YYYY-MM-DD format',
+                'Grading Level': 'Must match position group (e.g., MGR_LD, MGR_LQ, MGR_M, MGR_UQ, MGR_UD)',
+                'Contract Duration': 'Must be one of the predefined options',
+                'Line Manager': 'Must reference existing employee ID',
+                'Department/Unit': 'Must belong to selected Business Function/Department'
+            },
+            'available_options': {
+                'gender': ['MALE', 'FEMALE'],
+                'contract_duration': ['3_MONTHS', '6_MONTHS', '1_YEAR', '2_YEARS', '3_YEARS', 'PERMANENT'],
+                'org_chart_visibility': ['TRUE', 'FALSE'],
+                'tag_types': ['LEAVE', 'STATUS', 'SKILL', 'PROJECT', 'PERFORMANCE', 'OTHER']
+            },
+            'sample_data': {
+                'Employee ID': 'HC001',
+                'First Name': 'John',
+                'Last Name': 'Doe',
+                'Email': 'john.doe@company.com',
+                'Date of Birth': '1990-01-15',
+                'Gender': 'MALE',
+                'Business Function': 'IT',
+                'Department': 'Software Development',
+                'Job Title': 'Senior Software Engineer',
+                'Position Group': 'SENIOR SPECIALIST',
+                'Grading Level': 'M',
+                'Start Date': '2024-01-15',
+                'Contract Duration': 'PERMANENT'
+            }
+        }

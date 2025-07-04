@@ -1,4 +1,4 @@
-# api/urls.py - ENHANCED: Complete URL Configuration with All Endpoints
+# api/urls.py - ENHANCED: Complete URL Configuration with Bulk Employee Creation
 
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
@@ -46,7 +46,7 @@ urlpatterns = [
 
 # API Endpoint Documentation
 """
-ENHANCED HR HEADCOUNT SYSTEM API ENDPOINTS
+ENHANCED HR HEADCOUNT SYSTEM API ENDPOINTS WITH BULK EMPLOYEE CREATION
 
 === AUTHENTICATION ===
 POST   /api/auth/microsoft/                - Microsoft authentication
@@ -91,6 +91,10 @@ POST   /api/employees/                      - Create new employee
 GET    /api/employees/{id}/                 - Get employee details
 PUT    /api/employees/{id}/                 - Update employee
 DELETE /api/employees/{id}/                 - Soft delete employee
+
+# NEW: Bulk Employee Creation
+GET    /api/employees/download_template/    - Download Excel template for bulk creation
+POST   /api/employees/bulk_create/          - Bulk create employees from Excel file
 
 # Line Manager Management
 POST   /api/employees/bulk_update_line_manager/    - Bulk update line manager
@@ -153,6 +157,148 @@ GET    /api/headcount-summaries/latest/     - Get latest summary
 GET    /api/employee-grading/               - List employees with grading info
 POST   /api/employee-grading/bulk_update_grades/ - Bulk update employee grades
 
+=== NEW: BULK EMPLOYEE CREATION WORKFLOW ===
+
+Step 1: Download Template
+GET    /api/employees/download_template/
+- Downloads Excel template with:
+  - Pre-configured headers and validation
+  - Dropdown lists for Business Functions, Departments, etc.
+  - Sample data row
+  - Instructions sheet
+  - Reference sheets with valid values
+  - Data validation rules
+
+Step 2: Fill Template
+Users fill the Excel template with employee data:
+- Required fields: Employee ID, Name, Email, Business Function, Department, etc.
+- Optional fields: DOB, Gender, Unit, Grading Level, Line Manager, etc.
+- Validation occurs in Excel with dropdowns and rules
+
+Step 3: Upload and Create
+POST   /api/employees/bulk_create/
+Content-Type: multipart/form-data
+{
+  "file": <excel_file>
+}
+
+Response Format:
+{
+  "total_rows": 100,
+  "successful": 95,
+  "failed": 5,
+  "errors": [
+    "Row 15: Email john@company.com already exists",
+    "Row 23: Invalid Business Function: InvalidFunc",
+    "Row 45: Missing required field: Job Title"
+  ],
+  "created_employees": [
+    {
+      "employee_id": "HC001",
+      "name": "John Doe", 
+      "email": "john.doe@company.com"
+    },
+    // ... more employees
+  ]
+}
+
+=== BULK EMPLOYEE CREATION FEATURES ===
+
+Template Features:
+✅ Excel template with comprehensive validation
+✅ Dropdown lists for all reference data
+✅ Sample data and instructions
+✅ Field validation and formatting
+✅ Reference sheets with current system data
+✅ Maximum 1000 employees per upload
+
+Validation Features:
+✅ Duplicate detection (within file and database)
+✅ Foreign key validation (departments, positions, etc.)
+✅ Email format validation
+✅ Date format validation (YYYY-MM-DD)
+✅ Grading level validation per position group
+✅ Line manager existence validation
+
+Processing Features:
+✅ Atomic transactions (all or nothing per batch)
+✅ Detailed error reporting with row numbers
+✅ Activity logging for all created employees
+✅ Tag creation and assignment
+✅ Automatic status assignment
+✅ Contract end date calculation
+✅ Grading level auto-assignment
+
+Error Handling:
+✅ Comprehensive validation before processing
+✅ Clear error messages with row numbers
+✅ Partial success reporting
+✅ Transaction rollback on critical errors
+✅ Detailed logging for debugging
+
+=== EXCEL TEMPLATE STRUCTURE ===
+
+Required Fields (marked with *):
+- Employee ID*: Unique identifier (e.g., HC001)
+- First Name*: Employee's first name  
+- Last Name*: Employee's last name
+- Email*: Unique email address
+- Business Function*: Must match from dropdown
+- Department*: Must exist under Business Function
+- Job Function*: Must match from dropdown
+- Job Title*: Position title
+- Position Group*: Must match from dropdown
+- Start Date*: Format YYYY-MM-DD
+- Contract Duration*: From dropdown (3_MONTHS, 6_MONTHS, 1_YEAR, etc.)
+
+Optional Fields:
+- Date of Birth: Format YYYY-MM-DD
+- Gender: MALE or FEMALE
+- Address: Text field
+- Phone: Text field
+- Emergency Contact: Text field
+- Unit: Must exist under Department
+- Grading Level: Must be valid for Position Group (e.g., MGR_M)
+- Contract Start Date: Defaults to Start Date
+- Line Manager Employee ID: Must be existing employee
+- Is Visible in Org Chart: TRUE or FALSE (default TRUE)
+- Tag Names: Comma separated, format TYPE:Name
+- Notes: Additional information
+
+Reference Sheets in Template:
+1. "Business Functions" - Available business functions
+2. "Departments" - Departments by business function  
+3. "Units" - Units by department
+4. "Job Functions" - Available job functions
+5. "Position Groups" - Position groups with grading levels
+6. "Options" - Gender, contract duration, boolean options
+7. "Instructions" - Detailed usage instructions
+
+Data Validations:
+- Dropdown lists for all reference fields
+- Date format validation
+- Email format validation
+- Boolean value validation
+- Text length limits
+
+=== BULK CREATION WORKFLOW EXAMPLE ===
+
+1. User clicks "Bulk Create Employees"
+2. System shows "Download Template" button
+3. User downloads Excel template with:
+   - All current business functions, departments, etc.
+   - Validation rules and dropdowns
+   - Sample data and instructions
+4. User fills template with employee data
+5. User uploads completed template
+6. System validates all data before processing
+7. System creates employees in batches with full validation
+8. System returns detailed results with:
+   - Success count
+   - Error details with row numbers
+   - List of created employees
+9. System logs all activities for audit trail
+
 === ADVANCED FILTERING OPTIONS ===
 
 Employee List Filtering:
@@ -199,7 +345,7 @@ Each position group has shorthand codes with full names:
 Where:
 - LD = Lower Decile
 - LQ = Lower Quartile
-- M = Median
+- M = Median (default if not specified)
 - UQ = Upper Quartile
 - UD = Upper Decile
 
@@ -231,15 +377,6 @@ Default Probation Durations (configurable):
 - 1+ Year Contracts: 90 days
 - Permanent: 0 days (no probation)
 
-=== SOFT DELETE SYSTEM ===
-
-Soft Delete Features:
-- Employees are not permanently deleted, only marked as deleted
-- Soft-deleted employees can be restored
-- Activities are logged for all delete/restore operations
-- Filtering supports including/excluding deleted employees
-- Queries exclude soft-deleted by default
-
 === BULK OPERATIONS ===
 
 Line Manager Operations:
@@ -249,19 +386,7 @@ POST /api/employees/bulk_update_line_manager/
   "line_manager_id": 5
 }
 
-POST /api/employees/update_single_line_manager/
-{
-  "employee_id": 1,
-  "line_manager_id": 5
-}
-
 Tag Operations:
-POST /api/employees/add_tag/
-{
-  "employee_id": 1,
-  "tag_id": 2
-}
-
 POST /api/employees/bulk_add_tag/
 {
   "employee_ids": [1, 2, 3],
@@ -275,22 +400,12 @@ POST /api/employees/update_status/
   "status_id": 2
 }
 
-POST /api/employees/auto_update_status/
-{
-  "employee_ids": [1, 2, 3],  // Optional - if empty, updates all
-  "force_update": false
-}
-
-Soft Delete Operations:
-POST /api/employees/soft_delete/
-{
-  "employee_ids": [1, 2, 3]
-}
-
-POST /api/employees/restore/
-{
-  "employee_ids": [1, 2, 3]
-}
+Bulk Employee Creation:
+POST /api/employees/bulk_create/
+Content-Type: multipart/form-data
+- file: Excel file with employee data
+- Max 1000 employees per upload
+- Comprehensive validation and error reporting
 
 Grade Updates:
 POST /api/employee-grading/bulk_update_grades/
@@ -301,7 +416,7 @@ POST /api/employee-grading/bulk_update_grades/
   ]
 }
 
-=== EXPORT FUNCTIONALITY ===
+=== ENHANCED EXPORT FUNCTIONALITY ===
 
 Enhanced Export with Field Selection:
 POST /api/employees/export_selected/
@@ -334,10 +449,47 @@ Excel Export Features:
 - Proper formatting for dates and numbers
 - Clear, readable layout
 
+=== BULK CREATION ERROR HANDLING ===
+
+Common Validation Errors:
+1. "Employee ID HC001 already exists" - Duplicate employee ID
+2. "Email john@company.com already exists" - Duplicate email
+3. "Invalid Business Function: InvalidFunc" - Non-existent business function
+4. "Invalid Department: HR for Business Function: IT" - Department doesn't belong to business function
+5. "Invalid Grading Level: MGR_XX for Position Group: SPECIALIST" - Invalid grading for position
+6. "Line Manager not found: HC999" - Non-existent line manager
+7. "Invalid Date of Birth format: 15-01-1990 (use YYYY-MM-DD)" - Wrong date format
+8. "Missing required field: Job Title" - Required field empty
+
+Success Response Example:
+{
+  "total_rows": 50,
+  "successful": 47,
+  "failed": 3,
+  "errors": [
+    "Row 12: Email duplicate@company.com already exists",
+    "Row 25: Invalid Business Function: Sales",
+    "Row 38: Missing required field: Start Date"
+  ],
+  "created_employees": [
+    {
+      "employee_id": "HC001",
+      "name": "John Doe",
+      "email": "john.doe@company.com"
+    },
+    {
+      "employee_id": "HC002", 
+      "name": "Jane Smith",
+      "email": "jane.smith@company.com"
+    }
+    // ... 45 more employees
+  ]
+}
+
 === ACTIVITY LOGGING ===
 
 All significant employee changes are automatically logged:
-- Employee creation/updates
+- Employee creation/updates (including bulk creation)
 - Status changes (manual and automatic)
 - Manager changes
 - Position changes
@@ -354,9 +506,22 @@ Activity Types:
 - GRADE_CHANGED, TAG_ADDED, TAG_REMOVED
 - SOFT_DELETED, RESTORED
 
+Bulk Creation Activity Example:
+{
+  "employee": employee_object,
+  "activity_type": "CREATED",
+  "description": "Employee John Doe was created via bulk upload",
+  "performed_by": current_user,
+  "metadata": {
+    "bulk_creation": true,
+    "row_number": 15,
+    "template_file": "employee_bulk_template_2024-01-15.xlsx"
+  }
+}
+
 === VACANCY INTEGRATION ===
 
-When creating an employee, you can link them to a vacant position:
+When creating an employee (single or bulk), you can link them to a vacant position:
 POST /api/employees/
 {
   "vacancy_id": 123,
@@ -369,6 +534,7 @@ POST /api/employees/
   // ... other fields
 }
 
+For bulk creation, include vacancy_id in Excel template or data.
 This will automatically:
 - Mark the vacant position as filled
 - Link the employee to the vacancy
@@ -389,28 +555,70 @@ Headcount Summary:
 GET /api/headcount-summaries/latest/
 Returns latest comprehensive headcount analytics including trends and breakdowns.
 
-=== EMPLOYEE CREATION FLOW ===
+=== BULK CREATION BEST PRACTICES ===
 
-Enhanced Employee Creation:
-1. Status is automatically assigned (ONBOARDING by default)
-2. Grading level is auto-assigned based on position group (defaults to median)
-3. Contract end date is automatically calculated
-4. Full name is auto-generated from first/last name
-5. Activity is logged
-6. Optional vacancy linking
-7. Optional document uploads (not mandatory)
+Template Preparation:
+1. Download latest template to ensure current reference data
+2. Review instructions sheet thoroughly
+3. Use provided sample data as reference
+4. Validate data in Excel before upload
 
-Required Fields:
-- employee_id, first_name, last_name, email
-- business_function, department, job_function, job_title
-- position_group, start_date, contract_duration
-- grading_level (selected from available levels for position)
+Data Entry Guidelines:
+1. Employee IDs must be unique and follow company format
+2. Use exact spelling for Business Functions, Departments, etc.
+3. Date format must be YYYY-MM-DD
+4. Grading levels must match position group requirements
+5. Line managers must exist before assigning them
+6. Remove sample data row before upload
 
-Optional Fields:
-- unit, line_manager, contract_start_date
-- date_of_birth, gender, address, phone
-- emergency_contact, profile_image, notes
-- tag_ids, vacancy_id
+Upload Process:
+1. Start with small batches (10-50 employees) for testing
+2. Review error messages carefully
+3. Fix issues in Excel and re-upload
+4. Monitor activity logs for verification
+5. Export created employees for record keeping
+
+Error Resolution:
+1. Most errors can be fixed by updating Excel data
+2. Reference data issues may require admin setup first
+3. Duplicate errors require choosing different IDs/emails
+4. Date format errors need YYYY-MM-DD format
+5. Missing data errors need all required fields filled
+
+=== SECURITY & PERMISSIONS ===
+
+All endpoints require authentication:
+- JWT token required in Authorization header
+- Microsoft authentication supported
+- Token refresh capability
+- User info endpoint for current user details
+
+Bulk creation permissions:
+- Only authenticated users can download template
+- Only authenticated users can upload employee data
+- All activities are logged with user information
+- File size limits (10MB) and row limits (1000) enforced
+
+=== PERFORMANCE CONSIDERATIONS ===
+
+Bulk Creation Optimization:
+- Batch processing with transaction management
+- Foreign key validation in batches
+- Efficient duplicate detection
+- Memory-efficient Excel processing
+- Progress tracking for large uploads
+
+Template Generation:
+- Cached reference data for performance
+- Optimized Excel generation
+- Minimal memory footprint
+- Fast download response
+
+Database Operations:
+- Atomic transactions for data integrity
+- Bulk insert operations where possible
+- Efficient foreign key lookups
+- Optimized query patterns
 
 === ERROR HANDLING ===
 
@@ -418,14 +626,86 @@ All endpoints include comprehensive error handling:
 - Validation errors with detailed field-specific messages
 - 404 errors for missing resources
 - 400 errors for bad requests
+- 413 errors for file size limits
+- 422 errors for validation failures
 - 500 errors for server issues (logged for debugging)
 - Transaction rollback for bulk operations on error
 
-=== PERMISSIONS ===
+File Upload Specific Errors:
+- Invalid file format (must be .xlsx or .xls)
+- File too large (max 10MB)
+- Too many rows (max 1000)
+- Corrupted Excel file
+- Missing required sheets
+- Invalid data structure
 
-All endpoints require authentication:
-- JWT token required in Authorization header
-- Microsoft authentication supported
-- Token refresh capability
-- User info endpoint for current user details
+=== FRONTEND INTEGRATION GUIDELINES ===
+
+Bulk Employee Creation UI Flow:
+1. Show "Bulk Create Employees" button
+2. Display download template option with instructions
+3. Provide file upload area with validation
+4. Show progress indicator during upload
+5. Display detailed results with success/error counts
+6. Allow download of error report for fixing
+7. Provide link to view created employees
+
+Template Download:
+- Single click download
+- Clear file naming (employee_bulk_template_YYYY-MM-DD.xlsx)
+- Instructions overlay or modal
+
+File Upload:
+- Drag & drop support
+- File type validation
+- Progress bar during upload
+- Cancel option for long uploads
+
+Results Display:
+- Success/failure summary
+- Expandable error list with row numbers
+- List of successfully created employees
+- Option to export results
+- Link to employee list with new employees highlighted
+
+Error Handling:
+- User-friendly error messages
+- Guidance on fixing common issues
+- Option to download corrected template
+- Link to help documentation
+
+=== MAINTENANCE & MONITORING ===
+
+Logging:
+- All bulk operations logged with details
+- Error tracking for common issues
+- Performance metrics for optimization
+- User activity monitoring
+
+Monitoring:
+- Upload success/failure rates
+- Common error patterns
+- Performance bottlenecks
+- File size and row count trends
+
+Maintenance:
+- Regular template updates with current data
+- Error message improvements
+- Performance optimizations
+- Feature enhancements based on usage
+
+Data Cleanup:
+- Failed upload cleanup
+- Temporary file management
+- Activity log archiving
+- Performance data cleanup
+
+This comprehensive bulk employee creation system provides:
+✅ User-friendly Excel template with validation
+✅ Robust data validation and error handling
+✅ Efficient bulk processing with transaction safety
+✅ Detailed reporting and activity logging
+✅ Integration with existing employee management features
+✅ Scalable architecture for large datasets
+✅ Professional error handling and user feedback
 """
