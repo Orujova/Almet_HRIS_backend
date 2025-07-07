@@ -1,4 +1,4 @@
-# api/views.py - ENHANCED: Complete Employee Management with Bulk Creation
+# api/views.py - ENHANCED: Complete Employee Management with Advanced Contract Status Management
 
 from django.shortcuts import render
 from django.utils import timezone
@@ -31,7 +31,8 @@ from django.contrib.auth.models import User
 from .models import (
     Employee, BusinessFunction, Department, Unit, JobFunction, 
     PositionGroup, EmployeeTag, EmployeeDocument, EmployeeStatus,
-    EmployeeActivity, VacantPosition, HeadcountSummary
+    EmployeeActivity, VacantPosition, HeadcountSummary, ContractTypeConfig,
+    ContractStatusManager
 )
 from .serializers import (
     EmployeeListSerializer, EmployeeDetailSerializer, EmployeeCreateUpdateSerializer,
@@ -70,7 +71,7 @@ class StandardResultsSetPagination(PageNumberPagination):
             'results': data
         })
 
-# Microsoft Authentication Views (unchanged)
+# Microsoft Authentication Views
 @swagger_auto_schema(
     method='post',
     operation_description="Authenticate with Microsoft ID token and get JWT tokens",
@@ -354,7 +355,7 @@ class EmployeeSorter:
             return self.queryset.order_by(*order_fields)
         return self.queryset.order_by('employee_id')
 
-# Business Structure ViewSets (unchanged)
+# Business Structure ViewSets
 class BusinessFunctionViewSet(viewsets.ModelViewSet):
     queryset = BusinessFunction.objects.all()
     serializer_class = BusinessFunctionSerializer
@@ -427,7 +428,65 @@ class EmployeeStatusViewSet(viewsets.ModelViewSet):
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
     filterset_fields = ['status_type', 'affects_headcount', 'allows_org_chart', 'is_active']
     search_fields = ['name']
-    ordering = ['name']
+    ordering = ['order', 'name']
+
+# NEW: Contract Type Configuration ViewSet
+class ContractTypeConfigViewSet(viewsets.ModelViewSet):
+    queryset = ContractTypeConfig.objects.all()
+    serializer_class = 'ContractTypeConfigSerializer'  # We'll create this serializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
+    filterset_fields = ['contract_type', 'enable_auto_transitions', 'is_active']
+    search_fields = ['contract_type', 'display_name']
+    ordering = ['contract_type']
+    
+    @action(detail=False, methods=['post'])
+    def create_defaults(self, request):
+        """Create default contract configurations"""
+        configs = ContractTypeConfig.get_or_create_defaults()
+        return Response({
+            'message': f'Successfully created/updated {len(configs)} contract configurations',
+            'configs': [
+                {
+                    'contract_type': config.contract_type,
+                    'display_name': config.display_name,
+                    'onboarding_days': config.onboarding_days,
+                    'probation_days': config.probation_days
+                }
+                for config in configs.values()
+            ]
+        })
+    
+    @action(detail=True, methods=['get'])
+    def test_calculations(self, request, pk=None):
+        """Test status calculations for this contract type"""
+        config = self.get_object()
+        
+        # Get sample employees with this contract type
+        employees = Employee.objects.filter(contract_duration=config.contract_type)[:10]
+        
+        results = []
+        for employee in employees:
+            preview = employee.get_status_preview()
+            results.append({
+                'employee_id': employee.employee_id,
+                'name': employee.full_name,
+                'current_status': preview['current_status'],
+                'required_status': preview['required_status'],
+                'needs_update': preview['needs_update'],
+                'reason': preview['reason'],
+                'days_since_start': preview['days_since_start']
+            })
+        
+        return Response({
+            'contract_type': config.contract_type,
+            'configuration': {
+                'onboarding_days': config.onboarding_days,
+                'probation_days': config.probation_days,
+                'total_days_until_active': config.get_total_days_until_active()
+            },
+            'sample_employees': results
+        })
 
 # Vacant Position ViewSet
 class VacantPositionViewSet(viewsets.ModelViewSet):
@@ -516,7 +575,7 @@ class VacantPositionViewSet(viewsets.ModelViewSet):
             'by_business_function': function_stats
         })
 
-# Main Employee ViewSet with Enhanced Features including Bulk Creation
+# Main Employee ViewSet with Enhanced Features
 class EmployeeViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     pagination_class = StandardResultsSetPagination
@@ -575,7 +634,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         
         return Response(status=status.HTTP_204_NO_CONTENT)
     
-    # NEW: Bulk Employee Creation Actions
+    # Bulk Employee Creation Actions
     @action(detail=False, methods=['get'])
     def download_template(self, request):
         """Download Excel template for bulk employee creation"""
@@ -806,22 +865,6 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             ["• Line Manager must be existing employee"],
             ["• Dates must be in YYYY-MM-DD format"],
             [""],
-            ["GRADING LEVELS BY POSITION"],
-            ["Each position group has 5 grading levels:"],
-            ["• LD = Lower Decile"],
-            ["• LQ = Lower Quartile"],
-            ["• M = Median (default if not specified)"],
-            ["• UQ = Upper Quartile"],
-            ["• UD = Upper Decile"],
-            [""],
-            ["Example: For Manager position, valid grades are:"],
-            ["MGR_LD, MGR_LQ, MGR_M, MGR_UQ, MGR_UD"],
-            [""],
-            ["TAG FORMAT"],
-            ["Tags should be in format TYPE:Name, separated by commas:"],
-            ["• SKILL:Python,STATUS:New Hire,PROJECT:Alpha"],
-            ["• Available types: LEAVE, STATUS, SKILL, PROJECT, PERFORMANCE, OTHER"],
-            [""],
             ["NOTES"],
             ["• Remove the sample data row before uploading"],
             ["• Check the reference sheets for valid values"],
@@ -917,7 +960,9 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         tags_lookup = {tag.name: tag for tag in EmployeeTag.objects.filter(is_active=True)}
         
         # Get default status
-        default_status = EmployeeStatus.objects.filter(name='ONBOARDING').first()
+        default_status = EmployeeStatus.objects.filter(is_default_for_new_employees=True).first()
+        if not default_status:
+            default_status = EmployeeStatus.objects.filter(name='ONBOARDING').first()
         if not default_status:
             default_status = EmployeeStatus.objects.filter(is_active=True).first()
         
@@ -944,6 +989,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                     )
                     
                     # Create employee
+                    # Create employee
                     employee = Employee.objects.create(
                         user=user_obj,
                         employee_id=employee_data['employee_id'],
@@ -965,7 +1011,8 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                         line_manager=employee_data.get('line_manager'),
                         status=employee_data['status'],
                         is_visible_in_org_chart=employee_data.get('is_visible_in_org_chart', True),
-                        notes=employee_data.get('notes', '')
+                        notes=employee_data.get('notes', ''),
+                        created_by=user
                     )
                     
                     # Add tags
@@ -975,7 +1022,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                     # Log activity
                     EmployeeActivity.objects.create(
                         employee=employee,
-                        activity_type='CREATED',
+                        activity_type='BULK_CREATED',
                         description=f"Employee {employee.full_name} was created via bulk upload",
                         performed_by=user,
                         metadata={'bulk_creation': True, 'row_number': index + 2}
@@ -1188,10 +1235,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         
         return data
     
-    
-    
-    
-    # [Previous actions continue here - Line Manager Management Actions]
+    # Line Manager Management Actions
     @action(detail=False, methods=['post'])
     def bulk_update_line_manager(self, request):
         """Bulk update line manager for multiple employees"""
@@ -1663,7 +1707,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
     
     @action(detail=False, methods=['post'])
     def auto_update_status(self, request):
-        """Automatically update employee statuses based on contract and dates"""
+        """Automatically update employee statuses based on contract configuration"""
         serializer = AutoStatusUpdateSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -1673,19 +1717,14 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         
         try:
             if employee_ids:
-                employees = Employee.objects.filter(id__in=employee_ids)
+                updated_count = ContractStatusManager.bulk_update_employee_statuses(employee_ids, force_update)
             else:
-                employees = Employee.objects.all()
-            
-            updated_count = 0
-            for employee in employees:
-                if employee.update_status_automatically() or force_update:
-                    updated_count += 1
+                updated_count = ContractStatusManager.bulk_update_employee_statuses(force_update=force_update)
             
             return Response({
                 'message': f'Successfully auto-updated status for {updated_count} employees',
                 'updated_count': updated_count,
-                'total_processed': employees.count()
+                'force_update': force_update
             })
         except Exception as e:
             logger.error(f"Auto status update failed: {str(e)}")
@@ -1693,6 +1732,96 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 {'error': 'Auto status update failed', 'details': str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+    
+    # NEW: Status Preview Action
+    @action(detail=False, methods=['post'])
+    def preview_status_updates(self, request):
+        """Preview what status updates would happen for selected employees"""
+        employee_ids = request.data.get('employee_ids', [])
+        
+        if employee_ids:
+            employees = Employee.objects.filter(id__in=employee_ids)
+        else:
+            employees = Employee.objects.all()[:100]  # Limit to prevent timeout
+        
+        updates_needed = []
+        current_status = []
+        
+        for employee in employees:
+            preview = employee.get_status_preview()
+            employee_info = {
+                'employee_id': employee.employee_id,
+                'name': employee.full_name,
+                'current_status': preview['current_status'],
+                'required_status': preview['required_status'],
+                'needs_update': preview['needs_update'],
+                'reason': preview['reason'],
+                'contract_type': preview['contract_type'],
+                'days_since_start': preview['days_since_start']
+            }
+            
+            if preview['needs_update']:
+                updates_needed.append(employee_info)
+            else:
+                current_status.append(employee_info)
+        
+        return Response({
+            'total_checked': len(employees),
+            'updates_needed_count': len(updates_needed),
+            'current_status_count': len(current_status),
+            'updates_needed': updates_needed,
+            'current_status': current_status[:10]  # Limit response size
+        })
+    
+    # NEW: Contract Management Actions
+    @action(detail=False, methods=['post'])
+    def extend_contract(self, request):
+        """Extend contract for an employee"""
+        employee_id = request.data.get('employee_id')
+        extension_months = request.data.get('extension_months')
+        
+        if not employee_id or not extension_months:
+            return Response(
+                {'error': 'employee_id and extension_months are required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            employee = Employee.objects.get(id=employee_id)
+            success, message = employee.extend_contract(extension_months, request.user)
+            
+            if success:
+                return Response({
+                    'message': message,
+                    'employee': employee.full_name,
+                    'new_end_date': employee.contract_end_date,
+                    'extensions_count': employee.contract_extensions
+                })
+            else:
+                return Response(
+                    {'error': message},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        except Employee.DoesNotExist:
+            return Response(
+                {'error': 'Employee not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+    
+    @action(detail=False, methods=['get'])
+    def contracts_expiring_soon(self, request):
+        """Get employees whose contracts are expiring soon"""
+        days = int(request.query_params.get('days', 30))
+        
+        expiring_employees = ContractStatusManager.get_contract_expiring_soon(days)
+        
+        serializer = EmployeeListSerializer(expiring_employees, many=True)
+        
+        return Response({
+            'days': days,
+            'count': expiring_employees.count(),
+            'employees': serializer.data
+        })
     
     # Other existing actions...
     @action(detail=False, methods=['get'])
@@ -1749,6 +1878,17 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             contract_end_date__gte=date.today()
         ).count()
         
+        # Status update analysis
+        employees_needing_updates = ContractStatusManager.get_employees_needing_status_update()
+        status_update_stats = {
+            'employees_needing_updates': len(employees_needing_updates),
+            'status_transitions': {}
+        }
+        
+        for update_info in employees_needing_updates:
+            transition = f"{update_info['current_status']} → {update_info['required_status']}"
+            status_update_stats['status_transitions'][transition] = status_update_stats['status_transitions'].get(transition, 0) + 1
+        
         return Response({
             'total_employees': total_employees,
             'active_employees': active_employees,
@@ -1758,7 +1898,8 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             'by_position_group': position_stats,
             'by_contract_duration': contract_stats,
             'recent_hires_30_days': recent_hires,
-            'upcoming_contract_endings_30_days': upcoming_contract_endings
+            'upcoming_contract_endings_30_days': upcoming_contract_endings,
+            'status_update_analysis': status_update_stats
         })
     
     @action(detail=False, methods=['get'])
@@ -1791,6 +1932,18 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         activities = employee.activities.all()[:50]  # Last 50 activities
         serializer = EmployeeActivitySerializer(activities, many=True)
         return Response(serializer.data)
+    
+    @action(detail=True, methods=['get'])
+    def status_preview(self, request, pk=None):
+        """Get status preview for individual employee"""
+        employee = self.get_object()
+        preview = employee.get_status_preview()
+        
+        return Response({
+            'employee_id': employee.employee_id,
+            'employee_name': employee.full_name,
+            'preview': preview
+        })
 
 class EmployeeGradingViewSet(viewsets.ViewSet):
     """ViewSet for employee grading integration"""
@@ -1890,7 +2043,7 @@ class EmployeeGradingViewSet(viewsets.ViewSet):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
-# Organizational Chart ViewSet
+# Enhanced Organizational Chart ViewSet with Full Data
 class OrgChartViewSet(viewsets.ReadOnlyModelViewSet):
     """ViewSet for organizational chart data"""
     permission_classes = [IsAuthenticated]
@@ -1906,18 +2059,64 @@ class OrgChartViewSet(viewsets.ReadOnlyModelViewSet):
             'business_function', 'department', 'position_group', 'status'
         ).order_by('position_group__hierarchy_level', 'employee_id')
     
+    @swagger_auto_schema(
+        method='get',
+        operation_description="Get complete organizational chart tree with all employee data",
+        responses={
+            200: openapi.Response(
+                description="Organizational chart data retrieved successfully",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'org_chart': openapi.Schema(
+                            type=openapi.TYPE_ARRAY,
+                            items=openapi.Schema(
+                                type=openapi.TYPE_OBJECT,
+                                properties={
+                                    'id': openapi.Schema(type=openapi.TYPE_INTEGER),
+                                    'employee_id': openapi.Schema(type=openapi.TYPE_STRING),
+                                    'name': openapi.Schema(type=openapi.TYPE_STRING),
+                                    'job_title': openapi.Schema(type=openapi.TYPE_STRING),
+                                    'position_group': openapi.Schema(type=openapi.TYPE_INTEGER),
+                                    'position_level': openapi.Schema(type=openapi.TYPE_INTEGER),
+                                    'department': openapi.Schema(type=openapi.TYPE_INTEGER),
+                                    'department_name': openapi.Schema(type=openapi.TYPE_STRING),
+                                    'business_function': openapi.Schema(type=openapi.TYPE_INTEGER),
+                                    'business_function_name': openapi.Schema(type=openapi.TYPE_STRING),
+                                    'status_color': openapi.Schema(type=openapi.TYPE_STRING),
+                                    'grading_display': openapi.Schema(type=openapi.TYPE_STRING),
+                                    'children': openapi.Schema(type=openapi.TYPE_ARRAY, items=openapi.Schema(type=openapi.TYPE_OBJECT))
+                                }
+                            )
+                        ),
+                        'total_employees': openapi.Schema(type=openapi.TYPE_INTEGER)
+                    }
+                )
+            )
+        }
+    )
     @action(detail=False, methods=['get'])
     def full_tree(self, request):
         """Get complete organizational chart tree"""
         top_level = self.get_queryset()
         serializer = self.get_serializer(top_level, many=True)
+        
+        # Add total employee count
+        total_employees = Employee.objects.filter(
+            status__allows_org_chart=True,
+            is_visible_in_org_chart=True,
+            is_deleted=False
+        ).count()
+        
         return Response({
             'org_chart': serializer.data,
-            'total_employees': Employee.objects.filter(
-                status__allows_org_chart=True,
-                is_visible_in_org_chart=True,
-                is_deleted=False
-            ).count()
+            'total_employees': total_employees,
+            'generated_at': timezone.now(),
+            'filters_applied': {
+                'allows_org_chart': True,
+                'is_visible': True,
+                'is_deleted': False
+            }
         })
 
 # Headcount Summary ViewSet
@@ -1947,3 +2146,98 @@ class HeadcountSummaryViewSet(viewsets.ReadOnlyModelViewSet):
             summary = HeadcountSummary.generate_summary()
             serializer = self.get_serializer(summary)
             return Response(serializer.data)
+
+# NEW: Contract Status Management ViewSet
+class ContractStatusManagementViewSet(viewsets.ViewSet):
+    """ViewSet for contract status management operations"""
+    permission_classes = [IsAuthenticated]
+    
+    @action(detail=False, methods=['get'])
+    def employees_needing_updates(self, request):
+        """Get employees whose status needs to be updated"""
+        needing_updates = ContractStatusManager.get_employees_needing_status_update()
+        
+        return Response({
+            'count': len(needing_updates),
+            'employees': needing_updates
+        })
+    
+    @action(detail=False, methods=['post'])
+    def bulk_update_all(self, request):
+        """Update all employee statuses based on contract configurations"""
+        force_update = request.data.get('force_update', False)
+        
+        updated_count = ContractStatusManager.bulk_update_employee_statuses(
+            force_update=force_update
+        )
+        
+        return Response({
+            'message': f'Successfully updated {updated_count} employee statuses',
+            'updated_count': updated_count,
+            'force_update': force_update
+        })
+    
+    @action(detail=False, methods=['get'])
+    def contracts_expiring(self, request):
+        """Get contracts expiring within specified days"""
+        days = int(request.query_params.get('days', 30))
+        
+        expiring_contracts = ContractStatusManager.get_contract_expiring_soon(days)
+        serializer = EmployeeListSerializer(expiring_contracts, many=True)
+        
+        return Response({
+            'days': days,
+            'count': expiring_contracts.count(),
+            'employees': serializer.data
+        })
+    
+    @action(detail=False, methods=['get'])
+    def status_analysis(self, request):
+        """Get comprehensive status analysis"""
+        all_employees = Employee.objects.all()
+        
+        analysis = {
+            'total_employees': all_employees.count(),
+            'by_current_status': {},
+            'by_required_status': {},
+            'transitions_needed': {},
+            'by_contract_type': {}
+        }
+        
+        updates_needed = 0
+        
+        for employee in all_employees:
+            preview = employee.get_status_preview()
+            
+            # Count by current status
+            current = preview['current_status']
+            analysis['by_current_status'][current] = analysis['by_current_status'].get(current, 0) + 1
+            
+            # Count by required status
+            required = preview['required_status']
+            analysis['by_required_status'][required] = analysis['by_required_status'].get(required, 0) + 1
+            
+            # Count transitions needed
+            if preview['needs_update']:
+                updates_needed += 1
+                transition = f"{current} → {required}"
+                analysis['transitions_needed'][transition] = analysis['transitions_needed'].get(transition, 0) + 1
+            
+            # Count by contract type
+            contract_type = preview['contract_type']
+            if contract_type not in analysis['by_contract_type']:
+                analysis['by_contract_type'][contract_type] = {
+                    'total': 0,
+                    'needs_update': 0,
+                    'current': 0
+                }
+            
+            analysis['by_contract_type'][contract_type]['total'] += 1
+            if preview['needs_update']:
+                analysis['by_contract_type'][contract_type]['needs_update'] += 1
+            else:
+                analysis['by_contract_type'][contract_type]['current'] += 1
+        
+        analysis['updates_needed_total'] = updates_needed
+        
+        return Response(analysis)# api/views.py - ENHANCED: Complete Employee Management with Advanced Contract Status Management

@@ -1,4 +1,4 @@
-# api/admin.py - ENHANCED: Complete Django Admin with Soft Delete Support
+# api/admin.py - ENHANCED: Complete Django Admin with Contract Status Management
 
 from django.contrib import admin
 from django.utils.html import format_html
@@ -16,7 +16,8 @@ import csv
 from .models import (
     MicrosoftUser, Employee, BusinessFunction, Department, Unit, 
     JobFunction, PositionGroup, EmployeeTag, EmployeeStatus, 
-    EmployeeDocument, EmployeeActivity, VacantPosition, HeadcountSummary
+    EmployeeDocument, EmployeeActivity, VacantPosition, HeadcountSummary,
+    ContractTypeConfig, ContractStatusManager
 )
 
 # Custom admin styling
@@ -115,6 +116,100 @@ class EnhancedUserAdmin(UserAdmin):
         except:
             return format_html('<span style="color: #999;">No Profile</span>')
     employee_profile_link.short_description = 'Employee Profile'
+
+# NEW: Contract Type Configuration Admin
+@admin.register(ContractTypeConfig)
+class ContractTypeConfigAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
+    list_display = (
+        'contract_type', 'display_name', 'onboarding_days', 'probation_days', 
+        'total_days_display', 'auto_transitions_display', 'notify_days_display', 
+        'is_active', 'is_deleted_display'
+    )
+    list_filter = ('enable_auto_transitions', 'transition_to_inactive_on_end', 'is_active', 'is_deleted')
+    search_fields = ('contract_type', 'display_name')
+    ordering = ('contract_type',)
+    readonly_fields = ('created_at', 'updated_at')
+    
+    fieldsets = (
+        ('Basic Information', {
+            'fields': ('contract_type', 'display_name', 'is_active')
+        }),
+        ('Status Duration Configuration', {
+            'fields': (
+                ('onboarding_days', 'probation_days'),
+            ),
+            'description': 'Configure how long each status lasts for this contract type'
+        }),
+        ('Auto-Transition Settings', {
+            'fields': (
+                'enable_auto_transitions',
+                'transition_to_inactive_on_end',
+            )
+        }),
+        ('Notification Settings', {
+            'fields': ('notify_days_before_end',)
+        }),
+        ('Metadata', {
+            'fields': ('created_at', 'updated_at'),
+            'classes': ('collapse',)
+        })
+    )
+    
+    def is_deleted_display(self, obj):
+        if obj.is_deleted:
+            return format_html('<span style="color: red;">✗ Deleted</span>')
+        return format_html('<span style="color: green;">✓ Active</span>')
+    is_deleted_display.short_description = 'Status'
+    
+    def total_days_display(self, obj):
+        total = obj.get_total_days_until_active()
+        return format_html(
+            '<span style="background: #e3f2fd; color: #1976d2; padding: 2px 6px; border-radius: 4px; font-size: 11px;">{} days</span>',
+            total
+        )
+    total_days_display.short_description = 'Total Until Active'
+    
+    def auto_transitions_display(self, obj):
+        if obj.enable_auto_transitions:
+            return format_html('<span style="color: green;">✓ Enabled</span>')
+        return format_html('<span style="color: red;">✗ Disabled</span>')
+    auto_transitions_display.short_description = 'Auto Transitions'
+    
+    def notify_days_display(self, obj):
+        if obj.notify_days_before_end > 0:
+            return format_html(
+                '<span style="color: #f57c00;">{} days before</span>',
+                obj.notify_days_before_end
+            )
+        return format_html('<span style="color: #999;">No notifications</span>')
+    notify_days_display.short_description = 'Notifications'
+    
+    actions = ['create_default_configs', 'test_status_calculations']
+    
+    def create_default_configs(self, request, queryset):
+        """Create default contract configurations"""
+        configs = ContractTypeConfig.get_or_create_defaults()
+        created_count = len([c for c in configs.values() if c])
+        self.message_user(
+            request, 
+            f'Successfully created/updated {created_count} default contract configurations.'
+        )
+    create_default_configs.short_description = 'Create default contract configurations'
+    
+    def test_status_calculations(self, request, queryset):
+        """Test status calculations for selected contract types"""
+        for config in queryset:
+            # Get employees with this contract type
+            employees = Employee.objects.filter(contract_duration=config.contract_type)[:5]
+            results = []
+            
+            for employee in employees:
+                preview = employee.get_status_preview()
+                results.append(f"{employee.employee_id}: {preview['current_status']} → {preview['required_status']} ({preview['reason']})")
+            
+            if results:
+                messages.info(request, f"Contract {config.contract_type} sample results: " + "; ".join(results[:3]))
+    test_status_calculations.short_description = 'Test status calculations for selected contract types'
 
 # Business Structure Admins
 @admin.register(BusinessFunction)
@@ -348,26 +443,42 @@ class EmployeeTagAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
 
 @admin.register(EmployeeStatus)
 class EmployeeStatusAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
-    list_display = ('name', 'status_type', 'color_display', 'affects_headcount', 'allows_org_chart', 'employee_count', 'is_active', 'is_deleted_display')
-    list_filter = ('status_type', 'affects_headcount', 'allows_org_chart', 'is_active', 'is_deleted', 'created_at')
-    search_fields = ('name',)
-    ordering = ('name',)
+    list_display = (
+        'name', 'status_type', 'color_display', 'affects_headcount', 'allows_org_chart', 
+        'auto_transition_display', 'employee_count', 'is_default_display', 'is_active', 'is_deleted_display'
+    )
+    list_filter = (
+        'status_type', 'affects_headcount', 'allows_org_chart', 'auto_transition_enabled', 
+        'is_transitional', 'is_default_for_new_employees', 'is_active', 'is_deleted'
+    )
+    search_fields = ('name', 'description')
+    ordering = ('order', 'name')
     readonly_fields = ('created_at', 'updated_at')
+    
     fieldsets = (
         ('Basic Information', {
-            'fields': ('name', 'status_type', 'color', 'is_active')
+            'fields': ('name', 'status_type', 'color', 'description', 'order', 'is_active')
         }),
         ('Behavior Settings', {
-            'fields': ('affects_headcount', 'allows_org_chart')
-        }),
-        ('Duration Settings', {
             'fields': (
-                'onboarding_duration',
-                ('probation_duration_3m', 'probation_duration_6m'),
-                ('probation_duration_1y', 'probation_duration_2y', 'probation_duration_3y'),
-                'probation_duration_permanent'
+                'affects_headcount', 'allows_org_chart', 
+                'is_transitional', 'is_default_for_new_employees'
+            )
+        }),
+        ('Auto-Transition Settings', {
+            'fields': (
+                'auto_transition_enabled', 'auto_transition_days', 
+                'auto_transition_to', 'transition_priority'
             ),
-            'description': 'Configure automatic status transition durations'
+            'description': 'Configure automatic status transitions'
+        }),
+        ('Notification Settings', {
+            'fields': ('send_notifications', 'notification_template'),
+            'classes': ('collapse',)
+        }),
+        ('System Settings', {
+            'fields': ('is_system_status',),
+            'classes': ('collapse',)
         }),
         ('Metadata', {
             'fields': ('created_at', 'updated_at'),
@@ -388,6 +499,23 @@ class EmployeeStatusAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
         )
     color_display.short_description = 'Color'
     
+    def auto_transition_display(self, obj):
+        if obj.auto_transition_enabled and obj.auto_transition_to:
+            return format_html(
+                '<span style="color: green;">✓ {} days → {}</span>',
+                obj.auto_transition_days or '?', obj.auto_transition_to.name
+            )
+        elif obj.auto_transition_enabled:
+            return format_html('<span style="color: orange;">⚠ Enabled (no target)</span>')
+        return format_html('<span style="color: #999;">✗ Disabled</span>')
+    auto_transition_display.short_description = 'Auto Transition'
+    
+    def is_default_display(self, obj):
+        if obj.is_default_for_new_employees:
+            return format_html('<span style="color: green;">✓ Default</span>')
+        return format_html('<span style="color: #999;">-</span>')
+    is_default_display.short_description = 'Default for New'
+    
     def employee_count(self, obj):
         count = obj.employees.filter(is_deleted=False).count()
         if count > 0:
@@ -398,6 +526,18 @@ class EmployeeStatusAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
             )
         return '0 employees'
     employee_count.short_description = 'Employees'
+    
+    actions = ['create_default_statuses']
+    
+    def create_default_statuses(self, request, queryset):
+        """Create default employee statuses"""
+        statuses = EmployeeStatus.get_or_create_default_statuses()
+        created_count = len([s for s in statuses.values() if s])
+        self.message_user(
+            request, 
+            f'Successfully created/updated {created_count} default statuses.'
+        )
+    create_default_statuses.short_description = 'Create default statuses'
 
 # Employee Document Inline
 class EmployeeDocumentInline(admin.TabularInline):
@@ -417,14 +557,14 @@ class EmployeeActivityInline(admin.TabularInline):
     def has_add_permission(self, request, obj=None):
         return False
 
-# Main Employee Admin
+# Enhanced Employee Admin with Contract Status Management
 @admin.register(Employee)
 class EmployeeAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
     list_display = (
         'employee_id', 'full_name_display', 'email_display', 'position_display', 
         'business_function_display', 'status_display', 'grading_display', 
         'line_manager_display', 'start_date', 'contract_status_display', 
-        'is_visible_in_org_chart', 'is_deleted_display'
+        'status_needs_update_display', 'is_visible_in_org_chart', 'is_deleted_display'
     )
     list_filter = (
         'status', 'business_function', 'department', 'position_group', 
@@ -440,7 +580,7 @@ class EmployeeAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
     filter_horizontal = ('tags',)
     readonly_fields = (
         'full_name', 'contract_end_date', 'years_of_service_display', 
-        'direct_reports_count_display', 'created_at', 'updated_at'
+        'direct_reports_count_display', 'status_preview_display', 'created_at', 'updated_at'
     )
     inlines = [EmployeeDocumentInline, EmployeeActivityInline]
     
@@ -468,7 +608,8 @@ class EmployeeAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
         ('Employment Dates & Contract', {
             'fields': (
                 ('start_date', 'end_date'),
-                ('contract_duration', 'contract_start_date', 'contract_end_date')
+                ('contract_duration', 'contract_start_date', 'contract_end_date'),
+                ('contract_extensions', 'last_extension_date', 'renewal_status')
             )
         }),
         ('Status & Visibility', {
@@ -476,6 +617,10 @@ class EmployeeAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
                 ('status', 'is_visible_in_org_chart'),
                 'tags'
             )
+        }),
+        ('Status Management', {
+            'fields': ('status_preview_display',),
+            'description': 'Current status analysis based on contract configuration'
         }),
         ('Additional Information', {
             'fields': ('notes', 'filled_vacancy'),
@@ -584,6 +729,64 @@ class EmployeeAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
         return format_html('<div style="{}">{}</div>', style, duration_display)
     contract_status_display.short_description = 'Contract'
     
+    def status_needs_update_display(self, obj):
+        """Show if employee status needs updating based on contract"""
+        try:
+            preview = obj.get_status_preview()
+            if preview['needs_update']:
+                return format_html(
+                    '<span style="background: #ff9800; color: white; padding: 2px 6px; border-radius: 4px; font-size: 10px;">⚠ Update Needed</span><br><small style="color: #666;">{} → {}</small>',
+                    preview['current_status'], preview['required_status']
+                )
+            else:
+                return format_html('<span style="color: green;">✓ Current</span>')
+        except:
+            return format_html('<span style="color: #999;">-</span>')
+    status_needs_update_display.short_description = 'Status Check'
+    
+    def status_preview_display(self, obj):
+        """Detailed status preview for admin form"""
+        try:
+            preview = obj.get_status_preview()
+            if preview['needs_update']:
+                return format_html(
+                    '<div style="background: #fff3cd; padding: 10px; border-radius: 4px; border-left: 4px solid #ffc107;">'
+                    '<strong>Status Update Needed</strong><br>'
+                    'Current: <strong>{}</strong><br>'
+                    'Required: <strong>{}</strong><br>'
+                    'Reason: {}<br>'
+                    'Contract: {} ({} days since start)<br>'
+                    'Contract End: {}'
+                    '</div>',
+                    preview['current_status'], 
+                    preview['required_status'],
+                    preview['reason'],
+                    preview['contract_type'],
+                    preview['days_since_start'],
+                    preview.get('contract_end_date', 'N/A')
+                )
+            else:
+                return format_html(
+                    '<div style="background: #d4edda; padding: 10px; border-radius: 4px; border-left: 4px solid #28a745;">'
+                    '<strong>Status is Current</strong><br>'
+                    'Current Status: <strong>{}</strong><br>'
+                    'Reason: {}<br>'
+                    'Contract: {} ({} days since start)'
+                    '</div>',
+                    preview['current_status'],
+                    preview['reason'],
+                    preview['contract_type'],
+                    preview['days_since_start']
+                )
+        except Exception as e:
+            return format_html(
+                '<div style="background: #f8d7da; padding: 10px; border-radius: 4px; border-left: 4px solid #dc3545;">'
+                '<strong>Error calculating status</strong><br>{}'
+                '</div>',
+                str(e)
+            )
+    status_preview_display.short_description = 'Status Preview'
+    
     def years_of_service_display(self, obj):
         return f"{obj.years_of_service} years"
     years_of_service_display.short_description = 'Years of Service'
@@ -602,7 +805,8 @@ class EmployeeAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
     
     actions = [
         'export_employees_csv', 'mark_org_chart_visible', 'mark_org_chart_hidden', 
-        'update_contract_status', 'auto_update_status'
+        'update_contract_status', 'auto_update_status', 'bulk_assign_line_manager',
+        'extend_contracts', 'preview_status_updates'
     ]
     
     def export_employees_csv(self, request, queryset):
@@ -613,10 +817,12 @@ class EmployeeAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
         writer.writerow([
             'Employee ID', 'Name', 'Email', 'Job Title', 'Business Function',
             'Department', 'Unit', 'Position Group', 'Grade', 'Status',
-            'Line Manager', 'Start Date', 'Contract Duration', 'Phone', 'Is Deleted'
+            'Line Manager', 'Start Date', 'Contract Duration', 'Contract End Date',
+            'Status Needs Update', 'Phone', 'Is Deleted'
         ])
         
         for employee in queryset:
+            preview = employee.get_status_preview()
             writer.writerow([
                 employee.employee_id,
                 employee.full_name,
@@ -631,6 +837,8 @@ class EmployeeAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
                 employee.line_manager.full_name if employee.line_manager else '',
                 employee.start_date,
                 employee.get_contract_duration_display(),
+                employee.contract_end_date or '',
+                'Yes' if preview['needs_update'] else 'No',
                 employee.phone or '',
                 'Yes' if employee.is_deleted else 'No'
             ])
@@ -648,21 +856,45 @@ class EmployeeAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
         self.message_user(request, f'Successfully hid {updated} employees from org chart.')
     mark_org_chart_hidden.short_description = 'Hide from org chart'
     
-    def update_contract_status(self, request, queryset):
-        updated_count = 0
-        for employee in queryset:
-            employee.update_contract_status()
-            updated_count += 1
-        self.message_user(request, f'Successfully updated contract status for {updated_count} employees.')
-    update_contract_status.short_description = 'Update contract status'
-    
     def auto_update_status(self, request, queryset):
+        """Auto-update employee statuses based on contract configuration"""
         updated_count = 0
         for employee in queryset:
             if employee.update_status_automatically():
                 updated_count += 1
         self.message_user(request, f'Successfully auto-updated status for {updated_count} employees.')
     auto_update_status.short_description = 'Auto-update status based on contract'
+    
+    def bulk_assign_line_manager(self, request, queryset):
+        """Bulk assign line manager - redirects to change form with pre-filled data"""
+        selected = queryset.values_list('id', flat=True)
+        return redirect(f'/admin/bulk-line-manager/?ids={",".join(map(str, selected))}')
+    bulk_assign_line_manager.short_description = 'Bulk assign line manager'
+    
+    def preview_status_updates(self, request, queryset):
+        """Preview what status updates would happen"""
+        updates_needed = []
+        current_status = []
+        
+        for employee in queryset:
+            preview = employee.get_status_preview()
+            if preview['needs_update']:
+                updates_needed.append(f"{employee.employee_id}: {preview['current_status']} → {preview['required_status']}")
+            else:
+                current_status.append(f"{employee.employee_id}: {preview['current_status']} (current)")
+        
+        if updates_needed:
+            messages.warning(request, f"Status updates needed for {len(updates_needed)} employees: " + "; ".join(updates_needed[:5]))
+        if current_status:
+            messages.info(request, f"{len(current_status)} employees have current status")
+    preview_status_updates.short_description = 'Preview status updates'
+    
+    def extend_contracts(self, request, queryset):
+        """Extend contracts for selected employees"""
+        # This would redirect to a form where admin can specify extension details
+        selected = queryset.values_list('id', flat=True)
+        return redirect(f'/admin/bulk-contract-extension/?ids={",".join(map(str, selected))}')
+    extend_contracts.short_description = 'Extend contracts'
 
 # Employee Activity Admin
 @admin.register(EmployeeActivity)
@@ -870,6 +1102,56 @@ class HeadcountSummaryAdmin(admin.ModelAdmin):
         )
     generate_current_summary.short_description = 'Generate current headcount summary'
 
+# Custom Admin Dashboard Actions
+class HRSystemAdminMixin:
+    """Global HR System admin actions"""
+    
+    def changelist_view(self, request, extra_context=None):
+        extra_context = extra_context or {}
+        
+        # Add contract expiring soon count
+        expiring_soon = ContractStatusManager.get_contract_expiring_soon(30)
+        extra_context['contracts_expiring_soon'] = expiring_soon.count()
+        
+        # Add employees needing status updates
+        needing_updates = ContractStatusManager.get_employees_needing_status_update()
+        extra_context['employees_needing_status_update'] = len(needing_updates)
+        
+        return super().changelist_view(request, extra_context)
+
+# Apply custom styling and functionality to Employee admin
+EmployeeAdmin.__bases__ = EmployeeAdmin.__bases__ + (HRSystemAdminMixin,)
+
+# Global Admin Actions
+def bulk_update_all_employee_statuses(modeladmin, request, queryset):
+    """Global action to update all employee statuses"""
+    updated_count = ContractStatusManager.bulk_update_employee_statuses()
+    modeladmin.message_user(
+        request, 
+        f'Successfully updated statuses for {updated_count} employees based on contract configurations.'
+    )
+bulk_update_all_employee_statuses.short_description = 'Update all employee statuses based on contracts'
+
+def create_all_default_configurations(modeladmin, request, queryset):
+    """Create all default system configurations"""
+    # Create default contract configs
+    contract_configs = ContractTypeConfig.get_or_create_defaults()
+    
+    # Create default statuses
+    statuses = EmployeeStatus.get_or_create_default_statuses()
+    
+    modeladmin.message_user(
+        request, 
+        f'Successfully created default configurations: {len(contract_configs)} contract types, {len(statuses)} statuses.'
+    )
+create_all_default_configurations.short_description = 'Create all default system configurations'
+
+# Add global actions to Employee admin
+EmployeeAdmin.actions.extend([
+    bulk_update_all_employee_statuses,
+    create_all_default_configurations
+])
+
 # Admin customizations
 admin.site.site_header = "Almet HRIS Administration"
 admin.site.site_title = "Almet HRIS Admin"
@@ -890,16 +1172,39 @@ for admin_class in [
     BusinessFunctionAdmin, DepartmentAdmin, UnitAdmin, JobFunctionAdmin,
     PositionGroupAdmin, EmployeeTagAdmin, EmployeeStatusAdmin, EmployeeAdmin,
     EmployeeActivityAdmin, EmployeeDocumentAdmin, VacantPositionAdmin,
-    HeadcountSummaryAdmin
+    HeadcountSummaryAdmin, ContractTypeConfigAdmin
 ]:
     # Add custom styling mixin
-    admin_class.__bases__ = admin_class.__bases__ + (AdminStyleMixin,)# api/admin.py - ENHANCED: Complete Django Admin with Soft Delete Support
+    admin_class.__bases__ = admin_class.__bases__ + (AdminStyleMixin,)
 
-from django.contrib import admin
-from django.utils.html import format_html
-from django.utils import timezone
-from django.urls import reverse
-from django.db.models import Count, Q
-from django.contrib.auth.admin import UserAdmin
-from django.contrib.auth.models import User
-from django.http import HttpResponse
+# Custom admin dashboard
+from django.contrib.admin import AdminSite
+from django.utils.translation import gettext_lazy as _
+
+class HRAdminSite(AdminSite):
+    site_header = "Almet HRIS Administration"
+    site_title = "Almet HRIS Admin"
+    index_title = "HR Management System"
+    
+    def index(self, request, extra_context=None):
+        extra_context = extra_context or {}
+        
+        # Add dashboard statistics
+        total_employees = Employee.objects.count()
+        active_employees = Employee.objects.filter(status__affects_headcount=True).count()
+        contracts_expiring = ContractStatusManager.get_contract_expiring_soon(30).count()
+        status_updates_needed = len(ContractStatusManager.get_employees_needing_status_update())
+        
+        extra_context.update({
+            'dashboard_stats': {
+                'total_employees': total_employees,
+                'active_employees': active_employees,
+                'contracts_expiring_soon': contracts_expiring,
+                'status_updates_needed': status_updates_needed
+            }
+        })
+        
+        return super().index(request, extra_context)
+
+# Replace default admin site
+# admin.site = HRAdminSite(name='admin')

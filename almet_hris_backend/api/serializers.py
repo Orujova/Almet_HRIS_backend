@@ -1,4 +1,4 @@
-# api/serializers.py - ENHANCED: Complete Employee Management with Bulk Creation
+# api/serializers.py - ENHANCED: Complete Employee Management with Contract Status Management
 
 from rest_framework import serializers
 from django.contrib.auth.models import User
@@ -8,7 +8,7 @@ from datetime import date, timedelta
 from .models import (
     Employee, BusinessFunction, Department, Unit, JobFunction,
     PositionGroup, EmployeeTag, EmployeeStatus, EmployeeDocument,
-    VacantPosition, EmployeeActivity, HeadcountSummary
+    VacantPosition, EmployeeActivity, HeadcountSummary, ContractTypeConfig
 )
 import logging
 
@@ -83,7 +83,6 @@ class JobFunctionSerializer(serializers.ModelSerializer):
     def get_employee_count(self, obj):
         return obj.employees.filter(status__affects_headcount=True).count()
 
-# Enhanced Position Group Serializer with Grading Integration
 class PositionGroupSerializer(serializers.ModelSerializer):
     display_name = serializers.CharField(source='get_name_display', read_only=True)
     grading_levels = serializers.SerializerMethodField()
@@ -104,7 +103,6 @@ class PositionGroupSerializer(serializers.ModelSerializer):
     def get_employee_count(self, obj):
         return obj.employees.filter(status__affects_headcount=True).count()
 
-# Employee Tag Serializer
 class EmployeeTagSerializer(serializers.ModelSerializer):
     employee_count = serializers.SerializerMethodField()
     
@@ -115,22 +113,44 @@ class EmployeeTagSerializer(serializers.ModelSerializer):
     def get_employee_count(self, obj):
         return obj.employees.filter(status__affects_headcount=True).count()
 
-# Employee Status Serializer with Enhanced Features
 class EmployeeStatusSerializer(serializers.ModelSerializer):
     employee_count = serializers.SerializerMethodField()
+    auto_transition_to_name = serializers.CharField(source='auto_transition_to.name', read_only=True)
     
     class Meta:
         model = EmployeeStatus
         fields = [
-            'id', 'name', 'status_type', 'color', 'affects_headcount', 
-            'allows_org_chart', 'is_active', 'employee_count', 'created_at',
-            'onboarding_duration', 'probation_duration_3m', 'probation_duration_6m',
-            'probation_duration_1y', 'probation_duration_2y', 'probation_duration_3y',
-            'probation_duration_permanent'
+            'id', 'name', 'status_type', 'color', 'description', 'order', 
+            'affects_headcount', 'allows_org_chart', 
+            'auto_transition_enabled', 'auto_transition_days', 'auto_transition_to', 'auto_transition_to_name',
+            'is_transitional', 'transition_priority',
+            'send_notifications', 'notification_template',
+            'is_system_status', 'is_default_for_new_employees',
+            'is_active', 'employee_count', 'created_at'
         ]
     
     def get_employee_count(self, obj):
         return obj.employees.count()
+
+# NEW: Contract Type Configuration Serializer
+class ContractTypeConfigSerializer(serializers.ModelSerializer):
+    total_days_until_active = serializers.SerializerMethodField()
+    employee_count = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = ContractTypeConfig
+        fields = [
+            'id', 'contract_type', 'display_name', 
+            'onboarding_days', 'probation_days', 'total_days_until_active',
+            'enable_auto_transitions', 'transition_to_inactive_on_end',
+            'notify_days_before_end', 'employee_count', 'is_active', 'created_at'
+        ]
+    
+    def get_total_days_until_active(self, obj):
+        return obj.get_total_days_until_active()
+    
+    def get_employee_count(self, obj):
+        return Employee.objects.filter(contract_duration=obj.contract_type).count()
 
 # Vacant Position Serializers
 class VacantPositionListSerializer(serializers.ModelSerializer):
@@ -216,9 +236,8 @@ class EmployeeActivitySerializer(serializers.ModelSerializer):
             'performed_by', 'performed_by_name', 'metadata', 'created_at'
         ]
 
-# Main Employee Serializers
+# Enhanced Employee List Serializer with Contract Status Integration
 class EmployeeListSerializer(serializers.ModelSerializer):
-    """Enhanced serializer for employee list views with grading integration"""
     name = serializers.CharField(source='full_name', read_only=True)
     email = serializers.CharField(source='user.email', read_only=True)
     business_function_name = serializers.CharField(source='business_function.name', read_only=True)
@@ -237,8 +256,9 @@ class EmployeeListSerializer(serializers.ModelSerializer):
     current_status_display = serializers.ReadOnlyField()
     contract_duration_display = serializers.CharField(source='get_contract_duration_display', read_only=True)
     grading_display = serializers.CharField(source='get_grading_display', read_only=True)
-    contract_end_date = serializers.DateField(read_only=True)
+    renewal_status_display = serializers.CharField(source='get_renewal_status_display', read_only=True)
     direct_reports_count = serializers.SerializerMethodField()
+    status_needs_update = serializers.SerializerMethodField()
     
     class Meta:
         model = Employee
@@ -248,9 +268,10 @@ class EmployeeListSerializer(serializers.ModelSerializer):
             'job_function_name', 'job_title', 'position_group_name', 'position_group_level',
             'grading_level', 'grading_display', 'start_date', 'end_date',
             'contract_duration', 'contract_duration_display', 'contract_start_date', 'contract_end_date',
+            'contract_extensions', 'last_extension_date', 'renewal_status', 'renewal_status_display',
             'line_manager_name', 'line_manager_hc_number', 'status_name', 'status_color',
             'tag_names', 'years_of_service', 'current_status_display', 'is_visible_in_org_chart',
-            'direct_reports_count', 'created_at', 'updated_at'
+            'direct_reports_count', 'status_needs_update', 'created_at', 'updated_at'
         ]
     
     def get_tag_names(self, obj):
@@ -266,6 +287,14 @@ class EmployeeListSerializer(serializers.ModelSerializer):
     
     def get_direct_reports_count(self, obj):
         return obj.get_direct_reports_count()
+    
+    def get_status_needs_update(self, obj):
+        """Check if employee status needs updating based on contract"""
+        try:
+            preview = obj.get_status_preview()
+            return preview['needs_update']
+        except:
+            return False
 
 class EmployeeDetailSerializer(serializers.ModelSerializer):
     """Detailed employee serializer for individual views"""
@@ -293,6 +322,9 @@ class EmployeeDetailSerializer(serializers.ModelSerializer):
     years_of_service = serializers.ReadOnlyField()
     grading_display = serializers.CharField(source='get_grading_display', read_only=True)
     contract_duration_display = serializers.CharField(source='get_contract_duration_display', read_only=True)
+    
+    # Contract status analysis
+    status_preview = serializers.SerializerMethodField()
     
     # Vacancy information
     filled_vacancy_detail = VacantPositionListSerializer(source='filled_vacancy', read_only=True)
@@ -323,8 +355,13 @@ class EmployeeDetailSerializer(serializers.ModelSerializer):
             }
             for emp in reports
         ]
-
-# Update your EmployeeCreateUpdateSerializer in serializers.py
+    
+    def get_status_preview(self, obj):
+        """Get status preview for this employee"""
+        try:
+            return obj.get_status_preview()
+        except:
+            return None
 
 class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
     """Serializer for creating and updating employees with enhanced validation"""
@@ -336,7 +373,7 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Employee
-        exclude = ['user', 'full_name', 'tags', 'filled_vacancy', 'status']  # Status auto-assigned
+        exclude = ['user', 'full_name', 'tags', 'filled_vacancy', 'status', 'created_by', 'updated_by']
     
     def validate_employee_id(self, value):
         if self.instance:
@@ -359,9 +396,6 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
             if User.objects.filter(email=value).exists():
                 raise serializers.ValidationError("Email already exists.")
         return value
-    
-    # REMOVE the validate_grading_level method and move logic to validate()
-    # def validate_grading_level(self, value):  # <-- DELETE THIS METHOD
     
     def validate(self, data):
         """Cross-field validation including grading level"""
@@ -402,12 +436,27 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
         
         # Create employee
         validated_data['user'] = user
+        validated_data['created_by'] = self.context['request'].user
+        
         if vacancy_id:
             validated_data['_vacancy_id'] = vacancy_id
         
         # Set contract_start_date to start_date if not provided
         if not validated_data.get('contract_start_date'):
             validated_data['contract_start_date'] = validated_data.get('start_date')
+        
+        # Set default values for new fields
+        if 'contract_extensions' not in validated_data:
+            validated_data['contract_extensions'] = 0
+        if 'renewal_status' not in validated_data:
+            if validated_data.get('contract_duration') == 'PERMANENT':
+                validated_data['renewal_status'] = 'NOT_APPLICABLE'
+            else:
+                validated_data['renewal_status'] = 'PENDING'
+        if 'notes' not in validated_data:
+            validated_data['notes'] = ''
+        if 'grading_level' not in validated_data:
+            validated_data['grading_level'] = ''
         
         employee = super().create(validated_data)
         
@@ -464,6 +513,9 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
         if 'grading_level' in validated_data and validated_data['grading_level'] != instance.grading_level:
             changes.append(f"Grading level changed from {instance.grading_level} to {validated_data['grading_level']}")
         
+        # Set updated_by
+        validated_data['updated_by'] = self.context['request'].user
+        
         # Update employee
         employee = super().update(instance, validated_data)
         
@@ -493,8 +545,7 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
         
         return employee
 
-
-# NEW: Bulk Employee Creation Serializer
+# Bulk Employee Creation Serializers
 class BulkEmployeeCreateItemSerializer(serializers.Serializer):
     """Serializer for a single employee in bulk creation"""
     employee_id = serializers.CharField(max_length=50)
@@ -570,110 +621,6 @@ class BulkEmployeeCreateSerializer(serializers.Serializer):
                 )
         
         return value
-    
-    def validate(self, data):
-        """Cross-validate foreign key relationships"""
-        employees = data.get('employees', [])
-        
-        # Get all referenced IDs for batch validation
-        business_function_ids = set()
-        department_ids = set()
-        unit_ids = set()
-        job_function_ids = set()
-        position_group_ids = set()
-        line_manager_ids = set()
-        tag_ids = set()
-        vacancy_ids = set()
-        
-        for employee_data in employees:
-            business_function_ids.add(employee_data['business_function_id'])
-            department_ids.add(employee_data['department_id'])
-            if employee_data.get('unit_id'):
-                unit_ids.add(employee_data['unit_id'])
-            job_function_ids.add(employee_data['job_function_id'])
-            position_group_ids.add(employee_data['position_group_id'])
-            if employee_data.get('line_manager_id'):
-                line_manager_ids.add(employee_data['line_manager_id'])
-            if employee_data.get('tag_ids'):
-                tag_ids.update(employee_data['tag_ids'])
-            if employee_data.get('vacancy_id'):
-                vacancy_ids.add(employee_data['vacancy_id'])
-        
-        # Validate all foreign keys exist
-        errors = []
-        
-        # Business Functions
-        existing_bf_ids = set(BusinessFunction.objects.filter(
-            id__in=business_function_ids, is_active=True
-        ).values_list('id', flat=True))
-        missing_bf_ids = business_function_ids - existing_bf_ids
-        if missing_bf_ids:
-            errors.append(f"Invalid Business Function IDs: {missing_bf_ids}")
-        
-        # Departments
-        existing_dept_ids = set(Department.objects.filter(
-            id__in=department_ids, is_active=True
-        ).values_list('id', flat=True))
-        missing_dept_ids = department_ids - existing_dept_ids
-        if missing_dept_ids:
-            errors.append(f"Invalid Department IDs: {missing_dept_ids}")
-        
-        # Units
-        if unit_ids:
-            existing_unit_ids = set(Unit.objects.filter(
-                id__in=unit_ids, is_active=True
-            ).values_list('id', flat=True))
-            missing_unit_ids = unit_ids - existing_unit_ids
-            if missing_unit_ids:
-                errors.append(f"Invalid Unit IDs: {missing_unit_ids}")
-        
-        # Job Functions
-        existing_jf_ids = set(JobFunction.objects.filter(
-            id__in=job_function_ids, is_active=True
-        ).values_list('id', flat=True))
-        missing_jf_ids = job_function_ids - existing_jf_ids
-        if missing_jf_ids:
-            errors.append(f"Invalid Job Function IDs: {missing_jf_ids}")
-        
-        # Position Groups
-        existing_pg_ids = set(PositionGroup.objects.filter(
-            id__in=position_group_ids, is_active=True
-        ).values_list('id', flat=True))
-        missing_pg_ids = position_group_ids - existing_pg_ids
-        if missing_pg_ids:
-            errors.append(f"Invalid Position Group IDs: {missing_pg_ids}")
-        
-        # Line Managers
-        if line_manager_ids:
-            existing_lm_ids = set(Employee.objects.filter(
-                id__in=line_manager_ids
-            ).values_list('id', flat=True))
-            missing_lm_ids = line_manager_ids - existing_lm_ids
-            if missing_lm_ids:
-                errors.append(f"Invalid Line Manager IDs: {missing_lm_ids}")
-        
-        # Tags
-        if tag_ids:
-            existing_tag_ids = set(EmployeeTag.objects.filter(
-                id__in=tag_ids, is_active=True
-            ).values_list('id', flat=True))
-            missing_tag_ids = tag_ids - existing_tag_ids
-            if missing_tag_ids:
-                errors.append(f"Invalid Tag IDs: {missing_tag_ids}")
-        
-        # Vacancies
-        if vacancy_ids:
-            existing_vacancy_ids = set(VacantPosition.objects.filter(
-                id__in=vacancy_ids, is_filled=False
-            ).values_list('id', flat=True))
-            missing_vacancy_ids = vacancy_ids - existing_vacancy_ids
-            if missing_vacancy_ids:
-                errors.append(f"Invalid or already filled Vacancy IDs: {missing_vacancy_ids}")
-        
-        if errors:
-            raise serializers.ValidationError(errors)
-        
-        return data
 
 # Bulk Operations Serializers
 class BulkEmployeeUpdateSerializer(serializers.Serializer):
@@ -773,7 +720,7 @@ class BulkEmployeeTagOperationSerializer(serializers.Serializer):
             raise serializers.ValidationError("Tag not found.")
         return value
 
-# Enhanced Grading Serializers
+# Grading Serializers
 class EmployeeGradingUpdateSerializer(serializers.Serializer):
     """Serializer for updating employee grading information"""
     employee_id = serializers.IntegerField()
@@ -812,8 +759,22 @@ class EmployeeGradingListSerializer(serializers.ModelSerializer):
             return obj.position_group.get_grading_levels()
         return []
 
+class BulkEmployeeGradingUpdateSerializer(serializers.Serializer):
+    """Serializer for bulk updating employee grades"""
+    updates = serializers.ListField(
+        child=EmployeeGradingUpdateSerializer(),
+        help_text="List of employee grading updates",
+        allow_empty=False
+    )
+    
+    def validate_updates(self, value):
+        if not value:
+            raise serializers.ValidationError("At least one update is required")
+        return value
+
+# Enhanced Organizational Chart Serializer
 class OrgChartNodeSerializer(serializers.ModelSerializer):
-    """Enhanced serializer for organizational chart nodes"""
+    """Enhanced serializer for organizational chart nodes with full data"""
     name = serializers.CharField(source='full_name', read_only=True)
     children = serializers.SerializerMethodField()
     status_color = serializers.CharField(source='status.color', read_only=True)
@@ -842,7 +803,6 @@ class OrgChartNodeSerializer(serializers.ModelSerializer):
         ).order_by('position_group__hierarchy_level', 'full_name')
         
         return OrgChartNodeSerializer(children, many=True, context=self.context).data
-
 
 # Employee Visibility Serializer
 class EmployeeOrgChartVisibilitySerializer(serializers.ModelSerializer):
@@ -887,7 +847,7 @@ class EmployeeSearchSerializer(serializers.ModelSerializer):
             'department_name', 'position_group_name', 'status_name', 'status_color'
         ]
 
-# Contract Expiry Serializer
+# Contract Management Serializers
 class ContractExpirySerializer(serializers.ModelSerializer):
     """Serializer for contract expiry tracking"""
     name = serializers.CharField(source='full_name', read_only=True)
@@ -895,13 +855,14 @@ class ContractExpirySerializer(serializers.ModelSerializer):
     department_name = serializers.CharField(source='department.name', read_only=True)
     position_group_name = serializers.CharField(source='position_group.get_name_display', read_only=True)
     days_until_expiry = serializers.SerializerMethodField()
+    status_needs_update = serializers.SerializerMethodField()
     
     class Meta:
         model = Employee
         fields = [
             'id', 'employee_id', 'name', 'job_title', 'business_function_name',
             'department_name', 'position_group_name', 'contract_duration',
-            'contract_end_date', 'days_until_expiry'
+            'contract_end_date', 'days_until_expiry', 'status_needs_update'
         ]
     
     def get_days_until_expiry(self, obj):
@@ -909,6 +870,13 @@ class ContractExpirySerializer(serializers.ModelSerializer):
             delta = obj.contract_end_date - date.today()
             return delta.days
         return None
+    
+    def get_status_needs_update(self, obj):
+        try:
+            preview = obj.get_status_preview()
+            return preview['needs_update']
+        except:
+            return False
 
 # Soft Delete Operations
 class SoftDeleteSerializer(serializers.Serializer):
@@ -988,19 +956,72 @@ class AutoStatusUpdateSerializer(serializers.Serializer):
         default=False,
         help_text="Force update even if status appears correct"
     )
+
+# NEW: Contract Management Serializers
+class ContractExtensionSerializer(serializers.Serializer):
+    """Serializer for extending employee contracts"""
+    employee_id = serializers.IntegerField()
+    extension_months = serializers.IntegerField(min_value=1, max_value=36)
+    reason = serializers.CharField(max_length=500, required=False)
     
-class BulkEmployeeGradingUpdateSerializer(serializers.Serializer):
-    """Serializer for bulk updating employee grades"""
-    updates = serializers.ListField(
-        child=EmployeeGradingUpdateSerializer(),
-        help_text="List of employee grading updates",
-        allow_empty=False
-    )
-    
-    def validate_updates(self, value):
-        if not value:
-            raise serializers.ValidationError("At least one update is required")
+    def validate_employee_id(self, value):
+        try:
+            employee = Employee.objects.get(id=value)
+            if employee.contract_duration == 'PERMANENT':
+                raise serializers.ValidationError("Cannot extend permanent contracts")
+            if not employee.contract_end_date:
+                raise serializers.ValidationError("Employee has no contract end date to extend")
+        except Employee.DoesNotExist:
+            raise serializers.ValidationError("Employee not found.")
         return value
+
+class BulkContractExtensionSerializer(serializers.Serializer):
+    """Serializer for bulk contract extensions"""
+    employee_ids = serializers.ListField(child=serializers.IntegerField())
+    extension_months = serializers.IntegerField(min_value=1, max_value=36)
+    reason = serializers.CharField(max_length=500, required=False)
+    
+    def validate_employee_ids(self, value):
+        if not value:
+            raise serializers.ValidationError("At least one employee ID is required.")
+        
+        # Check all employees exist and can be extended
+        employees = Employee.objects.filter(id__in=value)
+        if employees.count() != len(value):
+            raise serializers.ValidationError("Some employee IDs do not exist.")
+        
+        permanent_contracts = employees.filter(contract_duration='PERMANENT')
+        if permanent_contracts.exists():
+            permanent_ids = list(permanent_contracts.values_list('employee_id', flat=True))
+            raise serializers.ValidationError(f"Cannot extend permanent contracts: {permanent_ids}")
+        
+        no_end_date = employees.filter(contract_end_date__isnull=True)
+        if no_end_date.exists():
+            no_end_ids = list(no_end_date.values_list('employee_id', flat=True))
+            raise serializers.ValidationError(f"Employees have no contract end date: {no_end_ids}")
+        
+        return value
+
+# NEW: Status Preview Serializers
+class StatusPreviewSerializer(serializers.Serializer):
+    """Serializer for status preview data"""
+    employee_id = serializers.CharField()
+    name = serializers.CharField()
+    current_status = serializers.CharField()
+    required_status = serializers.CharField()
+    needs_update = serializers.BooleanField()
+    reason = serializers.CharField()
+    contract_type = serializers.CharField()
+    days_since_start = serializers.IntegerField()
+    contract_end_date = serializers.DateField(allow_null=True)
+
+class BulkStatusPreviewSerializer(serializers.Serializer):
+    """Serializer for bulk status preview operations"""
+    employee_ids = serializers.ListField(
+        child=serializers.IntegerField(),
+        required=False,
+        help_text="Employee IDs to check. If empty, checks all employees."
+    )
 
 # Bulk Employee Creation Result Serializers
 class BulkEmployeeCreationResultSerializer(serializers.Serializer):
@@ -1012,14 +1033,14 @@ class BulkEmployeeCreationResultSerializer(serializers.Serializer):
     created_employees = serializers.ListField(
         child=serializers.DictField()
     )
-    
+
 class BulkEmployeeCreationSummarySerializer(serializers.Serializer):
     """Serializer for bulk creation summary"""
     employee_id = serializers.CharField()
     name = serializers.CharField()
     email = serializers.CharField()
     status = serializers.CharField()
-    
+
 # Template Download Serializer
 class BulkTemplateDownloadSerializer(serializers.Serializer):
     """Serializer for template download options"""
@@ -1082,7 +1103,28 @@ class BulkOperationProgressSerializer(serializers.Serializer):
     successful_items = serializers.IntegerField()
     failed_items = serializers.IntegerField()
     errors = serializers.ListField(child=serializers.CharField())
-    
+
+# Enhanced Contract Status Management Serializers
+class ContractStatusAnalysisSerializer(serializers.Serializer):
+    """Serializer for contract status analysis"""
+    total_employees = serializers.IntegerField()
+    by_current_status = serializers.DictField()
+    by_required_status = serializers.DictField()
+    transitions_needed = serializers.DictField()
+    by_contract_type = serializers.DictField()
+    updates_needed_total = serializers.IntegerField()
+
+class EmployeeStatusTransitionSerializer(serializers.Serializer):
+    """Serializer for individual employee status transitions"""
+    employee_id = serializers.CharField()
+    employee_name = serializers.CharField()
+    current_status = serializers.CharField()
+    required_status = serializers.CharField()
+    reason = serializers.CharField()
+    days_since_start = serializers.IntegerField()
+    contract_type = serializers.CharField()
+    needs_update = serializers.BooleanField()
+
 # Enhanced Bulk Employee Template Info Serializer
 class BulkEmployeeTemplateInfoSerializer(serializers.Serializer):
     """Serializer providing template structure information"""
@@ -1153,8 +1195,101 @@ class BulkEmployeeTemplateInfoSerializer(serializers.Serializer):
                 'Department': 'Software Development',
                 'Job Title': 'Senior Software Engineer',
                 'Position Group': 'SENIOR SPECIALIST',
-                'Grading Level': 'M',
+                'Grading Level': 'SS_M',
                 'Start Date': '2024-01-15',
                 'Contract Duration': 'PERMANENT'
             }
         }
+
+# NEW: Contract Configuration Management Serializers
+class ContractConfigurationSerializer(serializers.Serializer):
+    """Serializer for contract configuration management"""
+    contract_type = serializers.CharField()
+    onboarding_days = serializers.IntegerField(min_value=0, max_value=365)
+    probation_days = serializers.IntegerField(min_value=0, max_value=365)
+    enable_auto_transitions = serializers.BooleanField()
+    notify_days_before_end = serializers.IntegerField(min_value=0, max_value=365)
+
+class BulkContractConfigurationUpdateSerializer(serializers.Serializer):
+    """Serializer for bulk contract configuration updates"""
+    configurations = serializers.ListField(
+        child=ContractConfigurationSerializer(),
+        min_length=1
+    )
+
+# Statistics and Analytics Serializers
+class EmployeeStatisticsSerializer(serializers.Serializer):
+    """Comprehensive employee statistics serializer"""
+    total_employees = serializers.IntegerField()
+    active_employees = serializers.IntegerField()
+    inactive_employees = serializers.IntegerField()
+    by_status = serializers.DictField()
+    by_business_function = serializers.DictField()
+    by_position_group = serializers.DictField()
+    by_contract_duration = serializers.DictField()
+    recent_hires_30_days = serializers.IntegerField()
+    upcoming_contract_endings_30_days = serializers.IntegerField()
+    status_update_analysis = serializers.DictField()
+
+class ContractExpiryAnalysisSerializer(serializers.Serializer):
+    """Contract expiry analysis serializer"""
+    days = serializers.IntegerField()
+    count = serializers.IntegerField()
+    employees = ContractExpirySerializer(many=True)
+
+# Advanced Employee Search and Filter Serializers
+class AdvancedEmployeeFilterSerializer(serializers.Serializer):
+    """Advanced filtering options for employees"""
+    search = serializers.CharField(required=False)
+    status = serializers.ListField(child=serializers.CharField(), required=False)
+    business_function = serializers.ListField(child=serializers.IntegerField(), required=False)
+    department = serializers.ListField(child=serializers.IntegerField(), required=False)
+    position_group = serializers.ListField(child=serializers.IntegerField(), required=False)
+    line_manager = serializers.ListField(child=serializers.IntegerField(), required=False)
+    tags = serializers.ListField(child=serializers.IntegerField(), required=False)
+    contract_duration = serializers.ListField(child=serializers.CharField(), required=False)
+    start_date_from = serializers.DateField(required=False)
+    start_date_to = serializers.DateField(required=False)
+    active_only = serializers.BooleanField(required=False)
+    org_chart_visible = serializers.BooleanField(required=False)
+    include_deleted = serializers.BooleanField(required=False)
+    status_needs_update = serializers.BooleanField(required=False)
+
+class EmployeeSortingSerializer(serializers.Serializer):
+    """Employee sorting options"""
+    ordering = serializers.ListField(
+        child=serializers.CharField(),
+        required=False,
+        help_text="List of fields to sort by. Prefix with '-' for descending order."
+    )
+
+# Line Manager Analysis Serializers
+class LineManagerAnalysisSerializer(serializers.Serializer):
+    """Line manager analysis and potential managers"""
+    id = serializers.IntegerField()
+    employee_id = serializers.CharField()
+    name = serializers.CharField()
+    job_title = serializers.CharField()
+    position_group = serializers.CharField()
+    department = serializers.CharField()
+    direct_reports_count = serializers.IntegerField()
+    can_manage_more = serializers.BooleanField()
+    management_capacity = serializers.IntegerField()
+
+# Employee Activity and History Serializers
+class EmployeeActivitySummarySerializer(serializers.Serializer):
+    """Summary of employee activities"""
+    total_activities = serializers.IntegerField()
+    recent_activities_30_days = serializers.IntegerField()
+    by_activity_type = serializers.DictField()
+    latest_activity = EmployeeActivitySerializer()
+
+# Comprehensive Employee Management Response Serializers
+class EmployeeManagementResponseSerializer(serializers.Serializer):
+    """Comprehensive response for employee management operations"""
+    success = serializers.BooleanField()
+    message = serializers.CharField()
+    data = serializers.DictField()
+    errors = serializers.ListField(child=serializers.CharField(), required=False)
+    warnings = serializers.ListField(child=serializers.CharField(), required=False)
+    metadata = serializers.DictField(required=False)
