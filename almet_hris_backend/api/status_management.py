@@ -1,331 +1,517 @@
-# api/status_management.py
+# api/status_management.py - ENHANCED: Advanced Contract Status Management with Line Manager Integration
 
 from django.utils import timezone
-from datetime import timedelta
-from .models import Employee, EmployeeStatus, EmployeeActivity
+from datetime import timedelta, date
+from .models import Employee, EmployeeStatus, EmployeeActivity, ContractTypeConfig
 import logging
 
 logger = logging.getLogger(__name__)
 
 class EmployeeStatusManager:
     """
-    Employee status-larını avtomatik idarə etmək üçün class
+    Employee status-larını avtomatik idarə etmək üçün enhanced class
+    Contract configuration əsasında statusları idarə edir
     """
     
     @staticmethod
     def get_or_create_default_statuses():
         """Default status-ları yarat və ya gətir"""
-        statuses = {}
-        
-        status_configs = [
-            ('ONBOARDING', '#FFA500', 'İlk 7 gün ərzində'),
-            ('PROBATION', '#FFD700', 'Probation müddəti ərzində'),
-            ('ACTIVE', '#28A745', 'Normal işçi statusu'),
-            ('ON LEAVE', '#DC3545', 'İş müddəti bitib')
-        ]
-        
-        for name, color, description in status_configs:
-            status, created = EmployeeStatus.objects.get_or_create(
-                name=name,
-                defaults={'color': color, 'is_active': True}
-            )
-            statuses[name] = status
-            if created:
-                logger.info(f"Status yaradıldı: {name}")
-        
-        return statuses
+        return EmployeeStatus.get_or_create_default_statuses()
     
     @staticmethod
     def calculate_required_status(employee):
         """
-        Employee üçün olması lazım olan status-u hesabla
+        Employee üçün olması lazım olan status-u contract configuration əsasında hesabla
         """
-        current_date = timezone.now().date()
-        
-        # End date yoxla
-        if employee.end_date and employee.end_date <= current_date:
-            return 'ON LEAVE'
-        
-        # Start date-dən neçə gün keçib
-        days_since_start = (current_date - employee.start_date).days
-        
-        # İlk 7 gün - ONBOARDING
-        if days_since_start <= 7:
-            return 'ONBOARDING'
-        
-        # Contract duration əsasında probation
-        if employee.contract_duration != 'PERMANENT':
-            probation_days = EmployeeStatusManager.get_probation_days(employee.contract_duration)
+        try:
+            current_date = date.today()
             
-            if days_since_start <= probation_days:
-                return 'PROBATION'
-        
-        # Normal halda ACTIVE
-        return 'ACTIVE'
+            # Contract bitib bitməyibini yoxla
+            if employee.contract_end_date and employee.contract_end_date <= current_date:
+                inactive_status = EmployeeStatus.objects.filter(status_type='INACTIVE').first()
+                return inactive_status, f"Contract ended on {employee.contract_end_date}"
+            
+            # Contract configuration al
+            try:
+                contract_config = ContractTypeConfig.objects.get(
+                    contract_type=employee.contract_duration,
+                    is_active=True
+                )
+            except ContractTypeConfig.DoesNotExist:
+                # Default config yarat əgər yoxdursa
+                configs = ContractTypeConfig.get_or_create_defaults()
+                contract_config = configs.get(employee.contract_duration)
+                if not contract_config:
+                    return employee.status, "No contract configuration found"
+            
+            # Auto transition aktiv deyilsə, hazırki status-u saxla
+            if not contract_config.enable_auto_transitions:
+                return employee.status, "Auto transitions disabled for this contract type"
+            
+            # Start date-dən neçə gün keçib
+            days_since_start = (current_date - employee.start_date).days
+            
+            # Contract configuration əsasında status təyin et
+            if days_since_start <= contract_config.onboarding_days:
+                # Hələ onboarding dövrü
+                onboarding_status = EmployeeStatus.objects.filter(status_type='ONBOARDING').first()
+                return onboarding_status, f"Onboarding period ({days_since_start}/{contract_config.onboarding_days} days)"
+            
+            elif days_since_start <= (contract_config.onboarding_days + contract_config.probation_days):
+                # Probation dövrü
+                probation_status = EmployeeStatus.objects.filter(status_type='PROBATION').first()
+                remaining_days = (contract_config.onboarding_days + contract_config.probation_days) - days_since_start
+                return probation_status, f"Probation period ({remaining_days} days remaining)"
+            
+            else:
+                # Active olmalıdır
+                active_status = EmployeeStatus.objects.filter(status_type='ACTIVE').first()
+                return active_status, "Onboarding and probation completed"
+                
+        except Exception as e:
+            logger.error(f"Error calculating required status for {employee.employee_id}: {e}")
+            return employee.status, f"Error: {str(e)}"
     
     @staticmethod
-    def get_probation_days(contract_duration):
-        """Contract duration əsasında probation müddətini qaytar"""
-        probation_mapping = {
-            '3_MONTHS': 7,      # 7 gün probation
-            '6_MONTHS': 14,     # 14 gün probation  
-            '1_YEAR': 90,       # 90 gün probation
-            'PERMANENT': 0,     # Probation yoxdur
-        }
-        return probation_mapping.get(contract_duration, 0)
-    
-    @staticmethod
-    def update_employee_status(employee, force_update=False):
+    def update_employee_status(employee, force_update=False, user=None):
         """
         Tək employee üçün status-u yenilə
         """
-        required_status_name = EmployeeStatusManager.calculate_required_status(employee)
-        current_status_name = employee.status.name if employee.status else None
+        required_status, reason = EmployeeStatusManager.calculate_required_status(employee)
+        current_status = employee.status
         
-        # Əgər status dəyişməlidirsə
-        if current_status_name != required_status_name or force_update:
-            statuses = EmployeeStatusManager.get_or_create_default_statuses()
-            new_status = statuses.get(required_status_name)
-            
-            if new_status:
+        # Status dəyişməlidirsə və ya zorla yeniləmə tələb edilirsə
+        if current_status != required_status or force_update:
+            if required_status:
                 old_status = employee.status
-                employee.status = new_status
+                employee.status = required_status
+                if user:
+                    employee.updated_by = user
                 employee.save()
                 
                 # Activity log
                 EmployeeActivity.objects.create(
                     employee=employee,
                     activity_type='STATUS_CHANGED',
-                    description=f"Status avtomatik olaraq dəyişdirildi: {current_status_name} → {required_status_name}",
-                    performed_by=None,  # System tərəfindən
+                    description=f"Status automatically updated from {old_status.name} to {required_status.name}. Reason: {reason}",
+                    performed_by=user,
                     metadata={
-                        'old_status': current_status_name,
-                        'new_status': required_status_name,
+                        'old_status': old_status.name,
+                        'new_status': required_status.name,
+                        'reason': reason,
                         'automatic': True,
-                        'reason': EmployeeStatusManager.get_status_change_reason(employee, required_status_name)
+                        'contract_type': employee.contract_duration,
+                        'days_since_start': (date.today() - employee.start_date).days,
+                        'force_update': force_update
                     }
                 )
                 
-                logger.info(f"Employee {employee.employee_id} status dəyişdi: {current_status_name} → {required_status_name}")
+                logger.info(f"Employee {employee.employee_id} status updated: {old_status.name} → {required_status.name}")
                 return True
         
         return False
     
     @staticmethod
-    def get_status_change_reason(employee, new_status):
-        """Status dəyişməsinin səbəbini qaytar"""
-        current_date = timezone.now().date()
-        days_since_start = (current_date - employee.start_date).days
-        
-        if new_status == 'ONBOARDING':
-            return f"İlk 7 gün ərzində ({days_since_start} gün)"
-        elif new_status == 'PROBATION':
-            probation_days = EmployeeStatusManager.get_probation_days(employee.contract_duration)
-            return f"Probation müddəti ({employee.get_contract_duration_display()}, {days_since_start}/{probation_days} gün)"
-        elif new_status == 'ACTIVE':
-            return "Onboarding və probation tamamlandı"
-        elif new_status == 'ON LEAVE':
-            return f"İş müddəti bitib (end_date: {employee.end_date})"
+    def bulk_update_statuses(employee_ids=None, force_update=False, user=None):
+        """
+        Bulk status yeniləmə
+        """
+        if employee_ids:
+            employees = Employee.objects.filter(id__in=employee_ids)
         else:
-            return "Naməlum səbəb"
-    
-    @staticmethod
-    def bulk_update_statuses():
-        """
-        Bütün employee-lər üçün status-ları yenilə
-        """
-        employees = Employee.objects.select_related('status').all()
+            employees = Employee.objects.filter(is_deleted=False)
+        
         updated_count = 0
+        error_count = 0
         
         for employee in employees:
-            if EmployeeStatusManager.update_employee_status(employee):
-                updated_count += 1
+            try:
+                if EmployeeStatusManager.update_employee_status(employee, force_update, user):
+                    updated_count += 1
+            except Exception as e:
+                error_count += 1
+                logger.error(f"Error updating status for {employee.employee_id}: {e}")
         
-        logger.info(f"Bulk status update: {updated_count} employee yeniləndi")
-        return updated_count
+        logger.info(f"Bulk status update completed: {updated_count} updated, {error_count} errors")
+        return {'updated': updated_count, 'errors': error_count}
     
     @staticmethod
     def get_status_preview(employee):
         """
         Employee üçün status preview-ını qaytar (actual update etmədən)
         """
-        required_status = EmployeeStatusManager.calculate_required_status(employee)
-        current_status = employee.status.name if employee.status else None
+        required_status, reason = EmployeeStatusManager.calculate_required_status(employee)
+        current_status = employee.status
         
         return {
-            'current_status': current_status,
-            'required_status': required_status,
-            'needs_update': current_status != required_status,
-            'reason': EmployeeStatusManager.get_status_change_reason(employee, required_status)
-        }
-
-
-# api/views.py-ə əlavə ediləcək ViewSet-lər
-
-from rest_framework.decorators import action
-from rest_framework.response import Response
-from rest_framework import status
-from .status_management import EmployeeStatusManager
-
-# EmployeeViewSet-ə əlavə action-lar
-class EmployeeStatusManagementMixin:
-    """
-    Employee ViewSet-ə status management əlavə etmək üçün mixin
-    """
-    
-    @action(detail=True, methods=['post'], url_path='update-status')
-    def update_status(self, request, pk=None):
-        """
-        Tək employee üçün status-u avtomatik yenilə
-        """
-        employee = self.get_object()
-        
-        # Preview göstər
-        preview = EmployeeStatusManager.get_status_preview(employee)
-        
-        if not preview['needs_update']:
-            return Response({
-                'message': 'Status yeniləməyə ehtiyac yoxdur',
-                'current_status': preview['current_status'],
-                'preview': preview
-            })
-        
-        # Force update parametri
-        force_update = request.data.get('force_update', False)
-        
-        # Status-u yenilə
-        updated = EmployeeStatusManager.update_employee_status(employee, force_update=force_update)
-        
-        if updated:
-            employee.refresh_from_db()
-            return Response({
-                'message': 'Status uğurla yeniləndi',
-                'old_status': preview['current_status'],
-                'new_status': employee.status.name,
-                'reason': preview['reason']
-            })
-        else:
-            return Response({
-                'message': 'Status yenilənmədi',
-                'preview': preview
-            })
-    
-    @action(detail=True, methods=['get'], url_path='status-preview')
-    def status_preview(self, request, pk=None):
-        """
-        Employee üçün status preview-ını göstər
-        """
-        employee = self.get_object()
-        preview = EmployeeStatusManager.get_status_preview(employee)
-        
-        # Əlavə məlumatlar
-        current_date = timezone.now().date()
-        days_since_start = (current_date - employee.start_date).days
-        
-        probation_days = EmployeeStatusManager.get_probation_days(employee.contract_duration)
-        
-        additional_info = {
-            'days_since_start': days_since_start,
-            'contract_duration': employee.get_contract_duration_display(),
-            'probation_days': probation_days,
-            'end_date': employee.end_date,
-            'is_probation_completed': days_since_start > probation_days if probation_days > 0 else True,
-            'is_onboarding_completed': days_since_start > 7
-        }
-        
-        return Response({
             'employee_id': employee.employee_id,
             'employee_name': employee.full_name,
-            'preview': preview,
-            'details': additional_info
-        })
+            'current_status': current_status.name if current_status else None,
+            'required_status': required_status.name if required_status else None,
+            'needs_update': current_status != required_status,
+            'reason': reason,
+            'contract_type': employee.contract_duration,
+            'days_since_start': (date.today() - employee.start_date).days,
+            'contract_end_date': employee.contract_end_date,
+            'line_manager': employee.line_manager.full_name if employee.line_manager else None
+        }
     
-    @action(detail=False, methods=['post'], url_path='bulk-update-statuses')
-    def bulk_update_statuses(self, request):
+    @staticmethod
+    def get_employees_needing_update(contract_type=None, department_id=None):
         """
-        Bütün employee-lər üçün status-ları yenilə
+        Status yeniləməyə ehtiyacı olan employee-ləri qaytar
         """
-        # Yalnız spesifik employee ID-lər
-        employee_ids = request.data.get('employee_ids', [])
+        queryset = Employee.objects.filter(is_deleted=False)
         
-        if employee_ids:
-            employees = Employee.objects.filter(id__in=employee_ids)
-            updated_count = 0
-            
-            for employee in employees:
-                if EmployeeStatusManager.update_employee_status(employee):
-                    updated_count += 1
-        else:
-            # Bütün employee-lər
-            updated_count = EmployeeStatusManager.bulk_update_statuses()
+        if contract_type:
+            queryset = queryset.filter(contract_duration=contract_type)
         
-        return Response({
-            'message': f'{updated_count} employee status yeniləndi',
-            'updated_count': updated_count
-        })
+        if department_id:
+            queryset = queryset.filter(department_id=department_id)
+        
+        needing_updates = []
+        
+        for employee in queryset:
+            try:
+                preview = EmployeeStatusManager.get_status_preview(employee)
+                if preview and preview.get('needs_update', False):
+                    # Return a dictionary with employee and preview data
+                    update_info = {
+                        'employee': employee,
+                        'current_status': preview.get('current_status', ''),
+                        'required_status': preview.get('required_status', ''),
+                        'reason': preview.get('reason', ''),
+                        'needs_update': preview.get('needs_update', False),
+                        'contract_type': preview.get('contract_type', ''),
+                        'days_since_start': preview.get('days_since_start', 0)
+                    }
+                    needing_updates.append(update_info)
+            except Exception as e:
+                logger.error(f"Error getting status preview for employee {employee.employee_id}: {e}")
+                continue
+        
+        return needing_updates
+        
     
-    @action(detail=False, methods=['get'], url_path='status-rules')
-    def status_rules(self, request):
+    @staticmethod
+    def get_contract_expiry_analysis(days=30):
         """
-        Status rules və contract mapping-ini qaytar
+        Contract-ı bitən employee-ləri analiz et
         """
-        rules = {
-            'onboarding': {
-                'duration_days': 7,
-                'description': 'İlk 7 gün ərzində bütün employee-lər üçün'
-            },
-            'probation_by_contract': {
-                '3_MONTHS': {
-                    'probation_days': 7,
-                    'description': '3 aylıq contract - 7 gün probation'
-                },
-                '6_MONTHS': {
-                    'probation_days': 14,
-                    'description': '6 aylıq contract - 14 gün probation'
-                },
-                '1_YEAR': {
-                    'probation_days': 90,
-                    'description': '1 illik contract - 90 gün probation'
-                },
-                'PERMANENT': {
-                    'probation_days': 0,
-                    'description': 'Permanent contract - probation yoxdur'
-                }
-            },
-            'leave_condition': {
-                'description': 'end_date təyin edilib və keçib'
-            }
+        expiry_date = date.today() + timedelta(days=days)
+        
+        expiring_employees = Employee.objects.filter(
+            contract_end_date__lte=expiry_date,
+            contract_end_date__gte=date.today(),
+            contract_duration__in=['3_MONTHS', '6_MONTHS', '1_YEAR', '2_YEARS', '3_YEARS'],
+            is_deleted=False
+        ).select_related('status', 'business_function', 'department', 'line_manager')
+        
+        analysis = {
+            'total_expiring': expiring_employees.count(),
+            'by_urgency': {},
+            'by_department': {},
+            'by_line_manager': {},
+            'employees': []
         }
         
-        return Response(rules)
-
-
-# Management command üçün əlavə
-# api/management/commands/update_employee_statuses.py faylına əlavə:
-
-def handle_with_status_manager(self, *args, **options):
-    """
-    EmployeeStatusManager istifadə edərək status yeniləmə
-    """
-    from api.status_management import EmployeeStatusManager
-    
-    dry_run = options['dry_run']
-    verbose = options['verbose']
-    
-    if dry_run:
-        self.stdout.write('DRY RUN - Status preview-ları:')
-        employees = Employee.objects.all()
+        for employee in expiring_employees:
+            days_left = (employee.contract_end_date - date.today()).days
+            
+            # Urgency analysis
+            if days_left <= 7:
+                urgency = 'critical'
+            elif days_left <= 14:
+                urgency = 'high'
+            elif days_left <= 30:
+                urgency = 'medium'
+            else:
+                urgency = 'low'
+            
+            analysis['by_urgency'][urgency] = analysis['by_urgency'].get(urgency, 0) + 1
+            
+            # Department analysis
+            dept_key = employee.department.name
+            analysis['by_department'][dept_key] = analysis['by_department'].get(dept_key, 0) + 1
+            
+            # Line manager analysis
+            manager_key = employee.line_manager.full_name if employee.line_manager else 'No Manager'
+            analysis['by_line_manager'][manager_key] = analysis['by_line_manager'].get(manager_key, 0) + 1
+            
+            # Employee details
+            analysis['employees'].append({
+                'employee_id': employee.employee_id,
+                'name': employee.full_name,
+                'department': employee.department.name,
+                'line_manager': employee.line_manager.full_name if employee.line_manager else None,
+                'contract_end_date': employee.contract_end_date,
+                'days_remaining': days_left,
+                'urgency': urgency,
+                'renewal_status': employee.renewal_status
+            })
         
-        for employee in employees:
+        return analysis
+    
+    @staticmethod
+    def get_status_transition_analytics():
+        """
+        Status transition analytics
+        """
+        all_employees = Employee.objects.filter(is_deleted=False)
+        
+        analytics = {
+            'total_employees': all_employees.count(),
+            'by_current_status': {},
+            'by_required_status': {},
+            'transitions_needed': {},
+            'by_contract_type': {},
+            'line_manager_impact': {}
+        }
+        
+        for employee in all_employees:
             preview = EmployeeStatusManager.get_status_preview(employee)
+            
+            # Current status
+            current = preview['current_status']
+            analytics['by_current_status'][current] = analytics['by_current_status'].get(current, 0) + 1
+            
+            # Required status
+            required = preview['required_status']
+            analytics['by_required_status'][required] = analytics['by_required_status'].get(required, 0) + 1
+            
+            # Transitions
             if preview['needs_update']:
-                self.stdout.write(
-                    f"{employee.employee_id} - {employee.full_name}: "
-                    f"{preview['current_status']} → {preview['required_status']} "
-                    f"({preview['reason']})"
-                )
-    else:
-        updated_count = EmployeeStatusManager.bulk_update_statuses()
-        self.stdout.write(
-            self.style.SUCCESS(f'{updated_count} employee status yeniləndi')
+                transition = f"{current} → {required}"
+                analytics['transitions_needed'][transition] = analytics['transitions_needed'].get(transition, 0) + 1
+            
+            # Contract type
+            contract = preview['contract_type']
+            if contract not in analytics['by_contract_type']:
+                analytics['by_contract_type'][contract] = {'total': 0, 'needs_update': 0}
+            analytics['by_contract_type'][contract]['total'] += 1
+            if preview['needs_update']:
+                analytics['by_contract_type'][contract]['needs_update'] += 1
+            
+            # Line manager impact
+            manager = preview['line_manager'] or 'No Manager'
+            if manager not in analytics['line_manager_impact']:
+                analytics['line_manager_impact'][manager] = {'total': 0, 'needs_update': 0}
+            analytics['line_manager_impact'][manager]['total'] += 1
+            if preview['needs_update']:
+                analytics['line_manager_impact'][manager]['needs_update'] += 1
+        
+        return analytics
+
+# Enhanced Line Manager Status Integration
+class LineManagerStatusIntegration:
+    """
+    Line manager və status-ların inteqrasiyası üçün helper class
+    """
+    
+    @staticmethod
+    def get_manager_team_status_overview(manager_employee_id):
+        """
+        Line manager-in team-inin status overview-ını qaytar
+        """
+        try:
+            manager = Employee.objects.get(employee_id=manager_employee_id)
+            direct_reports = manager.direct_reports.filter(
+                is_deleted=False,
+                status__affects_headcount=True
+            )
+            
+            overview = {
+                'manager': {
+                    'employee_id': manager.employee_id,
+                    'name': manager.full_name,
+                    'job_title': manager.job_title
+                },
+                'team_size': direct_reports.count(),
+                'status_distribution': {},
+                'employees_needing_update': [],
+                'contract_expiry_alerts': []
+            }
+            
+            for employee in direct_reports:
+                # Status distribution
+                status_name = employee.status.name
+                overview['status_distribution'][status_name] = overview['status_distribution'].get(status_name, 0) + 1
+                
+                # Check if status update needed
+                preview = EmployeeStatusManager.get_status_preview(employee)
+                if preview['needs_update']:
+                    overview['employees_needing_update'].append({
+                        'employee_id': employee.employee_id,
+                        'name': employee.full_name,
+                        'current_status': preview['current_status'],
+                        'required_status': preview['required_status'],
+                        'reason': preview['reason']
+                    })
+                
+                # Contract expiry alerts
+                if employee.contract_end_date:
+                    days_left = (employee.contract_end_date - date.today()).days
+                    if 0 <= days_left <= 30:
+                        overview['contract_expiry_alerts'].append({
+                            'employee_id': employee.employee_id,
+                            'name': employee.full_name,
+                            'contract_end_date': employee.contract_end_date,
+                            'days_remaining': days_left
+                        })
+            
+            return overview
+            
+        except Employee.DoesNotExist:
+            return None
+    
+    @staticmethod
+    def get_managers_needing_attention():
+        """
+        Diqqət tələb edən manager-ləri qaytar
+        """
+        managers = Employee.objects.filter(
+            direct_reports__isnull=False,
+            is_deleted=False
+        ).distinct()
+        
+        managers_needing_attention = []
+        
+        for manager in managers:
+            overview = LineManagerStatusIntegration.get_manager_team_status_overview(manager.employee_id)
+            
+            if overview:
+                attention_score = 0
+                reasons = []
+                
+                # Status updates needed
+                if overview['employees_needing_update']:
+                    attention_score += len(overview['employees_needing_update']) * 2
+                    reasons.append(f"{len(overview['employees_needing_update'])} employees need status updates")
+                
+                # Contract expiries
+                if overview['contract_expiry_alerts']:
+                    attention_score += len(overview['contract_expiry_alerts']) * 3
+                    reasons.append(f"{len(overview['contract_expiry_alerts'])} contracts expiring soon")
+                
+                # Large team without recent activity
+                if overview['team_size'] > 10:
+                    attention_score += 1
+                    reasons.append(f"Large team ({overview['team_size']} members)")
+                
+                if attention_score > 0:
+                    managers_needing_attention.append({
+                        'manager': overview['manager'],
+                        'attention_score': attention_score,
+                        'reasons': reasons,
+                        'team_overview': overview
+                    })
+        
+        # Sort by attention score
+        managers_needing_attention.sort(key=lambda x: x['attention_score'], reverse=True)
+        
+        return managers_needing_attention
+
+
+# Status Automation Rules
+class StatusAutomationRules:
+    """
+    Status automation rules və triggers
+    """
+    
+    @staticmethod
+    def check_and_apply_rules():
+        """
+        Bütün automation rules-ları yoxla və tətbiq et
+        """
+        results = {
+            'onboarding_to_probation': 0,
+            'probation_to_active': 0,
+            'contract_expired_to_inactive': 0,
+            'errors': []
+        }
+        
+        try:
+            # Rule 1: Onboarding to Probation
+            results['onboarding_to_probation'] = StatusAutomationRules._apply_onboarding_to_probation()
+            
+            # Rule 2: Probation to Active
+            results['probation_to_active'] = StatusAutomationRules._apply_probation_to_active()
+            
+            # Rule 3: Contract Expired to Inactive
+            results['contract_expired_to_inactive'] = StatusAutomationRules._apply_contract_expired_to_inactive()
+            
+        except Exception as e:
+            results['errors'].append(str(e))
+            logger.error(f"Error in status automation rules: {e}")
+        
+        return results
+    
+    @staticmethod
+    def _apply_onboarding_to_probation():
+        """Apply onboarding to probation rule"""
+        count = 0
+        onboarding_employees = Employee.objects.filter(
+            status__status_type='ONBOARDING',
+            is_deleted=False
         )
+        
+        for employee in onboarding_employees:
+            preview = EmployeeStatusManager.get_status_preview(employee)
+            if preview['needs_update'] and preview['required_status'] == 'PROBATION':
+                if EmployeeStatusManager.update_employee_status(employee):
+                    count += 1
+        
+        return count
+    
+    @staticmethod
+    def _apply_probation_to_active():
+        """Apply probation to active rule"""
+        count = 0
+        probation_employees = Employee.objects.filter(
+            status__status_type='PROBATION',
+            is_deleted=False
+        )
+        
+        for employee in probation_employees:
+            preview = EmployeeStatusManager.get_status_preview(employee)
+            if preview['needs_update'] and preview['required_status'] == 'ACTIVE':
+                if EmployeeStatusManager.update_employee_status(employee):
+                    count += 1
+        
+        return count
+    
+    @staticmethod
+    def _apply_contract_expired_to_inactive():
+        """Apply contract expired to inactive rule"""
+        count = 0
+        today = date.today()
+        
+        expired_contracts = Employee.objects.filter(
+            contract_end_date__lt=today,
+            status__affects_headcount=True,
+            is_deleted=False
+        )
+        
+        inactive_status = EmployeeStatus.objects.filter(status_type='INACTIVE').first()
+        
+        if inactive_status:
+            for employee in expired_contracts:
+                if employee.status != inactive_status:
+                    employee.status = inactive_status
+                    employee.save()
+                    
+                    # Log activity
+                    EmployeeActivity.objects.create(
+                        employee=employee,
+                        activity_type='STATUS_CHANGED',
+                        description=f"Status automatically changed to INACTIVE due to contract expiry",
+                        performed_by=None,
+                        metadata={
+                            'automatic': True,
+                            'rule': 'contract_expired_to_inactive',
+                            'contract_end_date': str(employee.contract_end_date)
+                        }
+                    )
+                    count += 1
+        
+        return count

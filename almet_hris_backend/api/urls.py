@@ -15,7 +15,7 @@ router.register(r'units', views.UnitViewSet, basename='unit')
 router.register(r'job-functions', views.JobFunctionViewSet, basename='jobfunction')
 router.register(r'position-groups', views.PositionGroupViewSet, basename='positiongroup')
 
-# Employee Management URLs
+# Employee Management URLs (ENHANCED with Line Manager features)
 router.register(r'employees', views.EmployeeViewSet, basename='employee')
 router.register(r'employee-tags', views.EmployeeTagViewSet, basename='employeetag')
 router.register(r'employee-statuses', views.EmployeeStatusViewSet, basename='employeestatus')
@@ -26,7 +26,7 @@ router.register(r'contract-configs', views.ContractTypeConfigViewSet, basename='
 # Vacancy Management URLs
 router.register(r'vacant-positions', views.VacantPositionViewSet, basename='vacantposition')
 
-# Organizational Chart URLs
+# Organizational Chart URLs (ENHANCED with department-specific charts)
 router.register(r'org-chart', views.OrgChartViewSet, basename='orgchart')
 
 # Headcount Analytics URLs
@@ -37,6 +37,12 @@ router.register(r'employee-grading', views.EmployeeGradingViewSet, basename='emp
 
 # NEW: Contract Status Management URLs
 router.register(r'contract-status', views.ContractStatusManagementViewSet, basename='contractstatus')
+
+# NEW: Line Manager Management URLs
+router.register(r'line-manager-management', views.LineManagerManagementViewSet, basename='linemanagermanagement')
+
+# NEW: Employee Analytics URLs
+router.register(r'employee-analytics', views.EmployeeAnalyticsViewSet, basename='employeeanalytics')
 
 urlpatterns = [
     # Authentication endpoints
@@ -49,4 +55,3 @@ urlpatterns = [
     # Include all router URLs
     path('', include(router.urls)),
 ]
-

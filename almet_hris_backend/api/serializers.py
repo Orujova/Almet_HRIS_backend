@@ -263,7 +263,7 @@ class EmployeeListSerializer(serializers.ModelSerializer):
     class Meta:
         model = Employee
         fields = [
-            'id', 'employee_id', 'name', 'email', 'date_of_birth', 'gender', 'phone',
+            'id', 'employee_id', 'name', 'email', 'date_of_birth', 'gender', 'father_name', 'phone',
             'business_function_name', 'business_function_code', 'department_name', 'unit_name',
             'job_function_name', 'job_title', 'position_group_name', 'position_group_level',
             'grading_level', 'grading_display', 'start_date', 'end_date',
@@ -368,6 +368,7 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
     first_name = serializers.CharField(write_only=True)
     last_name = serializers.CharField(write_only=True)
     email = serializers.EmailField(write_only=True)
+    father_name = serializers.CharField(write_only=True, required=False, allow_blank=True)  # NEW FIELD
     tag_ids = serializers.ListField(child=serializers.IntegerField(), write_only=True, required=False)
     vacancy_id = serializers.IntegerField(write_only=True, required=False, help_text="Link to vacant position")
     
@@ -423,6 +424,7 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
         first_name = validated_data.pop('first_name')
         last_name = validated_data.pop('last_name')
         email = validated_data.pop('email')
+        father_name = validated_data.pop('father_name', '')  # NEW FIELD
         tag_ids = validated_data.pop('tag_ids', [])
         vacancy_id = validated_data.pop('vacancy_id', None)
         
@@ -457,6 +459,8 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
             validated_data['notes'] = ''
         if 'grading_level' not in validated_data:
             validated_data['grading_level'] = ''
+        if 'father_name' not in validated_data:
+            validated_data['father_name'] = father_name
         
         employee = super().create(validated_data)
         
@@ -480,6 +484,7 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
         first_name = validated_data.pop('first_name', None)
         last_name = validated_data.pop('last_name', None)
         email = validated_data.pop('email', None)
+        father_name = validated_data.pop('father_name', None)  # NEW FIELD
         tag_ids = validated_data.pop('tag_ids', None)
         vacancy_id = validated_data.pop('vacancy_id', None)
         
@@ -500,6 +505,11 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
                 user.username = email
                 changes.append(f"Email changed to {email}")
             user.save()
+        
+        # Update father_name if provided
+        if father_name is not None and instance.father_name != father_name:
+            instance.father_name = father_name
+            changes.append(f"Father name changed to {father_name}")
         
         # Track other significant changes
         if 'line_manager' in validated_data and validated_data['line_manager'] != instance.line_manager:
@@ -554,6 +564,7 @@ class BulkEmployeeCreateItemSerializer(serializers.Serializer):
     email = serializers.EmailField()
     date_of_birth = serializers.DateField(required=False, allow_null=True)
     gender = serializers.ChoiceField(choices=Employee.GENDER_CHOICES, required=False, allow_null=True)
+    father_name = serializers.CharField(max_length=200, required=False, allow_blank=True)  # NEW FIELD
     address = serializers.CharField(required=False, allow_blank=True)
     phone = serializers.CharField(max_length=20, required=False, allow_blank=True)
     emergency_contact = serializers.CharField(required=False, allow_blank=True)
@@ -571,7 +582,7 @@ class BulkEmployeeCreateItemSerializer(serializers.Serializer):
     start_date = serializers.DateField()
     contract_duration = serializers.ChoiceField(choices=Employee.CONTRACT_DURATION_CHOICES)
     contract_start_date = serializers.DateField(required=False, allow_null=True)
-    line_manager_id = serializers.IntegerField(required=False, allow_null=True)
+    line_manager_id = serializers.IntegerField(required=False, allow_null=True)  # ENHANCED FOR LINE MANAGER
     
     # Additional
     is_visible_in_org_chart = serializers.BooleanField(default=True)
@@ -638,7 +649,7 @@ class BulkEmployeeUpdateSerializer(serializers.Serializer):
         
         return value
 
-# Line Manager Operations
+# Line Manager Operations (ENHANCED)
 class BulkLineManagerUpdateSerializer(serializers.Serializer):
     employee_ids = serializers.ListField(child=serializers.IntegerField())
     line_manager_id = serializers.IntegerField(allow_null=True)
@@ -679,6 +690,21 @@ class SingleLineManagerUpdateSerializer(serializers.Serializer):
             except Employee.DoesNotExist:
                 raise serializers.ValidationError("Line manager not found.")
         return value
+
+# Line Manager Selection Serializer (NEW)
+class LineManagerSelectionSerializer(serializers.ModelSerializer):
+    """Serializer for line manager selection dropdown"""
+    name = serializers.CharField(source='full_name', read_only=True)
+    position_display = serializers.CharField(source='position_group.get_name_display', read_only=True)
+    department_name = serializers.CharField(source='department.name', read_only=True)
+    direct_reports_count = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = Employee
+        fields = ['id', 'employee_id', 'name', 'job_title', 'position_display', 'department_name', 'direct_reports_count']
+    
+    def get_direct_reports_count(self, obj):
+        return obj.get_direct_reports_count()
 
 # Tag Operations
 class EmployeeTagOperationSerializer(serializers.Serializer):
@@ -1143,7 +1169,7 @@ class BulkEmployeeTemplateInfoSerializer(serializers.Serializer):
                 'Job Title', 'Position Group', 'Start Date', 'Contract Duration'
             ],
             'optional_fields': [
-                'Date of Birth', 'Gender', 'Address', 'Phone', 'Emergency Contact',
+                'Date of Birth', 'Gender', 'Father Name', 'Address', 'Phone', 'Emergency Contact',
                 'Unit', 'Grading Level', 'Contract Start Date', 'Line Manager Employee ID',
                 'Is Visible in Org Chart', 'Tag Names', 'Notes'
             ],
@@ -1154,6 +1180,7 @@ class BulkEmployeeTemplateInfoSerializer(serializers.Serializer):
                 'Email': 'Unique email address',
                 'Date of Birth': 'Format: YYYY-MM-DD',
                 'Gender': 'MALE or FEMALE',
+                'Father Name': 'Father\'s name (optional)',
                 'Business Function': 'Must match exactly from available options',
                 'Department': 'Must exist under selected Business Function',
                 'Unit': 'Must exist under selected Department (optional)',
@@ -1191,13 +1218,15 @@ class BulkEmployeeTemplateInfoSerializer(serializers.Serializer):
                 'Email': 'john.doe@company.com',
                 'Date of Birth': '1990-01-15',
                 'Gender': 'MALE',
+                'Father Name': 'Robert Doe',
                 'Business Function': 'IT',
                 'Department': 'Software Development',
                 'Job Title': 'Senior Software Engineer',
                 'Position Group': 'SENIOR SPECIALIST',
                 'Grading Level': 'SS_M',
                 'Start Date': '2024-01-15',
-                'Contract Duration': 'PERMANENT'
+                'Contract Duration': 'PERMANENT',
+                'Line Manager Employee ID': 'HC002'
             }
         }
 

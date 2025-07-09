@@ -557,7 +557,7 @@ class EmployeeActivityInline(admin.TabularInline):
     def has_add_permission(self, request, obj=None):
         return False
 
-# Enhanced Employee Admin with Contract Status Management
+# Enhanced Employee Admin with Contract Status Management & Father Name
 @admin.register(Employee)
 class EmployeeAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
     list_display = (
@@ -569,14 +569,14 @@ class EmployeeAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
     list_filter = (
         'status', 'business_function', 'department', 'position_group', 
         'contract_duration', 'start_date', 'is_visible_in_org_chart', 
-        'is_deleted', 'created_at'
+        'is_deleted', 'created_at', 'gender'
     )
     search_fields = (
         'employee_id', 'full_name', 'user__email', 'user__first_name', 
-        'user__last_name', 'job_title', 'phone'
+        'user__last_name', 'job_title', 'phone', 'father_name'  # ENHANCED: Added father_name
     )
     ordering = ('employee_id',)
-    autocomplete_fields = ['user', 'line_manager']
+    autocomplete_fields = ['user', 'line_manager']  # ENHANCED: Added line_manager autocomplete
     filter_horizontal = ('tags',)
     readonly_fields = (
         'full_name', 'contract_end_date', 'years_of_service_display', 
@@ -591,6 +591,7 @@ class EmployeeAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
         ('Personal Details', {
             'fields': (
                 ('date_of_birth', 'gender'),
+                ('father_name',),  # ENHANCED: Added father_name field
                 'address',
                 ('phone', 'emergency_contact'),
                 'profile_image'
@@ -602,7 +603,7 @@ class EmployeeAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
                 ('business_function', 'department', 'unit'),
                 ('job_function', 'job_title'),
                 ('position_group', 'grading_level'),
-                'line_manager'
+                'line_manager'  # ENHANCED: Line manager field
             )
         }),
         ('Employment Dates & Contract', {
@@ -618,6 +619,10 @@ class EmployeeAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
                 'tags'
             )
         }),
+        ('Line Management', {  # NEW SECTION
+            'fields': ('direct_reports_count_display',),
+            'description': 'Information about direct reports and management hierarchy'
+        }),
         ('Status Management', {
             'fields': ('status_preview_display',),
             'description': 'Current status analysis based on contract configuration'
@@ -627,7 +632,7 @@ class EmployeeAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
             'classes': ('collapse',)
         }),
         ('Calculated Fields', {
-            'fields': ('years_of_service_display', 'direct_reports_count_display'),
+            'fields': ('years_of_service_display',),
             'classes': ('collapse',)
         }),
         ('Metadata', {
@@ -698,6 +703,7 @@ class EmployeeAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
         return format_html('<span style="color: #999;">No Grading</span>')
     grading_display.short_description = 'Grading'
     
+    # ENHANCED: Line Manager Display
     def line_manager_display(self, obj):
         if obj.line_manager and not obj.line_manager.is_deleted:
             url = reverse('admin:api_employee_change', args=[obj.line_manager.id])
@@ -791,6 +797,7 @@ class EmployeeAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
         return f"{obj.years_of_service} years"
     years_of_service_display.short_description = 'Years of Service'
     
+    # ENHANCED: Direct Reports Count Display
     def direct_reports_count_display(self, obj):
         count = obj.get_direct_reports_count()
         if count > 0:
@@ -806,9 +813,11 @@ class EmployeeAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
     actions = [
         'export_employees_csv', 'mark_org_chart_visible', 'mark_org_chart_hidden', 
         'update_contract_status', 'auto_update_status', 'bulk_assign_line_manager',
-        'extend_contracts', 'preview_status_updates'
+        'extend_contracts', 'preview_status_updates', 'clear_line_managers'  # NEW ACTION
     ]
     
+    # Complete the admin.py file - this continues from where it was cut off
+
     def export_employees_csv(self, request, queryset):
         response = HttpResponse(content_type='text/csv')
         response['Content-Disposition'] = f'attachment; filename="employees_{date.today()}.csv"'
@@ -818,7 +827,7 @@ class EmployeeAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
             'Employee ID', 'Name', 'Email', 'Job Title', 'Business Function',
             'Department', 'Unit', 'Position Group', 'Grade', 'Status',
             'Line Manager', 'Start Date', 'Contract Duration', 'Contract End Date',
-            'Status Needs Update', 'Phone', 'Is Deleted'
+            'Status Needs Update', 'Phone', 'Father Name', 'Is Deleted'
         ])
         
         for employee in queryset:
@@ -840,157 +849,113 @@ class EmployeeAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
                 employee.contract_end_date or '',
                 'Yes' if preview['needs_update'] else 'No',
                 employee.phone or '',
+                employee.father_name or '',
                 'Yes' if employee.is_deleted else 'No'
             ])
         
+        self.message_user(request, f'Exported {queryset.count()} employees to CSV.')
         return response
-    export_employees_csv.short_description = 'Export selected to CSV'
+    export_employees_csv.short_description = 'Export selected employees to CSV'
     
     def mark_org_chart_visible(self, request, queryset):
-        updated = queryset.update(is_visible_in_org_chart=True)
-        self.message_user(request, f'Successfully made {updated} employees visible in org chart.')
-    mark_org_chart_visible.short_description = 'Make visible in org chart'
+        count = queryset.update(is_visible_in_org_chart=True)
+        self.message_user(request, f'{count} employees marked as visible in org chart.')
+    mark_org_chart_visible.short_description = 'Mark as visible in org chart'
     
     def mark_org_chart_hidden(self, request, queryset):
-        updated = queryset.update(is_visible_in_org_chart=False)
-        self.message_user(request, f'Successfully hid {updated} employees from org chart.')
+        count = queryset.update(is_visible_in_org_chart=False)
+        self.message_user(request, f'{count} employees hidden from org chart.')
     mark_org_chart_hidden.short_description = 'Hide from org chart'
+    
+    def update_contract_status(self, request, queryset):
+        """Update contract end dates based on current configuration"""
+        updated_count = 0
+        for employee in queryset:
+            if employee.contract_start_date and employee.contract_duration != 'PERMANENT':
+                old_end_date = employee.contract_end_date
+                employee.save()  # This triggers contract_end_date recalculation
+                if old_end_date != employee.contract_end_date:
+                    updated_count += 1
+        
+        self.message_user(request, f'Updated contract end dates for {updated_count} employees.')
+    update_contract_status.short_description = 'Update contract end dates'
     
     def auto_update_status(self, request, queryset):
         """Auto-update employee statuses based on contract configuration"""
-        updated_count = 0
-        for employee in queryset:
-            if employee.update_status_automatically():
-                updated_count += 1
-        self.message_user(request, f'Successfully auto-updated status for {updated_count} employees.')
-    auto_update_status.short_description = 'Auto-update status based on contract'
+        from .status_management import EmployeeStatusManager
+        
+        employee_ids = list(queryset.values_list('id', flat=True))
+        result = EmployeeStatusManager.bulk_update_statuses(employee_ids=employee_ids)
+        
+        self.message_user(
+            request, 
+            f'Auto-updated status for {result["updated"]} employees. {result["errors"]} errors.'
+        )
+    auto_update_status.short_description = 'Auto-update employee statuses'
     
     def bulk_assign_line_manager(self, request, queryset):
-        """Bulk assign line manager - redirects to change form with pre-filled data"""
-        selected = queryset.values_list('id', flat=True)
-        return redirect(f'/admin/bulk-line-manager/?ids={",".join(map(str, selected))}')
+        """Bulk assign line manager - will redirect to change page"""
+        selected = request.POST.getlist(admin.ACTION_CHECKBOX_NAME)
+        return redirect(f'/admin/api/employee/?id__in={",".join(selected)}')
     bulk_assign_line_manager.short_description = 'Bulk assign line manager'
-    
-    def preview_status_updates(self, request, queryset):
-        """Preview what status updates would happen"""
-        updates_needed = []
-        current_status = []
-        
-        for employee in queryset:
-            preview = employee.get_status_preview()
-            if preview['needs_update']:
-                updates_needed.append(f"{employee.employee_id}: {preview['current_status']} → {preview['required_status']}")
-            else:
-                current_status.append(f"{employee.employee_id}: {preview['current_status']} (current)")
-        
-        if updates_needed:
-            messages.warning(request, f"Status updates needed for {len(updates_needed)} employees: " + "; ".join(updates_needed[:5]))
-        if current_status:
-            messages.info(request, f"{len(current_status)} employees have current status")
-    preview_status_updates.short_description = 'Preview status updates'
     
     def extend_contracts(self, request, queryset):
         """Extend contracts for selected employees"""
-        # This would redirect to a form where admin can specify extension details
-        selected = queryset.values_list('id', flat=True)
-        return redirect(f'/admin/bulk-contract-extension/?ids={",".join(map(str, selected))}')
-    extend_contracts.short_description = 'Extend contracts'
-
-# Employee Activity Admin
-@admin.register(EmployeeActivity)
-class EmployeeActivityAdmin(admin.ModelAdmin):
-    list_display = ('employee_display', 'activity_type', 'description_short', 'performed_by_display', 'created_at')
-    list_filter = ('activity_type', 'created_at', 'performed_by')
-    search_fields = ('employee__full_name', 'employee__employee_id', 'description')
-    ordering = ('-created_at',)
-    readonly_fields = ('created_at',)
-    
-    def employee_display(self, obj):
-        url = reverse('admin:api_employee_change', args=[obj.employee.id])
-        style = 'color: #999; text-decoration: line-through;' if obj.employee.is_deleted else 'color: #417690;'
-        deleted_indicator = ' (DELETED)' if obj.employee.is_deleted else ''
-        return format_html(
-            '<a href="{}" style="{}">{}</a><br><small style="color: #666;">{}{}</small>',
-            url, style, obj.employee.full_name, obj.employee.employee_id, deleted_indicator
+        extendable = queryset.exclude(contract_duration='PERMANENT').filter(contract_end_date__isnull=False)
+        extended_count = 0
+        
+        for employee in extendable:
+            success, message = employee.extend_contract(3, request.user)  # 3 months extension
+            if success:
+                extended_count += 1
+        
+        self.message_user(
+            request, 
+            f'Extended contracts for {extended_count} employees by 3 months.'
         )
-    employee_display.short_description = 'Employee'
+    extend_contracts.short_description = 'Extend contracts by 3 months'
     
-    def description_short(self, obj):
-        if len(obj.description) > 60:
-            return f"{obj.description[:60]}..."
-        return obj.description
-    description_short.short_description = 'Description'
-    
-    def performed_by_display(self, obj):
-        if obj.performed_by:
-            return obj.performed_by.username
-        return format_html('<span style="color: #999;">System</span>')
-    performed_by_display.short_description = 'Performed By'
-    
-    def has_add_permission(self, request):
-        return False
-    
-    def has_change_permission(self, request, obj=None):
-        return False
-    
-    def has_delete_permission(self, request, obj=None):
-        return request.user.is_superuser
-
-# Employee Document Admin
-@admin.register(EmployeeDocument)
-class EmployeeDocumentAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
-    list_display = ('name', 'employee_display', 'document_type', 'file_size_display', 'uploaded_by_display', 'uploaded_at', 'is_deleted_display')
-    list_filter = ('document_type', 'uploaded_at', 'uploaded_by', 'is_deleted')
-    search_fields = ('name', 'employee__full_name', 'employee__employee_id')
-    ordering = ('-uploaded_at',)
-    readonly_fields = ('uploaded_at', 'file_size', 'mime_type')
-    autocomplete_fields = ['employee', 'uploaded_by']
-    
-    def is_deleted_display(self, obj):
-        if obj.is_deleted:
-            return format_html('<span style="color: red;">✗ Deleted</span>')
-        return format_html('<span style="color: green;">✓ Active</span>')
-    is_deleted_display.short_description = 'Status'
-    
-    def employee_display(self, obj):
-        """Display employee with link to their profile"""
-        url = reverse('admin:api_employee_change', args=[obj.employee.id])
-        style = 'color: #999; text-decoration: line-through;' if obj.employee.is_deleted else 'color: #417690;'
-        deleted_indicator = ' (DELETED)' if obj.employee.is_deleted else ''
-        return format_html(
-            '<a href="{}" style="{}">{}</a><br><small style="color: #666;">{}{}</small>',
-            url, style, obj.employee.full_name, obj.employee.employee_id, deleted_indicator
+    def preview_status_updates(self, request, queryset):
+        """Preview what status updates would happen"""
+        updates_needed = 0
+        for employee in queryset:
+            preview = employee.get_status_preview()
+            if preview['needs_update']:
+                updates_needed += 1
+        
+        self.message_user(
+            request, 
+            f'{updates_needed} out of {queryset.count()} selected employees need status updates.'
         )
-    employee_display.short_description = 'Employee'
+    preview_status_updates.short_description = 'Preview status updates needed'
     
-    def file_size_display(self, obj):
-        """Display file size in human readable format"""
-        if obj.file_size:
-            if obj.file_size < 1024:
-                return f"{obj.file_size} B"
-            elif obj.file_size < 1024 * 1024:
-                return f"{obj.file_size / 1024:.1f} KB"
-            else:
-                return f"{obj.file_size / (1024 * 1024):.1f} MB"
-        return "Unknown"
-    file_size_display.short_description = 'File Size'
+    def clear_line_managers(self, request, queryset):
+        """Clear line managers for selected employees"""
+        count = queryset.update(line_manager=None)
+        self.message_user(request, f'Cleared line managers for {count} employees.')
+    clear_line_managers.short_description = 'Clear line managers'
     
-    def uploaded_by_display(self, obj):
-        """Display who uploaded the document"""
-        if obj.uploaded_by:
-            return obj.uploaded_by.username
-        return format_html('<span style="color: #999;">Unknown</span>')
-    uploaded_by_display.short_description = 'Uploaded By'
+    # Enhanced get_queryset to show soft-deleted employees in admin
+    def get_queryset(self, request):
+        if request.GET.get('show_deleted'):
+            return Employee.all_objects.get_queryset()
+        return super().get_queryset(request)
 
 # Vacant Position Admin
 @admin.register(VacantPosition)
 class VacantPositionAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
-    list_display = ('position_id', 'title', 'business_function', 'department', 'urgency_display', 'is_filled_display', 'created_at', 'is_deleted_display')
-    list_filter = ('urgency', 'is_filled', 'business_function', 'department', 'is_deleted', 'created_at')
+    list_display = (
+        'position_id', 'title', 'business_function_display', 'department_display',
+        'vacancy_type', 'urgency_display', 'expected_start_date', 
+        'reporting_to_display', 'filled_status_display', 'days_open_display'
+    )
+    list_filter = (
+        'business_function', 'department', 'vacancy_type', 'urgency', 
+        'is_filled', 'expected_start_date', 'created_at'
+    )
     search_fields = ('position_id', 'title', 'description')
-    ordering = ('-created_at',)
-    readonly_fields = ('created_at', 'updated_at')
-    autocomplete_fields = ['business_function', 'department', 'unit', 'job_function', 'position_group', 'reporting_to', 'filled_by']
+    autocomplete_fields = ['reporting_to', 'filled_by', 'created_by']
+    readonly_fields = ('filled_date', 'created_at', 'updated_at')
     
     fieldsets = (
         ('Basic Information', {
@@ -999,8 +964,7 @@ class VacantPositionAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
         ('Organizational Structure', {
             'fields': (
                 ('business_function', 'department', 'unit'),
-                ('job_function', 'position_group'),
-                'reporting_to'
+                ('job_function', 'position_group')
             )
         }),
         ('Vacancy Details', {
@@ -1010,10 +974,12 @@ class VacantPositionAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
                 ('expected_salary_range_min', 'expected_salary_range_max')
             )
         }),
-        ('Status Tracking', {
+        ('Management', {
+            'fields': ('reporting_to', 'created_by')
+        }),
+        ('Status', {
             'fields': (
-                ('is_filled', 'filled_by', 'filled_date'),
-                'created_by'
+                ('is_filled', 'filled_by', 'filled_date')
             )
         }),
         ('Metadata', {
@@ -1022,11 +988,13 @@ class VacantPositionAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
         })
     )
     
-    def is_deleted_display(self, obj):
-        if obj.is_deleted:
-            return format_html('<span style="color: red;">✗ Deleted</span>')
-        return format_html('<span style="color: green;">✓ Active</span>')
-    is_deleted_display.short_description = 'Status'
+    def business_function_display(self, obj):
+        return f"{obj.business_function.code} - {obj.business_function.name}"
+    business_function_display.short_description = 'Business Function'
+    
+    def department_display(self, obj):
+        return obj.department.name
+    department_display.short_description = 'Department'
     
     def urgency_display(self, obj):
         colors = {
@@ -1043,168 +1011,263 @@ class VacantPositionAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
     urgency_display.short_description = 'Urgency'
     urgency_display.admin_order_field = 'urgency'
     
-    def is_filled_display(self, obj):
+    def reporting_to_display(self, obj):
+        if obj.reporting_to:
+            url = reverse('admin:api_employee_change', args=[obj.reporting_to.id])
+            return format_html(
+                '<a href="{}" style="color: #417690;">{}</a>',
+                url, obj.reporting_to.full_name
+            )
+        return format_html('<span style="color: #999;">Not specified</span>')
+    reporting_to_display.short_description = 'Reports To'
+    
+    def filled_status_display(self, obj):
         if obj.is_filled:
-            return format_html('<span style="color: green;">✓ Filled</span>')
-        return format_html('<span style="color: orange;">○ Open</span>')
-    is_filled_display.short_description = 'Status'
-    is_filled_display.admin_order_field = 'is_filled'
+            return format_html(
+                '<span style="color: green;">✓ Filled by {}</span>',
+                obj.filled_by.full_name if obj.filled_by else 'Unknown'
+            )
+        return format_html('<span style="color: orange;">◯ Open</span>')
+    filled_status_display.short_description = 'Status'
+    
+    def days_open_display(self, obj):
+        if obj.is_filled and obj.filled_date:
+            days = (obj.filled_date - obj.created_at.date()).days
+            return format_html(
+                '<span style="color: green;">{} days (filled)</span>',
+                days
+            )
+        else:
+            days = (date.today() - obj.created_at.date()).days
+            color = '#dc3545' if days > 60 else '#ffc107' if days > 30 else '#28a745'
+            return format_html(
+                '<span style="color: {};">{} days (open)</span>',
+                color, days
+            )
+    days_open_display.short_description = 'Days Open'
+    
+    actions = ['mark_as_filled', 'generate_vacancy_report']
+    
+    def mark_as_filled(self, request, queryset):
+        """Mark selected vacancies as filled (without specifying employee)"""
+        count = queryset.filter(is_filled=False).update(
+            is_filled=True,
+            filled_date=date.today()
+        )
+        self.message_user(request, f'Marked {count} vacancies as filled.')
+    mark_as_filled.short_description = 'Mark as filled'
+    
+    def generate_vacancy_report(self, request, queryset):
+        """Generate CSV report for selected vacancies"""
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = f'attachment; filename="vacancies_{date.today()}.csv"'
+        
+        writer = csv.writer(response)
+        writer.writerow([
+            'Position ID', 'Title', 'Business Function', 'Department', 
+            'Vacancy Type', 'Urgency', 'Expected Start Date', 'Reports To',
+            'Status', 'Days Open', 'Created Date'
+        ])
+        
+        for vacancy in queryset:
+            days_open = (date.today() - vacancy.created_at.date()).days
+            writer.writerow([
+                vacancy.position_id,
+                vacancy.title,
+                vacancy.business_function.name,
+                vacancy.department.name,
+                vacancy.get_vacancy_type_display(),
+                vacancy.get_urgency_display(),
+                vacancy.expected_start_date,
+                vacancy.reporting_to.full_name if vacancy.reporting_to else '',
+                'Filled' if vacancy.is_filled else 'Open',
+                days_open,
+                vacancy.created_at.date()
+            ])
+        
+        return response
+    generate_vacancy_report.short_description = 'Export vacancy report'
+
+# Employee Document Admin
+@admin.register(EmployeeDocument)
+class EmployeeDocumentAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
+    list_display = ('name', 'employee_display', 'document_type', 'file_size_display', 'uploaded_at', 'uploaded_by')
+    list_filter = ('document_type', 'uploaded_at', 'mime_type')
+    search_fields = ('name', 'employee__employee_id', 'employee__full_name')
+    autocomplete_fields = ['employee', 'uploaded_by']
+    readonly_fields = ('id', 'file_size', 'mime_type', 'uploaded_at')
+    
+    def employee_display(self, obj):
+        url = reverse('admin:api_employee_change', args=[obj.employee.id])
+        return format_html(
+            '<a href="{}" style="color: #417690;">{} ({})</a>',
+            url, obj.employee.full_name, obj.employee.employee_id
+        )
+    employee_display.short_description = 'Employee'
+    
+    def file_size_display(self, obj):
+        if obj.file_size:
+            if obj.file_size < 1024:
+                return f"{obj.file_size} B"
+            elif obj.file_size < 1024 * 1024:
+                return f"{obj.file_size / 1024:.1f} KB"
+            else:
+                return f"{obj.file_size / (1024 * 1024):.1f} MB"
+        return "Unknown"
+    file_size_display.short_description = 'File Size'
+
+# Employee Activity Admin
+@admin.register(EmployeeActivity)
+class EmployeeActivityAdmin(admin.ModelAdmin):
+    list_display = ('employee_display', 'activity_type', 'short_description', 'performed_by', 'created_at')
+    list_filter = ('activity_type', 'created_at', 'performed_by')
+    search_fields = ('employee__employee_id', 'employee__full_name', 'description')
+    readonly_fields = ('id', 'created_at', 'metadata')
+    date_hierarchy = 'created_at'
+    
+    def employee_display(self, obj):
+        url = reverse('admin:api_employee_change', args=[obj.employee.id])
+        return format_html(
+            '<a href="{}" style="color: #417690;">{} ({})</a>',
+            url, obj.employee.full_name, obj.employee.employee_id
+        )
+    employee_display.short_description = 'Employee'
+    
+    def short_description(self, obj):
+        if len(obj.description) > 100:
+            return obj.description[:100] + '...'
+        return obj.description
+    short_description.short_description = 'Description'
+    
+    def has_add_permission(self, request):
+        return False  # Activities are auto-generated
+    
+    def has_change_permission(self, request, obj=None):
+        return False  # Activities are read-only
 
 # Headcount Summary Admin
 @admin.register(HeadcountSummary)
 class HeadcountSummaryAdmin(admin.ModelAdmin):
-    list_display = ('summary_date', 'total_employees', 'active_employees', 'vacant_positions', 'created_at')
-    list_filter = ('summary_date', 'created_at')
-    ordering = ('-summary_date',)
+    list_display = (
+        'summary_date', 'total_employees', 'active_employees', 'inactive_employees',
+        'vacant_positions', 'avg_years_of_service', 'new_hires_month', 'departures_month'
+    )
+    list_filter = ('summary_date',)
     readonly_fields = (
-        'created_at', 'headcount_by_function', 'headcount_by_department', 
-        'headcount_by_position', 'headcount_by_status', 'contract_analysis'
+        'summary_date', 'total_employees', 'active_employees', 'inactive_employees',
+        'vacant_positions', 'headcount_by_function', 'headcount_by_department',
+        'headcount_by_position', 'headcount_by_status', 'contract_analysis',
+        'avg_years_of_service', 'new_hires_month', 'departures_month', 'created_at'
     )
+    date_hierarchy = 'summary_date'
     
-    fieldsets = (
-        ('Summary Information', {
-            'fields': (
-                'summary_date',
-                ('total_employees', 'active_employees', 'inactive_employees'),
-                'vacant_positions'
-            )
-        }),
-        ('Additional Metrics', {
-            'fields': (
-                ('avg_years_of_service', 'new_hires_month', 'departures_month'),
-            )
-        }),
-        ('Detailed Breakdowns', {
-            'fields': (
-                'headcount_by_function',
-                'headcount_by_department',
-                'headcount_by_position',
-                'headcount_by_status',
-                'contract_analysis'
-            ),
-            'classes': ('collapse',)
-        }),
-        ('Metadata', {
-            'fields': ('created_at',),
-            'classes': ('collapse',)
-        })
-    )
+    def has_add_permission(self, request):
+        return False  # Use the generate action instead
+    
+    def has_change_permission(self, request, obj=None):
+        return False  # Summaries are auto-generated
     
     actions = ['generate_current_summary']
     
     def generate_current_summary(self, request, queryset):
-        """Generate a new headcount summary for today"""
+        """Generate headcount summary for today"""
         summary = HeadcountSummary.generate_summary()
         self.message_user(
-            request, 
-            f'Successfully generated headcount summary for {summary.summary_date}. '
-            f'Total employees: {summary.total_employees}, Active: {summary.active_employees}'
+            request,
+            f'Generated headcount summary for {summary.summary_date} with {summary.total_employees} total employees.'
         )
+        return redirect(reverse('admin:api_headcountsummary_change', args=[summary.id]))
     generate_current_summary.short_description = 'Generate current headcount summary'
 
-# Custom Admin Dashboard Actions
-class HRSystemAdminMixin:
-    """Global HR System admin actions"""
-    
-    def changelist_view(self, request, extra_context=None):
-        extra_context = extra_context or {}
-        
-        # Add contract expiring soon count
-        expiring_soon = ContractStatusManager.get_contract_expiring_soon(30)
-        extra_context['contracts_expiring_soon'] = expiring_soon.count()
-        
-        # Add employees needing status updates
-        needing_updates = ContractStatusManager.get_employees_needing_status_update()
-        extra_context['employees_needing_status_update'] = len(needing_updates)
-        
-        return super().changelist_view(request, extra_context)
+# Admin Site Customization
+admin.site.site_header = 'ALMET HRIS Administration'
+admin.site.site_title = 'ALMET HRIS Admin'
+admin.site.index_title = 'Employee Management System'
 
-# Apply custom styling and functionality to Employee admin
-EmployeeAdmin.__bases__ = EmployeeAdmin.__bases__ + (HRSystemAdminMixin,)
-
-# Global Admin Actions
-def bulk_update_all_employee_statuses(modeladmin, request, queryset):
-    """Global action to update all employee statuses"""
-    updated_count = ContractStatusManager.bulk_update_employee_statuses()
-    modeladmin.message_user(
-        request, 
-        f'Successfully updated statuses for {updated_count} employees based on contract configurations.'
-    )
-bulk_update_all_employee_statuses.short_description = 'Update all employee statuses based on contracts'
-
-def create_all_default_configurations(modeladmin, request, queryset):
-    """Create all default system configurations"""
-    # Create default contract configs
-    contract_configs = ContractTypeConfig.get_or_create_defaults()
-    
-    # Create default statuses
-    statuses = EmployeeStatus.get_or_create_default_statuses()
-    
-    modeladmin.message_user(
-        request, 
-        f'Successfully created default configurations: {len(contract_configs)} contract types, {len(statuses)} statuses.'
-    )
-create_all_default_configurations.short_description = 'Create all default system configurations'
-
-# Add global actions to Employee admin
-EmployeeAdmin.actions.extend([
-    bulk_update_all_employee_statuses,
-    create_all_default_configurations
-])
-
-# Admin customizations
-admin.site.site_header = "Almet HRIS Administration"
-admin.site.site_title = "Almet HRIS Admin"
-admin.site.index_title = "HR Management System"
-
-# Custom admin CSS and JavaScript
-class AdminStyleMixin:
-    """Mixin to add custom styling to admin"""
-    
-    class Media:
-        css = {
-            'all': ('admin/css/custom_admin.css',)
-        }
-        js = ('admin/js/custom_admin.js',)
-
-# Apply custom styling to all admin classes
-for admin_class in [
-    BusinessFunctionAdmin, DepartmentAdmin, UnitAdmin, JobFunctionAdmin,
-    PositionGroupAdmin, EmployeeTagAdmin, EmployeeStatusAdmin, EmployeeAdmin,
-    EmployeeActivityAdmin, EmployeeDocumentAdmin, VacantPositionAdmin,
-    HeadcountSummaryAdmin, ContractTypeConfigAdmin
-]:
-    # Add custom styling mixin
-    admin_class.__bases__ = admin_class.__bases__ + (AdminStyleMixin,)
-
-# Custom admin dashboard
-from django.contrib.admin import AdminSite
-from django.utils.translation import gettext_lazy as _
-
-class HRAdminSite(AdminSite):
-    site_header = "Almet HRIS Administration"
-    site_title = "Almet HRIS Admin"
-    index_title = "HR Management System"
+# Enhanced admin site with custom dashboard
+class AlmetHRISAdminSite(admin.AdminSite):
+    site_header = 'ALMET HRIS Administration'
+    site_title = 'ALMET HRIS Admin'
+    index_title = 'Employee Management System Dashboard'
     
     def index(self, request, extra_context=None):
+        """Custom admin dashboard with key metrics"""
         extra_context = extra_context or {}
         
-        # Add dashboard statistics
+        # Get key metrics
         total_employees = Employee.objects.count()
         active_employees = Employee.objects.filter(status__affects_headcount=True).count()
-        contracts_expiring = ContractStatusManager.get_contract_expiring_soon(30).count()
-        status_updates_needed = len(ContractStatusManager.get_employees_needing_status_update())
+        vacant_positions = VacantPosition.objects.filter(is_filled=False).count()
+        
+        # Contract expiry alerts
+        expiring_soon = Employee.objects.filter(
+            contract_end_date__lte=date.today() + timedelta(days=30),
+            contract_end_date__gte=date.today(),
+            contract_duration__in=['3_MONTHS', '6_MONTHS', '1_YEAR', '2_YEARS', '3_YEARS']
+        ).count()
+        
+        # Status updates needed
+        from .status_management import EmployeeStatusManager
+        needing_updates = len(EmployeeStatusManager.get_employees_needing_update())
         
         extra_context.update({
-            'dashboard_stats': {
-                'total_employees': total_employees,
-                'active_employees': active_employees,
-                'contracts_expiring_soon': contracts_expiring,
-                'status_updates_needed': status_updates_needed
-            }
+            'total_employees': total_employees,
+            'active_employees': active_employees,
+            'vacant_positions': vacant_positions,
+            'expiring_contracts': expiring_soon,
+            'status_updates_needed': needing_updates,
         })
         
         return super().index(request, extra_context)
 
-# Replace default admin site
-# admin.site = HRAdminSite(name='admin')
+# Create custom admin site instance
+# admin_site = AlmetHRISAdminSite(name='almet_admin')
+
+# Quick Actions for Admin
+class QuickActionsAdmin(admin.ModelAdmin):
+    """Mixin for quick actions in admin"""
+    
+    def get_actions(self, request):
+        actions = super().get_actions(request)
+        actions['quick_export'] = (self.quick_export, 'quick_export', 'Quick export to CSV')
+        return actions
+    
+    def quick_export(self, request, queryset):
+        """Quick export action for any model"""
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = f'attachment; filename="{self.model._meta.model_name}_{date.today()}.csv"'
+        
+        writer = csv.writer(response)
+        
+        # Get all field names
+        field_names = [field.name for field in self.model._meta.fields if not field.name.startswith('_')]
+        writer.writerow(field_names)
+        
+        # Write data
+        for obj in queryset:
+            row = []
+            for field_name in field_names:
+                value = getattr(obj, field_name, '')
+                if value is None:
+                    value = ''
+                row.append(str(value))
+            writer.writerow(row)
+        
+        self.message_user(request, f'Exported {queryset.count()} records.')
+        return response
+    quick_export.short_description = 'Quick export selected items to CSV'
+
+# Register admin customization JS and CSS
+class AlmetAdminMixin:
+    """Mixin to add custom styling and JavaScript to admin"""
+    
+    class Media:
+        css = {
+            'all': ('admin/css/almet_admin.css',)
+        }
+        js = ('admin/js/almet_admin.js',)
+
+# Update existing admin classes to include the mixin
+for admin_class in [EmployeeAdmin, BusinessFunctionAdmin, DepartmentAdmin]:
+    if hasattr(admin_class, '__bases__'):
+        admin_class.__bases__ = admin_class.__bases__ + (AlmetAdminMixin,)

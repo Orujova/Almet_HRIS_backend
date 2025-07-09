@@ -537,9 +537,10 @@ class Employee(SoftDeleteModel):
     # Auto-generated full name
     full_name = models.CharField(max_length=300, editable=False, default='')
     
-    # Personal Information
+    # Personal Information (ENHANCED with father_name)
     date_of_birth = models.DateField(null=True, blank=True)
     gender = models.CharField(max_length=10, choices=GENDER_CHOICES, null=True, blank=True)
+    father_name = models.CharField(max_length=200, blank=True, null=True, help_text="Father's name (optional)")
     address = models.TextField(blank=True, null=True)
     phone = models.CharField(max_length=20, blank=True, null=True)
     emergency_contact = models.TextField(blank=True, null=True)
@@ -568,8 +569,8 @@ class Employee(SoftDeleteModel):
     last_extension_date = models.DateField(null=True, blank=True)
     renewal_status = models.CharField(max_length=20, choices=RENEWAL_STATUS_CHOICES, default='NOT_APPLICABLE')
     
-    # Management Hierarchy
-    line_manager = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='direct_reports')
+    # Management Hierarchy (ENHANCED)
+    line_manager = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='direct_reports', help_text="Line manager for this employee")
     
     # Status and Visibility
     status = models.ForeignKey(EmployeeStatus, on_delete=models.PROTECT, related_name='employees')
@@ -1084,13 +1085,15 @@ class HeadcountSummary(models.Model):
         verbose_name = "Headcount Summary"
         verbose_name_plural = "Headcount Summaries"
 
-# NEW: Contract Status Management Helper
 class ContractStatusManager:
     """Helper class for managing contract-based status transitions"""
     
     @staticmethod
     def bulk_update_employee_statuses(employee_ids=None, force_update=False):
         """Bulk update employee statuses based on contract configurations"""
+        # Import here to avoid circular import
+        from .status_management import EmployeeStatusManager
+        
         if employee_ids:
             employees = Employee.objects.filter(id__in=employee_ids)
         else:
@@ -1098,7 +1101,7 @@ class ContractStatusManager:
         
         updated_count = 0
         for employee in employees:
-            if employee.update_status_automatically(force_update=force_update):
+            if EmployeeStatusManager.update_employee_status(employee, force_update):
                 updated_count += 1
         
         logger.info(f"Bulk status update completed: {updated_count} employees updated")
@@ -1107,10 +1110,13 @@ class ContractStatusManager:
     @staticmethod
     def get_employees_needing_status_update():
         """Get employees whose status needs to be updated"""
+        # Import here to avoid circular import
+        from .status_management import EmployeeStatusManager
+        
         employees_to_update = []
         
         for employee in Employee.objects.all():
-            preview = employee.get_status_preview()
+            preview = EmployeeStatusManager.get_status_preview(employee)
             if preview['needs_update']:
                 employees_to_update.append({
                     'employee': employee,
@@ -1129,7 +1135,8 @@ class ContractStatusManager:
         return Employee.objects.filter(
             contract_end_date__lte=expiry_date,
             contract_end_date__gte=date.today(),
-            contract_duration__in=['3_MONTHS', '6_MONTHS', '1_YEAR', '2_YEARS', '3_YEARS']
+            contract_duration__in=['3_MONTHS', '6_MONTHS', '1_YEAR', '2_YEARS', '3_YEARS'],
+            is_deleted=False
         ).select_related('status', 'business_function', 'department')
 
 # Signal handlers for automatic status updates

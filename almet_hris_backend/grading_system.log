@@ -82,3 +82,315 @@ INFO 2025-07-07 16:01:00,740 models 12340 5252 Created default contract config: 
 INFO 2025-07-07 16:01:00,743 models 12340 5252 Created default contract config: 3_YEARS
 INFO 2025-07-07 16:01:00,747 models 12340 5252 Created default contract config: PERMANENT
 INFO 2025-07-07 16:01:30,107 models 12340 5252 Created default status: ON LEAVE
+INFO 2025-07-08 10:04:25,593 views 11468 8632 === Microsoft authentication request received ===
+INFO 2025-07-08 10:04:25,640 views 11468 8632 Request method: POST
+INFO 2025-07-08 10:04:25,643 views 11468 8632 Request headers: {'Content-Length': '1289', 'Content-Type': 'application/json', 'Host': 'localhost:8000', 'Connection': 'keep-alive', 'Sec-Ch-Ua-Platform': '"Windows"', 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36', 'Accept': 'application/json, text/plain, */*', 'Sec-Ch-Ua': '"Not)A;Brand";v="8", "Chromium";v="138", "Google Chrome";v="138"', 'Sec-Ch-Ua-Mobile': '?0', 'Origin': 'http://localhost:3000', 'Sec-Fetch-Site': 'same-site', 'Sec-Fetch-Mode': 'cors', 'Sec-Fetch-Dest': 'empty', 'Referer': 'http://localhost:3000/', 'Accept-Encoding': 'gzip, deflate, br, zstd', 'Accept-Language': 'en-CA,en;q=0.9,az-AZ;q=0.8,az;q=0.7,en-GB;q=0.6,en-US;q=0.5'}
+INFO 2025-07-08 10:04:25,651 views 11468 8632 Request data keys: ['id_token']
+INFO 2025-07-08 10:04:25,653 views 11468 8632 Microsoft authentication attempt - validating token
+INFO 2025-07-08 10:04:25,654 views 11468 8632 Token length: 1274
+INFO 2025-07-08 10:04:25,656 auth 11468 8632 === Starting Microsoft token validation ===
+INFO 2025-07-08 10:04:25,660 auth 11468 8632 Received token: eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiIsImtpZCI6Il9qTn...
+INFO 2025-07-08 10:04:25,662 auth 11468 8632 === Token payload ===
+INFO 2025-07-08 10:04:25,664 auth 11468 8632 {
+  "aud": "230458ff-ed69-4abb-8496-3888067116f6",
+  "iss": "https://login.microsoftonline.com/b3222ef7-242d-4724-a665-97b0a764f2d0/v2.0",
+  "iat": 1751954366,
+  "nbf": 1751954366,
+  "exp": 1751958266,
+  "email": "n.orujova@almettrading.com",
+  "name": "Narmin Orujova",
+  "nonce": "0197e8a2-9e65-7cbe-a4b4-29541fb4a52e",
+  "oid": "2c74167f-d69a-43a5-a1e6-910fd8560625",
+  "preferred_username": "n.orujova@almettrading.com",
+  "rh": "1.ATkA9y4isy0kJEemZZewp2Ty0P9YBCNp7btKhJY4iAZxFvaqARM5AA.",
+  "sid": "006c1029-1a09-4f02-ab0e-aceab618f97c",
+  "sub": "i7rUkArSkR21ADRGNhKBNmJkwt25_DaBfDeIyBhUpf4",
+  "tid": "b3222ef7-242d-4724-a665-97b0a764f2d0",
+  "uti": "gxNZ7CcQ7ECXIVI4_rcyAA",
+  "ver": "2.0"
+}
+INFO 2025-07-08 10:04:25,666 auth 11468 8632 Audience from token: 230458ff-ed69-4abb-8496-3888067116f6
+INFO 2025-07-08 10:04:25,667 auth 11468 8632 Expected audience: 230458ff-ed69-4abb-8496-3888067116f6
+INFO 2025-07-08 10:04:25,669 auth 11468 8632 Microsoft ID (sub): i7rUkArSkR21ADRGNhKBNmJkwt25_DaBfDeIyBhUpf4
+INFO 2025-07-08 10:04:25,678 auth 11468 8632 Full name from token: Narmin Orujova
+INFO 2025-07-08 10:04:25,680 auth 11468 8632 Extracted user info: email=n.orujova@almettrading.com, first_name=Narmin, last_name=Orujova
+INFO 2025-07-08 10:04:25,833 auth 11468 8632 Found existing Microsoft user: n.orujova
+INFO 2025-07-08 10:04:25,839 auth 11468 8632 === Token validation successful for user: n.orujova ===
+INFO 2025-07-08 10:04:25,840 views 11468 8632 Token validated successfully for user: n.orujova
+INFO 2025-07-08 10:04:25,877 views 11468 8632 JWT tokens generated for user: n.orujova
+INFO 2025-07-08 10:04:25,879 views 11468 8632 Returning successful response for user: n.orujova
+INFO 2025-07-08 11:39:48,995 views 15052 2440 === Microsoft authentication request received ===
+INFO 2025-07-08 11:39:48,998 views 15052 2440 Microsoft authentication attempt - validating token
+INFO 2025-07-08 11:39:48,999 auth 15052 2440 === Starting Microsoft token validation ===
+INFO 2025-07-08 11:39:49,000 auth 15052 2440 Received token: eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiIsImtpZCI6Il9qTn...
+INFO 2025-07-08 11:39:49,002 auth 15052 2440 === Token payload ===
+INFO 2025-07-08 11:39:49,003 auth 15052 2440 {
+  "aud": "230458ff-ed69-4abb-8496-3888067116f6",
+  "iss": "https://login.microsoftonline.com/b3222ef7-242d-4724-a665-97b0a764f2d0/v2.0",
+  "iat": 1751960089,
+  "nbf": 1751960089,
+  "exp": 1751963989,
+  "email": "n.orujova@almettrading.com",
+  "name": "Narmin Orujova",
+  "nonce": "0197e8f9-f541-7460-809a-5b0047796b20",
+  "oid": "2c74167f-d69a-43a5-a1e6-910fd8560625",
+  "preferred_username": "n.orujova@almettrading.com",
+  "rh": "1.ATkA9y4isy0kJEemZZewp2Ty0P9YBCNp7btKhJY4iAZxFvaqARM5AA.",
+  "sid": "006c1029-1a09-4f02-ab0e-aceab618f97c",
+  "sub": "i7rUkArSkR21ADRGNhKBNmJkwt25_DaBfDeIyBhUpf4",
+  "tid": "b3222ef7-242d-4724-a665-97b0a764f2d0",
+  "uti": "nZWfcMalC0es4XRCr88MAA",
+  "ver": "2.0"
+}
+INFO 2025-07-08 11:39:49,005 auth 15052 2440 Audience from token: 230458ff-ed69-4abb-8496-3888067116f6
+INFO 2025-07-08 11:39:49,006 auth 15052 2440 Expected audience: 230458ff-ed69-4abb-8496-3888067116f6
+INFO 2025-07-08 11:39:49,008 auth 15052 2440 Microsoft ID (sub): i7rUkArSkR21ADRGNhKBNmJkwt25_DaBfDeIyBhUpf4
+INFO 2025-07-08 11:39:49,010 auth 15052 2440 Full name from token: Narmin Orujova
+INFO 2025-07-08 11:39:49,011 auth 15052 2440 Extracted user info: email=n.orujova@almettrading.com, first_name=Narmin, last_name=Orujova
+INFO 2025-07-08 11:39:49,233 auth 15052 2440 Found existing Microsoft user: n.orujova
+INFO 2025-07-08 11:39:49,234 auth 15052 2440 === Token validation successful for user: n.orujova ===
+INFO 2025-07-08 11:39:49,236 views 15052 2440 Token validated successfully for user: n.orujova
+INFO 2025-07-08 11:39:49,245 views 15052 2440 JWT tokens generated for user: n.orujova
+INFO 2025-07-08 11:39:49,247 views 15052 2440 Returning successful response for user: n.orujova
+INFO 2025-07-08 11:39:51,815 views 15052 2440 User info request for user: n.orujova
+ERROR 2025-07-08 11:39:51,872 views 15052 2440 [n.orujova] Error during employee profile processing: column api_contracttype.onboarding_days does not exist
+LINE 1: ..."."is_permanent", "api_contracttype"."is_active", "api_contr...
+                                                             ^
+
+INFO 2025-07-08 11:39:51,876 views 15052 2440 [n.orujova] User info response prepared successfully
+ERROR 2025-07-08 11:40:40,127 views 15052 20216 Error adding sample data: column api_contracttype.onboarding_days does not exist
+LINE 1: ..."."is_permanent", "api_contracttype"."is_active", "api_contr...
+                                                             ^
+
+ERROR 2025-07-08 11:40:40,191 views 15052 20216 Template download failed: column api_contracttype.onboarding_days does not exist
+LINE 1: ..."."is_permanent", "api_contracttype"."is_active", "api_contr...
+                                                             ^
+
+INFO 2025-07-08 11:43:35,820 views 9620 18536 User info request for user: n.orujova
+INFO 2025-07-08 11:43:35,913 views 9620 18536 [n.orujova] No employee profile found
+INFO 2025-07-08 11:43:35,917 views 9620 18536 [n.orujova] User info response prepared successfully
+INFO 2025-07-08 12:41:15,480 views 26324 26468 === Microsoft authentication request received ===
+INFO 2025-07-08 12:41:15,482 views 26324 26468 Request method: POST
+INFO 2025-07-08 12:41:15,483 views 26324 26468 Request headers: {'Content-Length': '1289', 'Content-Type': 'application/json', 'Host': 'localhost:8000', 'Connection': 'keep-alive', 'Sec-Ch-Ua-Platform': '"Windows"', 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36', 'Accept': 'application/json, text/plain, */*', 'Sec-Ch-Ua': '"Not)A;Brand";v="8", "Chromium";v="138", "Google Chrome";v="138"', 'Sec-Ch-Ua-Mobile': '?0', 'Origin': 'http://localhost:3000', 'Sec-Fetch-Site': 'same-site', 'Sec-Fetch-Mode': 'cors', 'Sec-Fetch-Dest': 'empty', 'Referer': 'http://localhost:3000/', 'Accept-Encoding': 'gzip, deflate, br, zstd', 'Accept-Language': 'en-CA,en;q=0.9,az-AZ;q=0.8,az;q=0.7,en-GB;q=0.6,en-US;q=0.5'}
+INFO 2025-07-08 12:41:15,485 views 26324 26468 Request data keys: ['id_token']
+INFO 2025-07-08 12:41:15,485 views 26324 26468 Microsoft authentication attempt - validating token
+INFO 2025-07-08 12:41:15,486 views 26324 26468 Token length: 1274
+INFO 2025-07-08 12:41:15,487 auth 26324 26468 === Starting Microsoft token validation ===
+INFO 2025-07-08 12:41:15,488 auth 26324 26468 Received token: eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiIsImtpZCI6Il9qTn...
+INFO 2025-07-08 12:41:15,490 auth 26324 26468 === Token payload ===
+INFO 2025-07-08 12:41:15,491 auth 26324 26468 {
+  "aud": "230458ff-ed69-4abb-8496-3888067116f6",
+  "iss": "https://login.microsoftonline.com/b3222ef7-242d-4724-a665-97b0a764f2d0/v2.0",
+  "iat": 1751960089,
+  "nbf": 1751960089,
+  "exp": 1751963989,
+  "email": "n.orujova@almettrading.com",
+  "name": "Narmin Orujova",
+  "nonce": "0197e8f9-f541-7460-809a-5b0047796b20",
+  "oid": "2c74167f-d69a-43a5-a1e6-910fd8560625",
+  "preferred_username": "n.orujova@almettrading.com",
+  "rh": "1.ATkA9y4isy0kJEemZZewp2Ty0P9YBCNp7btKhJY4iAZxFvaqARM5AA.",
+  "sid": "006c1029-1a09-4f02-ab0e-aceab618f97c",
+  "sub": "i7rUkArSkR21ADRGNhKBNmJkwt25_DaBfDeIyBhUpf4",
+  "tid": "b3222ef7-242d-4724-a665-97b0a764f2d0",
+  "uti": "nZWfcMalC0es4XRCr88MAA",
+  "ver": "2.0"
+}
+INFO 2025-07-08 12:41:15,493 auth 26324 26468 Audience from token: 230458ff-ed69-4abb-8496-3888067116f6
+INFO 2025-07-08 12:41:15,494 auth 26324 26468 Expected audience: 230458ff-ed69-4abb-8496-3888067116f6
+INFO 2025-07-08 12:41:15,494 auth 26324 26468 Microsoft ID (sub): i7rUkArSkR21ADRGNhKBNmJkwt25_DaBfDeIyBhUpf4
+INFO 2025-07-08 12:41:15,495 auth 26324 26468 Full name from token: Narmin Orujova
+INFO 2025-07-08 12:41:15,497 auth 26324 26468 Extracted user info: email=n.orujova@almettrading.com, first_name=Narmin, last_name=Orujova
+INFO 2025-07-08 12:41:15,557 auth 26324 26468 Found existing Microsoft user: n.orujova
+INFO 2025-07-08 12:41:15,558 auth 26324 26468 === Token validation successful for user: n.orujova ===
+INFO 2025-07-08 12:41:15,558 views 26324 26468 Token validated successfully for user: n.orujova
+INFO 2025-07-08 12:41:15,560 views 26324 26468 JWT tokens generated for user: n.orujova
+INFO 2025-07-08 12:41:15,560 views 26324 26468 Returning successful response for user: n.orujova
+INFO 2025-07-08 16:46:11,826 views 25912 26284 === Microsoft authentication request received ===
+INFO 2025-07-08 16:46:11,828 views 25912 26284 Microsoft authentication attempt - validating token
+INFO 2025-07-08 16:46:11,829 auth 25912 26284 === Starting Microsoft token validation ===
+INFO 2025-07-08 16:46:11,830 auth 25912 26284 Received token: eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiIsImtpZCI6Il9qTn...
+INFO 2025-07-08 16:46:11,830 auth 25912 26284 === Token payload ===
+INFO 2025-07-08 16:46:11,831 auth 25912 26284 {
+  "aud": "230458ff-ed69-4abb-8496-3888067116f6",
+  "iss": "https://login.microsoftonline.com/b3222ef7-242d-4724-a665-97b0a764f2d0/v2.0",
+  "iat": 1751978472,
+  "nbf": 1751978472,
+  "exp": 1751982372,
+  "email": "n.orujova@almettrading.com",
+  "name": "Narmin Orujova",
+  "nonce": "0197ea12-6513-7fd5-8068-fdfa7e1a75d5",
+  "oid": "2c74167f-d69a-43a5-a1e6-910fd8560625",
+  "preferred_username": "n.orujova@almettrading.com",
+  "rh": "1.ATkA9y4isy0kJEemZZewp2Ty0P9YBCNp7btKhJY4iAZxFvaqARM5AA.",
+  "sid": "006c1029-1a09-4f02-ab0e-aceab618f97c",
+  "sub": "i7rUkArSkR21ADRGNhKBNmJkwt25_DaBfDeIyBhUpf4",
+  "tid": "b3222ef7-242d-4724-a665-97b0a764f2d0",
+  "uti": "ELtDWJT3HkuATJ0uzo0_AA",
+  "ver": "2.0"
+}
+INFO 2025-07-08 16:46:11,833 auth 25912 26284 Audience from token: 230458ff-ed69-4abb-8496-3888067116f6
+INFO 2025-07-08 16:46:11,833 auth 25912 26284 Expected audience: 230458ff-ed69-4abb-8496-3888067116f6
+INFO 2025-07-08 16:46:11,835 auth 25912 26284 Microsoft ID (sub): i7rUkArSkR21ADRGNhKBNmJkwt25_DaBfDeIyBhUpf4
+INFO 2025-07-08 16:46:11,836 auth 25912 26284 Full name from token: Narmin Orujova
+INFO 2025-07-08 16:46:11,837 auth 25912 26284 Extracted user info: email=n.orujova@almettrading.com, first_name=Narmin, last_name=Orujova
+INFO 2025-07-08 16:46:11,908 auth 25912 26284 Found existing Microsoft user: n.orujova
+INFO 2025-07-08 16:46:11,909 auth 25912 26284 === Token validation successful for user: n.orujova ===
+INFO 2025-07-08 16:46:11,909 views 25912 26284 Token validated successfully for user: n.orujova
+INFO 2025-07-08 16:46:11,912 views 25912 26284 JWT tokens generated for user: n.orujova
+INFO 2025-07-08 16:46:11,913 views 25912 26284 Returning successful response for user: n.orujova
+INFO 2025-07-09 11:00:34,923 views 8852 536 === Microsoft authentication request received ===
+INFO 2025-07-09 11:00:34,924 views 8852 536 Request method: POST
+INFO 2025-07-09 11:00:34,925 views 8852 536 Request headers: {'Content-Length': '1289', 'Content-Type': 'application/json', 'Host': 'localhost:8000', 'Connection': 'keep-alive', 'Sec-Ch-Ua-Platform': '"Windows"', 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36', 'Accept': 'application/json, text/plain, */*', 'Sec-Ch-Ua': '"Not)A;Brand";v="8", "Chromium";v="138", "Google Chrome";v="138"', 'Sec-Ch-Ua-Mobile': '?0', 'Origin': 'http://localhost:3000', 'Sec-Fetch-Site': 'same-site', 'Sec-Fetch-Mode': 'cors', 'Sec-Fetch-Dest': 'empty', 'Referer': 'http://localhost:3000/', 'Accept-Encoding': 'gzip, deflate, br, zstd', 'Accept-Language': 'en-CA,en;q=0.9,az-AZ;q=0.8,az;q=0.7,en-GB;q=0.6,en-US;q=0.5'}
+INFO 2025-07-09 11:00:34,926 views 8852 536 Request data keys: ['id_token']
+INFO 2025-07-09 11:00:34,927 views 8852 536 Microsoft authentication attempt - validating token
+INFO 2025-07-09 11:00:34,927 views 8852 536 Token length: 1274
+INFO 2025-07-09 11:00:34,928 auth 8852 536 === Starting Microsoft token validation ===
+INFO 2025-07-09 11:00:34,928 auth 8852 536 Received token: eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiIsImtpZCI6Il9qTn...
+INFO 2025-07-09 11:00:34,929 auth 8852 536 === Token payload ===
+INFO 2025-07-09 11:00:34,929 auth 8852 536 {
+  "aud": "230458ff-ed69-4abb-8496-3888067116f6",
+  "iss": "https://login.microsoftonline.com/b3222ef7-242d-4724-a665-97b0a764f2d0/v2.0",
+  "iat": 1752044134,
+  "nbf": 1752044134,
+  "exp": 1752048034,
+  "email": "n.orujova@almettrading.com",
+  "name": "Narmin Orujova",
+  "nonce": "0197edfc-671f-7ed6-a378-6588cc19baec",
+  "oid": "2c74167f-d69a-43a5-a1e6-910fd8560625",
+  "preferred_username": "n.orujova@almettrading.com",
+  "rh": "1.ATkA9y4isy0kJEemZZewp2Ty0P9YBCNp7btKhJY4iAZxFvaqARM5AA.",
+  "sid": "006c1029-1a09-4f02-ab0e-aceab618f97c",
+  "sub": "i7rUkArSkR21ADRGNhKBNmJkwt25_DaBfDeIyBhUpf4",
+  "tid": "b3222ef7-242d-4724-a665-97b0a764f2d0",
+  "uti": "E7j2ali9KUmWW8CLeixYAA",
+  "ver": "2.0"
+}
+INFO 2025-07-09 11:00:34,930 auth 8852 536 Audience from token: 230458ff-ed69-4abb-8496-3888067116f6
+INFO 2025-07-09 11:00:34,930 auth 8852 536 Expected audience: 230458ff-ed69-4abb-8496-3888067116f6
+INFO 2025-07-09 11:00:34,930 auth 8852 536 Microsoft ID (sub): i7rUkArSkR21ADRGNhKBNmJkwt25_DaBfDeIyBhUpf4
+INFO 2025-07-09 11:00:34,930 auth 8852 536 Full name from token: Narmin Orujova
+INFO 2025-07-09 11:00:34,931 auth 8852 536 Extracted user info: email=n.orujova@almettrading.com, first_name=Narmin, last_name=Orujova
+INFO 2025-07-09 11:00:34,976 auth 8852 536 Found existing Microsoft user: n.orujova
+INFO 2025-07-09 11:00:34,976 auth 8852 536 === Token validation successful for user: n.orujova ===
+INFO 2025-07-09 11:00:34,977 views 8852 536 Token validated successfully for user: n.orujova
+INFO 2025-07-09 11:00:34,980 views 8852 536 JWT tokens generated for user: n.orujova
+INFO 2025-07-09 11:00:34,980 views 8852 536 Returning successful response for user: n.orujova
+INFO 2025-07-09 11:05:20,640 status_management 8852 8296 Bulk status update completed: 12 updated, 0 errors
+INFO 2025-07-09 11:18:30,306 views 26472 9652 User info request for user: n.orujova
+INFO 2025-07-09 11:18:30,319 views 26472 9652 [n.orujova] No employee profile found
+INFO 2025-07-09 11:18:30,322 views 26472 9652 [n.orujova] User info response prepared successfully
+INFO 2025-07-09 11:51:19,552 views 14528 12180 User info request for user: n.orujova
+INFO 2025-07-09 11:51:19,575 views 14528 12180 [n.orujova] No employee profile found
+INFO 2025-07-09 11:51:19,577 views 14528 12180 [n.orujova] User info response prepared successfully
+INFO 2025-07-09 14:07:36,672 views 23768 11648 === Microsoft authentication request received ===
+INFO 2025-07-09 14:07:36,674 views 23768 11648 Request method: POST
+INFO 2025-07-09 14:07:36,676 views 23768 11648 Request headers: {'Content-Length': '1289', 'Content-Type': 'application/json', 'Host': 'localhost:8000', 'Connection': 'keep-alive', 'Sec-Ch-Ua-Platform': '"Windows"', 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36', 'Accept': 'application/json, text/plain, */*', 'Sec-Ch-Ua': '"Not)A;Brand";v="8", "Chromium";v="138", "Google Chrome";v="138"', 'Sec-Ch-Ua-Mobile': '?0', 'Origin': 'http://localhost:3000', 'Sec-Fetch-Site': 'same-site', 'Sec-Fetch-Mode': 'cors', 'Sec-Fetch-Dest': 'empty', 'Referer': 'http://localhost:3000/', 'Accept-Encoding': 'gzip, deflate, br, zstd', 'Accept-Language': 'en-CA,en;q=0.9,az-AZ;q=0.8,az;q=0.7,en-GB;q=0.6,en-US;q=0.5'}
+INFO 2025-07-09 14:07:36,679 views 23768 11648 Request data keys: ['id_token']
+INFO 2025-07-09 14:07:36,681 views 23768 11648 Microsoft authentication attempt - validating token
+INFO 2025-07-09 14:07:36,684 views 23768 11648 Token length: 1274
+INFO 2025-07-09 14:07:36,686 auth 23768 11648 === Starting Microsoft token validation ===
+INFO 2025-07-09 14:07:36,687 auth 23768 11648 Received token: eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiIsImtpZCI6Il9qTn...
+INFO 2025-07-09 14:07:36,688 auth 23768 11648 === Token payload ===
+INFO 2025-07-09 14:07:36,689 auth 23768 11648 {
+  "aud": "230458ff-ed69-4abb-8496-3888067116f6",
+  "iss": "https://login.microsoftonline.com/b3222ef7-242d-4724-a665-97b0a764f2d0/v2.0",
+  "iat": 1752054995,
+  "nbf": 1752054995,
+  "exp": 1752058895,
+  "email": "n.orujova@almettrading.com",
+  "name": "Narmin Orujova",
+  "nonce": "0197edfc-671f-7ed6-a378-6588cc19baec",
+  "oid": "2c74167f-d69a-43a5-a1e6-910fd8560625",
+  "preferred_username": "n.orujova@almettrading.com",
+  "rh": "1.ATkA9y4isy0kJEemZZewp2Ty0P9YBCNp7btKhJY4iAZxFvaqARM5AA.",
+  "sid": "006c1029-1a09-4f02-ab0e-aceab618f97c",
+  "sub": "i7rUkArSkR21ADRGNhKBNmJkwt25_DaBfDeIyBhUpf4",
+  "tid": "b3222ef7-242d-4724-a665-97b0a764f2d0",
+  "uti": "cF-ufno9UU-F8uFUuaUEAA",
+  "ver": "2.0"
+}
+INFO 2025-07-09 14:07:36,691 auth 23768 11648 Audience from token: 230458ff-ed69-4abb-8496-3888067116f6
+INFO 2025-07-09 14:07:36,692 auth 23768 11648 Expected audience: 230458ff-ed69-4abb-8496-3888067116f6
+INFO 2025-07-09 14:07:36,693 auth 23768 11648 Microsoft ID (sub): i7rUkArSkR21ADRGNhKBNmJkwt25_DaBfDeIyBhUpf4
+INFO 2025-07-09 14:07:36,694 auth 23768 11648 Full name from token: Narmin Orujova
+INFO 2025-07-09 14:07:36,695 auth 23768 11648 Extracted user info: email=n.orujova@almettrading.com, first_name=Narmin, last_name=Orujova
+INFO 2025-07-09 14:07:36,807 auth 23768 11648 Found existing Microsoft user: n.orujova
+INFO 2025-07-09 14:07:36,808 auth 23768 11648 === Token validation successful for user: n.orujova ===
+INFO 2025-07-09 14:07:36,809 views 23768 11648 Token validated successfully for user: n.orujova
+INFO 2025-07-09 14:07:36,810 views 23768 11648 JWT tokens generated for user: n.orujova
+INFO 2025-07-09 14:07:36,811 views 23768 11648 Returning successful response for user: n.orujova
+INFO 2025-07-09 15:30:57,429 views 15448 25980 === Microsoft authentication request received ===
+INFO 2025-07-09 15:30:57,431 views 15448 25980 Request method: POST
+INFO 2025-07-09 15:30:57,433 views 15448 25980 Request headers: {'Content-Length': '1289', 'Content-Type': 'application/json', 'Host': 'localhost:8000', 'Connection': 'keep-alive', 'Sec-Ch-Ua-Platform': '"Windows"', 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36', 'Accept': 'application/json, text/plain, */*', 'Sec-Ch-Ua': '"Not)A;Brand";v="8", "Chromium";v="138", "Google Chrome";v="138"', 'Sec-Ch-Ua-Mobile': '?0', 'Origin': 'http://localhost:3000', 'Sec-Fetch-Site': 'same-site', 'Sec-Fetch-Mode': 'cors', 'Sec-Fetch-Dest': 'empty', 'Referer': 'http://localhost:3000/', 'Accept-Encoding': 'gzip, deflate, br, zstd', 'Accept-Language': 'en-CA,en;q=0.9,az-AZ;q=0.8,az;q=0.7,en-GB;q=0.6,en-US;q=0.5'}
+INFO 2025-07-09 15:30:57,435 views 15448 25980 Request data keys: ['id_token']
+INFO 2025-07-09 15:30:57,437 views 15448 25980 Microsoft authentication attempt - validating token
+INFO 2025-07-09 15:30:57,438 views 15448 25980 Token length: 1274
+INFO 2025-07-09 15:30:57,439 auth 15448 25980 === Starting Microsoft token validation ===
+INFO 2025-07-09 15:30:57,440 auth 15448 25980 Received token: eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiIsImtpZCI6Il9qTn...
+INFO 2025-07-09 15:30:57,443 auth 15448 25980 === Token payload ===
+INFO 2025-07-09 15:30:57,445 auth 15448 25980 {
+  "aud": "230458ff-ed69-4abb-8496-3888067116f6",
+  "iss": "https://login.microsoftonline.com/b3222ef7-242d-4724-a665-97b0a764f2d0/v2.0",
+  "iat": 1752060357,
+  "nbf": 1752060357,
+  "exp": 1752064257,
+  "email": "n.orujova@almettrading.com",
+  "name": "Narmin Orujova",
+  "nonce": "0197edfc-671f-7ed6-a378-6588cc19baec",
+  "oid": "2c74167f-d69a-43a5-a1e6-910fd8560625",
+  "preferred_username": "n.orujova@almettrading.com",
+  "rh": "1.ATkA9y4isy0kJEemZZewp2Ty0P9YBCNp7btKhJY4iAZxFvaqARM5AA.",
+  "sid": "006c1029-1a09-4f02-ab0e-aceab618f97c",
+  "sub": "i7rUkArSkR21ADRGNhKBNmJkwt25_DaBfDeIyBhUpf4",
+  "tid": "b3222ef7-242d-4724-a665-97b0a764f2d0",
+  "uti": "RG_IAA_G9EWqClHjMXoHAA",
+  "ver": "2.0"
+}
+INFO 2025-07-09 15:30:57,447 auth 15448 25980 Audience from token: 230458ff-ed69-4abb-8496-3888067116f6
+INFO 2025-07-09 15:30:57,448 auth 15448 25980 Expected audience: 230458ff-ed69-4abb-8496-3888067116f6
+INFO 2025-07-09 15:30:57,449 auth 15448 25980 Microsoft ID (sub): i7rUkArSkR21ADRGNhKBNmJkwt25_DaBfDeIyBhUpf4
+INFO 2025-07-09 15:30:57,450 auth 15448 25980 Full name from token: Narmin Orujova
+INFO 2025-07-09 15:30:57,451 auth 15448 25980 Extracted user info: email=n.orujova@almettrading.com, first_name=Narmin, last_name=Orujova
+INFO 2025-07-09 15:30:57,544 auth 15448 25980 Found existing Microsoft user: n.orujova
+INFO 2025-07-09 15:30:57,546 auth 15448 25980 === Token validation successful for user: n.orujova ===
+INFO 2025-07-09 15:30:57,547 views 15448 25980 Token validated successfully for user: n.orujova
+INFO 2025-07-09 15:30:57,548 views 15448 25980 JWT tokens generated for user: n.orujova
+INFO 2025-07-09 15:30:57,549 views 15448 25980 Returning successful response for user: n.orujova
+INFO 2025-07-09 17:19:05,349 views 20664 16948 === Microsoft authentication request received ===
+INFO 2025-07-09 17:19:05,354 views 20664 16948 Request method: POST
+INFO 2025-07-09 17:19:05,357 views 20664 16948 Request headers: {'Content-Length': '1289', 'Content-Type': 'application/json', 'Host': 'localhost:8000', 'Connection': 'keep-alive', 'Sec-Ch-Ua-Platform': '"Windows"', 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36', 'Accept': 'application/json, text/plain, */*', 'Sec-Ch-Ua': '"Not)A;Brand";v="8", "Chromium";v="138", "Google Chrome";v="138"', 'Sec-Ch-Ua-Mobile': '?0', 'Origin': 'http://localhost:3000', 'Sec-Fetch-Site': 'same-site', 'Sec-Fetch-Mode': 'cors', 'Sec-Fetch-Dest': 'empty', 'Referer': 'http://localhost:3000/', 'Accept-Encoding': 'gzip, deflate, br, zstd', 'Accept-Language': 'en-CA,en;q=0.9,az-AZ;q=0.8,az;q=0.7,en-GB;q=0.6,en-US;q=0.5'}
+INFO 2025-07-09 17:19:05,359 views 20664 16948 Request data keys: ['id_token']
+INFO 2025-07-09 17:19:05,361 views 20664 16948 Microsoft authentication attempt - validating token
+INFO 2025-07-09 17:19:05,363 views 20664 16948 Token length: 1274
+INFO 2025-07-09 17:19:05,365 auth 20664 16948 === Starting Microsoft token validation ===
+INFO 2025-07-09 17:19:05,367 auth 20664 16948 Received token: eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiIsImtpZCI6Il9qTn...
+INFO 2025-07-09 17:19:05,369 auth 20664 16948 === Token payload ===
+INFO 2025-07-09 17:19:05,371 auth 20664 16948 {
+  "aud": "230458ff-ed69-4abb-8496-3888067116f6",
+  "iss": "https://login.microsoftonline.com/b3222ef7-242d-4724-a665-97b0a764f2d0/v2.0",
+  "iat": 1752066845,
+  "nbf": 1752066845,
+  "exp": 1752070745,
+  "email": "n.orujova@almettrading.com",
+  "name": "Narmin Orujova",
+  "nonce": "0197ef56-e911-78d5-8d2a-e5df5e61136e",
+  "oid": "2c74167f-d69a-43a5-a1e6-910fd8560625",
+  "preferred_username": "n.orujova@almettrading.com",
+  "rh": "1.ATkA9y4isy0kJEemZZewp2Ty0P9YBCNp7btKhJY4iAZxFvaqARM5AA.",
+  "sid": "006c1029-1a09-4f02-ab0e-aceab618f97c",
+  "sub": "i7rUkArSkR21ADRGNhKBNmJkwt25_DaBfDeIyBhUpf4",
+  "tid": "b3222ef7-242d-4724-a665-97b0a764f2d0",
+  "uti": "ikK4mhYRGEu-QiXXRPMLAA",
+  "ver": "2.0"
+}
+INFO 2025-07-09 17:19:05,373 auth 20664 16948 Audience from token: 230458ff-ed69-4abb-8496-3888067116f6
+INFO 2025-07-09 17:19:05,375 auth 20664 16948 Expected audience: 230458ff-ed69-4abb-8496-3888067116f6
+INFO 2025-07-09 17:19:05,379 auth 20664 16948 Microsoft ID (sub): i7rUkArSkR21ADRGNhKBNmJkwt25_DaBfDeIyBhUpf4
+INFO 2025-07-09 17:19:05,381 auth 20664 16948 Full name from token: Narmin Orujova
+INFO 2025-07-09 17:19:05,383 auth 20664 16948 Extracted user info: email=n.orujova@almettrading.com, first_name=Narmin, last_name=Orujova
+INFO 2025-07-09 17:19:05,499 auth 20664 16948 Found existing Microsoft user: n.orujova
+INFO 2025-07-09 17:19:05,500 auth 20664 16948 === Token validation successful for user: n.orujova ===
+INFO 2025-07-09 17:19:05,501 views 20664 16948 Token validated successfully for user: n.orujova
+INFO 2025-07-09 17:19:05,510 views 20664 16948 JWT tokens generated for user: n.orujova
+INFO 2025-07-09 17:19:05,511 views 20664 16948 Returning successful response for user: n.orujova
