@@ -29,8 +29,7 @@ router.register(r'vacant-positions', views.VacantPositionViewSet, basename='vaca
 # Organizational Chart URLs (ENHANCED with department-specific charts)
 router.register(r'org-chart', views.OrgChartViewSet, basename='orgchart')
 
-# Headcount Analytics URLs
-router.register(r'headcount-summaries', views.HeadcountSummaryViewSet, basename='headcountsummary')
+
 
 # Employee Grading Integration URLs
 router.register(r'employee-grading', views.EmployeeGradingViewSet, basename='employeegrading')
@@ -38,9 +37,8 @@ router.register(r'employee-grading', views.EmployeeGradingViewSet, basename='emp
 # NEW: Contract Status Management URLs
 router.register(r'contract-status', views.ContractStatusManagementViewSet, basename='contractstatus')
 
-# NEW: Line Manager Management URLs
-router.register(r'line-manager-management', views.LineManagerManagementViewSet, basename='linemanagermanagement')
 
+router.register(r'bulk-upload', views.BulkEmployeeUploadViewSet, basename='bulkupload')
 # NEW: Employee Analytics URLs
 router.register(r'employee-analytics', views.EmployeeAnalyticsViewSet, basename='employeeanalytics')
 

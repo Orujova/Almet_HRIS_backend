@@ -8,7 +8,7 @@ from datetime import date, timedelta
 from .models import (
     Employee, BusinessFunction, Department, Unit, JobFunction,
     PositionGroup, EmployeeTag, EmployeeStatus, EmployeeDocument,
-    VacantPosition, EmployeeActivity, HeadcountSummary, ContractTypeConfig
+    VacantPosition, EmployeeActivity,  ContractTypeConfig
 )
 import logging
 
@@ -368,13 +368,26 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
     first_name = serializers.CharField(write_only=True)
     last_name = serializers.CharField(write_only=True)
     email = serializers.EmailField(write_only=True)
-    father_name = serializers.CharField(write_only=True, required=False, allow_blank=True)  # NEW FIELD
+    father_name = serializers.CharField(write_only=True, required=False, allow_blank=True)
     tag_ids = serializers.ListField(child=serializers.IntegerField(), write_only=True, required=False)
     vacancy_id = serializers.IntegerField(write_only=True, required=False, help_text="Link to vacant position")
     
     class Meta:
         model = Employee
         exclude = ['user', 'full_name', 'tags', 'filled_vacancy', 'status', 'created_by', 'updated_by']
+    
+    def validate_contract_duration(self, value):
+        """Validate that contract duration exists in configurations"""
+        if value:
+            try:
+                ContractTypeConfig.objects.get(contract_type=value, is_active=True)
+            except ContractTypeConfig.DoesNotExist:
+                available_choices = list(ContractTypeConfig.objects.filter(is_active=True).values_list('contract_type', flat=True))
+                raise serializers.ValidationError(
+                    f"Invalid contract duration '{value}'. Available choices: {', '.join(available_choices)}"
+                )
+        return value
+    
     
     def validate_employee_id(self, value):
         if self.instance:
@@ -580,7 +593,7 @@ class BulkEmployeeCreateItemSerializer(serializers.Serializer):
     
     # Employment Details
     start_date = serializers.DateField()
-    contract_duration = serializers.ChoiceField(choices=Employee.CONTRACT_DURATION_CHOICES)
+    contract_duration = serializers.CharField(max_length=50, default='PERMANENT')
     contract_start_date = serializers.DateField(required=False, allow_null=True)
     line_manager_id = serializers.IntegerField(required=False, allow_null=True)  # ENHANCED FOR LINE MANAGER
     
@@ -590,47 +603,51 @@ class BulkEmployeeCreateItemSerializer(serializers.Serializer):
     notes = serializers.CharField(required=False, allow_blank=True)
     vacancy_id = serializers.IntegerField(required=False, allow_null=True)
 
-class BulkEmployeeCreateSerializer(serializers.Serializer):
-    """Serializer for bulk employee creation"""
-    employees = serializers.ListField(
-        child=BulkEmployeeCreateItemSerializer(),
-        min_length=1,
-        max_length=1000,
-        help_text="List of employees to create (max 1000)"
-    )
+class BulkEmployeeCreateItemSerializer(serializers.Serializer):
+    """Serializer for a single employee in bulk creation"""
+    employee_id = serializers.CharField(max_length=50)
+    first_name = serializers.CharField(max_length=150)
+    last_name = serializers.CharField(max_length=150)
+    email = serializers.EmailField()
+    date_of_birth = serializers.DateField(required=False, allow_null=True)
+    gender = serializers.ChoiceField(choices=Employee.GENDER_CHOICES, required=False, allow_null=True)
+    father_name = serializers.CharField(max_length=200, required=False, allow_blank=True)
+    address = serializers.CharField(required=False, allow_blank=True)
+    phone = serializers.CharField(max_length=20, required=False, allow_blank=True)
+    emergency_contact = serializers.CharField(required=False, allow_blank=True)
     
-    def validate_employees(self, value):
-        """Validate that employee IDs and emails are unique within the batch"""
-        employee_ids = []
-        emails = []
-        
-        for i, employee_data in enumerate(value):
-            emp_id = employee_data.get('employee_id')
-            email = employee_data.get('email')
-            
-            # Check for duplicates within the batch
-            if emp_id in employee_ids:
-                raise serializers.ValidationError(
-                    f"Employee ID '{emp_id}' appears multiple times in the batch"
-                )
-            if email in emails:
-                raise serializers.ValidationError(
-                    f"Email '{email}' appears multiple times in the batch"
-                )
-            
-            employee_ids.append(emp_id)
-            emails.append(email)
-            
-            # Check for existing records in database
-            if Employee.objects.filter(employee_id=emp_id).exists():
-                raise serializers.ValidationError(
-                    f"Employee ID '{emp_id}' already exists in database"
-                )
-            if User.objects.filter(email=email).exists():
-                raise serializers.ValidationError(
-                    f"Email '{email}' already exists in database"
-                )
-        
+    # Job Information
+    business_function_id = serializers.IntegerField()
+    department_id = serializers.IntegerField()
+    unit_id = serializers.IntegerField(required=False, allow_null=True)
+    job_function_id = serializers.IntegerField()
+    job_title = serializers.CharField(max_length=200)
+    position_group_id = serializers.IntegerField()
+    grading_level = serializers.CharField(max_length=15, required=False, allow_blank=True)
+    
+    # Employment Details
+    start_date = serializers.DateField()
+    # FIXED: Use CharField instead of ChoiceField for dynamic contract types
+    contract_duration = serializers.CharField(max_length=50, default='PERMANENT')
+    contract_start_date = serializers.DateField(required=False, allow_null=True)
+    line_manager_id = serializers.IntegerField(required=False, allow_null=True)
+    
+    # Additional
+    is_visible_in_org_chart = serializers.BooleanField(default=True)
+    tag_ids = serializers.ListField(child=serializers.IntegerField(), required=False, default=list)
+    notes = serializers.CharField(required=False, allow_blank=True)
+    vacancy_id = serializers.IntegerField(required=False, allow_null=True)
+    
+    def validate_contract_duration(self, value):
+        """Validate that contract duration exists in configurations"""
+        try:
+            ContractTypeConfig.objects.get(contract_type=value, is_active=True)
+        except ContractTypeConfig.DoesNotExist:
+            # Get available choices for error message
+            available_choices = list(ContractTypeConfig.objects.filter(is_active=True).values_list('contract_type', flat=True))
+            raise serializers.ValidationError(
+                f"Invalid contract duration '{value}'. Available choices: {', '.join(available_choices)}"
+            )
         return value
 
 # Bulk Operations Serializers
@@ -650,9 +667,16 @@ class BulkEmployeeUpdateSerializer(serializers.Serializer):
         return value
 
 # Line Manager Operations (ENHANCED)
-class BulkLineManagerUpdateSerializer(serializers.Serializer):
-    employee_ids = serializers.ListField(child=serializers.IntegerField())
-    line_manager_id = serializers.IntegerField(allow_null=True)
+class BulkLineManagerAssignmentSerializer(serializers.Serializer):
+    """Bulk line manager assignment using employee IDs"""
+    employee_ids = serializers.ListField(
+        child=serializers.IntegerField(),
+        help_text="List of employee IDs to update"
+    )
+    line_manager_id = serializers.IntegerField(
+        allow_null=True,
+        help_text="Line manager employee ID (null to remove line manager)"
+    )
     
     def validate_employee_ids(self, value):
         if not value:
@@ -672,9 +696,13 @@ class BulkLineManagerUpdateSerializer(serializers.Serializer):
                 raise serializers.ValidationError("Line manager not found.")
         return value
 
-class SingleLineManagerUpdateSerializer(serializers.Serializer):
-    employee_id = serializers.IntegerField()
-    line_manager_id = serializers.IntegerField(allow_null=True)
+class SingleLineManagerAssignmentSerializer(serializers.Serializer):
+    """Single employee line manager assignment"""
+    employee_id = serializers.IntegerField(help_text="Employee ID")
+    line_manager_id = serializers.IntegerField(
+        allow_null=True,
+        help_text="Line manager employee ID (null to remove line manager)"
+    )
     
     def validate_employee_id(self, value):
         try:
@@ -691,43 +719,14 @@ class SingleLineManagerUpdateSerializer(serializers.Serializer):
                 raise serializers.ValidationError("Line manager not found.")
         return value
 
-# Line Manager Selection Serializer (NEW)
-class LineManagerSelectionSerializer(serializers.ModelSerializer):
-    """Serializer for line manager selection dropdown"""
-    name = serializers.CharField(source='full_name', read_only=True)
-    position_display = serializers.CharField(source='position_group.get_name_display', read_only=True)
-    department_name = serializers.CharField(source='department.name', read_only=True)
-    direct_reports_count = serializers.SerializerMethodField()
-    
-    class Meta:
-        model = Employee
-        fields = ['id', 'employee_id', 'name', 'job_title', 'position_display', 'department_name', 'direct_reports_count']
-    
-    def get_direct_reports_count(self, obj):
-        return obj.get_direct_reports_count()
 
-# Tag Operations
-class EmployeeTagOperationSerializer(serializers.Serializer):
-    employee_id = serializers.IntegerField()
-    tag_id = serializers.IntegerField()
-    
-    def validate_employee_id(self, value):
-        try:
-            Employee.objects.get(id=value)
-        except Employee.DoesNotExist:
-            raise serializers.ValidationError("Employee not found.")
-        return value
-    
-    def validate_tag_id(self, value):
-        try:
-            EmployeeTag.objects.get(id=value)
-        except EmployeeTag.DoesNotExist:
-            raise serializers.ValidationError("Tag not found.")
-        return value
-
-class BulkEmployeeTagOperationSerializer(serializers.Serializer):
-    employee_ids = serializers.ListField(child=serializers.IntegerField())
-    tag_id = serializers.IntegerField()
+class BulkEmployeeTagUpdateSerializer(serializers.Serializer):
+    """Simple bulk tag operations using employee IDs"""
+    employee_ids = serializers.ListField(
+        child=serializers.IntegerField(),
+        help_text="List of employee IDs to update"
+    )
+    tag_id = serializers.IntegerField(help_text="Tag ID to add or remove")
     
     def validate_employee_ids(self, value):
         if not value:
@@ -746,6 +745,24 @@ class BulkEmployeeTagOperationSerializer(serializers.Serializer):
             raise serializers.ValidationError("Tag not found.")
         return value
 
+class SingleEmployeeTagUpdateSerializer(serializers.Serializer):
+    """Single employee tag operations"""
+    employee_id = serializers.IntegerField(help_text="Employee ID")
+    tag_id = serializers.IntegerField(help_text="Tag ID to add or remove")
+    
+    def validate_employee_id(self, value):
+        try:
+            Employee.objects.get(id=value)
+        except Employee.DoesNotExist:
+            raise serializers.ValidationError("Employee not found.")
+        return value
+    
+    def validate_tag_id(self, value):
+        try:
+            EmployeeTag.objects.get(id=value)
+        except EmployeeTag.DoesNotExist:
+            raise serializers.ValidationError("Tag not found.")
+        return value
 # Grading Serializers
 class EmployeeGradingUpdateSerializer(serializers.Serializer):
     """Serializer for updating employee grading information"""
@@ -839,13 +856,7 @@ class EmployeeOrgChartVisibilitySerializer(serializers.ModelSerializer):
         fields = ['id', 'employee_id', 'is_visible_in_org_chart']
         read_only_fields = ['id', 'employee_id']
 
-# Headcount Summary Serializer
-class HeadcountSummarySerializer(serializers.ModelSerializer):
-    """Serializer for headcount summaries and analytics"""
-    
-    class Meta:
-        model = HeadcountSummary
-        fields = '__all__'
+
 
 # Additional Employee Serializers for specific use cases
 class EmployeeMinimalSerializer(serializers.ModelSerializer):
@@ -904,35 +915,40 @@ class ContractExpirySerializer(serializers.ModelSerializer):
         except:
             return False
 
-# Soft Delete Operations
-class SoftDeleteSerializer(serializers.Serializer):
-    employee_ids = serializers.ListField(child=serializers.IntegerField())
+
+class BulkSoftDeleteSerializer(serializers.Serializer):
+    """Bulk soft delete employees"""
+    employee_ids = serializers.ListField(
+        child=serializers.IntegerField(),
+        help_text="List of employee IDs to soft delete"
+    )
     
     def validate_employee_ids(self, value):
         if not value:
             raise serializers.ValidationError("At least one employee ID is required.")
         
-        # Use all_objects to include soft-deleted employees for validation
-        existing_count = Employee.all_objects.filter(id__in=value, is_deleted=False).count()
+        existing_count = Employee.objects.filter(id__in=value, is_deleted=False).count()
         if existing_count != len(value):
             raise serializers.ValidationError("Some employee IDs do not exist or are already deleted.")
         
         return value
 
-class RestoreEmployeeSerializer(serializers.Serializer):
-    employee_ids = serializers.ListField(child=serializers.IntegerField())
+class BulkRestoreSerializer(serializers.Serializer):
+    """Bulk restore soft-deleted employees"""
+    employee_ids = serializers.ListField(
+        child=serializers.IntegerField(),
+        help_text="List of employee IDs to restore"
+    )
     
     def validate_employee_ids(self, value):
         if not value:
             raise serializers.ValidationError("At least one employee ID is required.")
         
-        # Check that all employees exist and are soft-deleted
         existing_count = Employee.all_objects.filter(id__in=value, is_deleted=True).count()
         if existing_count != len(value):
             raise serializers.ValidationError("Some employee IDs do not exist or are not deleted.")
         
         return value
-
 # Export Serializer for selected data
 class EmployeeExportSerializer(serializers.Serializer):
     employee_ids = serializers.ListField(
@@ -950,85 +966,77 @@ class EmployeeExportSerializer(serializers.Serializer):
         help_text="List of fields to include in export"
     )
 
-# Status Management Serializers
-class EmployeeStatusUpdateSerializer(serializers.Serializer):
-    employee_ids = serializers.ListField(child=serializers.IntegerField())
-    status_id = serializers.IntegerField()
-    
-    def validate_employee_ids(self, value):
-        if not value:
-            raise serializers.ValidationError("At least one employee ID is required.")
-        
-        existing_count = Employee.objects.filter(id__in=value).count()
-        if existing_count != len(value):
-            raise serializers.ValidationError("Some employee IDs do not exist.")
-        
-        return value
-    
-    def validate_status_id(self, value):
-        try:
-            EmployeeStatus.objects.get(id=value)
-        except EmployeeStatus.DoesNotExist:
-            raise serializers.ValidationError("Status not found.")
-        return value
 
-class AutoStatusUpdateSerializer(serializers.Serializer):
-    employee_ids = serializers.ListField(
-        child=serializers.IntegerField(), 
-        required=False,
-        help_text="Employee IDs to update. If empty, updates all employees."
-    )
-    force_update = serializers.BooleanField(
-        default=False,
-        help_text="Force update even if status appears correct"
-    )
-
-# NEW: Contract Management Serializers
 class ContractExtensionSerializer(serializers.Serializer):
-    """Serializer for extending employee contracts"""
-    employee_id = serializers.IntegerField()
-    extension_months = serializers.IntegerField(min_value=1, max_value=36)
-    reason = serializers.CharField(max_length=500, required=False)
+    """Contract extension for single employee - WITHOUT extension_months"""
+    employee_id = serializers.IntegerField(help_text="Employee ID")
+    new_contract_type = serializers.CharField(
+        max_length=50,
+        help_text="New contract type (required)"
+    )
+    new_start_date = serializers.DateField(
+        help_text="New contract start date (required)"
+    )
+    reason = serializers.CharField(
+        max_length=500,
+        required=False,
+        help_text="Reason for contract change"
+    )
     
     def validate_employee_id(self, value):
         try:
-            employee = Employee.objects.get(id=value)
-            if employee.contract_duration == 'PERMANENT':
-                raise serializers.ValidationError("Cannot extend permanent contracts")
-            if not employee.contract_end_date:
-                raise serializers.ValidationError("Employee has no contract end date to extend")
+            Employee.objects.get(id=value)
         except Employee.DoesNotExist:
             raise serializers.ValidationError("Employee not found.")
         return value
-
+    
+    def validate_new_contract_type(self, value):
+        try:
+            ContractTypeConfig.objects.get(contract_type=value, is_active=True)
+        except ContractTypeConfig.DoesNotExist:
+            available_choices = list(ContractTypeConfig.objects.filter(is_active=True).values_list('contract_type', flat=True))
+            raise serializers.ValidationError(
+                f"Invalid contract type '{value}'. Available choices: {', '.join(available_choices)}"
+            )
+        return value
 class BulkContractExtensionSerializer(serializers.Serializer):
-    """Serializer for bulk contract extensions"""
-    employee_ids = serializers.ListField(child=serializers.IntegerField())
-    extension_months = serializers.IntegerField(min_value=1, max_value=36)
-    reason = serializers.CharField(max_length=500, required=False)
+    """Bulk contract extension - WITHOUT extension_months"""
+    employee_ids = serializers.ListField(
+        child=serializers.IntegerField(),
+        help_text="List of employee IDs to update contracts"
+    )
+    new_contract_type = serializers.CharField(
+        max_length=50,
+        help_text="New contract type for all employees (required)"
+    )
+    new_start_date = serializers.DateField(
+        help_text="New contract start date for all employees (required)"
+    )
+    reason = serializers.CharField(
+        max_length=500,
+        required=False,
+        help_text="Reason for contract change"
+    )
     
     def validate_employee_ids(self, value):
         if not value:
             raise serializers.ValidationError("At least one employee ID is required.")
         
-        # Check all employees exist and can be extended
         employees = Employee.objects.filter(id__in=value)
         if employees.count() != len(value):
             raise serializers.ValidationError("Some employee IDs do not exist.")
         
-        permanent_contracts = employees.filter(contract_duration='PERMANENT')
-        if permanent_contracts.exists():
-            permanent_ids = list(permanent_contracts.values_list('employee_id', flat=True))
-            raise serializers.ValidationError(f"Cannot extend permanent contracts: {permanent_ids}")
-        
-        no_end_date = employees.filter(contract_end_date__isnull=True)
-        if no_end_date.exists():
-            no_end_ids = list(no_end_date.values_list('employee_id', flat=True))
-            raise serializers.ValidationError(f"Employees have no contract end date: {no_end_ids}")
-        
         return value
-
-# NEW: Status Preview Serializers
+    
+    def validate_new_contract_type(self, value):
+        try:
+            ContractTypeConfig.objects.get(contract_type=value, is_active=True)
+        except ContractTypeConfig.DoesNotExist:
+            available_choices = list(ContractTypeConfig.objects.filter(is_active=True).values_list('contract_type', flat=True))
+            raise serializers.ValidationError(
+                f"Invalid contract type '{value}'. Available choices: {', '.join(available_choices)}"
+            )
+        return value
 class StatusPreviewSerializer(serializers.Serializer):
     """Serializer for status preview data"""
     employee_id = serializers.CharField()
@@ -1048,16 +1056,23 @@ class BulkStatusPreviewSerializer(serializers.Serializer):
         required=False,
         help_text="Employee IDs to check. If empty, checks all employees."
     )
-
+class StatusPreviewRequestSerializer(serializers.Serializer):
+    """Status preview request for selected employees"""
+    employee_ids = serializers.ListField(
+        child=serializers.IntegerField(),
+        required=False,
+        help_text="Employee IDs to check (optional - if empty, checks all employees)"
+    )
 # Bulk Employee Creation Result Serializers
 class BulkEmployeeCreationResultSerializer(serializers.Serializer):
     """Serializer for bulk employee creation results"""
     total_rows = serializers.IntegerField()
     successful = serializers.IntegerField()
     failed = serializers.IntegerField()
-    errors = serializers.ListField(child=serializers.CharField())
+    errors = serializers.ListField(child=serializers.CharField(), required=False)
     created_employees = serializers.ListField(
-        child=serializers.DictField()
+        child=serializers.DictField(),
+        required=False
     )
 
 class BulkEmployeeCreationSummarySerializer(serializers.Serializer):
@@ -1080,35 +1095,6 @@ class BulkTemplateDownloadSerializer(serializers.Serializer):
         help_text="Template complexity level"
     )
 
-# File Upload Validation Serializer
-class BulkEmployeeFileUploadSerializer(serializers.Serializer):
-    """Serializer for file upload validation"""
-    file = serializers.FileField(
-        help_text="Excel file (.xlsx, .xls) containing employee data"
-    )
-    validate_only = serializers.BooleanField(
-        default=False,
-        help_text="Only validate the file without creating employees"
-    )
-    skip_duplicates = serializers.BooleanField(
-        default=False,
-        help_text="Skip rows with duplicate employee IDs or emails"
-    )
-    
-    def validate_file(self, value):
-        """Validate uploaded file"""
-        if not value.name.endswith(('.xlsx', '.xls')):
-            raise serializers.ValidationError(
-                "Invalid file format. Please upload Excel file (.xlsx or .xls)"
-            )
-        
-        # Check file size (max 10MB)
-        if value.size > 10 * 1024 * 1024:
-            raise serializers.ValidationError(
-                "File too large. Maximum size is 10MB"
-            )
-        
-        return value
 
 # Bulk Operation Progress Serializer
 class BulkOperationProgressSerializer(serializers.Serializer):

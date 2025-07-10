@@ -16,6 +16,7 @@ from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 import logging
 import traceback
+from rest_framework.parsers import JSONParser, MultiPartParser, FormParser
 from rest_framework.parsers import MultiPartParser, FormParser
 from datetime import datetime, timedelta, date
 from django.utils.dateparse import parse_date
@@ -32,7 +33,7 @@ from .status_management import EmployeeStatusManager, LineManagerStatusIntegrati
 from .models import (
     Employee, BusinessFunction, Department, Unit, JobFunction, 
     PositionGroup, EmployeeTag, EmployeeDocument, EmployeeStatus,
-    EmployeeActivity, VacantPosition, HeadcountSummary, ContractTypeConfig,
+    EmployeeActivity, VacantPosition, ContractTypeConfig,
     ContractStatusManager
 )
 from .serializers import (
@@ -42,13 +43,12 @@ from .serializers import (
     EmployeeStatusSerializer, EmployeeDocumentSerializer, EmployeeActivitySerializer,
     UserSerializer, OrgChartNodeSerializer, EmployeeOrgChartVisibilitySerializer,
     VacantPositionListSerializer, VacantPositionDetailSerializer, VacantPositionCreateSerializer,
-    BulkEmployeeUpdateSerializer, BulkLineManagerUpdateSerializer, SingleLineManagerUpdateSerializer,
-    EmployeeTagOperationSerializer, BulkEmployeeTagOperationSerializer,
+    
+    
     EmployeeGradingUpdateSerializer, EmployeeGradingListSerializer,
-    HeadcountSummarySerializer, SoftDeleteSerializer, RestoreEmployeeSerializer,
-    EmployeeExportSerializer, EmployeeStatusUpdateSerializer, AutoStatusUpdateSerializer,
-    BulkEmployeeGradingUpdateSerializer, BulkEmployeeCreateSerializer,
-    ContractTypeConfigSerializer, LineManagerSelectionSerializer
+   BulkEmployeeGradingUpdateSerializer,
+    EmployeeExportSerializer,
+    ContractTypeConfigSerializer, BulkContractExtensionSerializer,ContractExtensionSerializer,SingleEmployeeTagUpdateSerializer,SingleLineManagerAssignmentSerializer,BulkEmployeeTagUpdateSerializer,BulkSoftDeleteSerializer,StatusPreviewRequestSerializer,BulkRestoreSerializer,BulkLineManagerAssignmentSerializer
 )
 from .auth import MicrosoftTokenValidator
 
@@ -450,22 +450,7 @@ class ContractTypeConfigViewSet(viewsets.ModelViewSet):
     search_fields = ['contract_type', 'display_name']
     ordering = ['contract_type']
     
-    @action(detail=False, methods=['post'])
-    def create_defaults(self, request):
-        """Create default contract configurations"""
-        configs = ContractTypeConfig.get_or_create_defaults()
-        return Response({
-            'message': f'Successfully created/updated {len(configs)} contract configurations',
-            'configs': [
-                {
-                    'contract_type': config.contract_type,
-                    'display_name': config.display_name,
-                    'onboarding_days': config.onboarding_days,
-                    'probation_days': config.probation_days
-                }
-                for config in configs.values()
-            ]
-        })
+   
     
     @action(detail=True, methods=['get'])
     def test_calculations(self, request, pk=None):
@@ -589,7 +574,7 @@ class VacantPositionViewSet(viewsets.ModelViewSet):
 class EmployeeViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     pagination_class = StandardResultsSetPagination
-    
+    parser_classes = [JSONParser, MultiPartParser, FormParser]
     def get_queryset(self):
         return Employee.objects.select_related(
             'user', 'business_function', 'department', 'unit', 'job_function',
@@ -657,91 +642,8 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         
         return Response(status=status.HTTP_204_NO_CONTENT)
     
-    # NEW: Line Manager Management Actions
-    @action(detail=False, methods=['get'])
-    def available_line_managers(self, request):
-        """Get list of available line managers"""
-        # Get employees who can be line managers (typically senior positions)
-        potential_managers = Employee.objects.filter(
-            status__affects_headcount=True,
-            position_group__hierarchy_level__lte=4,  # Manager level and above
-            is_deleted=False
-        ).select_related('position_group', 'department', 'business_function').order_by('full_name')
-        
-        serializer = LineManagerSelectionSerializer(potential_managers, many=True)
-        return Response(serializer.data)
-    
-    @action(detail=False, methods=['post'])
-    def bulk_update_line_manager(self, request):
-        """Bulk update line manager for multiple employees"""
-        serializer = BulkLineManagerUpdateSerializer(data=request.data)
-        if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-        
-        employee_ids = serializer.validated_data['employee_ids']
-        line_manager_id = serializer.validated_data['line_manager_id']
-        
-        try:
-            line_manager = Employee.objects.get(id=line_manager_id) if line_manager_id else None
-            
-            with transaction.atomic():
-                employees = Employee.objects.filter(id__in=employee_ids)
-                updated_count = 0
-                
-                for employee in employees:
-                    employee.change_line_manager(line_manager, request.user)
-                    updated_count += 1
-                
-                return Response({
-                    'message': f'Successfully updated line manager for {updated_count} employees',
-                    'updated_count': updated_count,
-                    'new_line_manager': line_manager.full_name if line_manager else 'None'
-                })
-        except Employee.DoesNotExist:
-            return Response(
-                {'error': 'Line manager not found'},
-                status=status.HTTP_404_NOT_FOUND
-            )
-        except Exception as e:
-            logger.error(f"Bulk line manager update failed: {str(e)}")
-            return Response(
-                {'error': 'Bulk line manager update failed', 'details': str(e)},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-    
-    @action(detail=False, methods=['post'])
-    def update_single_line_manager(self, request):
-        """Update line manager for a single employee"""
-        serializer = SingleLineManagerUpdateSerializer(data=request.data)
-        if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-        
-        employee_id = serializer.validated_data['employee_id']
-        line_manager_id = serializer.validated_data['line_manager_id']
-        
-        try:
-            employee = Employee.objects.get(id=employee_id)
-            line_manager = Employee.objects.get(id=line_manager_id) if line_manager_id else None
-            
-            employee.change_line_manager(line_manager, request.user)
-            
-            return Response({
-                'message': 'Line manager updated successfully',
-                'employee': employee.full_name,
-                'new_line_manager': line_manager.full_name if line_manager else 'None'
-            })
-        except Employee.DoesNotExist:
-            return Response(
-                {'error': 'Employee or line manager not found'},
-                status=status.HTTP_404_NOT_FOUND
-            )
-    
-    # Bulk Employee Creation Actions
-    @action(detail=False, methods=['get'])
-    def download_template(self, request):
-        """Download Excel template for bulk employee creation"""
-        return self._generate_bulk_template()
-    
+  
+  
     def _generate_bulk_template(self):
         """Generate Excel template with dropdowns and validation"""
         from openpyxl import Workbook
@@ -873,7 +775,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         options_sheet.append(['FEMALE'])
         options_sheet.append([''])
         options_sheet.append(['Contract Duration Options'])
-        for duration in Employee.CONTRACT_DURATION_CHOICES:
+        for duration in Employee.contract_duration:
             options_sheet.append([duration[0]])
         options_sheet.append([''])
         options_sheet.append(['Boolean Options'])
@@ -1000,381 +902,6 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         instructions_sheet.column_dimensions['A'].width = 80
     
 
-
-    @swagger_auto_schema(
-        method='post',
-        operation_description="Bulk create employees from uploaded Excel file",
-        manual_parameters=[
-            openapi.Parameter(
-                'file', 
-                openapi.IN_FORM, 
-                description="Excel file (.xlsx or .xls) containing employee data", 
-                type=openapi.TYPE_FILE,
-                required=True
-            ),
-        ],
-        responses={
-            200: openapi.Response(
-                description="Bulk creation completed successfully",
-                schema=openapi.Schema(
-                    type=openapi.TYPE_OBJECT,
-                    properties={
-                        'total_rows': openapi.Schema(type=openapi.TYPE_INTEGER, description='Total rows processed'),
-                        'successful': openapi.Schema(type=openapi.TYPE_INTEGER, description='Successfully created employees'),
-                        'failed': openapi.Schema(type=openapi.TYPE_INTEGER, description='Failed rows'),
-                        'errors': openapi.Schema(type=openapi.TYPE_ARRAY, items=openapi.Schema(type=openapi.TYPE_STRING)),
-                        'created_employees': openapi.Schema(
-                            type=openapi.TYPE_ARRAY,
-                            items=openapi.Schema(
-                                type=openapi.TYPE_OBJECT,
-                                properties={
-                                    'employee_id': openapi.Schema(type=openapi.TYPE_STRING),
-                                    'name': openapi.Schema(type=openapi.TYPE_STRING),
-                                    'email': openapi.Schema(type=openapi.TYPE_STRING)
-                                }
-                            )
-                        )
-                    }
-                )
-            ),
-            400: openapi.Response(description="Bad request - no file or invalid format"),
-            500: openapi.Response(description="Internal server error")
-        }
-    )
-    @action(detail=False, methods=['post'], parser_classes=[MultiPartParser, FormParser])
-    def bulk_create(self, request):
-        """Bulk create employees from uploaded Excel file"""
-        if 'file' not in request.FILES:
-            return Response(
-                {'error': 'No file uploaded. Please select an Excel file.'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        file = request.FILES['file']
-        
-        # Validate file extension
-        if not file.name.endswith(('.xlsx', '.xls')):
-            return Response(
-                {'error': 'Invalid file format. Please upload an Excel file (.xlsx or .xls)'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        # Validate file size (max 10MB)
-        if file.size > 10 * 1024 * 1024:
-            return Response(
-                {'error': 'File too large. Maximum size is 10MB'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        try:
-            # Read Excel file
-            df = pd.read_excel(file, sheet_name='Employee Template')
-            
-            # Log file info
-            logger.info(f"Bulk create: Processing file {file.name} with {len(df)} rows")
-            
-            # Remove empty rows
-            df = df.dropna(how='all')
-            
-            # Remove rows where Employee ID is empty
-            df = df.dropna(subset=['Employee ID*'])
-            
-            # Skip sample data row if it exists (check if first row has HC001)
-            if not df.empty and str(df.iloc[0]['Employee ID*']).strip() == 'HC001':
-                logger.info("Removing sample data row")
-                df = df.iloc[1:]
-            
-            if df.empty:
-                return Response(
-                    {'error': 'No valid data found in the uploaded file'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            
-            logger.info(f"Processing {len(df)} valid data rows")
-            
-            # Process the data
-            result = self._process_bulk_employee_data(df, request.user)
-            
-            # Log results
-            logger.info(f"Bulk create completed: {result['successful']} successful, {result['failed']} failed")
-            
-            return Response(result)
-            
-        except KeyError as e:
-            logger.error(f"Missing expected column in Excel file: {str(e)}")
-            return Response(
-                {'error': f'Missing required column in Excel file: {str(e)}. Please use the template from download_template endpoint.'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        except Exception as e:
-            logger.error(f"Bulk employee creation failed: {str(e)}")
-            logger.error(f"Traceback: {traceback.format_exc()}")
-            return Response(
-                {'error': f'Failed to process file: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-    
-    
-    
-    @swagger_auto_schema(
-        method='post',
-        operation_description="Validate Excel file for bulk creation without creating employees",
-        manual_parameters=[
-            openapi.Parameter(
-                'file', 
-                openapi.IN_FORM, 
-                description="Excel file to validate", 
-                type=openapi.TYPE_FILE,
-                required=True
-            ),
-        ],
-        responses={
-            200: openapi.Response(
-                description="Validation completed",
-                schema=openapi.Schema(
-                    type=openapi.TYPE_OBJECT,
-                    properties={
-                        'valid': openapi.Schema(type=openapi.TYPE_BOOLEAN),
-                        'total_rows': openapi.Schema(type=openapi.TYPE_INTEGER),
-                        'valid_rows': openapi.Schema(type=openapi.TYPE_INTEGER),
-                        'invalid_rows': openapi.Schema(type=openapi.TYPE_INTEGER),
-                        'validation_errors': openapi.Schema(type=openapi.TYPE_ARRAY, items=openapi.Schema(type=openapi.TYPE_STRING)),
-                        'warnings': openapi.Schema(type=openapi.TYPE_ARRAY, items=openapi.Schema(type=openapi.TYPE_STRING))
-                    }
-                )
-            )
-        }
-    )
-    @action(detail=False, methods=['post'], parser_classes=[MultiPartParser, FormParser])
-    def validate_bulk_file(self, request):
-        """Validate Excel file for bulk creation without creating employees"""
-        if 'file' not in request.FILES:
-            return Response(
-                {'error': 'No file uploaded'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        file = request.FILES['file']
-        
-        if not file.name.endswith(('.xlsx', '.xls')):
-            return Response(
-                {'error': 'Invalid file format. Please upload Excel file (.xlsx or .xls)'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        try:
-            # Read Excel file
-            df = pd.read_excel(file, sheet_name='Employee Template')
-            
-            # Remove empty rows and sample data
-            df = df.dropna(how='all')
-            df = df.dropna(subset=['Employee ID*'])
-            
-            # Skip sample data row
-            if not df.empty and str(df.iloc[0]['Employee ID*']).strip() == 'HC001':
-                df = df.iloc[1:]
-            
-            if df.empty:
-                return Response({
-                    'valid': False,
-                    'total_rows': 0,
-                    'valid_rows': 0,
-                    'invalid_rows': 0,
-                    'validation_errors': ['No valid data found in the file'],
-                    'warnings': []
-                })
-            
-            # Prepare lookup dictionaries
-            business_functions = {bf.name: bf for bf in BusinessFunction.objects.filter(is_active=True)}
-            departments = {}
-            for dept in Department.objects.select_related('business_function').filter(is_active=True):
-                key = f"{dept.business_function.name}|{dept.name}"
-                departments[key] = dept
-            
-            units = {}
-            for unit in Unit.objects.select_related('department').filter(is_active=True):
-                key = f"{unit.department.name}|{unit.name}"
-                units[key] = unit
-            
-            job_functions = {jf.name: jf for jf in JobFunction.objects.filter(is_active=True)}
-            position_groups = {pg.get_name_display(): pg for pg in PositionGroup.objects.filter(is_active=True)}
-            employee_lookup = {emp.employee_id: emp for emp in Employee.objects.all()}
-            tags_lookup = {tag.name: tag for tag in EmployeeTag.objects.filter(is_active=True)}
-            
-            default_status = EmployeeStatus.objects.filter(is_default_for_new_employees=True).first()
-            
-            # Validate each row
-            validation_results = {
-                'valid': True,
-                'total_rows': len(df),
-                'valid_rows': 0,
-                'invalid_rows': 0,
-                'validation_errors': [],
-                'warnings': []
-            }
-            
-            employee_ids_in_file = []
-            emails_in_file = []
-            
-            for index, row in df.iterrows():
-                row_num = index + 2  # +2 for header and 0-based index
-                result = self._validate_and_prepare_employee_data(
-                    row, business_functions, departments, units, 
-                    job_functions, position_groups, employee_lookup, 
-                    tags_lookup, default_status, row_num
-                )
-                
-                if 'error' in result:
-                    validation_results['validation_errors'].append(result['error'])
-                    validation_results['invalid_rows'] += 1
-                    validation_results['valid'] = False
-                else:
-                    # Check for duplicates within file
-                    emp_id = result['employee_id']
-                    email = result['email']
-                    
-                    if emp_id in employee_ids_in_file:
-                        validation_results['validation_errors'].append(
-                            f"Row {row_num}: Duplicate Employee ID '{emp_id}' found in file"
-                        )
-                        validation_results['invalid_rows'] += 1
-                        validation_results['valid'] = False
-                    elif email in emails_in_file:
-                        validation_results['validation_errors'].append(
-                            f"Row {row_num}: Duplicate email '{email}' found in file"
-                        )
-                        validation_results['invalid_rows'] += 1
-                        validation_results['valid'] = False
-                    else:
-                        validation_results['valid_rows'] += 1
-                        employee_ids_in_file.append(emp_id)
-                        emails_in_file.append(email)
-                        
-                        # Add warnings for optional fields
-                        if not result.get('line_manager'):
-                            validation_results['warnings'].append(
-                                f"Row {row_num}: No line manager assigned"
-                            )
-            
-            return Response(validation_results)
-            
-        except Exception as e:
-            logger.error(f"File validation failed: {str(e)}")
-            return Response(
-                {'error': f'Failed to validate file: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-    
-    def _process_bulk_employee_data(self, df, user):
-        """Process bulk employee data from DataFrame"""
-        results = {
-            'total_rows': len(df),
-            'successful': 0,
-            'failed': 0,
-            'errors': [],
-            'created_employees': []
-        }
-        
-        # Prepare lookup dictionaries for validation
-        business_functions = {bf.name: bf for bf in BusinessFunction.objects.filter(is_active=True)}
-        departments = {}
-        for dept in Department.objects.select_related('business_function').filter(is_active=True):
-            key = f"{dept.business_function.name}|{dept.name}"
-            departments[key] = dept
-        
-        units = {}
-        for unit in Unit.objects.select_related('department').filter(is_active=True):
-            key = f"{unit.department.name}|{unit.name}"
-            units[key] = unit
-        
-        job_functions = {jf.name: jf for jf in JobFunction.objects.filter(is_active=True)}
-        position_groups = {pg.get_name_display(): pg for pg in PositionGroup.objects.filter(is_active=True)}
-        employee_lookup = {emp.employee_id: emp for emp in Employee.objects.all()}
-        tags_lookup = {tag.name: tag for tag in EmployeeTag.objects.filter(is_active=True)}
-        
-        # Get default status
-        default_status = EmployeeStatus.objects.filter(is_default_for_new_employees=True).first()
-        if not default_status:
-            default_status = EmployeeStatus.objects.filter(name='ONBOARDING').first()
-        if not default_status:
-            default_status = EmployeeStatus.objects.filter(is_active=True).first()
-        
-        with transaction.atomic():
-            for index, row in df.iterrows():
-                try:
-                    employee_data = self._validate_and_prepare_employee_data(
-                        row, business_functions, departments, units, 
-                        job_functions, position_groups, employee_lookup, 
-                        tags_lookup, default_status, index + 2  # +2 for header and 0-based index
-                    )
-                    
-                    if 'error' in employee_data:
-                        results['errors'].append(employee_data['error'])
-                        results['failed'] += 1
-                        continue
-                    
-                    # Create user
-                    user_obj = User.objects.create_user(
-                        username=employee_data['email'],
-                        email=employee_data['email'],
-                        first_name=employee_data['first_name'],
-                        last_name=employee_data['last_name']
-                    )
-                    
-                    # Create employee
-                    employee = Employee.objects.create(
-                        user=user_obj,
-                        employee_id=employee_data['employee_id'],
-                        date_of_birth=employee_data.get('date_of_birth'),
-                        gender=employee_data.get('gender'),
-                        father_name=employee_data.get('father_name', ''),  # NEW FIELD
-                        address=employee_data.get('address'),
-                        phone=employee_data.get('phone'),
-                        emergency_contact=employee_data.get('emergency_contact'),
-                        business_function=employee_data['business_function'],
-                        department=employee_data['department'],
-                        unit=employee_data.get('unit'),
-                        job_function=employee_data['job_function'],
-                        job_title=employee_data['job_title'],
-                        position_group=employee_data['position_group'],
-                        grading_level=employee_data.get('grading_level'),
-                        start_date=employee_data['start_date'],
-                        contract_duration=employee_data['contract_duration'],
-                        contract_start_date=employee_data.get('contract_start_date'),
-                        line_manager=employee_data.get('line_manager'),  # ENHANCED
-                        status=employee_data['status'],
-                        is_visible_in_org_chart=employee_data.get('is_visible_in_org_chart', True),
-                        notes=employee_data.get('notes', ''),
-                        created_by=user
-                    )
-                    
-                    # Add tags
-                    if employee_data.get('tags'):
-                        employee.tags.set(employee_data['tags'])
-                    
-                    # Log activity
-                    EmployeeActivity.objects.create(
-                        employee=employee,
-                        activity_type='BULK_CREATED',
-                        description=f"Employee {employee.full_name} was created via bulk upload",
-                        performed_by=user,
-                        metadata={'bulk_creation': True, 'row_number': index + 2}
-                    )
-                    
-                    results['successful'] += 1
-                    results['created_employees'].append({
-                        'employee_id': employee.employee_id,
-                        'name': employee.full_name,
-                        'email': employee.user.email
-                    })
-                    
-                except Exception as e:
-                    results['errors'].append(f"Row {index + 2}: {str(e)}")
-                    results['failed'] += 1
-                    continue
-        
-        return results
-    
     def _validate_and_prepare_employee_data(self, row, business_functions, departments, 
                                           units, job_functions, position_groups, 
                                           employee_lookup, tags_lookup, default_status, row_num):
@@ -1483,7 +1010,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             data['contract_start_date'] = data.get('start_date')
         
         # Validate contract duration
-        valid_durations = [choice[0] for choice in Employee.CONTRACT_DURATION_CHOICES]
+        valid_durations = [choice[0] for choice in Employee.contract_duration]
         if data['contract_duration'] not in valid_durations:
             errors.append(f"Invalid Contract Duration: {data['contract_duration']}")
         
@@ -1569,202 +1096,8 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         
         return data
     
-    # Tag Management Actions
-    @action(detail=False, methods=['post'])
-    def add_tag(self, request):
-        """Add tag to employee"""
-        serializer = EmployeeTagOperationSerializer(data=request.data)
-        if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-        
-        employee_id = serializer.validated_data['employee_id']
-        tag_id = serializer.validated_data['tag_id']
-        
-        try:
-            employee = Employee.objects.get(id=employee_id)
-            tag = EmployeeTag.objects.get(id=tag_id)
-            
-            if employee.add_tag(tag, request.user):
-                return Response({
-                    'message': f'Tag "{tag.name}" added to {employee.full_name}',
-                    'employee': employee.full_name,
-                    'tag': tag.name
-                })
-            else:
-                return Response({
-                    'message': f'Tag "{tag.name}" already exists on {employee.full_name}',
-                    'employee': employee.full_name,
-                    'tag': tag.name
-                })
-        except Employee.DoesNotExist:
-            return Response({'error': 'Employee not found'}, status=status.HTTP_404_NOT_FOUND)
-        except EmployeeTag.DoesNotExist:
-            return Response({'error': 'Tag not found'}, status=status.HTTP_404_NOT_FOUND)
-    
-    @action(detail=False, methods=['post'])
-    def remove_tag(self, request):
-        """Remove tag from employee"""
-        serializer = EmployeeTagOperationSerializer(data=request.data)
-        if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-        
-        employee_id = serializer.validated_data['employee_id']
-        tag_id = serializer.validated_data['tag_id']
-        
-        try:
-            employee = Employee.objects.get(id=employee_id)
-            tag = EmployeeTag.objects.get(id=tag_id)
-            
-            if employee.remove_tag(tag, request.user):
-                return Response({
-                    'message': f'Tag "{tag.name}" removed from {employee.full_name}',
-                    'employee': employee.full_name,
-                    'tag': tag.name
-                })
-            else:
-                return Response({
-                    'message': f'Tag "{tag.name}" was not found on {employee.full_name}',
-                    'employee': employee.full_name,
-                    'tag': tag.name
-                })
-        except Employee.DoesNotExist:
-            return Response({'error': 'Employee not found'}, status=status.HTTP_404_NOT_FOUND)
-        except EmployeeTag.DoesNotExist:
-            return Response({'error': 'Tag not found'}, status=status.HTTP_404_NOT_FOUND)
-    
-    @action(detail=False, methods=['post'])
-    def bulk_add_tag(self, request):
-        """Add tag to multiple employees"""
-        serializer = BulkEmployeeTagOperationSerializer(data=request.data)
-        if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-        
-        employee_ids = serializer.validated_data['employee_ids']
-        tag_id = serializer.validated_data['tag_id']
-        
-        try:
-            tag = EmployeeTag.objects.get(id=tag_id)
-            employees = Employee.objects.filter(id__in=employee_ids)
-            
-            added_count = 0
-            for employee in employees:
-                if employee.add_tag(tag, request.user):
-                    added_count += 1
-            
-            return Response({
-                'message': f'Tag "{tag.name}" added to {added_count} employees',
-                'added_count': added_count,
-                'total_employees': len(employee_ids),
-                'tag': tag.name
-            })
-        except EmployeeTag.DoesNotExist:
-            return Response({'error': 'Tag not found'}, status=status.HTTP_404_NOT_FOUND)
-    
-    @action(detail=False, methods=['post'])
-    def bulk_remove_tag(self, request):
-        """Remove tag from multiple employees"""
-        serializer = BulkEmployeeTagOperationSerializer(data=request.data)
-        if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-        
-        employee_ids = serializer.validated_data['employee_ids']
-        tag_id = serializer.validated_data['tag_id']
-        
-        try:
-            tag = EmployeeTag.objects.get(id=tag_id)
-            employees = Employee.objects.filter(id__in=employee_ids)
-            
-            removed_count = 0
-            for employee in employees:
-                if employee.remove_tag(tag, request.user):
-                    removed_count += 1
-            
-            return Response({
-                'message': f'Tag "{tag.name}" removed from {removed_count} employees',
-                'removed_count': removed_count,
-                'total_employees': len(employee_ids),
-                'tag': tag.name
-            })
-        except EmployeeTag.DoesNotExist:
-            return Response({'error': 'Tag not found'}, status=status.HTTP_404_NOT_FOUND)
-    
-    # Soft Delete Management
-    @action(detail=False, methods=['post'])
-    def soft_delete(self, request):
-        """Soft delete multiple employees"""
-        serializer = SoftDeleteSerializer(data=request.data)
-        if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-        
-        employee_ids = serializer.validated_data['employee_ids']
-        
-        try:
-            with transaction.atomic():
-                employees = Employee.objects.filter(id__in=employee_ids)
-                deleted_count = 0
-                
-                for employee in employees:
-                    employee.soft_delete(user=request.user)
-                    deleted_count += 1
-                    
-                    # Log activity
-                    EmployeeActivity.objects.create(
-                        employee=employee,
-                        activity_type='SOFT_DELETED',
-                        description=f"Employee {employee.full_name} was soft deleted",
-                        performed_by=request.user,
-                        metadata={'bulk_delete': True}
-                    )
-                
-                return Response({
-                    'message': f'Successfully soft deleted {deleted_count} employees',
-                    'deleted_count': deleted_count
-                })
-        except Exception as e:
-            logger.error(f"Soft delete failed: {str(e)}")
-            return Response(
-                {'error': 'Soft delete failed', 'details': str(e)},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-    
-    @action(detail=False, methods=['post'])
-    def restore(self, request):
-        """Restore soft-deleted employees"""
-        serializer = RestoreEmployeeSerializer(data=request.data)
-        if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-        
-        employee_ids = serializer.validated_data['employee_ids']
-        
-        try:
-            with transaction.atomic():
-                employees = Employee.all_objects.filter(id__in=employee_ids, is_deleted=True)
-                restored_count = 0
-                
-                for employee in employees:
-                    employee.restore()
-                    restored_count += 1
-                    
-                    # Log activity
-                    EmployeeActivity.objects.create(
-                        employee=employee,
-                        activity_type='RESTORED',
-                        description=f"Employee {employee.full_name} was restored",
-                        performed_by=request.user,
-                        metadata={'bulk_restore': True}
-                    )
-                
-                return Response({
-                    'message': f'Successfully restored {restored_count} employees',
-                    'restored_count': restored_count
-                })
-        except Exception as e:
-            logger.error(f"Restore failed: {str(e)}")
-            return Response(
-                {'error': 'Restore failed', 'details': str(e)},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-    
+   
+
     # Enhanced Export Functionality
     @action(detail=False, methods=['post'])
     def export_selected(self, request):
@@ -1932,152 +1265,1081 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         
         return response
     
-    # Status Management
-    @action(detail=False, methods=['post'])
-    def update_status(self, request):
-        """Update status for multiple employees"""
-        serializer = EmployeeStatusUpdateSerializer(data=request.data)
+    # views.py - EmployeeViewSet class-ına bu method-u əlavə edin
+
+    def _process_bulk_employee_data_from_excel(self, df, user):
+        """Excel data-sını process et və employee-lar yarat"""
+        results = {
+            'total_rows': len(df),
+            'successful': 0,
+            'failed': 0,
+            'errors': [],
+            'created_employees': []
+        }
+        
+        try:
+            # Log the actual columns for debugging
+            logger.info(f"Excel columns found: {list(df.columns)}")
+            logger.info(f"Excel shape: {df.shape}")
+            
+            # Convert all columns to string to avoid Series object issues
+            df_str = df.astype(str)
+            
+            # Enhanced column mappings - more flexible matching
+            column_mappings = {
+                'employee_id': ['Employee ID*', 'Employee ID', 'employee_id'],
+                'first_name': ['First Name*', 'First Name', 'first_name'],
+                'last_name': ['Last Name*', 'Last Name', 'last_name'],
+                'email': ['Email*', 'Email', 'email'],
+                'date_of_birth': ['Date of Birth', 'date_of_birth'],
+                'gender': ['Gender', 'gender'],
+                'father_name': ['Father Name', 'father_name'],
+                'phone': ['Phone', 'phone'],
+                'address': ['Address', 'address'],
+                'emergency_contact': ['Emergency Contact', 'emergency_contact'],
+                'business_function': ['Business Function*', 'Business Function', 'business_function'],
+                'department': ['Department*', 'Department', 'department'],
+                'unit': ['Unit', 'unit'],
+                'job_function': ['Job Function*', 'Job Function', 'job_function'],
+                'job_title': ['Job Title*', 'Job Title', 'job_title'],
+                'position_group': ['Position Group*', 'Position Group', 'position_group'],
+                'grading_level': ['Grading Level', 'grading_level'],
+                'start_date': ['Start Date*', 'Start Date', 'start_date'],
+                'contract_duration': ['Contract Duration*', 'Contract Duration', 'contract_duration'],
+                'contract_start_date': ['Contract Start Date', 'contract_start_date'],
+                'line_manager_id': ['Line Manager Employee ID', 'Line Manager ID', 'line_manager_id'],
+                'is_visible_in_org_chart': ['Is Visible in Org Chart', 'Org Chart Visible'],
+                'tags': ['Tag Names (comma separated)', 'Tags', 'tags'],
+                'notes': ['Notes', 'notes']
+            }
+            
+            # Find actual column names - exact matching first
+            actual_columns = {}
+            df_columns = [str(col).strip() for col in df_str.columns]
+            
+            logger.info(f"Available columns: {df_columns}")
+            
+            # Map columns with exact matching
+            for field, possible_names in column_mappings.items():
+                found_column = None
+                for possible_name in possible_names:
+                    for df_col in df_columns:
+                        if df_col.strip() == possible_name.strip():
+                            found_column = df_col
+                            break
+                    if found_column:
+                        break
+                
+                if found_column:
+                    actual_columns[field] = found_column
+                    logger.info(f"Mapped {field} -> {found_column}")
+            
+            logger.info(f"Final column mapping: {actual_columns}")
+            
+            # Check required fields
+            required_fields = ['employee_id', 'first_name', 'last_name', 'email', 
+                              'business_function', 'department', 'job_function', 
+                              'job_title', 'position_group', 'start_date', 'contract_duration']
+            
+            missing_required = []
+            for req_field in required_fields:
+                if req_field not in actual_columns:
+                    missing_required.append(req_field)
+            
+            if missing_required:
+                error_msg = f"Missing required columns: {', '.join(missing_required)}"
+                logger.error(error_msg)
+                results['errors'].append(error_msg)
+                results['failed'] = len(df_str)
+                return results
+            
+            # Remove sample data row (row with HC001, John, Doe, etc.)
+            df_clean = df_str.copy()
+            
+            # Remove rows where Employee ID is sample data
+            employee_id_col = actual_columns['employee_id']
+            sample_ids = ['HC001', 'HC002', 'EMP001', 'TEST001']  # Common sample IDs
+            
+            for sample_id in sample_ids:
+                df_clean = df_clean[df_clean[employee_id_col].str.strip() != sample_id]
+            
+            # Remove rows with sample names
+            first_name_col = actual_columns['first_name']
+            sample_names = ['John', 'Jane', 'Test', 'Sample']
+            for sample_name in sample_names:
+                df_clean = df_clean[df_clean[first_name_col].str.strip() != sample_name]
+            
+            # Remove completely empty rows
+            df_clean = df_clean.dropna(how='all')
+            
+            # Remove rows where employee_id is empty or nan
+            df_clean = df_clean[df_clean[employee_id_col].notna()]
+            df_clean = df_clean[df_clean[employee_id_col].str.strip() != '']
+            df_clean = df_clean[df_clean[employee_id_col].str.strip() != 'nan']
+            
+            logger.info(f"After cleaning: {len(df_clean)} rows to process")
+            
+            if df_clean.empty:
+                results['errors'].append("No valid data rows found. Please add employee data after removing sample rows.")
+                results['failed'] = len(df_str)
+                return results
+            
+            # Update total_rows
+            results['total_rows'] = len(df_clean)
+            
+            # Prepare lookup dictionaries
+            business_functions = {}
+            for bf in BusinessFunction.objects.filter(is_active=True):
+                business_functions[bf.name.lower()] = bf
+            
+            departments = {}
+            for dept in Department.objects.select_related('business_function').filter(is_active=True):
+                departments[dept.name.lower()] = dept
+            
+            job_functions = {}
+            for jf in JobFunction.objects.filter(is_active=True):
+                job_functions[jf.name.lower()] = jf
+            
+            position_groups = {}
+            for pg in PositionGroup.objects.filter(is_active=True):
+                position_groups[pg.get_name_display().lower()] = pg
+            
+            employee_lookup = {}
+            for emp in Employee.objects.all():
+                employee_lookup[emp.employee_id] = emp
+            
+            # Get default status
+            default_status = EmployeeStatus.objects.filter(is_default_for_new_employees=True).first()
+            if not default_status:
+                default_status = EmployeeStatus.objects.filter(name='ONBOARDING').first()
+            if not default_status:
+                default_status = EmployeeStatus.objects.filter(is_active=True).first()
+            
+            if not default_status:
+                results['errors'].append("No employee status found. Please create default status first.")
+                results['failed'] = len(df_clean)
+                return results
+            
+            # Process each row
+            with transaction.atomic():
+                for index, row in df_clean.iterrows():
+                    try:
+                        # Extract required fields with safe string conversion
+                        def safe_get(col_name, default=''):
+                            if col_name in actual_columns:
+                                value = row.get(actual_columns[col_name], default)
+                                return str(value).strip() if value and str(value).strip().lower() != 'nan' else default
+                            return default
+                        
+                        employee_id = safe_get('employee_id')
+                        first_name = safe_get('first_name')
+                        last_name = safe_get('last_name')
+                        email = safe_get('email')
+                        business_function_name = safe_get('business_function')
+                        department_name = safe_get('department')
+                        job_function_name = safe_get('job_function')
+                        job_title = safe_get('job_title')
+                        position_group_name = safe_get('position_group')
+                        start_date_str = safe_get('start_date')
+                        contract_duration = safe_get('contract_duration', 'PERMANENT')
+                        
+                        logger.info(f"Processing row {index}: {employee_id}, {first_name}, {last_name}")
+                        
+                        # Validate required fields
+                        if not all([employee_id, first_name, last_name, email, business_function_name, 
+                                   department_name, job_function_name, job_title, position_group_name, start_date_str]):
+                            results['errors'].append(f"Row {index + 2}: Missing required data")
+                            results['failed'] += 1
+                            continue
+                        
+                        # Check duplicates
+                        if Employee.objects.filter(employee_id=employee_id).exists():
+                            results['errors'].append(f"Row {index + 2}: Employee ID {employee_id} already exists")
+                            results['failed'] += 1
+                            continue
+                        
+                        if User.objects.filter(email=email).exists():
+                            results['errors'].append(f"Row {index + 2}: Email {email} already exists")
+                            results['failed'] += 1
+                            continue
+                        
+                        # Validate business function
+                        business_function = business_functions.get(business_function_name.lower())
+                        if not business_function:
+                            results['errors'].append(f"Row {index + 2}: Business Function '{business_function_name}' not found")
+                            results['failed'] += 1
+                            continue
+                        
+                        # Validate department
+                        department = departments.get(department_name.lower())
+                        if not department:
+                            results['errors'].append(f"Row {index + 2}: Department '{department_name}' not found")
+                            results['failed'] += 1
+                            continue
+                        
+                        # Validate job function
+                        job_function = job_functions.get(job_function_name.lower())
+                        if not job_function:
+                            results['errors'].append(f"Row {index + 2}: Job Function '{job_function_name}' not found")
+                            results['failed'] += 1
+                            continue
+                        
+                        # Validate position group
+                        position_group = position_groups.get(position_group_name.lower())
+                        if not position_group:
+                            results['errors'].append(f"Row {index + 2}: Position Group '{position_group_name}' not found")
+                            results['failed'] += 1
+                            continue
+                        
+                        # Parse start date
+                        try:
+                            start_date = pd.to_datetime(start_date_str).date()
+                        except:
+                            results['errors'].append(f"Row {index + 2}: Invalid start date '{start_date_str}'")
+                            results['failed'] += 1
+                            continue
+                        
+                        # Validate contract duration
+                        valid_durations = [choice[0] for choice in Employee.contract_duration]
+                        if contract_duration not in valid_durations:
+                            contract_duration = 'PERMANENT'
+                        
+                        # Optional fields
+                        date_of_birth = None
+                        dob_str = safe_get('date_of_birth')
+                        if dob_str:
+                            try:
+                                date_of_birth = pd.to_datetime(dob_str).date()
+                            except:
+                                pass
+                        
+                        gender = safe_get('gender').upper()
+                        if gender not in ['MALE', 'FEMALE']:
+                            gender = None
+                        
+                        father_name = safe_get('father_name')
+                        phone = safe_get('phone')
+                        address = safe_get('address')
+                        emergency_contact = safe_get('emergency_contact')
+                        
+                        # Unit (optional)
+                        unit = None
+                        unit_name = safe_get('unit')
+                        if unit_name:
+                            unit = Unit.objects.filter(name__iexact=unit_name, department=department).first()
+                        
+                        # Grading level
+                        grading_level = safe_get('grading_level')
+                        if not grading_level:
+                            grading_level = f"{position_group.grading_shorthand}_M"
+                        
+                        # Contract start date
+                        contract_start_date = start_date
+                        csd_str = safe_get('contract_start_date')
+                        if csd_str:
+                            try:
+                                contract_start_date = pd.to_datetime(csd_str).date()
+                            except:
+                                pass
+                        
+                        # Line manager
+                        line_manager = None
+                        line_manager_id = safe_get('line_manager_id')
+                        if line_manager_id:
+                            line_manager = employee_lookup.get(line_manager_id)
+                        
+                        # Org chart visibility
+                        is_visible_str = safe_get('is_visible_in_org_chart', 'TRUE').upper()
+                        is_visible_in_org_chart = is_visible_str in ['TRUE', '1', 'YES']
+                        
+                        notes = safe_get('notes')
+                        
+                        # Create user
+                        user_obj = User.objects.create_user(
+                            username=email,
+                            email=email,
+                            first_name=first_name,
+                            last_name=last_name
+                        )
+                        
+                        # Create employee
+                        employee = Employee.objects.create(
+                            user=user_obj,
+                            employee_id=employee_id,
+                            date_of_birth=date_of_birth,
+                            gender=gender,
+                            father_name=father_name,
+                            address=address,
+                            phone=phone,
+                            emergency_contact=emergency_contact,
+                            business_function=business_function,
+                            department=department,
+                            unit=unit,
+                            job_function=job_function,
+                            job_title=job_title,
+                            position_group=position_group,
+                            grading_level=grading_level,
+                            start_date=start_date,
+                            contract_duration=contract_duration,
+                            contract_start_date=contract_start_date,
+                            line_manager=line_manager,
+                            status=default_status,
+                            is_visible_in_org_chart=is_visible_in_org_chart,
+                            notes=notes,
+                            created_by=user
+                        )
+                        
+                        # Process tags
+                        tags_str = safe_get('tags')
+                        if tags_str:
+                            tags = []
+                            for tag_spec in tags_str.split(','):
+                                tag_spec = tag_spec.strip()
+                                if ':' in tag_spec:
+                                    tag_type, tag_name = tag_spec.split(':', 1)
+                                    tag_type = tag_type.strip().upper()
+                                    tag_name = tag_name.strip()
+                                    
+                                    tag, created = EmployeeTag.objects.get_or_create(
+                                        name=tag_name,
+                                        defaults={
+                                            'tag_type': tag_type if tag_type in ['LEAVE', 'STATUS', 'SKILL', 'PROJECT', 'PERFORMANCE'] else 'OTHER',
+                                            'is_active': True
+                                        }
+                                    )
+                                    tags.append(tag)
+                                else:
+                                    tag, created = EmployeeTag.objects.get_or_create(
+                                        name=tag_spec,
+                                        defaults={'tag_type': 'OTHER', 'is_active': True}
+                                    )
+                                    tags.append(tag)
+                            
+                            if tags:
+                                employee.tags.set(tags)
+                        
+                        # Log activity
+                        EmployeeActivity.objects.create(
+                            employee=employee,
+                            activity_type='BULK_CREATED',
+                            description=f"Employee {employee.full_name} created via bulk upload",
+                            performed_by=user,
+                            metadata={'bulk_creation': True, 'row_number': index + 2}
+                        )
+                        
+                        results['successful'] += 1
+                        results['created_employees'].append({
+                            'employee_id': employee.employee_id,
+                            'name': employee.full_name,
+                            'email': employee.user.email
+                        })
+                        
+                        logger.info(f"Created employee: {employee.employee_id} - {employee.full_name}")
+                        
+                    except Exception as e:
+                        error_msg = f"Row {index + 2}: {str(e)}"
+                        results['errors'].append(error_msg)
+                        results['failed'] += 1
+                        logger.error(f"Error creating employee from row {index + 2}: {e}")
+                        logger.error(f"Traceback: {traceback.format_exc()}")
+                        continue
+            
+            logger.info(f"Bulk creation completed: {results['successful']} successful, {results['failed']} failed")
+            return results
+            
+        except Exception as e:
+            logger.error(f"Bulk processing failed: {str(e)}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            results['errors'].append(f"Processing failed: {str(e)}")
+            results['failed'] = results['total_rows']
+            return results
+        
+    @swagger_auto_schema(
+        method='post',
+        operation_description="Add tag to single employee",
+        request_body=SingleEmployeeTagUpdateSerializer,
+        responses={200: "Tag added successfully", 400: "Bad request"}
+    )
+    @action(detail=False, methods=['post'], url_path='add-tag')
+    def add_tag_to_employee(self, request):
+        """Add tag to single employee using employee ID"""
+        serializer = SingleEmployeeTagUpdateSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        employee_id = serializer.validated_data['employee_id']
+        tag_id = serializer.validated_data['tag_id']
+        
+        try:
+            employee = Employee.objects.get(id=employee_id)
+            tag = EmployeeTag.objects.get(id=tag_id)
+            
+            if employee.add_tag(tag, request.user):
+                return Response({
+                    'success': True,
+                    'message': f'Tag "{tag.name}" added to {employee.full_name}',
+                    'employee_id': employee.id,
+                    'employee_name': employee.full_name,
+                    'tag_name': tag.name
+                })
+            else:
+                return Response({
+                    'success': False,
+                    'message': f'Tag "{tag.name}" already exists on {employee.full_name}',
+                    'employee_id': employee.id,
+                    'employee_name': employee.full_name,
+                    'tag_name': tag.name
+                })
+        except (Employee.DoesNotExist, EmployeeTag.DoesNotExist) as e:
+            return Response({'error': str(e)}, status=status.HTTP_404_NOT_FOUND)
+    
+    @swagger_auto_schema(
+        method='post',
+        operation_description="Remove tag from single employee",
+        request_body=SingleEmployeeTagUpdateSerializer,
+        responses={200: "Tag removed successfully", 400: "Bad request"}
+    )
+    @action(detail=False, methods=['post'], url_path='remove-tag')
+    def remove_tag_from_employee(self, request):
+        """Remove tag from single employee using employee ID"""
+        serializer = SingleEmployeeTagUpdateSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        employee_id = serializer.validated_data['employee_id']
+        tag_id = serializer.validated_data['tag_id']
+        
+        try:
+            employee = Employee.objects.get(id=employee_id)
+            tag = EmployeeTag.objects.get(id=tag_id)
+            
+            if employee.remove_tag(tag, request.user):
+                return Response({
+                    'success': True,
+                    'message': f'Tag "{tag.name}" removed from {employee.full_name}',
+                    'employee_id': employee.id,
+                    'employee_name': employee.full_name,
+                    'tag_name': tag.name
+                })
+            else:
+                return Response({
+                    'success': False,
+                    'message': f'Tag "{tag.name}" was not found on {employee.full_name}',
+                    'employee_id': employee.id,
+                    'employee_name': employee.full_name,
+                    'tag_name': tag.name
+                })
+        except (Employee.DoesNotExist, EmployeeTag.DoesNotExist) as e:
+            return Response({'error': str(e)}, status=status.HTTP_404_NOT_FOUND)
+    
+    @swagger_auto_schema(
+        method='post',
+        operation_description="Add tag to multiple employees",
+        request_body=BulkEmployeeTagUpdateSerializer,
+        responses={200: "Tags added successfully", 400: "Bad request"}
+    )
+    @action(detail=False, methods=['post'], url_path='bulk-add-tag')
+    def bulk_add_tag(self, request):
+        """Add tag to multiple employees using employee IDs"""
+        serializer = BulkEmployeeTagUpdateSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         
         employee_ids = serializer.validated_data['employee_ids']
-        status_id = serializer.validated_data['status_id']
+        tag_id = serializer.validated_data['tag_id']
         
         try:
-            new_status = EmployeeStatus.objects.get(id=status_id)
+            tag = EmployeeTag.objects.get(id=tag_id)
+            employees = Employee.objects.filter(id__in=employee_ids)
+            
+            added_count = 0
+            already_had_count = 0
+            results = []
+            
+            with transaction.atomic():
+                for employee in employees:
+                    if employee.add_tag(tag, request.user):
+                        added_count += 1
+                        results.append({
+                            'employee_id': employee.id,
+                            'employee_name': employee.full_name,
+                            'status': 'added'
+                        })
+                    else:
+                        already_had_count += 1
+                        results.append({
+                            'employee_id': employee.id,
+                            'employee_name': employee.full_name,
+                            'status': 'already_had'
+                        })
+            
+            return Response({
+                'success': True,
+                'message': f'Tag "{tag.name}" processed for {len(employee_ids)} employees',
+                'tag_name': tag.name,
+                'total_employees': len(employee_ids),
+                'added_count': added_count,
+                'already_had_count': already_had_count,
+                'results': results
+            })
+        except EmployeeTag.DoesNotExist:
+            return Response({'error': 'Tag not found'}, status=status.HTTP_404_NOT_FOUND)
+    
+    @swagger_auto_schema(
+        method='post',
+        operation_description="Remove tag from multiple employees",
+        request_body=BulkEmployeeTagUpdateSerializer,
+        responses={200: "Tags removed successfully", 400: "Bad request"}
+    )
+    @action(detail=False, methods=['post'], url_path='bulk-remove-tag')
+    def bulk_remove_tag(self, request):
+        """Remove tag from multiple employees using employee IDs"""
+        serializer = BulkEmployeeTagUpdateSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        employee_ids = serializer.validated_data['employee_ids']
+        tag_id = serializer.validated_data['tag_id']
+        
+        try:
+            tag = EmployeeTag.objects.get(id=tag_id)
+            employees = Employee.objects.filter(id__in=employee_ids)
+            
+            removed_count = 0
+            didnt_have_count = 0
+            results = []
+            
+            with transaction.atomic():
+                for employee in employees:
+                    if employee.remove_tag(tag, request.user):
+                        removed_count += 1
+                        results.append({
+                            'employee_id': employee.id,
+                            'employee_name': employee.full_name,
+                            'status': 'removed'
+                        })
+                    else:
+                        didnt_have_count += 1
+                        results.append({
+                            'employee_id': employee.id,
+                            'employee_name': employee.full_name,
+                            'status': 'didnt_have'
+                        })
+            
+            return Response({
+                'success': True,
+                'message': f'Tag "{tag.name}" removal processed for {len(employee_ids)} employees',
+                'tag_name': tag.name,
+                'total_employees': len(employee_ids),
+                'removed_count': removed_count,
+                'didnt_have_count': didnt_have_count,
+                'results': results
+            })
+        except EmployeeTag.DoesNotExist:
+            return Response({'error': 'Tag not found'}, status=status.HTTP_404_NOT_FOUND)
+    
+    # ENHANCED LINE MANAGER MANAGEMENT
+    @swagger_auto_schema(
+        method='post',
+        operation_description="Assign line manager to single employee",
+        request_body=SingleLineManagerAssignmentSerializer,
+        responses={200: "Line manager assigned successfully", 400: "Bad request"}
+    )
+    @action(detail=False, methods=['post'], url_path='assign-line-manager')
+    def assign_line_manager(self, request):
+        """Assign line manager to single employee"""
+        serializer = SingleLineManagerAssignmentSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        employee_id = serializer.validated_data['employee_id']
+        line_manager_id = serializer.validated_data['line_manager_id']
+        
+        try:
+            employee = Employee.objects.get(id=employee_id)
+            line_manager = Employee.objects.get(id=line_manager_id) if line_manager_id else None
+            
+            old_manager_name = employee.line_manager.full_name if employee.line_manager else 'None'
+            new_manager_name = line_manager.full_name if line_manager else 'None'
+            
+            employee.change_line_manager(line_manager, request.user)
+            
+            return Response({
+                'success': True,
+                'message': f'Line manager updated for {employee.full_name}',
+                'employee_id': employee.id,
+                'employee_name': employee.full_name,
+                'old_line_manager': old_manager_name,
+                'new_line_manager': new_manager_name
+            })
+        except Employee.DoesNotExist:
+            return Response({'error': 'Employee or line manager not found'}, status=status.HTTP_404_NOT_FOUND)
+    
+    @swagger_auto_schema(
+        method='post',
+        operation_description="Assign line manager to multiple employees",
+        request_body=BulkLineManagerAssignmentSerializer,
+        responses={200: "Line managers assigned successfully", 400: "Bad request"}
+    )
+    @action(detail=False, methods=['post'], url_path='bulk-assign-line-manager')
+    def bulk_assign_line_manager(self, request):
+        """Assign line manager to multiple employees"""
+        serializer = BulkLineManagerAssignmentSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        employee_ids = serializer.validated_data['employee_ids']
+        line_manager_id = serializer.validated_data['line_manager_id']
+        
+        try:
+            line_manager = Employee.objects.get(id=line_manager_id) if line_manager_id else None
             employees = Employee.objects.filter(id__in=employee_ids)
             
             updated_count = 0
-            for employee in employees:
-                old_status = employee.status
-                employee.status = new_status
-                employee.save()
-                updated_count += 1
-                
-                # Log activity
-                EmployeeActivity.objects.create(
-                    employee=employee,
-                    activity_type='STATUS_CHANGED',
-                    description=f"Status manually changed from {old_status.name} to {new_status.name}",
-                    performed_by=request.user,
-                    metadata={
-                        'old_status': old_status.name,
-                        'new_status': new_status.name,
-                        'manual_update': True
-                    }
-                )
+            results = []
+            
+            with transaction.atomic():
+                for employee in employees:
+                    old_manager_name = employee.line_manager.full_name if employee.line_manager else 'None'
+                    employee.change_line_manager(line_manager, request.user)
+                    updated_count += 1
+                    
+                    results.append({
+                        'employee_id': employee.id,
+                        'employee_name': employee.full_name,
+                        'old_line_manager': old_manager_name,
+                        'new_line_manager': line_manager.full_name if line_manager else 'None'
+                    })
             
             return Response({
-                'message': f'Successfully updated status for {updated_count} employees',
+                'success': True,
+                'message': f'Line manager updated for {updated_count} employees',
+                'new_line_manager': line_manager.full_name if line_manager else 'None',
+                'total_employees': len(employee_ids),
                 'updated_count': updated_count,
-                'new_status': new_status.name
+                'results': results
             })
-        except EmployeeStatus.DoesNotExist:
-            return Response({'error': 'Status not found'}, status=status.HTTP_404_NOT_FOUND)
+        except Employee.DoesNotExist:
+            return Response({'error': 'Line manager not found'}, status=status.HTTP_404_NOT_FOUND)
     
-    @action(detail=False, methods=['post'])
-    def auto_update_status(self, request):
-        """Automatically update employee statuses based on contract configuration"""
-        serializer = AutoStatusUpdateSerializer(data=request.data)
+    @swagger_auto_schema(
+        method='post',
+        operation_description="Update contract for single employee",
+        request_body=ContractExtensionSerializer,
+        responses={200: "Contract updated successfully", 400: "Bad request"}
+    )
+    @action(detail=False, methods=['post'], url_path='extend-contract')
+    def extend_employee_contract(self, request):
+        """Update contract for single employee with new type and start date"""
+        serializer = ContractExtensionSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        employee_id = serializer.validated_data['employee_id']
+        new_contract_type = serializer.validated_data['new_contract_type']
+        new_start_date = serializer.validated_data['new_start_date']
+        reason = serializer.validated_data.get('reason', '')
+        
+        try:
+            employee = Employee.objects.get(id=employee_id)
+            
+            # Store old values
+            old_contract_type = employee.contract_duration
+            old_start_date = employee.contract_start_date
+            old_end_date = employee.contract_end_date
+            
+            # Update contract
+            employee.contract_duration = new_contract_type
+            employee.contract_start_date = new_start_date
+            employee.contract_extensions += 1
+            employee.last_extension_date = timezone.now().date()
+            employee.renewal_status = 'APPROVED'
+            
+            if request.user:
+                employee.updated_by = request.user
+            
+            # Save will auto-calculate new end date
+            employee.save()
+            
+            # Log detailed activity
+            EmployeeActivity.objects.create(
+                employee=employee,
+                activity_type='CONTRACT_UPDATED',
+                description=f"Contract updated: {old_contract_type} → {new_contract_type}. New start: {new_start_date}. Reason: {reason}",
+                performed_by=request.user,
+                metadata={
+                    'old_contract_type': old_contract_type,
+                    'new_contract_type': new_contract_type,
+                    'old_start_date': str(old_start_date) if old_start_date else None,
+                    'new_start_date': str(new_start_date),
+                    'old_end_date': str(old_end_date) if old_end_date else None,
+                    'new_end_date': str(employee.contract_end_date) if employee.contract_end_date else None,
+                    'reason': reason,
+                    'extension_count': employee.contract_extensions
+                }
+            )
+            
+            return Response({
+                'success': True,
+                'message': f'Contract updated successfully for {employee.full_name}',
+                'employee_id': employee.id,
+                'employee_name': employee.full_name,
+                'old_contract_type': old_contract_type,
+                'new_contract_type': new_contract_type,
+                'old_start_date': old_start_date,
+                'new_start_date': new_start_date,
+                'old_end_date': old_end_date,
+                'new_end_date': employee.contract_end_date,
+                'extensions_count': employee.contract_extensions
+            })
+                
+        except Employee.DoesNotExist:
+            return Response({'error': 'Employee not found'}, status=status.HTTP_404_NOT_FOUND)
+    
+    @swagger_auto_schema(
+        method='post',
+        operation_description="Update contracts for multiple employees",
+        request_body=BulkContractExtensionSerializer,
+        responses={200: "Contracts updated successfully", 400: "Bad request"}
+    )
+    @action(detail=False, methods=['post'], url_path='bulk-extend-contracts')
+    def bulk_extend_contracts(self, request):
+        """Update contracts for multiple employees"""
+        serializer = BulkContractExtensionSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        employee_ids = serializer.validated_data['employee_ids']
+        new_contract_type = serializer.validated_data['new_contract_type']
+        new_start_date = serializer.validated_data['new_start_date']
+        reason = serializer.validated_data.get('reason', '')
+        
+        try:
+            employees = Employee.objects.filter(id__in=employee_ids)
+            
+            updated_count = 0
+            failed_count = 0
+            results = []
+            
+            with transaction.atomic():
+                for employee in employees:
+                    try:
+                        old_contract_type = employee.contract_duration
+                        old_start_date = employee.contract_start_date
+                        old_end_date = employee.contract_end_date
+                        
+                        # Update contract
+                        employee.contract_duration = new_contract_type
+                        employee.contract_start_date = new_start_date
+                        employee.contract_extensions += 1
+                        employee.last_extension_date = timezone.now().date()
+                        employee.renewal_status = 'APPROVED'
+                        
+                        if request.user:
+                            employee.updated_by = request.user
+                        
+                        # Save will auto-calculate new end date
+                        employee.save()
+                        
+                        # Log detailed activity
+                        EmployeeActivity.objects.create(
+                            employee=employee,
+                            activity_type='CONTRACT_UPDATED',
+                            description=f"Bulk contract update: {old_contract_type} → {new_contract_type}. New start: {new_start_date}. Reason: {reason}",
+                            performed_by=request.user,
+                            metadata={
+                                'bulk_update': True,
+                                'old_contract_type': old_contract_type,
+                                'new_contract_type': new_contract_type,
+                                'old_start_date': str(old_start_date) if old_start_date else None,
+                                'new_start_date': str(new_start_date),
+                                'old_end_date': str(old_end_date) if old_end_date else None,
+                                'new_end_date': str(employee.contract_end_date) if employee.contract_end_date else None,
+                                'reason': reason,
+                                'extension_count': employee.contract_extensions
+                            }
+                        )
+                        
+                        updated_count += 1
+                        results.append({
+                            'employee_id': employee.id,
+                            'employee_name': employee.full_name,
+                            'status': 'success',
+                            'old_contract_type': old_contract_type,
+                            'new_contract_type': new_contract_type,
+                            'old_end_date': old_end_date,
+                            'new_end_date': employee.contract_end_date,
+                            'extensions_count': employee.contract_extensions
+                        })
+                    except Exception as e:
+                        failed_count += 1
+                        results.append({
+                            'employee_id': employee.id,
+                            'employee_name': employee.full_name,
+                            'status': 'failed',
+                            'error': str(e)
+                        })
+            
+            return Response({
+                'success': True,
+                'message': f'Contract update completed: {updated_count} updated, {failed_count} failed',
+                'total_employees': len(employee_ids),
+                'updated_count': updated_count,
+                'failed_count': failed_count,
+                'new_contract_type': new_contract_type,
+                'new_start_date': new_start_date,
+                'reason': reason,
+                'results': results
+            })
+            
+        except Exception as e:
+            return Response({'error': f'Bulk contract update failed: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    # ENHANCED SOFT DELETE/RESTORE (Simplified as requested)
+    @swagger_auto_schema(
+        method='post',
+        operation_description="Soft delete multiple employees",
+        request_body=BulkSoftDeleteSerializer,
+        responses={200: "Employees soft deleted successfully", 400: "Bad request"}
+    )
+    @action(detail=False, methods=['post'], url_path='soft-delete')
+    def bulk_soft_delete(self, request):
+        """Soft delete multiple employees using employee IDs"""
+        serializer = BulkSoftDeleteSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        employee_ids = serializer.validated_data['employee_ids']
+        
+        try:
+            with transaction.atomic():
+                employees = Employee.objects.filter(id__in=employee_ids, is_deleted=False)
+                deleted_count = 0
+                results = []
+                
+                for employee in employees:
+                    employee.soft_delete(user=request.user)
+                    deleted_count += 1
+                    
+                    # Log activity
+                    EmployeeActivity.objects.create(
+                        employee=employee,
+                        activity_type='SOFT_DELETED',
+                        description=f"Employee {employee.full_name} was soft deleted (bulk operation)",
+                        performed_by=request.user,
+                        metadata={'bulk_delete': True}
+                    )
+                    
+                    results.append({
+                        'employee_id': employee.id,
+                        'employee_name': employee.full_name,
+                        'status': 'deleted'
+                    })
+                
+                return Response({
+                    'success': True,
+                    'message': f'Successfully soft deleted {deleted_count} employees',
+                    'total_requested': len(employee_ids),
+                    'deleted_count': deleted_count,
+                    'results': results
+                })
+        except Exception as e:
+            return Response({'error': f'Soft delete failed: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    @swagger_auto_schema(
+        method='post',
+        operation_description="Restore multiple soft-deleted employees",
+        request_body=BulkRestoreSerializer,
+        responses={200: "Employees restored successfully", 400: "Bad request"}
+    )
+    @action(detail=False, methods=['post'], url_path='restore')
+    def bulk_restore(self, request):
+        """Restore multiple soft-deleted employees using employee IDs"""
+        serializer = BulkRestoreSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        employee_ids = serializer.validated_data['employee_ids']
+        
+        try:
+            with transaction.atomic():
+                employees = Employee.all_objects.filter(id__in=employee_ids, is_deleted=True)
+                restored_count = 0
+                results = []
+                
+                for employee in employees:
+                    employee.restore()
+                    restored_count += 1
+                    
+                    # Log activity
+                    EmployeeActivity.objects.create(
+                        employee=employee,
+                        activity_type='RESTORED',
+                        description=f"Employee {employee.full_name} was restored (bulk operation)",
+                        performed_by=request.user,
+                        metadata={'bulk_restore': True}
+                    )
+                    
+                    results.append({
+                        'employee_id': employee.id,
+                        'employee_name': employee.full_name,
+                        'status': 'restored'
+                    })
+                
+                return Response({
+                    'success': True,
+                    'message': f'Successfully restored {restored_count} employees',
+                    'total_requested': len(employee_ids),
+                    'restored_count': restored_count,
+                    'results': results
+                })
+        except Exception as e:
+            return Response({'error': f'Restore failed: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    # STATUS PREVIEW EXPLANATION
+    @swagger_auto_schema(
+        method='post',
+        operation_description="Preview status updates for employees (shows what status changes would happen)",
+        request_body=StatusPreviewRequestSerializer,
+        responses={200: "Status preview generated successfully", 400: "Bad request"}
+    )
+    @action(detail=False, methods=['post'], url_path='preview-status-updates')
+    def preview_status_updates(self, request):
+        """
+        Preview what status updates would happen for selected employees.
+        
+        This endpoint shows you what automatic status changes would occur
+        based on each employee's contract configuration and how long they've been working.
+        
+        For example:
+        - An employee who started 10 days ago with 7-day onboarding should move from ONBOARDING to PROBATION
+        - An employee who completed probation should move to ACTIVE
+        - An employee whose contract expired should move to INACTIVE
+        
+        This is useful to see what changes would happen before actually applying them.
+        """
+        serializer = StatusPreviewRequestSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         
         employee_ids = serializer.validated_data.get('employee_ids', [])
-        force_update = serializer.validated_data.get('force_update', False)
         
-        try:
-            if employee_ids:
-                updated_count = ContractStatusManager.bulk_update_employee_statuses(employee_ids, force_update)
-            else:
-                updated_count = ContractStatusManager.bulk_update_employee_statuses(force_update=force_update)
-            
-            return Response({
-                'message': f'Successfully auto-updated status for {updated_count} employees',
-                'updated_count': updated_count,
-                'force_update': force_update
-            })
-        except Exception as e:
-            logger.error(f"Auto status update failed: {str(e)}")
-            return Response(
-                {'error': 'Auto status update failed', 'details': str(e)},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-    
-    # NEW: Status Preview Action
-    @action(detail=False, methods=['post'])
-    def preview_status_updates(self, request):
-        """Preview what status updates would happen for selected employees"""
-        employee_ids = request.data.get('employee_ids', [])
-        
+        # Get employees to check
         if employee_ids:
-            employees = Employee.objects.filter(id__in=employee_ids)
+            employees = Employee.objects.filter(id__in=employee_ids, is_deleted=False)
         else:
-            employees = Employee.objects.all()[:100]  # Limit to prevent timeout
+            employees = Employee.objects.filter(is_deleted=False)[:100]  # Limit to prevent timeout
         
         updates_needed = []
         current_status = []
+        contract_expired = []
+        errors = []
         
         for employee in employees:
-            preview = employee.get_status_preview()
-            employee_info = {
-                'employee_id': employee.employee_id,
-                'name': employee.full_name,
-                'current_status': preview['current_status'],
-                'required_status': preview['required_status'],
-                'needs_update': preview['needs_update'],
-                'reason': preview['reason'],
-                'contract_type': preview['contract_type'],
-                'days_since_start': preview['days_since_start']
-            }
-            
-            if preview['needs_update']:
-                updates_needed.append(employee_info)
-            else:
-                current_status.append(employee_info)
+            try:
+                preview = employee.get_status_preview()
+                
+                employee_info = {
+                    'employee_id': employee.id,
+                    'employee_hc_number': employee.employee_id,
+                    'employee_name': employee.full_name,
+                    'current_status': preview['current_status'],
+                    'required_status': preview['required_status'],
+                    'needs_update': preview['needs_update'],
+                    'reason': preview['reason'],
+                    'contract_type': preview['contract_type'],
+                    'days_since_start': preview['days_since_start'],
+                    'contract_end_date': preview.get('contract_end_date'),
+                    'department': employee.department.name,
+                    'line_manager': employee.line_manager.full_name if employee.line_manager else None
+                }
+                
+                if preview['needs_update']:
+                    if 'contract ended' in preview['reason'].lower():
+                        contract_expired.append(employee_info)
+                    else:
+                        updates_needed.append(employee_info)
+                else:
+                    current_status.append(employee_info)
+                    
+            except Exception as e:
+                errors.append({
+                    'employee_id': employee.id,
+                    'employee_hc_number': employee.employee_id,
+                    'employee_name': employee.full_name,
+                    'error': str(e)
+                })
+        
+        # Group by transition type for easier understanding
+        transition_summary = {}
+        for emp in updates_needed + contract_expired:
+            transition = f"{emp['current_status']} → {emp['required_status']}"
+            if transition not in transition_summary:
+                transition_summary[transition] = []
+            transition_summary[transition].append(emp)
         
         return Response({
-            'total_checked': len(employees),
-            'updates_needed_count': len(updates_needed),
-            'current_status_count': len(current_status),
-            'updates_needed': updates_needed,
-            'current_status': current_status[:10]  # Limit response size
+            'success': True,
+            'message': f'Status preview completed for {len(employees)} employees',
+            'summary': {
+                'total_checked': len(employees),
+                'updates_needed': len(updates_needed),
+                'current_status': len(current_status),
+                'contract_expired': len(contract_expired),
+                'errors': len(errors)
+            },
+            'transition_summary': {
+                transition: len(employees) 
+                for transition, employees in transition_summary.items()
+            },
+            'details': {
+                'updates_needed': updates_needed,
+                'contract_expired': contract_expired,
+                'current_status': current_status[:10],  # Limit to first 10
+                'errors': errors
+            },
+            'explanation': {
+                'updates_needed': 'Employees whose status should change based on contract rules',
+                'contract_expired': 'Employees whose contracts have ended and should be inactive',
+                'current_status': 'Employees whose status is already correct',
+                'transition_types': {
+                    'ONBOARDING → PROBATION': 'Employees who completed onboarding period',
+                    'PROBATION → ACTIVE': 'Employees who completed probation period',
+                    'ACTIVE → INACTIVE': 'Employees whose contracts have expired'
+                }
+            }
         })
     
-    # NEW: Contract Management Actions
-    @action(detail=False, methods=['post'])
-    def extend_contract(self, request):
-        """Extend contract for an employee"""
-        employee_id = request.data.get('employee_id')
-        extension_months = request.data.get('extension_months')
+    # CONTRACT EXPIRY NOTIFICATIONS
+    @action(detail=False, methods=['get'], url_path='contract-expiry-alerts')
+    def get_contract_expiry_alerts(self, request):
+        """Get employees whose contracts are expiring soon with notification capabilities"""
+        days = int(request.query_params.get('days', 30))
         
-        if not employee_id or not extension_months:
-            return Response(
-                {'error': 'employee_id and extension_months are required'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        from .status_management import EmployeeStatusManager
+        expiry_analysis = EmployeeStatusManager.get_contract_expiry_analysis(days)
         
-        try:
-            employee = Employee.objects.get(id=employee_id)
-            success, message = employee.extend_contract(extension_months, request.user)
-            
-            if success:
-                return Response({
-                    'message': message,
-                    'employee': employee.full_name,
-                    'new_end_date': employee.contract_end_date,
-                    'extensions_count': employee.contract_extensions
-                })
-            else:
-                return Response(
-                    {'error': message},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-        except Employee.DoesNotExist:
-            return Response(
-                {'error': 'Employee not found'},
-                status=status.HTTP_404_NOT_FOUND
-            )
+        # Group employees by urgency
+        urgent_employees = [emp for emp in expiry_analysis['employees'] if emp['urgency'] in ['critical', 'high']]
+        
+        return Response({
+            'success': True,
+            'days_ahead': days,
+            'total_expiring': expiry_analysis['total_expiring'],
+            'urgency_breakdown': expiry_analysis['by_urgency'],
+            'department_breakdown': expiry_analysis['by_department'],
+            'line_manager_breakdown': expiry_analysis['by_line_manager'],
+            'urgent_employees': urgent_employees,
+            'all_employees': expiry_analysis['employees'],
+            'notification_recommendations': {
+                'critical_contracts': [emp for emp in expiry_analysis['employees'] if emp['urgency'] == 'critical'],
+                'renewal_decisions_needed': [emp for emp in expiry_analysis['employees'] if emp['renewal_status'] == 'PENDING'],
+                'manager_notifications': list(set([emp['line_manager'] for emp in expiry_analysis['employees'] if emp['line_manager']]))
+            }
+        })
     
+   
+  
+
     @action(detail=False, methods=['get'])
     def contracts_expiring_soon(self, request):
         """Get employees whose contracts are expiring soon"""
@@ -2093,7 +2355,6 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             'employees': serializer.data
         })
     
-    # Other existing actions...
     @action(detail=False, methods=['get'])
     def statistics(self, request):
         """Get comprehensive employee statistics"""
@@ -2131,12 +2392,20 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             if count > 0:
                 position_stats[pos.get_name_display()] = count
         
-        # Contract analysis
+        # Contract analysis - FIXED
         contract_stats = {}
-        for duration in Employee.CONTRACT_DURATION_CHOICES:
-            count = queryset.filter(contract_duration=duration[0]).count()
-            if count > 0:
-                contract_stats[duration[1]] = count
+        # Get all unique contract types from employees
+        contract_types = queryset.values_list('contract_duration', flat=True).distinct()
+        for contract_type in contract_types:
+            if contract_type:
+                count = queryset.filter(contract_duration=contract_type).count()
+                if count > 0:
+                    try:
+                        config = ContractTypeConfig.objects.get(contract_type=contract_type, is_active=True)
+                        display_name = config.display_name
+                    except ContractTypeConfig.DoesNotExist:
+                        display_name = contract_type.replace('_', ' ').title()
+                    contract_stats[display_name] = count
         
         # Recent activity
         recent_hires = queryset.filter(
@@ -2149,15 +2418,23 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         ).count()
         
         # Status update analysis
-        employees_needing_updates = ContractStatusManager.get_employees_needing_status_update()
-        status_update_stats = {
-            'employees_needing_updates': len(employees_needing_updates),
-            'status_transitions': {}
-        }
-        
-        for update_info in employees_needing_updates:
-            transition = f"{update_info['current_status']} → {update_info['required_status']}"
-            status_update_stats['status_transitions'][transition] = status_update_stats['status_transitions'].get(transition, 0) + 1
+        try:
+            from .status_management import EmployeeStatusManager
+            employees_needing_updates = EmployeeStatusManager.get_employees_needing_update()
+            status_update_stats = {
+                'employees_needing_updates': len(employees_needing_updates),
+                'status_transitions': {}
+            }
+            
+            for update_info in employees_needing_updates:
+                transition = f"{update_info['current_status']} → {update_info['required_status']}"
+                status_update_stats['status_transitions'][transition] = status_update_stats['status_transitions'].get(transition, 0) + 1
+        except Exception as e:
+            status_update_stats = {
+                'employees_needing_updates': 0,
+                'status_transitions': {},
+                'error': str(e)
+            }
         
         return Response({
             'total_employees': total_employees,
@@ -2171,36 +2448,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             'upcoming_contract_endings_30_days': upcoming_contract_endings,
             'status_update_analysis': status_update_stats
         })
-    
-    @action(detail=False, methods=['get'])
-    def line_managers(self, request):
-        """Get list of potential line managers (ENHANCED)"""
-        managers = Employee.objects.filter(
-            status__affects_headcount=True,
-            position_group__hierarchy_level__lte=4,  # Manager level and above
-            is_deleted=False
-        ).select_related('position_group', 'department', 'business_function').order_by('full_name')
-        
-        # Add filtering options
-        search = request.query_params.get('search')
-        if search:
-            managers = managers.filter(
-                Q(full_name__icontains=search) |
-                Q(employee_id__icontains=search) |
-                Q(job_title__icontains=search)
-            )
-        
-        department_id = request.query_params.get('department')
-        if department_id:
-            managers = managers.filter(department_id=department_id)
-        
-        business_function_id = request.query_params.get('business_function')
-        if business_function_id:
-            managers = managers.filter(business_function_id=business_function_id)
-        
-        serializer = LineManagerSelectionSerializer(managers, many=True)
-        return Response(serializer.data)
-    
+   
     @action(detail=True, methods=['get'])
     def activities(self, request, pk=None):
         """Get employee activity history"""
@@ -2265,7 +2513,206 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             'top_level_managers': len(hierarchy_data),
             'hierarchy': hierarchy_data
         })
+
+
+
+class BulkEmployeeUploadViewSet(viewsets.ViewSet):
+    """Ayrı ViewSet yalnız file upload üçün"""
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]  # Yalnız file upload
+    
+    @swagger_auto_schema(
+        operation_description="Bulk create employees from uploaded Excel file",
+        manual_parameters=[
+            openapi.Parameter(
+                'file',
+                openapi.IN_FORM,
+                description='Excel file (.xlsx, .xls) containing employee data',
+                type=openapi.TYPE_FILE,
+                required=True
+            )
+        ],
+        consumes=['multipart/form-data'],
+        responses={
+            200: openapi.Response(
+                description="File processed successfully",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'message': openapi.Schema(type=openapi.TYPE_STRING),
+                        'total_rows': openapi.Schema(type=openapi.TYPE_INTEGER),
+                        'successful': openapi.Schema(type=openapi.TYPE_INTEGER),
+                        'failed': openapi.Schema(type=openapi.TYPE_INTEGER),
+                        'errors': openapi.Schema(
+                            type=openapi.TYPE_ARRAY, 
+                            items=openapi.Schema(type=openapi.TYPE_STRING)
+                        ),
+                        'created_employees': openapi.Schema(
+                            type=openapi.TYPE_ARRAY,
+                            items=openapi.Schema(
+                                type=openapi.TYPE_OBJECT,
+                                properties={
+                                    'employee_id': openapi.Schema(type=openapi.TYPE_STRING),
+                                    'name': openapi.Schema(type=openapi.TYPE_STRING),
+                                    'email': openapi.Schema(type=openapi.TYPE_STRING)
+                                }
+                            )
+                        ),
+                        'filename': openapi.Schema(type=openapi.TYPE_STRING)
+                    }
+                )
+            ),
+            400: openapi.Response(
+                description="Bad request - file validation error",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'error': openapi.Schema(type=openapi.TYPE_STRING)
+                    }
+                )
+            )
+        }
+    )
+    def create(self, request):
+        """Bulk create employees from uploaded Excel file"""
         
+        try:
+            # Log incoming request
+            logger.info(f"Bulk upload request received from user: {request.user}")
+            logger.info(f"Request FILES: {list(request.FILES.keys())}")
+            logger.info(f"Request data: {request.data}")
+            
+            # Check if file exists
+            if 'file' not in request.FILES:
+                logger.warning("No file in request.FILES")
+                return Response(
+                    {'error': 'No file uploaded. Please select an Excel file.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            file = request.FILES['file']
+            logger.info(f"File received: {file.name}, size: {file.size}")
+            
+            # Validate file format
+            if not file.name.endswith(('.xlsx', '.xls')):
+                logger.warning(f"Invalid file format: {file.name}")
+                return Response(
+                    {'error': 'Invalid file format. Please upload Excel file (.xlsx or .xls)'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Validate file size (max 10MB)
+            if file.size > 10 * 1024 * 1024:
+                logger.warning(f"File too large: {file.size} bytes")
+                return Response(
+                    {'error': 'File too large. Maximum size is 10MB'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Read Excel file with better error handling
+            try:
+                # Try multiple engines
+                try:
+                    df = pd.read_excel(file, sheet_name=0, engine='openpyxl')
+                except:
+                    try:
+                        df = pd.read_excel(file, sheet_name=0, engine='xlrd')
+                    except:
+                        df = pd.read_excel(file, sheet_name=0)
+                
+                logger.info(f"Excel file read successfully. Shape: {df.shape}")
+                logger.info(f"Columns: {list(df.columns)}")
+                
+            except Exception as e:
+                logger.error(f"Failed to read Excel file: {str(e)}")
+                return Response(
+                    {'error': f'Failed to read Excel file: {str(e)}. Please check file format and content.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Remove completely empty rows
+            df = df.dropna(how='all')
+            
+            # Check if file has data
+            if df.empty:
+                logger.warning("Excel file is empty after removing empty rows")
+                return Response(
+                    {'error': 'Excel file is empty or has no valid data'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            logger.info(f"Processing Excel file '{file.name}' with {len(df)} rows")
+            
+            # Process the data - call EmployeeViewSet method
+            employee_viewset = EmployeeViewSet()
+            
+            # Make sure the viewset has the method
+            if not hasattr(employee_viewset, '_process_bulk_employee_data_from_excel'):
+                logger.error("EmployeeViewSet missing _process_bulk_employee_data_from_excel method")
+                return Response(
+                    {'error': 'Server configuration error. Please contact administrator.'},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+            
+            result = employee_viewset._process_bulk_employee_data_from_excel(df, request.user)
+            
+            logger.info(f"Bulk upload completed. Success: {result['successful']}, Failed: {result['failed']}")
+            
+            return Response({
+                'message': f'File processed successfully. {result["successful"]} employees created, {result["failed"]} failed.',
+                'total_rows': result['total_rows'],
+                'successful': result['successful'],
+                'failed': result['failed'],
+                'errors': result['errors'],
+                'created_employees': result['created_employees'],
+                'filename': file.name
+            })
+            
+        except Exception as e:
+            logger.error(f"Bulk employee creation failed for file: {str(e)}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return Response(
+                {'error': f'Failed to process request: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    @swagger_auto_schema(
+        operation_description="Download Excel template for bulk employee creation",
+        responses={
+            200: openapi.Response(
+                description="Excel template file",
+                content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            )
+        }
+    )
+    @action(detail=False, methods=['get'])
+    def download_template(self, request):
+        """Download Excel template for bulk employee creation"""
+        try:
+            logger.info(f"Template download request from user: {request.user}")
+            
+            # Call EmployeeViewSet template method
+            employee_viewset = EmployeeViewSet()
+            
+            # Make sure the method exists
+            if not hasattr(employee_viewset, '_generate_bulk_template'):
+                logger.error("EmployeeViewSet missing _generate_bulk_template method")
+                return Response(
+                    {'error': 'Template generation not available. Please contact administrator.'},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+            
+            response = employee_viewset._generate_bulk_template()
+            logger.info("Template generated successfully")
+            return response
+            
+        except Exception as e:
+            logger.error(f"Template generation failed: {str(e)}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return Response(
+                {'error': f'Failed to generate template: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )    
 class EmployeeGradingViewSet(viewsets.ViewSet):
     """ViewSet for employee grading integration"""
     permission_classes = [IsAuthenticated]
@@ -2281,76 +2728,95 @@ class EmployeeGradingViewSet(viewsets.ViewSet):
             'count': employees.count(),
             'employees': serializer.data
         })
+        
+    @swagger_auto_schema(
+        method='post',
+        operation_description="Bulk update employee grades and grading levels",
+        request_body=BulkEmployeeGradingUpdateSerializer,
+        responses={
+            200: openapi.Response(
+                description="Successfully updated grades",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'message': openapi.Schema(type=openapi.TYPE_STRING),
+                        'updated_count': openapi.Schema(type=openapi.TYPE_INTEGER)
+                    }
+                )
+            ),
+            400: openapi.Response(
+                description="Bad request - validation errors",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'error': openapi.Schema(type=openapi.TYPE_STRING)
+                    }
+                )
+            )
+        }
+    )
     
- 
-    @action(detail=False, methods=['get'])
-    def contracts_expiring(self, request):
-        """Get contracts expiring within specified days"""
-        days = int(request.query_params.get('days', 30))
+    @action(detail=False, methods=['post'])
+    def bulk_update_grades(self, request):
+        """Bulk update employee grades"""
+        serializer = BulkEmployeeGradingUpdateSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         
-        expiring_contracts = EmployeeStatusManager.get_contract_expiry_analysis(days)
-        from .serializers import EmployeeListSerializer
+        updates = serializer.validated_data['updates']
         
-        # Get the actual employee objects
-        expiring_employees = Employee.objects.filter(
-            contract_end_date__lte=date.today() + timedelta(days=days),
-            contract_end_date__gte=date.today(),
-            contract_duration__in=['3_MONTHS', '6_MONTHS', '1_YEAR', '2_YEARS', '3_YEARS'],
-            is_deleted=False
-        )
+        if not updates:
+            return Response(
+                {'error': 'updates list is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
         
-        serializer = EmployeeListSerializer(expiring_employees, many=True)
-        
-        return Response({
-            'days': days,
-            'count': expiring_employees.count(),
-            'employees': serializer.data,
-            'analysis': expiring_contracts
-        })
-    
-    @action(detail=False, methods=['get'])
-    def status_analysis(self, request):
-        """Get comprehensive status analysis"""
-        analytics = EmployeeStatusManager.get_status_transition_analytics()
-        
-        return Response(analytics)
-    
-    @action(detail=False, methods=['get'])
-    def contract_configuration_impact(self, request):
-        """Analyze impact of contract configurations on employee statuses"""
-        configs = ContractTypeConfig.objects.filter(is_active=True)
-        impact_analysis = {}
-        
-        for config in configs:
-            employees_with_contract = Employee.objects.filter(contract_duration=config.contract_type)
+        try:
+            with transaction.atomic():
+                updated_count = 0
+                
+                for update in updates:
+                    employee_id = update['employee_id']
+                    grading_level = update.get('grading_level')
+                    
+                    try:
+                        employee = Employee.objects.get(id=employee_id)
+                        
+                        changes = []
+                        if grading_level and employee.grading_level != grading_level:
+                            old_level = employee.grading_level
+                            employee.grading_level = grading_level
+                            changes.append(f"Grading Level: {old_level} → {grading_level}")
+                        
+                        if changes:
+                            employee.save()
+                            updated_count += 1
+                            
+                            # Log activity
+                            EmployeeActivity.objects.create(
+                                employee=employee,
+                                activity_type='GRADE_CHANGED',
+                                description=f"Grading updated: {'; '.join(changes)}",
+                                performed_by=request.user,
+                                metadata={'changes': changes}
+                            )
+                            
+                    except Employee.DoesNotExist:
+                        continue
             
-            if employees_with_contract.exists():
-                impact_data = {
-                    'total_employees': employees_with_contract.count(),
-                    'configuration': {
-                        'onboarding_days': config.onboarding_days,
-                        'probation_days': config.probation_days,
-                        'total_days_until_active': config.get_total_days_until_active(),
-                        'auto_transitions_enabled': config.enable_auto_transitions
-                    },
-                    'status_distribution': {},
-                    'employees_needing_update': 0
-                }
-                
-                for employee in employees_with_contract:
-                    preview = EmployeeStatusManager.get_status_preview(employee)
-                    current_status = preview['current_status']
-                    
-                    if current_status not in impact_data['status_distribution']:
-                        impact_data['status_distribution'][current_status] = 0
-                    impact_data['status_distribution'][current_status] += 1
-                    
-                    if preview['needs_update']:
-                        impact_data['employees_needing_update'] += 1
-                
-                impact_analysis[config.contract_type] = impact_data
-        
-        return Response(impact_analysis)
+            return Response({
+                'message': f'Successfully updated grades for {updated_count} employees',
+                'updated_count': updated_count
+            })
+        except Exception as e:
+            logger.error(f"Bulk grade update failed: {str(e)}")
+            return Response(
+                {'error': 'Bulk grade update failed', 'details': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    
+    
 
 # Replace the ContractStatusManagementViewSet with this corrected version:
 class ContractStatusManagementViewSet(viewsets.ViewSet):
@@ -2392,59 +2858,8 @@ class ContractStatusManagementViewSet(viewsets.ViewSet):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
     
-    @action(detail=False, methods=['post'])
-    def bulk_update_all(self, request):
-        """Update all employee statuses based on contract configurations"""
-        try:
-            force_update = request.data.get('force_update', False)
-            employee_ids = request.data.get('employee_ids', [])
-            
-            if employee_ids:
-                result = EmployeeStatusManager.bulk_update_statuses(
-                    employee_ids=employee_ids,
-                    force_update=force_update,
-                    user=request.user
-                )
-            else:
-                result = EmployeeStatusManager.bulk_update_statuses(
-                    force_update=force_update,
-                    user=request.user
-                )
-            
-            return Response({
-                'message': f'Successfully updated {result["updated"]} employee statuses',
-                'updated_count': result['updated'],
-                'error_count': result['errors'],
-                'force_update': force_update
-            })
-            
-        except Exception as e:
-            logger.error(f"Bulk status update failed: {str(e)}")
-            return Response(
-                {'error': f'Bulk status update failed: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-    
-    @action(detail=False, methods=['get'])
-    def contracts_expiring(self, request):
-        """Get contracts expiring within specified days"""
-        try:
-            days = int(request.query_params.get('days', 30))
-            
-            analysis = EmployeeStatusManager.get_contract_expiry_analysis(days)
-            
-            return Response({
-                'days': days,
-                'analysis': analysis
-            })
-            
-        except Exception as e:
-            logger.error(f"Error getting contracts expiring: {str(e)}")
-            return Response(
-                {'error': f'Failed to get expiring contracts: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-    
+ 
+   
     @action(detail=False, methods=['get'])
     def status_analysis(self, request):
         """Get comprehensive status analysis"""
@@ -2460,362 +2875,9 @@ class ContractStatusManagementViewSet(viewsets.ViewSet):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
     
-    @action(detail=False, methods=['post'])
-    def run_automation_rules(self, request):
-        """Run status automation rules"""
-        try:
-            results = StatusAutomationRules.check_and_apply_rules()
-            
-            total_updated = (
-                results['onboarding_to_probation'] + 
-                results['probation_to_active'] + 
-                results['contract_expired_to_inactive']
-            )
-            
-            return Response({
-                'message': f'Automation rules completed. {total_updated} employees updated.',
-                'results': results,
-                'total_updated': total_updated
-            })
-            
-        except Exception as e:
-            logger.error(f"Automation rules failed: {str(e)}")
-            return Response(
-                {'error': f'Automation rules failed: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-    
-    @action(detail=False, methods=['get'])
-    def line_manager_overview(self, request):
-        """Get line manager team overviews"""
-        try:
-            manager_employee_id = request.query_params.get('manager_id')
-            
-            if manager_employee_id:
-                overview = LineManagerStatusIntegration.get_manager_team_status_overview(manager_employee_id)
-                if overview:
-                    return Response(overview)
-                else:
-                    return Response(
-                        {'error': 'Manager not found'},
-                        status=status.HTTP_404_NOT_FOUND
-                    )
-            else:
-                managers_needing_attention = LineManagerStatusIntegration.get_managers_needing_attention()
-                return Response({
-                    'managers_needing_attention': managers_needing_attention[:10]  # Top 10
-                })
-                
-        except Exception as e:
-            logger.error(f"Error getting line manager overview: {str(e)}")
-            return Response(
-                {'error': f'Failed to get line manager overview: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-    
-    @action(detail=False, methods=['post'])
-    def preview_status_updates(self, request):
-        """Preview what status updates would happen for selected employees"""
-        try:
-            employee_ids = request.data.get('employee_ids', [])
-            
-            if employee_ids:
-                employees = Employee.objects.filter(id__in=employee_ids)
-            else:
-                employees = Employee.objects.filter(is_deleted=False)[:100]  # Limit to prevent timeout
-            
-            updates_needed = []
-            current_status = []
-            
-            for employee in employees:
-                try:
-                    preview = EmployeeStatusManager.get_status_preview(employee)
-                    employee_info = {
-                        'employee_id': employee.employee_id,
-                        'name': employee.full_name,
-                        'current_status': preview['current_status'],
-                        'required_status': preview['required_status'],
-                        'needs_update': preview['needs_update'],
-                        'reason': preview['reason'],
-                        'contract_type': preview['contract_type'],
-                        'days_since_start': preview['days_since_start']
-                    }
-                    
-                    if preview['needs_update']:
-                        updates_needed.append(employee_info)
-                    else:
-                        current_status.append(employee_info)
-                except Exception as e:
-                    logger.error(f"Error getting preview for employee {employee.employee_id}: {e}")
-                    continue
-            
-            return Response({
-                'total_checked': len(employees),
-                'updates_needed_count': len(updates_needed),
-                'current_status_count': len(current_status),
-                'updates_needed': updates_needed,
-                'current_status': current_status[:10]  # Limit response size
-            })
-            
-        except Exception as e:
-            logger.error(f"Error previewing status updates: {str(e)}")
-            return Response(
-                {'error': f'Failed to preview status updates: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-    
-    @action(detail=False, methods=['get'])
-    def contract_configurations(self, request):
-        """Get contract configuration analysis"""
-        try:
-            configs = ContractTypeConfig.objects.filter(is_active=True)
-            impact_analysis = {}
-            
-            for config in configs:
-                employees_with_contract = Employee.objects.filter(contract_duration=config.contract_type)
-                
-                if employees_with_contract.exists():
-                    impact_data = {
-                        'total_employees': employees_with_contract.count(),
-                        'configuration': {
-                            'onboarding_days': config.onboarding_days,
-                            'probation_days': config.probation_days,
-                            'total_days_until_active': config.get_total_days_until_active(),
-                            'auto_transitions_enabled': config.enable_auto_transitions
-                        },
-                        'status_distribution': {},
-                        'employees_needing_update': 0
-                    }
-                    
-                    for employee in employees_with_contract:
-                        try:
-                            preview = EmployeeStatusManager.get_status_preview(employee)
-                            current_status = preview['current_status']
-                            
-                            if current_status not in impact_data['status_distribution']:
-                                impact_data['status_distribution'][current_status] = 0
-                            impact_data['status_distribution'][current_status] += 1
-                            
-                            if preview['needs_update']:
-                                impact_data['employees_needing_update'] += 1
-                        except:
-                            continue
-                    
-                    impact_analysis[config.contract_type] = impact_data
-            
-            return Response(impact_analysis)
-            
-        except Exception as e:
-            logger.error(f"Error getting contract configurations: {str(e)}")
-            return Response(
-                {'error': f'Failed to get contract configurations: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-
-# NEW: Line Manager Management ViewSet
-class LineManagerManagementViewSet(viewsets.ViewSet):
-    """ViewSet for line manager specific operations"""
-    permission_classes = [IsAuthenticated]
-    
-    @action(detail=False, methods=['get'])
-    def manager_hierarchy(self, request):
-        """Get complete manager hierarchy"""
-        # Get all managers (employees who have direct reports)
-        managers = Employee.objects.filter(
-            direct_reports__isnull=False,
-            status__affects_headcount=True,
-            is_deleted=False
-        ).distinct().select_related(
-            'position_group', 'department', 'business_function', 'line_manager'
-        ).prefetch_related('direct_reports')
-        
-        hierarchy_data = []
-        for manager in managers:
-            manager_info = {
-                'manager': LineManagerSelectionSerializer(manager).data,
-                'direct_reports_count': manager.get_direct_reports_count(),
-                'direct_reports': [],
-                'reports_to': None
-            }
-            
-            # Add direct reports
-            reports = manager.direct_reports.filter(
-                status__affects_headcount=True,
-                is_deleted=False
-            )[:10]  # Limit for performance
-            
-            for report in reports:
-                manager_info['direct_reports'].append({
-                    'id': report.id,
-                    'employee_id': report.employee_id,
-                    'name': report.full_name,
-                    'job_title': report.job_title
-                })
-            
-            # Add who this manager reports to
-            if manager.line_manager:
-                manager_info['reports_to'] = {
-                    'id': manager.line_manager.id,
-                    'employee_id': manager.line_manager.employee_id,
-                    'name': manager.line_manager.full_name
-                }
-            
-            hierarchy_data.append(manager_info)
-        
-        return Response({
-            'total_managers': len(hierarchy_data),
-            'hierarchy': hierarchy_data
-        })
-    
-    @action(detail=False, methods=['get'])
-    def management_analytics(self, request):
-        """Get management analytics"""
-        # Get all employees
-        all_employees = Employee.objects.filter(
-            status__affects_headcount=True,
-            is_deleted=False
-        )
-        
-        # Count employees without line managers
-        without_managers = all_employees.filter(line_manager__isnull=True).count()
-        with_managers = all_employees.filter(line_manager__isnull=False).count()
-        
-        # Get manager workload distribution
-        manager_workload = {}
-        managers = Employee.objects.filter(
-            direct_reports__isnull=False,
-            status__affects_headcount=True,
-            is_deleted=False
-        ).distinct()
-        
-        for manager in managers:
-            count = manager.get_direct_reports_count()
-            if count in manager_workload:
-                manager_workload[count] += 1
-            else:
-                manager_workload[count] = 1
-        
-        # Department management coverage
-        dept_coverage = {}
-        for dept in Department.objects.filter(is_active=True):
-            dept_employees = all_employees.filter(department=dept)
-            dept_with_managers = dept_employees.filter(line_manager__isnull=False).count()
-            dept_total = dept_employees.count()
-            
-            if dept_total > 0:
-                coverage_percent = round((dept_with_managers / dept_total) * 100, 1)
-                dept_coverage[dept.name] = {
-                    'total_employees': dept_total,
-                    'with_managers': dept_with_managers,
-                    'coverage_percent': coverage_percent
-                }
-        
-        return Response({
-            'total_employees': all_employees.count(),
-            'without_line_managers': without_managers,
-            'with_line_managers': with_managers,
-            'management_coverage_percent': round((with_managers / all_employees.count()) * 100, 1) if all_employees.count() > 0 else 0,
-            'manager_workload_distribution': manager_workload,
-            'department_coverage': dept_coverage,
-            'total_managers': managers.count()
-        })
-    
-    @action(detail=False, methods=['post'])
-    def suggest_line_managers(self, request):
-        """Suggest potential line managers for employees without one"""
-        employee_ids = request.data.get('employee_ids', [])
-        
-        if employee_ids:
-            employees_without_managers = Employee.objects.filter(
-                id__in=employee_ids,
-                line_manager__isnull=True,
-                status__affects_headcount=True,
-                is_deleted=False
-            )
-        else:
-            employees_without_managers = Employee.objects.filter(
-                line_manager__isnull=True,
-                status__affects_headcount=True,
-                is_deleted=False
-            )
-        
-        suggestions = []
-        
-        for employee in employees_without_managers:
-            # Find potential managers in same department or business function
-            potential_managers = Employee.objects.filter(
-                Q(department=employee.department) | Q(business_function=employee.business_function),
-                position_group__hierarchy_level__lt=employee.position_group.hierarchy_level,
-                status__affects_headcount=True,
-                is_deleted=False
-            ).exclude(id=employee.id).order_by('position_group__hierarchy_level')[:5]
-            
-            manager_suggestions = []
-            for manager in potential_managers:
-                manager_suggestions.append({
-                    'id': manager.id,
-                    'employee_id': manager.employee_id,
-                    'name': manager.full_name,
-                    'job_title': manager.job_title,
-                    'position_level': manager.position_group.hierarchy_level,
-                    'same_department': manager.department == employee.department,
-                    'current_reports_count': manager.get_direct_reports_count(),
-                    'recommendation_score': self._calculate_manager_score(employee, manager)
-                })
-            
-            # Sort by recommendation score
-            manager_suggestions.sort(key=lambda x: x['recommendation_score'], reverse=True)
-            
-            suggestions.append({
-                'employee': {
-                    'id': employee.id,
-                    'employee_id': employee.employee_id,
-                    'name': employee.full_name,
-                    'job_title': employee.job_title,
-                    'department': employee.department.name,
-                    'position_level': employee.position_group.hierarchy_level
-                },
-                'suggested_managers': manager_suggestions[:3]  # Top 3 suggestions
-            })
-        
-        return Response({
-            'employees_without_managers': len(suggestions),
-            'suggestions': suggestions
-        })
-    
-    def _calculate_manager_score(self, employee, potential_manager):
-        """Calculate recommendation score for potential manager"""
-        score = 0
-        
-        # Same department bonus
-        if potential_manager.department == employee.department:
-            score += 30
-        
-        # Same business function bonus
-        if potential_manager.business_function == employee.business_function:
-            score += 20
-        
-        # Position level difference (prefer closer levels but manager should be higher)
-        level_diff = potential_manager.position_group.hierarchy_level - employee.position_group.hierarchy_level
-        if level_diff == -1:  # One level above
-            score += 25
-        elif level_diff == -2:  # Two levels above
-            score += 15
-        elif level_diff <= -3:  # More than two levels above
-            score += 5
-        
-        # Current workload (prefer managers with fewer direct reports)
-        current_reports = potential_manager.get_direct_reports_count()
-        if current_reports == 0:
-            score += 15
-        elif current_reports <= 3:
-            score += 10
-        elif current_reports <= 6:
-            score += 5
-        # No bonus for more than 6 reports
-        
-        return score
-
+  
+  
+   
 # NEW: Enhanced Employee Analytics ViewSet
 class EmployeeAnalyticsViewSet(viewsets.ViewSet):
     """ViewSet for detailed employee analytics and reporting"""
@@ -2906,7 +2968,7 @@ class EmployeeAnalyticsViewSet(viewsets.ViewSet):
         
         # Contract type distribution
         contract_distribution = {}
-        for contract_choice in Employee.CONTRACT_DURATION_CHOICES:
+        for contract_choice in Employee.contract_duration:
             count = all_employees.filter(contract_duration=contract_choice[0]).count()
             contract_distribution[contract_choice[1]] = count
         
@@ -2996,90 +3058,7 @@ class EmployeeAnalyticsViewSet(viewsets.ViewSet):
             }
         })
     
-    @swagger_auto_schema(
-        method='post',
-        operation_description="Bulk update employee grades and grading levels",
-        request_body=BulkEmployeeGradingUpdateSerializer,
-        responses={
-            200: openapi.Response(
-                description="Successfully updated grades",
-                schema=openapi.Schema(
-                    type=openapi.TYPE_OBJECT,
-                    properties={
-                        'message': openapi.Schema(type=openapi.TYPE_STRING),
-                        'updated_count': openapi.Schema(type=openapi.TYPE_INTEGER)
-                    }
-                )
-            ),
-            400: openapi.Response(
-                description="Bad request - validation errors",
-                schema=openapi.Schema(
-                    type=openapi.TYPE_OBJECT,
-                    properties={
-                        'error': openapi.Schema(type=openapi.TYPE_STRING)
-                    }
-                )
-            )
-        }
-    )
-    @action(detail=False, methods=['post'])
-    def bulk_update_grades(self, request):
-        """Bulk update employee grades"""
-        serializer = BulkEmployeeGradingUpdateSerializer(data=request.data)
-        if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-        
-        updates = serializer.validated_data['updates']
-        
-        if not updates:
-            return Response(
-                {'error': 'updates list is required'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        try:
-            with transaction.atomic():
-                updated_count = 0
-                
-                for update in updates:
-                    employee_id = update['employee_id']
-                    grading_level = update.get('grading_level')
-                    
-                    try:
-                        employee = Employee.objects.get(id=employee_id)
-                        
-                        changes = []
-                        if grading_level and employee.grading_level != grading_level:
-                            old_level = employee.grading_level
-                            employee.grading_level = grading_level
-                            changes.append(f"Grading Level: {old_level} → {grading_level}")
-                        
-                        if changes:
-                            employee.save()
-                            updated_count += 1
-                            
-                            # Log activity
-                            EmployeeActivity.objects.create(
-                                employee=employee,
-                                activity_type='GRADE_CHANGED',
-                                description=f"Grading updated: {'; '.join(changes)}",
-                                performed_by=request.user,
-                                metadata={'changes': changes}
-                            )
-                            
-                    except Employee.DoesNotExist:
-                        continue
-            
-            return Response({
-                'message': f'Successfully updated grades for {updated_count} employees',
-                'updated_count': updated_count
-            })
-        except Exception as e:
-            logger.error(f"Bulk grade update failed: {str(e)}")
-            return Response(
-                {'error': 'Bulk grade update failed', 'details': str(e)},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+    
 
 # Enhanced Organizational Chart ViewSet with Full Data
 class OrgChartViewSet(viewsets.ReadOnlyModelViewSet):
@@ -3221,292 +3200,6 @@ class OrgChartViewSet(viewsets.ReadOnlyModelViewSet):
                 children.append(child_data)
         return children
 
-# Headcount Summary ViewSet
-class HeadcountSummaryViewSet(viewsets.ReadOnlyModelViewSet):
-    """ViewSet for headcount summaries and analytics"""
-    queryset = HeadcountSummary.objects.all()
-    serializer_class = HeadcountSummarySerializer
-    permission_classes = [IsAuthenticated]
-    ordering = ['-summary_date']
-    
-    @action(detail=False, methods=['post'])
-    def generate_current(self, request):
-        """Generate headcount summary for today"""
-        summary = HeadcountSummary.generate_summary()
-        serializer = self.get_serializer(summary)
-        return Response(serializer.data)
-    
-    @action(detail=False, methods=['get'])
-    def latest(self, request):
-        """Get latest headcount summary"""
-        try:
-            latest = HeadcountSummary.objects.latest('summary_date')
-            serializer = self.get_serializer(latest)
-            return Response(serializer.data)
-        except HeadcountSummary.DoesNotExist:
-            # Generate if none exists
-            summary = HeadcountSummary.generate_summary()
-            serializer = self.get_serializer(summary)
-            return Response(serializer.data)
 
-# NEW: Contract Status Management ViewSet
-# Fixed section for ContractStatusManagementViewSet in views.py
 
-class ContractStatusManagementViewSet(viewsets.ViewSet):
-    """ViewSet for contract status management operations"""
-    permission_classes = [IsAuthenticated]
-    
-    @action(detail=False, methods=['get'])
-    def employees_needing_updates(self, request):
-        """Get employees whose status needs to be updated"""
-        try:
-            needing_updates = EmployeeStatusManager.get_employees_needing_update()
-            
-            # Convert to serializable format
-            employees_data = []
-            for employee_info in needing_updates:
-                employee = employee_info['employee']
-                employees_data.append({
-                    'employee_id': employee.employee_id,
-                    'employee_name': employee.full_name,
-                    'current_status': employee_info['current_status'],
-                    'required_status': employee_info['required_status'],
-                    'reason': employee_info['reason'],
-                    'contract_type': employee.contract_duration,
-                    'days_since_start': (date.today() - employee.start_date).days,
-                    'department': employee.department.name,
-                    'business_function': employee.business_function.name,
-                    'line_manager': employee.line_manager.full_name if employee.line_manager else None
-                })
-            
-            return Response({
-                'count': len(employees_data),
-                'employees': employees_data
-            })
-            
-        except Exception as e:
-            logger.error(f"Error getting employees needing updates: {str(e)}")
-            return Response(
-                {'error': f'Failed to get employees needing updates: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-    
-    @action(detail=False, methods=['post'])
-    def bulk_update_all(self, request):
-        """Update all employee statuses based on contract configurations"""
-        try:
-            force_update = request.data.get('force_update', False)
-            employee_ids = request.data.get('employee_ids', [])
-            
-            if employee_ids:
-                result = EmployeeStatusManager.bulk_update_statuses(
-                    employee_ids=employee_ids,
-                    force_update=force_update,
-                    user=request.user
-                )
-            else:
-                result = EmployeeStatusManager.bulk_update_statuses(
-                    force_update=force_update,
-                    user=request.user
-                )
-            
-            return Response({
-                'message': f'Successfully updated {result["updated"]} employee statuses',
-                'updated_count': result['updated'],
-                'error_count': result['errors'],
-                'force_update': force_update
-            })
-            
-        except Exception as e:
-            logger.error(f"Bulk status update failed: {str(e)}")
-            return Response(
-                {'error': f'Bulk status update failed: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-    
-    @action(detail=False, methods=['get'])
-    def contracts_expiring(self, request):
-        """Get contracts expiring within specified days"""
-        try:
-            days = int(request.query_params.get('days', 30))
-            
-            analysis = EmployeeStatusManager.get_contract_expiry_analysis(days)
-            
-            return Response({
-                'days': days,
-                'analysis': analysis
-            })
-            
-        except Exception as e:
-            logger.error(f"Error getting contracts expiring: {str(e)}")
-            return Response(
-                {'error': f'Failed to get expiring contracts: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-    
-    @action(detail=False, methods=['get'])
-    def status_analysis(self, request):
-        """Get comprehensive status analysis"""
-        try:
-            analytics = EmployeeStatusManager.get_status_transition_analytics()
-            
-            return Response(analytics)
-            
-        except Exception as e:
-            logger.error(f"Error getting status analysis: {str(e)}")
-            return Response(
-                {'error': f'Failed to get status analysis: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-    
-    @action(detail=False, methods=['post'])
-    def run_automation_rules(self, request):
-        """Run status automation rules"""
-        try:
-            results = StatusAutomationRules.check_and_apply_rules()
-            
-            total_updated = (
-                results['onboarding_to_probation'] + 
-                results['probation_to_active'] + 
-                results['contract_expired_to_inactive']
-            )
-            
-            return Response({
-                'message': f'Automation rules completed. {total_updated} employees updated.',
-                'results': results,
-                'total_updated': total_updated
-            })
-            
-        except Exception as e:
-            logger.error(f"Automation rules failed: {str(e)}")
-            return Response(
-                {'error': f'Automation rules failed: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-    
-    @action(detail=False, methods=['get'])
-    def line_manager_overview(self, request):
-        """Get line manager team overviews"""
-        try:
-            manager_employee_id = request.query_params.get('manager_id')
-            
-            if manager_employee_id:
-                overview = LineManagerStatusIntegration.get_manager_team_status_overview(manager_employee_id)
-                if overview:
-                    return Response(overview)
-                else:
-                    return Response(
-                        {'error': 'Manager not found'},
-                        status=status.HTTP_404_NOT_FOUND
-                    )
-            else:
-                managers_needing_attention = LineManagerStatusIntegration.get_managers_needing_attention()
-                return Response({
-                    'managers_needing_attention': managers_needing_attention[:10]  # Top 10
-                })
-                
-        except Exception as e:
-            logger.error(f"Error getting line manager overview: {str(e)}")
-            return Response(
-                {'error': f'Failed to get line manager overview: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-    
-    @action(detail=False, methods=['post'])
-    def preview_status_updates(self, request):
-        """Preview what status updates would happen for selected employees"""
-        try:
-            employee_ids = request.data.get('employee_ids', [])
-            
-            if employee_ids:
-                employees = Employee.objects.filter(id__in=employee_ids)
-            else:
-                employees = Employee.objects.filter(is_deleted=False)[:100]  # Limit to prevent timeout
-            
-            updates_needed = []
-            current_status = []
-            
-            for employee in employees:
-                try:
-                    preview = EmployeeStatusManager.get_status_preview(employee)
-                    employee_info = {
-                        'employee_id': employee.employee_id,
-                        'name': employee.full_name,
-                        'current_status': preview['current_status'],
-                        'required_status': preview['required_status'],
-                        'needs_update': preview['needs_update'],
-                        'reason': preview['reason'],
-                        'contract_type': preview['contract_type'],
-                        'days_since_start': preview['days_since_start']
-                    }
-                    
-                    if preview['needs_update']:
-                        updates_needed.append(employee_info)
-                    else:
-                        current_status.append(employee_info)
-                except Exception as e:
-                    logger.error(f"Error getting preview for employee {employee.employee_id}: {e}")
-                    continue
-            
-            return Response({
-                'total_checked': len(employees),
-                'updates_needed_count': len(updates_needed),
-                'current_status_count': len(current_status),
-                'updates_needed': updates_needed,
-                'current_status': current_status[:10]  # Limit response size
-            })
-            
-        except Exception as e:
-            logger.error(f"Error previewing status updates: {str(e)}")
-            return Response(
-                {'error': f'Failed to preview status updates: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-    
-    @action(detail=False, methods=['get'])
-    def contract_configurations(self, request):
-        """Get contract configuration analysis"""
-        try:
-            configs = ContractTypeConfig.objects.filter(is_active=True)
-            impact_analysis = {}
-            
-            for config in configs:
-                employees_with_contract = Employee.objects.filter(contract_duration=config.contract_type)
-                
-                if employees_with_contract.exists():
-                    impact_data = {
-                        'total_employees': employees_with_contract.count(),
-                        'configuration': {
-                            'onboarding_days': config.onboarding_days,
-                            'probation_days': config.probation_days,
-                            'total_days_until_active': config.get_total_days_until_active(),
-                            'auto_transitions_enabled': config.enable_auto_transitions
-                        },
-                        'status_distribution': {},
-                        'employees_needing_update': 0
-                    }
-                    
-                    for employee in employees_with_contract:
-                        try:
-                            preview = EmployeeStatusManager.get_status_preview(employee)
-                            current_status = preview['current_status']
-                            
-                            if current_status not in impact_data['status_distribution']:
-                                impact_data['status_distribution'][current_status] = 0
-                            impact_data['status_distribution'][current_status] += 1
-                            
-                            if preview['needs_update']:
-                                impact_data['employees_needing_update'] += 1
-                        except:
-                            continue
-                    
-                    impact_analysis[config.contract_type] = impact_data
-            
-            return Response(impact_analysis)
-            
-        except Exception as e:
-            logger.error(f"Error getting contract configurations: {str(e)}")
-            return Response(
-                {'error': f'Failed to get contract configurations: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+   

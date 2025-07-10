@@ -205,20 +205,14 @@ class EmployeeTag(SoftDeleteModel):
     class Meta:
         ordering = ['tag_type', 'name']
 
-# NEW: Contract Type Configuration Model
 class ContractTypeConfig(SoftDeleteModel):
     """Configuration for different contract types and their status transitions"""
     
-    CONTRACT_TYPES = [
-        ('3_MONTHS', '3 Months'),
-        ('6_MONTHS', '6 Months'),
-        ('1_YEAR', '1 Year'),
-        ('2_YEARS', '2 Years'),
-        ('3_YEARS', '3 Years'),
-        ('PERMANENT', 'Permanent'),
-    ]
-    
-    contract_type = models.CharField(max_length=20, choices=CONTRACT_TYPES, unique=True)
+    contract_type = models.CharField(
+        max_length=50, 
+        unique=True, 
+        help_text="Contract type identifier (e.g., 3_MONTHS, 5_MONTHS, 18_MONTHS, etc.)"
+    )
     display_name = models.CharField(max_length=100)
     
     # Status Configuration
@@ -235,6 +229,16 @@ class ContractTypeConfig(SoftDeleteModel):
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    
+    def get_total_days_until_active(self):
+        """Get total days until employee becomes active"""
+        return self.onboarding_days + self.probation_days
+    
+    @classmethod
+    def get_contract_choices(cls):
+        """Get dynamic contract choices from database"""
+        active_configs = cls.objects.filter(is_active=True)
+        return [(config.contract_type, config.display_name) for config in active_configs]
     
     @classmethod
     def get_or_create_defaults(cls):
@@ -268,10 +272,6 @@ class ContractTypeConfig(SoftDeleteModel):
         
         return created_configs
     
-    def get_total_days_until_active(self):
-        """Get total days until employee becomes active"""
-        return self.onboarding_days + self.probation_days
-    
     def __str__(self):
         return self.display_name
     
@@ -279,7 +279,6 @@ class ContractTypeConfig(SoftDeleteModel):
         ordering = ['contract_type']
         verbose_name = "Contract Type Configuration"
         verbose_name_plural = "Contract Type Configurations"
-
 # Enhanced Employee Status Model with Contract Integration
 class EmployeeStatus(SoftDeleteModel):
     STATUS_TYPES = [
@@ -514,15 +513,7 @@ class Employee(SoftDeleteModel):
         ('FEMALE', 'Female'),
     ]
     
-    CONTRACT_DURATION_CHOICES = [
-        ('3_MONTHS', '3 Months'),
-        ('6_MONTHS', '6 Months'),
-        ('1_YEAR', '1 Year'),
-        ('2_YEARS', '2 Years'),
-        ('3_YEARS', '3 Years'),
-        ('PERMANENT', 'Permanent'),
-    ]
-    
+   
     RENEWAL_STATUS_CHOICES = [
         ('PENDING', 'Pending'),
         ('APPROVED', 'Approved'),
@@ -562,7 +553,11 @@ class Employee(SoftDeleteModel):
     end_date = models.DateField(null=True, blank=True)
     
     # Enhanced contract management
-    contract_duration = models.CharField(max_length=20, choices=CONTRACT_DURATION_CHOICES, default='PERMANENT')
+    contract_duration = models.CharField(
+        max_length=50, 
+        default='PERMANENT',
+        help_text="Contract duration type - references ContractTypeConfig"
+    )
     contract_start_date = models.DateField(null=True, blank=True)
     contract_end_date = models.DateField(null=True, blank=True, editable=False)  # Auto-calculated
     contract_extensions = models.IntegerField(default=0, help_text="Number of contract extensions")
@@ -877,14 +872,32 @@ class Employee(SoftDeleteModel):
             return f"{self.status.name}"
         return "No Status"
 
-    def get_contract_duration_display(self):
-        """Get formatted contract duration"""
-        if self.contract_duration == 'PERMANENT':
-            return 'Permanent'
-        elif self.contract_end_date:
-            extensions_text = f" (Extended {self.contract_extensions}x)" if self.contract_extensions > 0 else ""
-            return f"{dict(self.CONTRACT_DURATION_CHOICES).get(self.contract_duration, self.contract_duration)} - Until {self.contract_end_date.strftime('%d/%m/%Y')}{extensions_text}"
-        return dict(self.CONTRACT_DURATION_CHOICES).get(self.contract_duration, self.contract_duration)
+    def get_contract_duration_choices(self):
+        """Get available contract duration choices"""
+        return ContractTypeConfig.get_contract_choices()
+    
+    def get_contract_config(self):
+        """Get contract configuration for this employee"""
+        try:
+            return ContractTypeConfig.objects.get(
+                contract_type=self.contract_duration,
+                is_active=True
+            )
+        except ContractTypeConfig.DoesNotExist:
+            return None
+    
+    def clean(self):
+        """Validate contract_duration exists in configurations"""
+        super().clean()
+        if self.contract_duration:
+            try:
+                ContractTypeConfig.objects.get(
+                    contract_type=self.contract_duration,
+                    is_active=True
+                )
+            except ContractTypeConfig.DoesNotExist:
+                from django.core.exceptions import ValidationError
+                raise ValidationError(f"Contract type '{self.contract_duration}' is not configured or inactive")
 
     def get_direct_reports_count(self):
         """Get count of direct reports"""
@@ -964,126 +977,6 @@ class EmployeeActivity(models.Model):
         verbose_name = "Employee Activity"
         verbose_name_plural = "Employee Activities"
 
-# Headcount Summary Model for reporting
-class HeadcountSummary(models.Model):
-    """Model for storing headcount summaries and analytics"""
-    
-    summary_date = models.DateField(unique=True)
-    
-    # Overall headcount
-    total_employees = models.IntegerField(default=0)
-    active_employees = models.IntegerField(default=0)
-    inactive_employees = models.IntegerField(default=0)
-    vacant_positions = models.IntegerField(default=0)
-    
-    # By business function
-    headcount_by_function = models.JSONField(default=dict)
-    
-    # By department
-    headcount_by_department = models.JSONField(default=dict)
-    
-    # By position group
-    headcount_by_position = models.JSONField(default=dict)
-    
-    # By status
-    headcount_by_status = models.JSONField(default=dict)
-    
-    # Contract analysis
-    contract_analysis = models.JSONField(default=dict)
-    
-    # Additional metrics
-    avg_years_of_service = models.FloatField(default=0)
-    new_hires_month = models.IntegerField(default=0)
-    departures_month = models.IntegerField(default=0)
-    
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    @classmethod
-    def generate_summary(cls, date=None):
-        """Generate headcount summary for a specific date"""
-        from django.db.models import Count, Avg
-        
-        if date is None:
-            date = date.today()
-        
-        # Get employee counts (excluding soft-deleted)
-        active_statuses = EmployeeStatus.objects.filter(affects_headcount=True)
-        
-        total_employees = Employee.objects.count()
-        active_employees = Employee.objects.filter(status__in=active_statuses).count()
-        inactive_employees = total_employees - active_employees
-        vacant_positions = VacantPosition.objects.filter(is_filled=False).count()
-        
-        # Business function breakdown
-        function_data = {}
-        for func in BusinessFunction.objects.filter(is_active=True):
-            func_count = Employee.objects.filter(
-                business_function=func,
-                status__in=active_statuses
-            ).count()
-            function_data[func.name] = func_count
-        
-        # Department breakdown  
-        dept_data = {}
-        for dept in Department.objects.filter(is_active=True):
-            dept_count = Employee.objects.filter(
-                department=dept,
-                status__in=active_statuses
-            ).count()
-            dept_data[f"{dept.business_function.code}-{dept.name}"] = dept_count
-        
-        # Position group breakdown
-        position_data = {}
-        for pos in PositionGroup.objects.filter(is_active=True):
-            pos_count = Employee.objects.filter(
-                position_group=pos,
-                status__in=active_statuses
-            ).count()
-            position_data[pos.get_name_display()] = pos_count
-        
-        # Status breakdown
-        status_data = {}
-        for status in EmployeeStatus.objects.filter(is_active=True):
-            status_count = Employee.objects.filter(status=status).count()
-            status_data[status.name] = status_count
-        
-        # Contract analysis
-        contract_data = {}
-        for duration in Employee.CONTRACT_DURATION_CHOICES:
-            contract_count = Employee.objects.filter(
-                contract_duration=duration[0],
-                status__in=active_statuses
-            ).count()
-            contract_data[duration[1]] = contract_count
-        
-        # Create or update summary
-        summary, created = cls.objects.update_or_create(
-            summary_date=date,
-            defaults={
-                'total_employees': total_employees,
-                'active_employees': active_employees,
-                'inactive_employees': inactive_employees,
-                'vacant_positions': vacant_positions,
-                'headcount_by_function': function_data,
-                'headcount_by_department': dept_data,
-                'headcount_by_position': position_data,
-                'headcount_by_status': status_data,
-                'contract_analysis': contract_data,
-                'avg_years_of_service': 0,  # Would need more complex calculation
-                'new_hires_month': 0,  # Would need date filtering
-                'departures_month': 0,  # Would need date filtering
-            }
-        )
-        
-        return summary
-
-    def __str__(self):
-        return f"Headcount Summary - {self.summary_date}"
-
-    class Meta:
-        ordering = ['-summary_date']
-        verbose_name = "Headcount Summary"
-        verbose_name_plural = "Headcount Summaries"
 
 class ContractStatusManager:
     """Helper class for managing contract-based status transitions"""

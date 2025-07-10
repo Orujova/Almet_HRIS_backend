@@ -16,7 +16,7 @@ import csv
 from .models import (
     MicrosoftUser, Employee, BusinessFunction, Department, Unit, 
     JobFunction, PositionGroup, EmployeeTag, EmployeeStatus, 
-    EmployeeDocument, EmployeeActivity, VacantPosition, HeadcountSummary,
+    EmployeeDocument, EmployeeActivity, VacantPosition,
     ContractTypeConfig, ContractStatusManager
 )
 
@@ -867,31 +867,8 @@ class EmployeeAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
         self.message_user(request, f'{count} employees hidden from org chart.')
     mark_org_chart_hidden.short_description = 'Hide from org chart'
     
-    def update_contract_status(self, request, queryset):
-        """Update contract end dates based on current configuration"""
-        updated_count = 0
-        for employee in queryset:
-            if employee.contract_start_date and employee.contract_duration != 'PERMANENT':
-                old_end_date = employee.contract_end_date
-                employee.save()  # This triggers contract_end_date recalculation
-                if old_end_date != employee.contract_end_date:
-                    updated_count += 1
-        
-        self.message_user(request, f'Updated contract end dates for {updated_count} employees.')
-    update_contract_status.short_description = 'Update contract end dates'
+
     
-    def auto_update_status(self, request, queryset):
-        """Auto-update employee statuses based on contract configuration"""
-        from .status_management import EmployeeStatusManager
-        
-        employee_ids = list(queryset.values_list('id', flat=True))
-        result = EmployeeStatusManager.bulk_update_statuses(employee_ids=employee_ids)
-        
-        self.message_user(
-            request, 
-            f'Auto-updated status for {result["updated"]} employees. {result["errors"]} errors.'
-        )
-    auto_update_status.short_description = 'Auto-update employee statuses'
     
     def bulk_assign_line_manager(self, request, queryset):
         """Bulk assign line manager - will redirect to change page"""
@@ -1145,39 +1122,6 @@ class EmployeeActivityAdmin(admin.ModelAdmin):
     def has_change_permission(self, request, obj=None):
         return False  # Activities are read-only
 
-# Headcount Summary Admin
-@admin.register(HeadcountSummary)
-class HeadcountSummaryAdmin(admin.ModelAdmin):
-    list_display = (
-        'summary_date', 'total_employees', 'active_employees', 'inactive_employees',
-        'vacant_positions', 'avg_years_of_service', 'new_hires_month', 'departures_month'
-    )
-    list_filter = ('summary_date',)
-    readonly_fields = (
-        'summary_date', 'total_employees', 'active_employees', 'inactive_employees',
-        'vacant_positions', 'headcount_by_function', 'headcount_by_department',
-        'headcount_by_position', 'headcount_by_status', 'contract_analysis',
-        'avg_years_of_service', 'new_hires_month', 'departures_month', 'created_at'
-    )
-    date_hierarchy = 'summary_date'
-    
-    def has_add_permission(self, request):
-        return False  # Use the generate action instead
-    
-    def has_change_permission(self, request, obj=None):
-        return False  # Summaries are auto-generated
-    
-    actions = ['generate_current_summary']
-    
-    def generate_current_summary(self, request, queryset):
-        """Generate headcount summary for today"""
-        summary = HeadcountSummary.generate_summary()
-        self.message_user(
-            request,
-            f'Generated headcount summary for {summary.summary_date} with {summary.total_employees} total employees.'
-        )
-        return redirect(reverse('admin:api_headcountsummary_change', args=[summary.id]))
-    generate_current_summary.short_description = 'Generate current headcount summary'
 
 # Admin Site Customization
 admin.site.site_header = 'ALMET HRIS Administration'
@@ -1220,10 +1164,6 @@ class AlmetHRISAdminSite(admin.AdminSite):
         
         return super().index(request, extra_context)
 
-# Create custom admin site instance
-# admin_site = AlmetHRISAdminSite(name='almet_admin')
-
-# Quick Actions for Admin
 class QuickActionsAdmin(admin.ModelAdmin):
     """Mixin for quick actions in admin"""
     
