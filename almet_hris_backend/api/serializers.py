@@ -847,15 +847,6 @@ class OrgChartNodeSerializer(serializers.ModelSerializer):
         
         return OrgChartNodeSerializer(children, many=True, context=self.context).data
 
-# Employee Visibility Serializer
-class EmployeeOrgChartVisibilitySerializer(serializers.ModelSerializer):
-    """Serializer for updating org chart visibility"""
-    
-    class Meta:
-        model = Employee
-        fields = ['id', 'employee_id', 'is_visible_in_org_chart']
-        read_only_fields = ['id', 'employee_id']
-
 
 
 # Additional Employee Serializers for specific use cases
@@ -1056,13 +1047,7 @@ class BulkStatusPreviewSerializer(serializers.Serializer):
         required=False,
         help_text="Employee IDs to check. If empty, checks all employees."
     )
-class StatusPreviewRequestSerializer(serializers.Serializer):
-    """Status preview request for selected employees"""
-    employee_ids = serializers.ListField(
-        child=serializers.IntegerField(),
-        required=False,
-        help_text="Employee IDs to check (optional - if empty, checks all employees)"
-    )
+
 # Bulk Employee Creation Result Serializers
 class BulkEmployeeCreationResultSerializer(serializers.Serializer):
     """Serializer for bulk employee creation results"""

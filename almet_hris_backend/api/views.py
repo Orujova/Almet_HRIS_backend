@@ -41,14 +41,14 @@ from .serializers import (
     BusinessFunctionSerializer, DepartmentSerializer, UnitSerializer,
     JobFunctionSerializer, PositionGroupSerializer, EmployeeTagSerializer,
     EmployeeStatusSerializer, EmployeeDocumentSerializer, EmployeeActivitySerializer,
-    UserSerializer, OrgChartNodeSerializer, EmployeeOrgChartVisibilitySerializer,
+    UserSerializer, OrgChartNodeSerializer,
     VacantPositionListSerializer, VacantPositionDetailSerializer, VacantPositionCreateSerializer,
     
     
     EmployeeGradingUpdateSerializer, EmployeeGradingListSerializer,
    BulkEmployeeGradingUpdateSerializer,
     EmployeeExportSerializer,
-    ContractTypeConfigSerializer, BulkContractExtensionSerializer,ContractExtensionSerializer,SingleEmployeeTagUpdateSerializer,SingleLineManagerAssignmentSerializer,BulkEmployeeTagUpdateSerializer,BulkSoftDeleteSerializer,StatusPreviewRequestSerializer,BulkRestoreSerializer,BulkLineManagerAssignmentSerializer
+    ContractTypeConfigSerializer, BulkContractExtensionSerializer,ContractExtensionSerializer,SingleEmployeeTagUpdateSerializer,SingleLineManagerAssignmentSerializer,BulkEmployeeTagUpdateSerializer,BulkSoftDeleteSerializer,BulkRestoreSerializer,BulkLineManagerAssignmentSerializer
 )
 from .auth import MicrosoftTokenValidator
 
@@ -2195,119 +2195,6 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         except Exception as e:
             return Response({'error': f'Restore failed: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
-    # STATUS PREVIEW EXPLANATION
-    @swagger_auto_schema(
-        method='post',
-        operation_description="Preview status updates for employees (shows what status changes would happen)",
-        request_body=StatusPreviewRequestSerializer,
-        responses={200: "Status preview generated successfully", 400: "Bad request"}
-    )
-    @action(detail=False, methods=['post'], url_path='preview-status-updates')
-    def preview_status_updates(self, request):
-        """
-        Preview what status updates would happen for selected employees.
-        
-        This endpoint shows you what automatic status changes would occur
-        based on each employee's contract configuration and how long they've been working.
-        
-        For example:
-        - An employee who started 10 days ago with 7-day onboarding should move from ONBOARDING to PROBATION
-        - An employee who completed probation should move to ACTIVE
-        - An employee whose contract expired should move to INACTIVE
-        
-        This is useful to see what changes would happen before actually applying them.
-        """
-        serializer = StatusPreviewRequestSerializer(data=request.data)
-        if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-        
-        employee_ids = serializer.validated_data.get('employee_ids', [])
-        
-        # Get employees to check
-        if employee_ids:
-            employees = Employee.objects.filter(id__in=employee_ids, is_deleted=False)
-        else:
-            employees = Employee.objects.filter(is_deleted=False)[:100]  # Limit to prevent timeout
-        
-        updates_needed = []
-        current_status = []
-        contract_expired = []
-        errors = []
-        
-        for employee in employees:
-            try:
-                preview = employee.get_status_preview()
-                
-                employee_info = {
-                    'employee_id': employee.id,
-                    'employee_hc_number': employee.employee_id,
-                    'employee_name': employee.full_name,
-                    'current_status': preview['current_status'],
-                    'required_status': preview['required_status'],
-                    'needs_update': preview['needs_update'],
-                    'reason': preview['reason'],
-                    'contract_type': preview['contract_type'],
-                    'days_since_start': preview['days_since_start'],
-                    'contract_end_date': preview.get('contract_end_date'),
-                    'department': employee.department.name,
-                    'line_manager': employee.line_manager.full_name if employee.line_manager else None
-                }
-                
-                if preview['needs_update']:
-                    if 'contract ended' in preview['reason'].lower():
-                        contract_expired.append(employee_info)
-                    else:
-                        updates_needed.append(employee_info)
-                else:
-                    current_status.append(employee_info)
-                    
-            except Exception as e:
-                errors.append({
-                    'employee_id': employee.id,
-                    'employee_hc_number': employee.employee_id,
-                    'employee_name': employee.full_name,
-                    'error': str(e)
-                })
-        
-        # Group by transition type for easier understanding
-        transition_summary = {}
-        for emp in updates_needed + contract_expired:
-            transition = f"{emp['current_status']} → {emp['required_status']}"
-            if transition not in transition_summary:
-                transition_summary[transition] = []
-            transition_summary[transition].append(emp)
-        
-        return Response({
-            'success': True,
-            'message': f'Status preview completed for {len(employees)} employees',
-            'summary': {
-                'total_checked': len(employees),
-                'updates_needed': len(updates_needed),
-                'current_status': len(current_status),
-                'contract_expired': len(contract_expired),
-                'errors': len(errors)
-            },
-            'transition_summary': {
-                transition: len(employees) 
-                for transition, employees in transition_summary.items()
-            },
-            'details': {
-                'updates_needed': updates_needed,
-                'contract_expired': contract_expired,
-                'current_status': current_status[:10],  # Limit to first 10
-                'errors': errors
-            },
-            'explanation': {
-                'updates_needed': 'Employees whose status should change based on contract rules',
-                'contract_expired': 'Employees whose contracts have ended and should be inactive',
-                'current_status': 'Employees whose status is already correct',
-                'transition_types': {
-                    'ONBOARDING → PROBATION': 'Employees who completed onboarding period',
-                    'PROBATION → ACTIVE': 'Employees who completed probation period',
-                    'ACTIVE → INACTIVE': 'Employees whose contracts have expired'
-                }
-            }
-        })
     
     # CONTRACT EXPIRY NOTIFICATIONS
     @action(detail=False, methods=['get'], url_path='contract-expiry-alerts')
