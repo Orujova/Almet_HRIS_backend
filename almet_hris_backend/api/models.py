@@ -70,7 +70,6 @@ class SoftDeleteModel(models.Model):
         self.deleted_by = None
         self.save()
 
-# Business Structure Models
 class BusinessFunction(SoftDeleteModel):
     name = models.CharField(max_length=100, unique=True)
     code = models.CharField(max_length=10, unique=True)
@@ -181,7 +180,6 @@ class PositionGroup(SoftDeleteModel):
     class Meta:
         ordering = ['hierarchy_level']
 
-# Employee Tags for categorization
 class EmployeeTag(SoftDeleteModel):
     TAG_TYPES = [
         ('LEAVE', 'Leave Related'),
@@ -279,7 +277,7 @@ class ContractTypeConfig(SoftDeleteModel):
         ordering = ['contract_type']
         verbose_name = "Contract Type Configuration"
         verbose_name_plural = "Contract Type Configurations"
-# Enhanced Employee Status Model with Contract Integration
+
 class EmployeeStatus(SoftDeleteModel):
     STATUS_TYPES = [
         ('ACTIVE', 'Active'),
@@ -416,7 +414,6 @@ class EmployeeStatus(SoftDeleteModel):
         verbose_name = "Employee Status"
         verbose_name_plural = "Employee Statuses"
 
-# Enhanced Vacancy Management Model
 class VacantPosition(SoftDeleteModel):
     VACANCY_TYPES = [
         ('NEW_POSITION', 'New Position'),
@@ -479,7 +476,6 @@ class VacantPosition(SoftDeleteModel):
         verbose_name = "Vacant Position"
         verbose_name_plural = "Vacant Positions"
 
-# Employee Documents with optional uploads
 class EmployeeDocument(SoftDeleteModel):
     DOCUMENT_TYPES = [
         ('CONTRACT', 'Employment Contract'),
@@ -506,7 +502,6 @@ class EmployeeDocument(SoftDeleteModel):
     class Meta:
         ordering = ['-uploaded_at']
 
-# Complete Employee Model with Enhanced Contract and Status Management
 class Employee(SoftDeleteModel):
     GENDER_CHOICES = [
         ('MALE', 'Male'),

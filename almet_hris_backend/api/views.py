@@ -52,10 +52,8 @@ from .serializers import (
 )
 from .auth import MicrosoftTokenValidator
 
-# Set up logger
 logger = logging.getLogger(__name__)
 
-# Enhanced Pagination with multiple page size options
 class StandardResultsSetPagination(PageNumberPagination):
     page_size = 25
     page_size_query_param = 'page_size'
@@ -73,7 +71,6 @@ class StandardResultsSetPagination(PageNumberPagination):
             'results': data
         })
 
-# Microsoft Authentication Views
 @swagger_auto_schema(
     method='post',
     operation_description="Authenticate with Microsoft ID token and get JWT tokens",
@@ -187,8 +184,7 @@ def user_info(request):
     try:
         logger.info(f'User info request for user: {request.user.username}')
         serializer = UserSerializer(request.user)
-        
-        # Check if user has an employee profile with proper select_related
+   
         try:
             employee = Employee.objects.select_related(
                 'user', 'business_function', 'department', 'unit', 
@@ -223,7 +219,6 @@ def user_info(request):
             "success": False
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-# Enhanced Employee Filter Class for Advanced Filtering
 class EmployeeFilter:
     def __init__(self, queryset, params):
         self.queryset = queryset
@@ -314,7 +309,6 @@ class EmployeeFilter:
         
         return queryset
 
-# Multi-field Sorting Class with Excel-like functionality
 class EmployeeSorter:
     SORTABLE_FIELDS = {
         'employee_id': 'employee_id',
@@ -365,7 +359,6 @@ class EmployeeSorter:
             return self.queryset.order_by(*order_fields)
         return self.queryset.order_by('employee_id')
 
-# Business Structure ViewSets
 class BusinessFunctionViewSet(viewsets.ModelViewSet):
     queryset = BusinessFunction.objects.all()
     serializer_class = BusinessFunctionSerializer
@@ -440,7 +433,6 @@ class EmployeeStatusViewSet(viewsets.ModelViewSet):
     search_fields = ['name']
     ordering = ['order', 'name']
 
-# NEW: Contract Type Configuration ViewSet
 class ContractTypeConfigViewSet(viewsets.ModelViewSet):
     queryset = ContractTypeConfig.objects.all()
     serializer_class = ContractTypeConfigSerializer
@@ -483,7 +475,6 @@ class ContractTypeConfigViewSet(viewsets.ModelViewSet):
             'sample_employees': results
         })
 
-# Vacant Position ViewSet
 class VacantPositionViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
@@ -569,8 +560,7 @@ class VacantPositionViewSet(viewsets.ModelViewSet):
             'by_urgency': urgency_stats,
             'by_business_function': function_stats
         })
-        
-# Main Employee ViewSet with Enhanced Features
+
 class EmployeeViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     pagination_class = StandardResultsSetPagination
@@ -641,9 +631,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         )
         
         return Response(status=status.HTTP_204_NO_CONTENT)
-    
-  
-  
+
     def _generate_bulk_template(self):
         """Generate Excel template with dropdowns and validation"""
         from openpyxl import Workbook
@@ -775,13 +763,30 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         options_sheet.append(['FEMALE'])
         options_sheet.append([''])
         options_sheet.append(['Contract Duration Options'])
-        for duration in Employee.contract_duration:
-            options_sheet.append([duration[0]])
+        
+        # FIXED: Get contract duration choices properly
+        try:
+            # Try to get from ContractTypeConfig first
+            contract_configs = ContractTypeConfig.objects.filter(is_active=True).order_by('contract_type')
+            if contract_configs.exists():
+                for config in contract_configs:
+                    options_sheet.append([config.contract_type])
+            else:
+                # Fallback to default choices if no configs exist
+                default_durations = ['3_MONTHS', '6_MONTHS', '1_YEAR', '2_YEARS', '3_YEARS', 'PERMANENT']
+                for duration in default_durations:
+                    options_sheet.append([duration])
+        except Exception as e:
+            # Emergency fallback
+            logger.error(f"Error getting contract durations: {e}")
+            default_durations = ['3_MONTHS', '6_MONTHS', '1_YEAR', '2_YEARS', '3_YEARS', 'PERMANENT']
+            for duration in default_durations:
+                options_sheet.append([duration])
+        
         options_sheet.append([''])
         options_sheet.append(['Boolean Options'])
         options_sheet.append(['TRUE'])
         options_sheet.append(['FALSE'])
-    
     def _add_data_validations(self, worksheet):
         """Add data validation to template"""
         from openpyxl.worksheet.datavalidation import DataValidation
@@ -900,11 +905,10 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         
         # Auto-adjust column width
         instructions_sheet.column_dimensions['A'].width = 80
-    
 
     def _validate_and_prepare_employee_data(self, row, business_functions, departments, 
-                                          units, job_functions, position_groups, 
-                                          employee_lookup, tags_lookup, default_status, row_num):
+                                      units, job_functions, position_groups, 
+                                      employee_lookup, tags_lookup, default_status, row_num):
         """Validate and prepare employee data from Excel row"""
         data = {}
         errors = []
@@ -1009,10 +1013,23 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         else:
             data['contract_start_date'] = data.get('start_date')
         
-        # Validate contract duration
-        valid_durations = [choice[0] for choice in Employee.contract_duration]
-        if data['contract_duration'] not in valid_durations:
-            errors.append(f"Invalid Contract Duration: {data['contract_duration']}")
+        # FIXED: Validate contract duration properly
+        contract_duration = data['contract_duration']
+        try:
+            # Check if it exists in ContractTypeConfig
+            if not ContractTypeConfig.objects.filter(contract_type=contract_duration, is_active=True).exists():
+                # Get available options for error message
+                available_durations = list(ContractTypeConfig.objects.filter(is_active=True).values_list('contract_type', flat=True))
+                if not available_durations:
+                    # Fallback to default options
+                    available_durations = ['3_MONTHS', '6_MONTHS', '1_YEAR', '2_YEARS', '3_YEARS', 'PERMANENT']
+                errors.append(f"Invalid Contract Duration: {contract_duration}. Available options: {', '.join(available_durations)}")
+        except Exception as e:
+            logger.error(f"Error validating contract duration: {e}")
+            # Fallback validation
+            default_durations = ['3_MONTHS', '6_MONTHS', '1_YEAR', '2_YEARS', '3_YEARS', 'PERMANENT']
+            if contract_duration not in default_durations:
+                errors.append(f"Invalid Contract Duration: {contract_duration}. Available options: {', '.join(default_durations)}")
         
         # Validate line manager (optional) - ENHANCED
         line_manager_id = row.get('Line Manager Employee ID')
@@ -1095,10 +1112,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             return {'error': f"Row {row_num}: {'; '.join(errors)}"}
         
         return data
-    
    
-
-    # Enhanced Export Functionality
     @action(detail=False, methods=['post'])
     def export_selected(self, request):
         """Export selected employees to Excel or CSV"""
@@ -1265,8 +1279,6 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         
         return response
     
-    # views.py - EmployeeViewSet class-ına bu method-u əlavə edin
-
     def _process_bulk_employee_data_from_excel(self, df, user):
         """Excel data-sını process et və employee-lar yarat"""
         results = {
@@ -1499,10 +1511,31 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                             results['failed'] += 1
                             continue
                         
-                        # Validate contract duration
-                        valid_durations = [choice[0] for choice in Employee.contract_duration]
-                        if contract_duration not in valid_durations:
-                            contract_duration = 'PERMANENT'
+                        # FIXED: Validate contract duration properly
+                        try:
+                            # Check if it exists in ContractTypeConfig
+                            if not ContractTypeConfig.objects.filter(contract_type=contract_duration, is_active=True).exists():
+                                # Get available options
+                                available_durations = list(ContractTypeConfig.objects.filter(is_active=True).values_list('contract_type', flat=True))
+                                if not available_durations:
+                                    # Create default configs if none exist
+                                    ContractTypeConfig.get_or_create_defaults()
+                                    available_durations = list(ContractTypeConfig.objects.filter(is_active=True).values_list('contract_type', flat=True))
+                                
+                                if not available_durations:
+                                    # Final fallback
+                                    available_durations = ['3_MONTHS', '6_MONTHS', '1_YEAR', '2_YEARS', '3_YEARS', 'PERMANENT']
+                                
+                                if contract_duration not in available_durations:
+                                    results['errors'].append(f"Row {index + 2}: Invalid contract duration '{contract_duration}'. Available: {', '.join(available_durations)}")
+                                    results['failed'] += 1
+                                    continue
+                        except Exception as e:
+                            logger.error(f"Error validating contract duration for row {index + 2}: {e}")
+                            # Fallback validation
+                            default_durations = ['3_MONTHS', '6_MONTHS', '1_YEAR', '2_YEARS', '3_YEARS', 'PERMANENT']
+                            if contract_duration not in default_durations:
+                                contract_duration = 'PERMANENT'  # Default fallback
                         
                         # Optional fields
                         date_of_birth = None
@@ -1653,7 +1686,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             results['errors'].append(f"Processing failed: {str(e)}")
             results['failed'] = results['total_rows']
             return results
-        
+            
     @swagger_auto_schema(
         method='post',
         operation_description="Add tag to single employee",
@@ -1692,6 +1725,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 })
         except (Employee.DoesNotExist, EmployeeTag.DoesNotExist) as e:
             return Response({'error': str(e)}, status=status.HTTP_404_NOT_FOUND)
+    
     
     @swagger_auto_schema(
         method='post',
@@ -1837,8 +1871,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             })
         except EmployeeTag.DoesNotExist:
             return Response({'error': 'Tag not found'}, status=status.HTTP_404_NOT_FOUND)
-    
-    # ENHANCED LINE MANAGER MANAGEMENT
+
     @swagger_auto_schema(
         method='post',
         operation_description="Assign line manager to single employee",
@@ -2094,7 +2127,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             
         except Exception as e:
             return Response({'error': f'Bulk contract update failed: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-    # ENHANCED SOFT DELETE/RESTORE (Simplified as requested)
+
     @swagger_auto_schema(
         method='post',
         operation_description="Soft delete multiple employees",
@@ -2195,8 +2228,6 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         except Exception as e:
             return Response({'error': f'Restore failed: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
-    
-    # CONTRACT EXPIRY NOTIFICATIONS
     @action(detail=False, methods=['get'], url_path='contract-expiry-alerts')
     def get_contract_expiry_alerts(self, request):
         """Get employees whose contracts are expiring soon with notification capabilities"""
@@ -2223,10 +2254,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 'manager_notifications': list(set([emp['line_manager'] for emp in expiry_analysis['employees'] if emp['line_manager']]))
             }
         })
-    
-   
-  
-
+ 
     @action(detail=False, methods=['get'])
     def contracts_expiring_soon(self, request):
         """Get employees whose contracts are expiring soon"""
@@ -2279,20 +2307,25 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             if count > 0:
                 position_stats[pos.get_name_display()] = count
         
-        # Contract analysis - FIXED
+        # FIXED: Contract analysis using proper method
         contract_stats = {}
-        # Get all unique contract types from employees
-        contract_types = queryset.values_list('contract_duration', flat=True).distinct()
-        for contract_type in contract_types:
-            if contract_type:
-                count = queryset.filter(contract_duration=contract_type).count()
-                if count > 0:
-                    try:
-                        config = ContractTypeConfig.objects.get(contract_type=contract_type, is_active=True)
-                        display_name = config.display_name
-                    except ContractTypeConfig.DoesNotExist:
-                        display_name = contract_type.replace('_', ' ').title()
-                    contract_stats[display_name] = count
+        try:
+            # Get all unique contract types from employees
+            contract_types = queryset.values_list('contract_duration', flat=True).distinct()
+            for contract_type in contract_types:
+                if contract_type:
+                    count = queryset.filter(contract_duration=contract_type).count()
+                    if count > 0:
+                        try:
+                            config = ContractTypeConfig.objects.get(contract_type=contract_type, is_active=True)
+                            display_name = config.display_name
+                        except ContractTypeConfig.DoesNotExist:
+                            # Fallback to formatted display name
+                            display_name = contract_type.replace('_', ' ').title()
+                        contract_stats[display_name] = count
+        except Exception as e:
+            logger.error(f"Error calculating contract statistics: {e}")
+            contract_stats = {'Error': 'Could not calculate contract statistics'}
         
         # Recent activity
         recent_hires = queryset.filter(
@@ -2400,8 +2433,6 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             'top_level_managers': len(hierarchy_data),
             'hierarchy': hierarchy_data
         })
-
-
 
 class BulkEmployeeUploadViewSet(viewsets.ViewSet):
     """Ayrı ViewSet yalnız file upload üçün"""
@@ -2600,6 +2631,7 @@ class BulkEmployeeUploadViewSet(viewsets.ViewSet):
                 {'error': f'Failed to generate template: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )    
+
 class EmployeeGradingViewSet(viewsets.ViewSet):
     """ViewSet for employee grading integration"""
     permission_classes = [IsAuthenticated]
@@ -2702,10 +2734,6 @@ class EmployeeGradingViewSet(viewsets.ViewSet):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
-    
-    
-
-# Replace the ContractStatusManagementViewSet with this corrected version:
 class ContractStatusManagementViewSet(viewsets.ViewSet):
     """ViewSet for contract status management operations"""
     permission_classes = [IsAuthenticated]
@@ -2761,11 +2789,7 @@ class ContractStatusManagementViewSet(viewsets.ViewSet):
                 {'error': f'Failed to get status analysis: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-    
-  
-  
-   
-# NEW: Enhanced Employee Analytics ViewSet
+
 class EmployeeAnalyticsViewSet(viewsets.ViewSet):
     """ViewSet for detailed employee analytics and reporting"""
     permission_classes = [IsAuthenticated]
@@ -2944,10 +2968,7 @@ class EmployeeAnalyticsViewSet(viewsets.ViewSet):
                 'without_line_manager': active_employees.filter(line_manager__isnull=True).count()
             }
         })
-    
-    
 
-# Enhanced Organizational Chart ViewSet with Full Data
 class OrgChartViewSet(viewsets.ReadOnlyModelViewSet):
     """ViewSet for organizational chart data"""
     permission_classes = [IsAuthenticated]

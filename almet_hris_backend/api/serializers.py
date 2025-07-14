@@ -378,14 +378,26 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
     
     def validate_contract_duration(self, value):
         """Validate that contract duration exists in configurations"""
-        if value:
-            try:
-                ContractTypeConfig.objects.get(contract_type=value, is_active=True)
-            except ContractTypeConfig.DoesNotExist:
+        try:
+            if not ContractTypeConfig.objects.filter(contract_type=value, is_active=True).exists():
+                # Get available choices for error message
                 available_choices = list(ContractTypeConfig.objects.filter(is_active=True).values_list('contract_type', flat=True))
+                if not available_choices:
+                    # Create defaults if none exist
+                    ContractTypeConfig.get_or_create_defaults()
+                    available_choices = list(ContractTypeConfig.objects.filter(is_active=True).values_list('contract_type', flat=True))
+                
+                if not available_choices:
+                    # Final fallback
+                    available_choices = ['3_MONTHS', '6_MONTHS', '1_YEAR', '2_YEARS', '3_YEARS', 'PERMANENT']
+                
                 raise serializers.ValidationError(
                     f"Invalid contract duration '{value}'. Available choices: {', '.join(available_choices)}"
                 )
+        except ContractTypeConfig.DoesNotExist:
+            # This shouldn't happen with the above code, but just in case
+            pass
+        
         return value
     
     
@@ -1293,3 +1305,6 @@ class EmployeeManagementResponseSerializer(serializers.Serializer):
     errors = serializers.ListField(child=serializers.CharField(), required=False)
     warnings = serializers.ListField(child=serializers.CharField(), required=False)
     metadata = serializers.DictField(required=False)
+    
+    
+    
