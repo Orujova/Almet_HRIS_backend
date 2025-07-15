@@ -11,7 +11,8 @@ from .models import (
     VacantPosition, EmployeeActivity,  ContractTypeConfig
 )
 import logging
-
+import os
+from django.db import models 
 logger = logging.getLogger(__name__)
 
 class UserSerializer(serializers.ModelSerializer):
@@ -132,7 +133,6 @@ class EmployeeStatusSerializer(serializers.ModelSerializer):
     def get_employee_count(self, obj):
         return obj.employees.count()
 
-# NEW: Contract Type Configuration Serializer
 class ContractTypeConfigSerializer(serializers.ModelSerializer):
     total_days_until_active = serializers.SerializerMethodField()
     employee_count = serializers.SerializerMethodField()
@@ -152,7 +152,6 @@ class ContractTypeConfigSerializer(serializers.ModelSerializer):
     def get_employee_count(self, obj):
         return Employee.objects.filter(contract_duration=obj.contract_type).count()
 
-# Vacant Position Serializers
 class VacantPositionListSerializer(serializers.ModelSerializer):
     business_function_name = serializers.CharField(source='business_function.name', read_only=True)
     department_name = serializers.CharField(source='department.name', read_only=True)
@@ -202,29 +201,370 @@ class VacantPositionCreateSerializer(serializers.ModelSerializer):
         validated_data['created_by'] = self.context['request'].user
         return super().create(validated_data)
 
-# Employee Document Serializer
 class EmployeeDocumentSerializer(serializers.ModelSerializer):
     uploaded_by_name = serializers.CharField(source='uploaded_by.username', read_only=True)
-    file_size_display = serializers.SerializerMethodField()
+    file_size_display = serializers.CharField(source='get_file_size_display', read_only=True)
+    is_image = serializers.BooleanField(read_only=True)
+    is_pdf = serializers.BooleanField(read_only=True)
+    file_url = serializers.SerializerMethodField()
+    version_info = serializers.SerializerMethodField()
     
     class Meta:
         model = EmployeeDocument
         fields = [
-            'id', 'name', 'document_type', 'file_path', 'file_size',
-            'file_size_display', 'mime_type', 'uploaded_at', 'uploaded_by_name'
+            'id', 'name', 'document_type', 'document_status', 'document_file', 'file_url',
+            'version', 'is_current_version', 'version_info',
+            'file_size', 'file_size_display', 'mime_type', 'original_filename',
+            'description', 'expiry_date', 'is_confidential', 'is_required',
+            'uploaded_at', 'uploaded_by_name', 'download_count', 'last_accessed',
+            'is_image', 'is_pdf', 'is_deleted'
+        ]
+        read_only_fields = [
+            'id', 'version', 'file_size', 'mime_type', 'original_filename', 
+            'uploaded_at', 'download_count', 'last_accessed', 'is_current_version'
         ]
     
-    def get_file_size_display(self, obj):
-        if obj.file_size:
-            if obj.file_size < 1024:
-                return f"{obj.file_size} B"
-            elif obj.file_size < 1024 * 1024:
-                return f"{obj.file_size / 1024:.1f} KB"
-            else:
-                return f"{obj.file_size / (1024 * 1024):.1f} MB"
-        return "Unknown"
+    def get_file_url(self, obj):
+        if obj.document_file:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.document_file.url)
+        return None
+    
+    def get_version_info(self, obj):
+        """Get version history information"""
+        version_history = obj.get_version_history()
+        return {
+            'current_version': obj.version,
+            'is_current': obj.is_current_version,
+            'total_versions': version_history.count(),
+            'has_previous': obj.get_previous_version() is not None,
+            'has_next': obj.get_next_version() is not None
+        }
 
-# Employee Activity Serializer
+class DocumentUploadSerializer(serializers.Serializer):
+    """File upload serializer - Fixed version handling"""
+    employee_id = serializers.IntegerField(
+        help_text="Employee ID to associate document with"
+    )
+    name = serializers.CharField(
+        max_length=255,
+        help_text="Document name or title"
+    )
+    document_type = serializers.ChoiceField(
+        choices=EmployeeDocument.DOCUMENT_TYPES,
+        default='OTHER',
+        help_text="Type of document being uploaded"
+    )
+    document_file = serializers.FileField(
+        help_text="Document file to upload (PDF, DOC, DOCX, JPG, PNG, etc.)"
+    )
+    description = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        help_text="Optional document description"
+    )
+    expiry_date = serializers.DateField(
+        required=False,
+        allow_null=True,
+        help_text="Document expiry date (YYYY-MM-DD format)"
+    )
+    is_confidential = serializers.BooleanField(
+        default=False,
+        help_text="Mark document as confidential"
+    )
+    is_required = serializers.BooleanField(
+        default=False,
+        help_text="Mark document as required"
+    )
+    replace_existing = serializers.BooleanField(
+        default=False,
+        help_text="Replace existing document with same name and type"
+    )
+    
+    def validate_employee_id(self, value):
+        try:
+            Employee.objects.get(id=value)
+        except Employee.DoesNotExist:
+            raise serializers.ValidationError("Employee not found.")
+        return value
+    
+    def validate_document_file(self, value):
+        # File size validation (50MB max)
+        if value.size > 50 * 1024 * 1024:
+            raise serializers.ValidationError("File size cannot exceed 50MB.")
+        
+        # File type validation
+        allowed_types = [
+            'application/pdf', 'application/msword', 
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'image/jpeg', 'image/png', 'image/gif', 'image/bmp',
+            'text/plain', 'application/vnd.ms-excel',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        ]
+        
+        import mimetypes
+        file_type, _ = mimetypes.guess_type(value.name)
+        
+        if file_type and file_type not in allowed_types:
+            raise serializers.ValidationError(f"File type {file_type} is not allowed.")
+        
+        return value
+    
+    def create(self, validated_data):
+        employee_id = validated_data.pop('employee_id')
+        replace_existing = validated_data.pop('replace_existing', False)
+        
+        employee = Employee.objects.get(id=employee_id)
+        validated_data['employee'] = employee
+        validated_data['uploaded_by'] = self.context['request'].user
+        
+        # Set default status
+        validated_data['document_status'] = 'ACTIVE'
+        
+        # FIXED: Handle existing documents and versioning properly
+        if replace_existing:
+            # Check for existing documents with same name and type
+            existing_docs = EmployeeDocument.objects.filter(
+                employee=employee,
+                name=validated_data['name'],
+                document_type=validated_data['document_type'],
+                is_deleted=False
+            ).order_by('-version')
+            
+            if existing_docs.exists():
+                # Mark existing documents as not current
+                existing_docs.update(is_current_version=False)
+                
+                # Set version number
+                latest_version = existing_docs.first().version
+                validated_data['version'] = latest_version + 1
+                
+                # Set the latest document as replaced by the new one
+                latest_doc = existing_docs.first()
+                validated_data['_replace_document_id'] = latest_doc.id
+            else:
+                validated_data['version'] = 1
+        else:
+            # For new documents, check if same name+type already exists
+            existing_count = EmployeeDocument.objects.filter(
+                employee=employee,
+                name=validated_data['name'],
+                document_type=validated_data['document_type'],
+                is_deleted=False
+            ).count()
+            
+            if existing_count > 0:
+                # Auto-increment the name to make it unique
+                base_name = validated_data['name']
+                counter = 1
+                while EmployeeDocument.objects.filter(
+                    employee=employee,
+                    name=f"{base_name} ({counter})",
+                    document_type=validated_data['document_type'],
+                    is_deleted=False
+                ).exists():
+                    counter += 1
+                
+                validated_data['name'] = f"{base_name} ({counter})"
+            
+            validated_data['version'] = 1
+        
+        # Ensure is_current_version is True for new uploads
+        validated_data['is_current_version'] = True
+        
+        # Create the document
+        document = EmployeeDocument.objects.create(**validated_data)
+        
+        # Handle replacement relationship
+        if replace_existing and '_replace_document_id' in validated_data:
+            try:
+                replaced_doc = EmployeeDocument.objects.get(id=validated_data['_replace_document_id'])
+                replaced_doc.replaced_by = document
+                replaced_doc.save()
+            except EmployeeDocument.DoesNotExist:
+                pass
+        
+        return document
+    
+class BulkDocumentUploadSerializer(serializers.Serializer):
+    """Bulk document upload serializer - Fixed version handling"""
+    employee_id = serializers.IntegerField(
+        help_text="Employee ID to upload documents for"
+    )
+    documents = serializers.ListField(
+        child=serializers.FileField(),
+        min_length=1,
+        max_length=10,
+        help_text="List of document files (max 10 files)"
+    )
+    document_type = serializers.ChoiceField(
+        choices=EmployeeDocument.DOCUMENT_TYPES,
+        default='OTHER',
+        help_text="Document type for all uploaded files"
+    )
+    is_confidential = serializers.BooleanField(
+        default=False,
+        help_text="Mark all documents as confidential"
+    )
+    replace_existing = serializers.BooleanField(
+        default=False,
+        help_text="Replace existing documents with same names"
+    )
+    
+    def validate_employee_id(self, value):
+        try:
+            Employee.objects.get(id=value)
+        except Employee.DoesNotExist:
+            raise serializers.ValidationError("Employee not found.")
+        return value
+    
+    def validate_documents(self, value):
+        total_size = sum(doc.size for doc in value)
+        if total_size > 100 * 1024 * 1024:  # 100MB total
+            raise serializers.ValidationError("Total file size cannot exceed 100MB.")
+        
+        for doc in value:
+            if doc.size > 50 * 1024 * 1024:  # 50MB per file
+                raise serializers.ValidationError(f"File {doc.name} exceeds 50MB limit.")
+        
+        return value
+
+class DocumentReplaceSerializer(serializers.Serializer):
+    """Serializer for replacing an existing document"""
+    document_file = serializers.FileField(
+        help_text="New document file to replace the existing one"
+    )
+    description = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        help_text="Optional description for the new version"
+    )
+    
+    def validate_document_file(self, value):
+        # Same validation as DocumentUploadSerializer
+        if value.size > 50 * 1024 * 1024:
+            raise serializers.ValidationError("File size cannot exceed 50MB.")
+        
+        allowed_types = [
+            'application/pdf', 'application/msword', 
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'image/jpeg', 'image/png', 'image/gif', 'image/bmp',
+            'text/plain', 'application/vnd.ms-excel',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        ]
+        
+        import mimetypes
+        file_type, _ = mimetypes.guess_type(value.name)
+        
+        if file_type and file_type not in allowed_types:
+            raise serializers.ValidationError(f"File type {file_type} is not allowed.")
+        
+        return value
+
+class ProfileImageUploadSerializer(serializers.Serializer):
+    employee_id = serializers.IntegerField()
+    profile_image = serializers.ImageField()
+    
+    def validate_employee_id(self, value):
+        try:
+            Employee.objects.get(id=value)
+        except Employee.DoesNotExist:
+            raise serializers.ValidationError("Employee not found.")
+        return value
+    
+    def validate_profile_image(self, value):
+        # Image size validation (10MB max)
+        if value.size > 10 * 1024 * 1024:
+            raise serializers.ValidationError("Image size cannot exceed 10MB.")
+        
+        # Image format validation
+        allowed_formats = ['JPEG', 'PNG', 'GIF', 'BMP']
+        
+        try:
+            from PIL import Image
+            img = Image.open(value)
+            if img.format not in allowed_formats:
+                raise serializers.ValidationError(f"Image format {img.format} is not allowed.")
+        except Exception as e:
+            raise serializers.ValidationError("Invalid image file.")
+        
+        return value
+    
+    def save(self):
+        employee_id = self.validated_data['employee_id']
+        profile_image = self.validated_data['profile_image']
+        
+        employee = Employee.objects.get(id=employee_id)
+        
+        # Delete old profile image if exists
+        if employee.profile_image:
+            try:
+                # Check if it's a FieldFile with a path
+                if hasattr(employee.profile_image, 'path'):
+                    old_image_path = employee.profile_image.path
+                    if os.path.exists(old_image_path):
+                        os.remove(old_image_path)
+            except Exception as e:
+                # Log error but don't fail
+                logger.warning(f"Could not delete old profile image: {e}")
+        
+        # Save the new profile image
+        employee.profile_image = profile_image
+        employee.save()
+        
+        # Log activity
+        EmployeeActivity.objects.create(
+            employee=employee,
+            activity_type='PROFILE_UPDATED',
+            description="Profile image updated",
+            performed_by=self.context['request'].user,
+            metadata={'action': 'profile_image_upload'}
+        )
+        
+        return employee
+
+class ProfileImageDeleteSerializer(serializers.Serializer):
+    employee_id = serializers.IntegerField()
+    
+    def validate_employee_id(self, value):
+        try:
+            employee = Employee.objects.get(id=value)
+            if not employee.profile_image:
+                raise serializers.ValidationError("Employee has no profile image to delete.")
+        except Employee.DoesNotExist:
+            raise serializers.ValidationError("Employee not found.")
+        return value
+    
+    def save(self):
+        employee_id = self.validated_data['employee_id']
+        employee = Employee.objects.get(id=employee_id)
+        
+        # Delete image file safely
+        if employee.profile_image:
+            try:
+                if hasattr(employee.profile_image, 'path'):
+                    old_image_path = employee.profile_image.path
+                    if os.path.exists(old_image_path):
+                        os.remove(old_image_path)
+            except Exception as e:
+                logger.warning(f"Could not delete profile image file: {e}")
+        
+        # Clear the field
+        employee.profile_image = None
+        employee.save()
+        
+        # Log activity
+        EmployeeActivity.objects.create(
+            employee=employee,
+            activity_type='PROFILE_UPDATED',
+            description="Profile image deleted",
+            performed_by=self.context['request'].user,
+            metadata={'action': 'profile_image_delete'}
+        )
+        
+        return employee
+
 class EmployeeActivitySerializer(serializers.ModelSerializer):
     performed_by_name = serializers.CharField(source='performed_by.username', read_only=True)
     employee_name = serializers.CharField(source='employee.full_name', read_only=True)
@@ -236,7 +576,6 @@ class EmployeeActivitySerializer(serializers.ModelSerializer):
             'performed_by', 'performed_by_name', 'metadata', 'created_at'
         ]
 
-# Enhanced Employee List Serializer with Contract Status Integration
 class EmployeeListSerializer(serializers.ModelSerializer):
     name = serializers.CharField(source='full_name', read_only=True)
     email = serializers.CharField(source='user.email', read_only=True)
@@ -259,6 +598,7 @@ class EmployeeListSerializer(serializers.ModelSerializer):
     renewal_status_display = serializers.CharField(source='get_renewal_status_display', read_only=True)
     direct_reports_count = serializers.SerializerMethodField()
     status_needs_update = serializers.SerializerMethodField()
+    profile_image_url = serializers.SerializerMethodField()
     
     class Meta:
         model = Employee
@@ -271,9 +611,22 @@ class EmployeeListSerializer(serializers.ModelSerializer):
             'contract_extensions', 'last_extension_date', 'renewal_status', 'renewal_status_display',
             'line_manager_name', 'line_manager_hc_number', 'status_name', 'status_color',
             'tag_names', 'years_of_service', 'current_status_display', 'is_visible_in_org_chart',
-            'direct_reports_count', 'status_needs_update', 'created_at', 'updated_at'
+            'direct_reports_count', 'status_needs_update', 'created_at', 'updated_at','profile_image_url',
         ]
     
+    def get_profile_image_url(self, obj):
+        """Get profile image URL safely"""
+        if obj.profile_image:
+            try:
+                if hasattr(obj.profile_image, 'url'):
+                    request = self.context.get('request')
+                    if request:
+                        return request.build_absolute_uri(obj.profile_image.url)
+                    return obj.profile_image.url
+            except Exception as e:
+                # Log error but don't fail serialization
+                logger.warning(f"Could not get profile image URL for employee {obj.employee_id}: {e}")
+        return None
     def get_tag_names(self, obj):
         return [
             {
@@ -329,9 +682,29 @@ class EmployeeDetailSerializer(serializers.ModelSerializer):
     # Vacancy information
     filled_vacancy_detail = VacantPositionListSerializer(source='filled_vacancy', read_only=True)
     
+    profile_image_url = serializers.SerializerMethodField()
+    documents = EmployeeDocumentSerializer(many=True, read_only=True)
+    documents_count = serializers.SerializerMethodField()
     class Meta:
         model = Employee
         fields = '__all__'
+    
+    def get_profile_image_url(self, obj):
+        """Get profile image URL safely"""
+        if obj.profile_image:
+            try:
+                if hasattr(obj.profile_image, 'url'):
+                    request = self.context.get('request')
+                    if request:
+                        return request.build_absolute_uri(obj.profile_image.url)
+                    return obj.profile_image.url
+            except Exception as e:
+                # Log error but don't fail serialization
+                logger.warning(f"Could not get profile image URL for employee {obj.employee_id}: {e}")
+        return None
+    
+    def get_documents_count(self, obj):
+        return obj.documents.filter(is_deleted=False).count()
     
     def get_line_manager_detail(self, obj):
         if obj.line_manager:
@@ -580,7 +953,6 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
         
         return employee
 
-# Bulk Employee Creation Serializers
 class BulkEmployeeCreateItemSerializer(serializers.Serializer):
     """Serializer for a single employee in bulk creation"""
     employee_id = serializers.CharField(max_length=50)
@@ -662,7 +1034,6 @@ class BulkEmployeeCreateItemSerializer(serializers.Serializer):
             )
         return value
 
-# Bulk Operations Serializers
 class BulkEmployeeUpdateSerializer(serializers.Serializer):
     employee_ids = serializers.ListField(child=serializers.IntegerField())
     updates = serializers.DictField()
@@ -678,7 +1049,6 @@ class BulkEmployeeUpdateSerializer(serializers.Serializer):
         
         return value
 
-# Line Manager Operations (ENHANCED)
 class BulkLineManagerAssignmentSerializer(serializers.Serializer):
     """Bulk line manager assignment using employee IDs"""
     employee_ids = serializers.ListField(
@@ -731,7 +1101,6 @@ class SingleLineManagerAssignmentSerializer(serializers.Serializer):
                 raise serializers.ValidationError("Line manager not found.")
         return value
 
-
 class BulkEmployeeTagUpdateSerializer(serializers.Serializer):
     """Simple bulk tag operations using employee IDs"""
     employee_ids = serializers.ListField(
@@ -775,7 +1144,7 @@ class SingleEmployeeTagUpdateSerializer(serializers.Serializer):
         except EmployeeTag.DoesNotExist:
             raise serializers.ValidationError("Tag not found.")
         return value
-# Grading Serializers
+
 class EmployeeGradingUpdateSerializer(serializers.Serializer):
     """Serializer for updating employee grading information"""
     employee_id = serializers.IntegerField()
@@ -827,7 +1196,6 @@ class BulkEmployeeGradingUpdateSerializer(serializers.Serializer):
             raise serializers.ValidationError("At least one update is required")
         return value
 
-# Enhanced Organizational Chart Serializer
 class OrgChartNodeSerializer(serializers.ModelSerializer):
     """Enhanced serializer for organizational chart nodes with full data"""
     name = serializers.CharField(source='full_name', read_only=True)
@@ -859,35 +1227,6 @@ class OrgChartNodeSerializer(serializers.ModelSerializer):
         
         return OrgChartNodeSerializer(children, many=True, context=self.context).data
 
-
-
-# Additional Employee Serializers for specific use cases
-class EmployeeMinimalSerializer(serializers.ModelSerializer):
-    """Minimal employee serializer for dropdowns and references"""
-    name = serializers.CharField(source='full_name', read_only=True)
-    position_display = serializers.CharField(source='position_group.get_name_display', read_only=True)
-    
-    class Meta:
-        model = Employee
-        fields = ['id', 'employee_id', 'name', 'job_title', 'position_display']
-
-class EmployeeSearchSerializer(serializers.ModelSerializer):
-    """Optimized serializer for search results"""
-    name = serializers.CharField(source='full_name', read_only=True)
-    business_function_name = serializers.CharField(source='business_function.name', read_only=True)
-    department_name = serializers.CharField(source='department.name', read_only=True)
-    position_group_name = serializers.CharField(source='position_group.get_name_display', read_only=True)
-    status_name = serializers.CharField(source='status.name', read_only=True)
-    status_color = serializers.CharField(source='status.color', read_only=True)
-    
-    class Meta:
-        model = Employee
-        fields = [
-            'id', 'employee_id', 'name', 'job_title', 'business_function_name',
-            'department_name', 'position_group_name', 'status_name', 'status_color'
-        ]
-
-# Contract Management Serializers
 class ContractExpirySerializer(serializers.ModelSerializer):
     """Serializer for contract expiry tracking"""
     name = serializers.CharField(source='full_name', read_only=True)
@@ -917,7 +1256,6 @@ class ContractExpirySerializer(serializers.ModelSerializer):
             return preview['needs_update']
         except:
             return False
-
 
 class BulkSoftDeleteSerializer(serializers.Serializer):
     """Bulk soft delete employees"""
@@ -952,7 +1290,7 @@ class BulkRestoreSerializer(serializers.Serializer):
             raise serializers.ValidationError("Some employee IDs do not exist or are not deleted.")
         
         return value
-# Export Serializer for selected data
+
 class EmployeeExportSerializer(serializers.Serializer):
     employee_ids = serializers.ListField(
         child=serializers.IntegerField(), 
@@ -968,7 +1306,6 @@ class EmployeeExportSerializer(serializers.Serializer):
         required=False,
         help_text="List of fields to include in export"
     )
-
 
 class ContractExtensionSerializer(serializers.Serializer):
     """Contract extension for single employee - WITHOUT extension_months"""
@@ -1002,6 +1339,7 @@ class ContractExtensionSerializer(serializers.Serializer):
                 f"Invalid contract type '{value}'. Available choices: {', '.join(available_choices)}"
             )
         return value
+
 class BulkContractExtensionSerializer(serializers.Serializer):
     """Bulk contract extension - WITHOUT extension_months"""
     employee_ids = serializers.ListField(
@@ -1040,271 +1378,5 @@ class BulkContractExtensionSerializer(serializers.Serializer):
                 f"Invalid contract type '{value}'. Available choices: {', '.join(available_choices)}"
             )
         return value
-class StatusPreviewSerializer(serializers.Serializer):
-    """Serializer for status preview data"""
-    employee_id = serializers.CharField()
-    name = serializers.CharField()
-    current_status = serializers.CharField()
-    required_status = serializers.CharField()
-    needs_update = serializers.BooleanField()
-    reason = serializers.CharField()
-    contract_type = serializers.CharField()
-    days_since_start = serializers.IntegerField()
-    contract_end_date = serializers.DateField(allow_null=True)
-
-class BulkStatusPreviewSerializer(serializers.Serializer):
-    """Serializer for bulk status preview operations"""
-    employee_ids = serializers.ListField(
-        child=serializers.IntegerField(),
-        required=False,
-        help_text="Employee IDs to check. If empty, checks all employees."
-    )
-
-# Bulk Employee Creation Result Serializers
-class BulkEmployeeCreationResultSerializer(serializers.Serializer):
-    """Serializer for bulk employee creation results"""
-    total_rows = serializers.IntegerField()
-    successful = serializers.IntegerField()
-    failed = serializers.IntegerField()
-    errors = serializers.ListField(child=serializers.CharField(), required=False)
-    created_employees = serializers.ListField(
-        child=serializers.DictField(),
-        required=False
-    )
-
-class BulkEmployeeCreationSummarySerializer(serializers.Serializer):
-    """Serializer for bulk creation summary"""
-    employee_id = serializers.CharField()
-    name = serializers.CharField()
-    email = serializers.CharField()
-    status = serializers.CharField()
-
-# Template Download Serializer
-class BulkTemplateDownloadSerializer(serializers.Serializer):
-    """Serializer for template download options"""
-    include_sample_data = serializers.BooleanField(
-        default=True,
-        help_text="Include sample data row in template"
-    )
-    template_type = serializers.ChoiceField(
-        choices=[('basic', 'Basic Template'), ('advanced', 'Advanced Template')],
-        default='basic',
-        help_text="Template complexity level"
-    )
 
 
-# Bulk Operation Progress Serializer
-class BulkOperationProgressSerializer(serializers.Serializer):
-    """Serializer for tracking bulk operation progress"""
-    operation_id = serializers.CharField()
-    status = serializers.ChoiceField(
-        choices=[
-            ('pending', 'Pending'),
-            ('processing', 'Processing'),
-            ('completed', 'Completed'),
-            ('failed', 'Failed')
-        ]
-    )
-    progress_percentage = serializers.IntegerField(min_value=0, max_value=100)
-    current_step = serializers.CharField()
-    total_items = serializers.IntegerField()
-    processed_items = serializers.IntegerField()
-    successful_items = serializers.IntegerField()
-    failed_items = serializers.IntegerField()
-    errors = serializers.ListField(child=serializers.CharField())
-
-# Enhanced Contract Status Management Serializers
-class ContractStatusAnalysisSerializer(serializers.Serializer):
-    """Serializer for contract status analysis"""
-    total_employees = serializers.IntegerField()
-    by_current_status = serializers.DictField()
-    by_required_status = serializers.DictField()
-    transitions_needed = serializers.DictField()
-    by_contract_type = serializers.DictField()
-    updates_needed_total = serializers.IntegerField()
-
-class EmployeeStatusTransitionSerializer(serializers.Serializer):
-    """Serializer for individual employee status transitions"""
-    employee_id = serializers.CharField()
-    employee_name = serializers.CharField()
-    current_status = serializers.CharField()
-    required_status = serializers.CharField()
-    reason = serializers.CharField()
-    days_since_start = serializers.IntegerField()
-    contract_type = serializers.CharField()
-    needs_update = serializers.BooleanField()
-
-# Enhanced Bulk Employee Template Info Serializer
-class BulkEmployeeTemplateInfoSerializer(serializers.Serializer):
-    """Serializer providing template structure information"""
-    required_fields = serializers.ListField(child=serializers.CharField())
-    optional_fields = serializers.ListField(child=serializers.CharField())
-    field_descriptions = serializers.DictField()
-    validation_rules = serializers.DictField()
-    available_options = serializers.DictField()
-    sample_data = serializers.DictField()
-    
-    def to_representation(self, instance):
-        return {
-            'required_fields': [
-                'Employee ID', 'First Name', 'Last Name', 'Email',
-                'Business Function', 'Department', 'Job Function',
-                'Job Title', 'Position Group', 'Start Date', 'Contract Duration'
-            ],
-            'optional_fields': [
-                'Date of Birth', 'Gender', 'Father Name', 'Address', 'Phone', 'Emergency Contact',
-                'Unit', 'Grading Level', 'Contract Start Date', 'Line Manager Employee ID',
-                'Is Visible in Org Chart', 'Tag Names', 'Notes'
-            ],
-            'field_descriptions': {
-                'Employee ID': 'Unique identifier (e.g., HC001)',
-                'First Name': 'Employee first name',
-                'Last Name': 'Employee last name',
-                'Email': 'Unique email address',
-                'Date of Birth': 'Format: YYYY-MM-DD',
-                'Gender': 'MALE or FEMALE',
-                'Father Name': 'Father\'s name (optional)',
-                'Business Function': 'Must match exactly from available options',
-                'Department': 'Must exist under selected Business Function',
-                'Unit': 'Must exist under selected Department (optional)',
-                'Job Function': 'Must match exactly from available options',
-                'Job Title': 'Position title',
-                'Position Group': 'Must match exactly from available options',
-                'Grading Level': 'Must be valid for Position Group (e.g., MGR_M)',
-                'Start Date': 'Format: YYYY-MM-DD',
-                'Contract Duration': 'Select from: 3_MONTHS, 6_MONTHS, 1_YEAR, 2_YEARS, 3_YEARS, PERMANENT',
-                'Contract Start Date': 'Format: YYYY-MM-DD (defaults to Start Date)',
-                'Line Manager Employee ID': 'Must be existing employee ID',
-                'Is Visible in Org Chart': 'TRUE or FALSE (default: TRUE)',
-                'Tag Names': 'Comma separated, format TYPE:Name (e.g., SKILL:Python,STATUS:New)',
-                'Notes': 'Additional information'
-            },
-            'validation_rules': {
-                'Employee ID': 'Must be unique across all employees',
-                'Email': 'Must be unique and valid email format',
-                'Dates': 'Must be in YYYY-MM-DD format',
-                'Grading Level': 'Must match position group (e.g., MGR_LD, MGR_LQ, MGR_M, MGR_UQ, MGR_UD)',
-                'Contract Duration': 'Must be one of the predefined options',
-                'Line Manager': 'Must reference existing employee ID',
-                'Department/Unit': 'Must belong to selected Business Function/Department'
-            },
-            'available_options': {
-                'gender': ['MALE', 'FEMALE'],
-                'contract_duration': ['3_MONTHS', '6_MONTHS', '1_YEAR', '2_YEARS', '3_YEARS', 'PERMANENT'],
-                'org_chart_visibility': ['TRUE', 'FALSE'],
-                'tag_types': ['LEAVE', 'STATUS', 'SKILL', 'PROJECT', 'PERFORMANCE', 'OTHER']
-            },
-            'sample_data': {
-                'Employee ID': 'HC001',
-                'First Name': 'John',
-                'Last Name': 'Doe',
-                'Email': 'john.doe@company.com',
-                'Date of Birth': '1990-01-15',
-                'Gender': 'MALE',
-                'Father Name': 'Robert Doe',
-                'Business Function': 'IT',
-                'Department': 'Software Development',
-                'Job Title': 'Senior Software Engineer',
-                'Position Group': 'SENIOR SPECIALIST',
-                'Grading Level': 'SS_M',
-                'Start Date': '2024-01-15',
-                'Contract Duration': 'PERMANENT',
-                'Line Manager Employee ID': 'HC002'
-            }
-        }
-
-# NEW: Contract Configuration Management Serializers
-class ContractConfigurationSerializer(serializers.Serializer):
-    """Serializer for contract configuration management"""
-    contract_type = serializers.CharField()
-    onboarding_days = serializers.IntegerField(min_value=0, max_value=365)
-    probation_days = serializers.IntegerField(min_value=0, max_value=365)
-    enable_auto_transitions = serializers.BooleanField()
-    notify_days_before_end = serializers.IntegerField(min_value=0, max_value=365)
-
-class BulkContractConfigurationUpdateSerializer(serializers.Serializer):
-    """Serializer for bulk contract configuration updates"""
-    configurations = serializers.ListField(
-        child=ContractConfigurationSerializer(),
-        min_length=1
-    )
-
-# Statistics and Analytics Serializers
-class EmployeeStatisticsSerializer(serializers.Serializer):
-    """Comprehensive employee statistics serializer"""
-    total_employees = serializers.IntegerField()
-    active_employees = serializers.IntegerField()
-    inactive_employees = serializers.IntegerField()
-    by_status = serializers.DictField()
-    by_business_function = serializers.DictField()
-    by_position_group = serializers.DictField()
-    by_contract_duration = serializers.DictField()
-    recent_hires_30_days = serializers.IntegerField()
-    upcoming_contract_endings_30_days = serializers.IntegerField()
-    status_update_analysis = serializers.DictField()
-
-class ContractExpiryAnalysisSerializer(serializers.Serializer):
-    """Contract expiry analysis serializer"""
-    days = serializers.IntegerField()
-    count = serializers.IntegerField()
-    employees = ContractExpirySerializer(many=True)
-
-# Advanced Employee Search and Filter Serializers
-class AdvancedEmployeeFilterSerializer(serializers.Serializer):
-    """Advanced filtering options for employees"""
-    search = serializers.CharField(required=False)
-    status = serializers.ListField(child=serializers.CharField(), required=False)
-    business_function = serializers.ListField(child=serializers.IntegerField(), required=False)
-    department = serializers.ListField(child=serializers.IntegerField(), required=False)
-    position_group = serializers.ListField(child=serializers.IntegerField(), required=False)
-    line_manager = serializers.ListField(child=serializers.IntegerField(), required=False)
-    tags = serializers.ListField(child=serializers.IntegerField(), required=False)
-    contract_duration = serializers.ListField(child=serializers.CharField(), required=False)
-    start_date_from = serializers.DateField(required=False)
-    start_date_to = serializers.DateField(required=False)
-    active_only = serializers.BooleanField(required=False)
-    org_chart_visible = serializers.BooleanField(required=False)
-    include_deleted = serializers.BooleanField(required=False)
-    status_needs_update = serializers.BooleanField(required=False)
-
-class EmployeeSortingSerializer(serializers.Serializer):
-    """Employee sorting options"""
-    ordering = serializers.ListField(
-        child=serializers.CharField(),
-        required=False,
-        help_text="List of fields to sort by. Prefix with '-' for descending order."
-    )
-
-# Line Manager Analysis Serializers
-class LineManagerAnalysisSerializer(serializers.Serializer):
-    """Line manager analysis and potential managers"""
-    id = serializers.IntegerField()
-    employee_id = serializers.CharField()
-    name = serializers.CharField()
-    job_title = serializers.CharField()
-    position_group = serializers.CharField()
-    department = serializers.CharField()
-    direct_reports_count = serializers.IntegerField()
-    can_manage_more = serializers.BooleanField()
-    management_capacity = serializers.IntegerField()
-
-# Employee Activity and History Serializers
-class EmployeeActivitySummarySerializer(serializers.Serializer):
-    """Summary of employee activities"""
-    total_activities = serializers.IntegerField()
-    recent_activities_30_days = serializers.IntegerField()
-    by_activity_type = serializers.DictField()
-    latest_activity = EmployeeActivitySerializer()
-
-# Comprehensive Employee Management Response Serializers
-class EmployeeManagementResponseSerializer(serializers.Serializer):
-    """Comprehensive response for employee management operations"""
-    success = serializers.BooleanField()
-    message = serializers.CharField()
-    data = serializers.DictField()
-    errors = serializers.ListField(child=serializers.CharField(), required=False)
-    warnings = serializers.ListField(child=serializers.CharField(), required=False)
-    metadata = serializers.DictField(required=False)
-    
-    
-    

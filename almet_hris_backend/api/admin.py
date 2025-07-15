@@ -20,7 +20,6 @@ from .models import (
     ContractTypeConfig, ContractStatusManager
 )
 
-# Custom admin styling
 class BaseModelAdmin(admin.ModelAdmin):
     """Base admin class with common styling"""
     from django.db import models
@@ -31,7 +30,6 @@ class BaseModelAdmin(admin.ModelAdmin):
         models.TextField: {'widget': Textarea(attrs={'rows': 4, 'cols': 60})},
     }
 
-# Soft Delete Admin Mixin
 class SoftDeleteAdminMixin:
     """Mixin to handle soft delete functionality in admin"""
     
@@ -93,7 +91,6 @@ class MicrosoftUserAdmin(BaseModelAdmin):
         return format_html('<span style="color: orange;">? Unknown</span>')
     token_status.short_description = 'Token Status'
 
-# Unregister default User admin and create enhanced version
 admin.site.unregister(User)
 
 @admin.register(User)
@@ -117,7 +114,6 @@ class EnhancedUserAdmin(UserAdmin):
             return format_html('<span style="color: #999;">No Profile</span>')
     employee_profile_link.short_description = 'Employee Profile'
 
-# NEW: Contract Type Configuration Admin
 @admin.register(ContractTypeConfig)
 class ContractTypeConfigAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
     list_display = (
@@ -211,7 +207,6 @@ class ContractTypeConfigAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
                 messages.info(request, f"Contract {config.contract_type} sample results: " + "; ".join(results[:3]))
     test_status_calculations.short_description = 'Test status calculations for selected contract types'
 
-# Business Structure Admins
 @admin.register(BusinessFunction)
 class BusinessFunctionAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
     list_display = ('code', 'name', 'employee_count', 'department_count', 'is_active', 'is_deleted_display', 'created_at')
@@ -539,14 +534,12 @@ class EmployeeStatusAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
         )
     create_default_statuses.short_description = 'Create default statuses'
 
-# Employee Document Inline
 class EmployeeDocumentInline(admin.TabularInline):
     model = EmployeeDocument
     extra = 0
     readonly_fields = ('uploaded_at', 'file_size', 'mime_type')
     fields = ('name', 'document_type', 'file_path', 'file_size', 'uploaded_at')
 
-# Employee Activity Inline
 class EmployeeActivityInline(admin.TabularInline):
     model = EmployeeActivity
     extra = 0
@@ -557,14 +550,14 @@ class EmployeeActivityInline(admin.TabularInline):
     def has_add_permission(self, request, obj=None):
         return False
 
-# Enhanced Employee Admin with Contract Status Management & Father Name
 @admin.register(Employee)
 class EmployeeAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
     list_display = (
-        'employee_id', 'full_name_display', 'email_display', 'position_display', 
-        'business_function_display', 'status_display', 'grading_display', 
-        'line_manager_display', 'start_date', 'contract_status_display', 
-        'status_needs_update_display', 'is_visible_in_org_chart', 'is_deleted_display'
+        'employee_id', 'profile_image_display', 'full_name_display', 'email_display', 
+        'position_display', 'business_function_display', 'status_display', 
+        'grading_display', 'line_manager_display', 'start_date', 
+        'contract_status_display', 'status_needs_update_display', 
+        'is_visible_in_org_chart', 'is_deleted_display'
     )
     list_filter = (
         'status', 'business_function', 'department', 'position_group', 
@@ -589,15 +582,15 @@ class EmployeeAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
             'fields': ('user', 'employee_id', 'full_name')
         }),
         ('Personal Details', {
-            'fields': (
-                ('date_of_birth', 'gender'),
-                ('father_name',),  # ENHANCED: Added father_name field
-                'address',
-                ('phone', 'emergency_contact'),
-                'profile_image'
-            ),
-            'classes': ('collapse',)
-        }),
+   'fields': (
+        ('date_of_birth', 'gender'),
+        ('father_name',),
+         'address',
+         ('phone', 'emergency_contact'),
+        ('profile_image', 'profile_image_preview')
+     ),
+     'classes': ('collapse',)
+ }),
         ('Job Information', {
             'fields': (
                 ('business_function', 'department', 'unit'),
@@ -640,6 +633,29 @@ class EmployeeAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
             'classes': ('collapse',)
         })
     )
+    
+    def profile_image_display(self, obj):
+        """Display profile image in admin"""
+        if obj.profile_image:
+            return format_html(
+                '<img src="{}" style="width: 60px; height: 60px; object-fit: cover; border-radius: 50%;" />',
+                obj.profile_image.url
+            )
+        return format_html('<div style="width: 60px; height: 60px; background: #f0f0f0; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #999;">No Image</div>')
+    profile_image_display.short_description = 'Profile Image'
+    
+    def profile_image_preview(self, obj):
+        """Large profile image preview for detail view"""
+        if obj.profile_image:
+            return format_html(
+                '<div style="margin: 10px 0;">'
+                '<img src="{}" style="max-width: 200px; max-height: 200px; border: 1px solid #ddd; border-radius: 8px;" />'
+                '<br><small><a href="{}" target="_blank">View full size</a></small>'
+                '</div>',
+                obj.profile_image.url, obj.profile_image.url
+            )
+        return 'No profile image uploaded'
+    profile_image_preview.short_description = 'Profile Image Preview'
     
     def is_deleted_display(self, obj):
         if obj.is_deleted:
@@ -918,7 +934,6 @@ class EmployeeAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
             return Employee.all_objects.get_queryset()
         return super().get_queryset(request)
 
-# Vacant Position Admin
 @admin.register(VacantPosition)
 class VacantPositionAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
     list_display = (
@@ -1065,14 +1080,44 @@ class VacantPositionAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
         return response
     generate_vacancy_report.short_description = 'Export vacancy report'
 
-# Employee Document Admin
 @admin.register(EmployeeDocument)
 class EmployeeDocumentAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
-    list_display = ('name', 'employee_display', 'document_type', 'file_size_display', 'uploaded_at', 'uploaded_by')
-    list_filter = ('document_type', 'uploaded_at', 'mime_type')
-    search_fields = ('name', 'employee__employee_id', 'employee__full_name')
+    list_display = (
+        'name', 'employee_display', 'document_type', 'file_preview', 
+        'file_size_display', 'expiry_status', 'confidential_status',
+        'download_count', 'uploaded_at', 'uploaded_by', 'is_deleted_display'
+    )
+    list_filter = (
+        'document_type', 'is_confidential', 'uploaded_at', 
+        'expiry_date', 'mime_type', 'is_deleted'
+    )
+    search_fields = ('name', 'employee__employee_id', 'employee__full_name', 'description', 'original_filename')
     autocomplete_fields = ['employee', 'uploaded_by']
-    readonly_fields = ('id', 'file_size', 'mime_type', 'uploaded_at')
+    readonly_fields = (
+        'id', 'file_size', 'mime_type', 'original_filename', 'uploaded_at',
+        'file_preview_large', 'download_count', 'last_accessed'
+    )
+    date_hierarchy = 'uploaded_at'
+    
+    fieldsets = (
+        ('Document Information', {
+            'fields': ('employee', 'name', 'document_type', 'description')
+        }),
+        ('File Details', {
+            'fields': ('document_file', 'file_preview_large')
+        }),
+        ('Security & Expiry', {
+            'fields': ('is_confidential', 'expiry_date')
+        }),
+        ('File Metadata', {
+            'fields': ('file_size', 'mime_type', 'original_filename'),
+            'classes': ('collapse',)
+        }),
+        ('Upload Information', {
+            'fields': ('uploaded_at', 'uploaded_by', 'download_count', 'last_accessed'),
+            'classes': ('collapse',)
+        })
+    )
     
     def employee_display(self, obj):
         url = reverse('admin:api_employee_change', args=[obj.employee.id])
@@ -1082,18 +1127,137 @@ class EmployeeDocumentAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
         )
     employee_display.short_description = 'Employee'
     
-    def file_size_display(self, obj):
-        if obj.file_size:
-            if obj.file_size < 1024:
-                return f"{obj.file_size} B"
-            elif obj.file_size < 1024 * 1024:
-                return f"{obj.file_size / 1024:.1f} KB"
+    def file_preview(self, obj):
+        """Small file preview for list view"""
+        if obj.document_file:
+            if obj.is_image():
+                return format_html(
+                    '<img src="{}" style="width: 50px; height: 50px; object-fit: cover; border-radius: 4px;" />',
+                    obj.document_file.url
+                )
+            elif obj.is_pdf():
+                return format_html('<span style="color: #dc3545;">📄 PDF</span>')
             else:
-                return f"{obj.file_size / (1024 * 1024):.1f} MB"
-        return "Unknown"
+                return format_html('<span style="color: #6c757d;">📎 File</span>')
+        return '-'
+    file_preview.short_description = 'Preview'
+    
+    def file_preview_large(self, obj):
+        """Large file preview for detail view"""
+        if obj.document_file:
+            if obj.is_image():
+                return format_html(
+                    '<div style="margin: 10px 0;">'
+                    '<img src="{}" style="max-width: 300px; max-height: 300px; border: 1px solid #ddd; border-radius: 4px;" />'
+                    '<br><small><a href="{}" target="_blank">View full size</a></small>'
+                    '</div>',
+                    obj.document_file.url, obj.document_file.url
+                )
+            else:
+                return format_html(
+                    '<div style="margin: 10px 0;">'
+                    '<a href="{}" target="_blank" style="color: #417690;">📎 Download File</a>'
+                    '<br><small>File: {} ({})</small>'
+                    '</div>',
+                    obj.document_file.url, obj.original_filename or obj.name, obj.get_file_size_display()
+                )
+        return 'No file uploaded'
+    file_preview_large.short_description = 'File Preview'
+    
+    def file_size_display(self, obj):
+        return obj.get_file_size_display()
     file_size_display.short_description = 'File Size'
+    file_size_display.admin_order_field = 'file_size'
+    
+    def expiry_status(self, obj):
+        if obj.expiry_date:
+            days_until_expiry = (obj.expiry_date - date.today()).days
+            if days_until_expiry < 0:
+                return format_html(
+                    '<span style="color: red; font-weight: bold;">⚠ Expired</span>'
+                )
+            elif days_until_expiry <= 30:
+                return format_html(
+                    '<span style="color: orange; font-weight: bold;">⚡ Expires in {} days</span>',
+                    days_until_expiry
+                )
+            else:
+                return format_html(
+                    '<span style="color: green;">✓ Valid until {}</span>',
+                    obj.expiry_date.strftime('%d/%m/%Y')
+                )
+        return '-'
+    expiry_status.short_description = 'Expiry Status'
+    
+    def confidential_status(self, obj):
+        if obj.is_confidential:
+            return format_html('<span style="color: red;">🔒 Confidential</span>')
+        return format_html('<span style="color: green;">🔓 Public</span>')
+    confidential_status.short_description = 'Security'
+    confidential_status.admin_order_field = 'is_confidential'
+    
+    def is_deleted_display(self, obj):
+        if obj.is_deleted:
+            return format_html('<span style="color: red;">✗ Deleted</span>')
+        return format_html('<span style="color: green;">✓ Active</span>')
+    is_deleted_display.short_description = 'Status'
+    
+    actions = ['mark_as_confidential', 'mark_as_public', 'export_documents', 'check_expiry']
+    
+    def mark_as_confidential(self, request, queryset):
+        """Mark selected documents as confidential"""
+        count = queryset.update(is_confidential=True)
+        self.message_user(request, f'Marked {count} documents as confidential.')
+    mark_as_confidential.short_description = 'Mark as confidential'
+    
+    def mark_as_public(self, request, queryset):
+        """Mark selected documents as public"""
+        count = queryset.update(is_confidential=False)
+        self.message_user(request, f'Marked {count} documents as public.')
+    mark_as_public.short_description = 'Mark as public'
+    
+    def export_documents(self, request, queryset):
+        """Export document metadata to CSV"""
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = f'attachment; filename="documents_export_{date.today()}.csv"'
+        
+        writer = csv.writer(response)
+        writer.writerow([
+            'Document ID', 'Employee ID', 'Employee Name', 'Document Name',
+            'Document Type', 'File Size', 'Is Confidential', 'Expiry Date',
+            'Upload Date', 'Download Count', 'Uploaded By'
+        ])
+        
+        for doc in queryset:
+            writer.writerow([
+                str(doc.id), doc.employee.employee_id, doc.employee.full_name,
+                doc.name, doc.get_document_type_display(), doc.get_file_size_display(),
+                'Yes' if doc.is_confidential else 'No', doc.expiry_date or '',
+                doc.uploaded_at.strftime('%Y-%m-%d'), doc.download_count,
+                doc.uploaded_by.username if doc.uploaded_by else ''
+            ])
+        
+        self.message_user(request, f'Exported {queryset.count()} documents to CSV.')
+        return response
+    export_documents.short_description = 'Export document metadata to CSV'
+    
+    def check_expiry(self, request, queryset):
+        """Check document expiry status"""
+        expiring_soon = 0
+        expired = 0
+        
+        for doc in queryset:
+            if doc.expiry_date:
+                days_until_expiry = (doc.expiry_date - date.today()).days
+                if days_until_expiry < 0:
+                    expired += 1
+                elif days_until_expiry <= 30:
+                    expiring_soon += 1
+        
+        message = f'Expiry check complete: {expired} expired, {expiring_soon} expiring within 30 days'
+        self.message_user(request, message)
+    check_expiry.short_description = 'Check document expiry status'
 
-# Employee Activity Admin
 @admin.register(EmployeeActivity)
 class EmployeeActivityAdmin(admin.ModelAdmin):
     list_display = ('employee_display', 'activity_type', 'short_description', 'performed_by', 'created_at')
@@ -1115,20 +1279,53 @@ class EmployeeActivityAdmin(admin.ModelAdmin):
             return obj.description[:100] + '...'
         return obj.description
     short_description.short_description = 'Description'
+    def get_list_filter(self):
+        """Enhanced list filter with file activity types"""
+        return (
+            'activity_type', 'created_at', 'performed_by',
+            ('activity_type', admin.ChoicesFieldListFilter),
+        )
     
+    def get_activity_icon(self, obj):
+        """Get icon for activity type"""
+        icons = {
+            'CREATED': '➕',
+            'UPDATED': '✏️',
+            'STATUS_CHANGED': '🔄',
+            'MANAGER_CHANGED': '👤',
+            'POSITION_CHANGED': '📊',
+            'CONTRACT_UPDATED': '📋',
+            'DOCUMENT_UPLOADED': '📎',
+            'PROFILE_UPDATED': '🖼️',
+            'GRADE_CHANGED': '⭐',
+            'TAG_ADDED': '🏷️',
+            'TAG_REMOVED': '🗑️',
+            'SOFT_DELETED': '❌',
+            'RESTORED': '♻️',
+            'BULK_CREATED': '📦',
+            'STATUS_AUTO_UPDATED': '🤖',
+        }
+        return icons.get(obj.activity_type, '📝')
+    
+    def activity_display(self, obj):
+        """Enhanced activity display with icons"""
+        icon = self.get_activity_icon(obj)
+        return format_html(
+            '<span style="margin-right: 8px;">{}</span>{}',
+            icon, obj.get_activity_type_display()
+        )
+    activity_display.short_description = 'Activity Type'
+    activity_display.admin_order_field = 'activity_type'
     def has_add_permission(self, request):
         return False  # Activities are auto-generated
     
     def has_change_permission(self, request, obj=None):
         return False  # Activities are read-only
 
-
-# Admin Site Customization
 admin.site.site_header = 'ALMET HRIS Administration'
 admin.site.site_title = 'ALMET HRIS Admin'
 admin.site.index_title = 'Employee Management System'
 
-# Enhanced admin site with custom dashboard
 class AlmetHRISAdminSite(admin.AdminSite):
     site_header = 'ALMET HRIS Administration'
     site_title = 'ALMET HRIS Admin'
@@ -1197,7 +1394,6 @@ class QuickActionsAdmin(admin.ModelAdmin):
         return response
     quick_export.short_description = 'Quick export selected items to CSV'
 
-# Register admin customization JS and CSS
 class AlmetAdminMixin:
     """Mixin to add custom styling and JavaScript to admin"""
     
@@ -1207,7 +1403,112 @@ class AlmetAdminMixin:
         }
         js = ('admin/js/almet_admin.js',)
 
-# Update existing admin classes to include the mixin
 for admin_class in [EmployeeAdmin, BusinessFunctionAdmin, DepartmentAdmin]:
     if hasattr(admin_class, '__bases__'):
         admin_class.__bases__ = admin_class.__bases__ + (AlmetAdminMixin,)
+        class FileManagementAdminMixin:
+         """Mixin for file management actions"""
+    
+    def cleanup_orphaned_files(self, request, queryset):
+        """Clean up orphaned files that have no database records"""
+        import os
+        from django.conf import settings
+        
+        cleaned_count = 0
+        
+        # Check employee documents
+        documents_path = os.path.join(settings.MEDIA_ROOT, 'employee_documents')
+        if os.path.exists(documents_path):
+            for root, dirs, files in os.walk(documents_path):
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    relative_path = os.path.relpath(file_path, settings.MEDIA_ROOT)
+                    
+                    # Check if file exists in database
+                    if not EmployeeDocument.objects.filter(document_file=relative_path).exists():
+                        try:
+                            os.remove(file_path)
+                            cleaned_count += 1
+                        except:
+                            pass
+        
+        # Check profile images
+        profiles_path = os.path.join(settings.MEDIA_ROOT, 'employee_profiles')
+        if os.path.exists(profiles_path):
+            for root, dirs, files in os.walk(profiles_path):
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    relative_path = os.path.relpath(file_path, settings.MEDIA_ROOT)
+                    
+                    # Check if file exists in database
+                    if not Employee.objects.filter(profile_image=relative_path).exists():
+                        try:
+                            os.remove(file_path)
+                            cleaned_count += 1
+                        except:
+                            pass
+        
+        self.message_user(request, f'Cleaned up {cleaned_count} orphaned files.')
+    cleanup_orphaned_files.short_description = 'Clean up orphaned files'
+    
+    def generate_file_report(self, request, queryset):
+        """Generate file usage report"""
+        from django.db.models import Sum, Count
+        
+        # Document statistics
+        doc_stats = EmployeeDocument.objects.aggregate(
+            total_documents=Count('id'),
+            total_size=Sum('file_size'),
+            confidential_docs=Count('id', filter=Q(is_confidential=True))
+        )
+        
+        # Profile image statistics
+        profile_stats = Employee.objects.aggregate(
+            employees_with_images=Count('id', filter=Q(profile_image__isnull=False))
+        )
+        
+        total_employees = Employee.objects.count()
+        
+        message = (
+            f"File Usage Report: "
+            f"{doc_stats['total_documents']} documents, "
+            f"{doc_stats['total_size'] // (1024*1024) if doc_stats['total_size'] else 0} MB total, "
+            f"{doc_stats['confidential_docs']} confidential, "
+            f"{profile_stats['employees_with_images']}/{total_employees} employees have profile images"
+        )
+        
+        self.message_user(request, message)
+    generate_file_report.short_description = 'Generate file usage report'
+
+
+EmployeeDocumentAdmin.__bases__ = EmployeeDocumentAdmin.__bases__ + (FileManagementAdminMixin,)
+
+
+EmployeeDocumentAdmin.actions.extend(['cleanup_orphaned_files', 'generate_file_report'])
+
+
+admin.site.site_header = 'ALMET HRIS Administration - Enhanced File Management'
+admin.site.site_title = 'ALMET HRIS Admin'
+admin.site.index_title = 'Employee Management System with Document Control'
+
+
+class AlmetAdminWithFilesMixin:
+    """Enhanced admin mixin with file management styling"""
+    
+    class Media:
+        css = {
+            'all': (
+                'admin/css/almet_admin.css',
+                'admin/css/file_management.css',
+            )
+        }
+        js = (
+            'admin/js/almet_admin.js',
+            'admin/js/file_management.js',
+        )
+
+
+for admin_class in [EmployeeAdmin, EmployeeDocumentAdmin]:
+    if hasattr(admin_class, '__bases__'):
+        admin_class.__bases__ = admin_class.__bases__ + (AlmetAdminWithFilesMixin,)
+        

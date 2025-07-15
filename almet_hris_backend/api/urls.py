@@ -1,4 +1,4 @@
-# api/urls.py - ENHANCED: Complete URL Configuration with Advanced Contract Status Management
+# api/urls.py - ENHANCED: Complete URL Configuration with File Management
 
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
@@ -15,31 +15,35 @@ router.register(r'units', views.UnitViewSet, basename='unit')
 router.register(r'job-functions', views.JobFunctionViewSet, basename='jobfunction')
 router.register(r'position-groups', views.PositionGroupViewSet, basename='positiongroup')
 
-# Employee Management URLs (ENHANCED with Line Manager features)
+# Employee Management URLs (ENHANCED with file management)
 router.register(r'employees', views.EmployeeViewSet, basename='employee')
 router.register(r'employee-tags', views.EmployeeTagViewSet, basename='employeetag')
 router.register(r'employee-statuses', views.EmployeeStatusViewSet, basename='employeestatus')
 
-# NEW: Contract Type Configuration URLs
+# NEW: File Management URLs
+router.register(r'employee-documents', views.EmployeeDocumentViewSet, basename='employeedocument')
+router.register(r'profile-images', views.ProfileImageViewSet, basename='profileimage')
+
+
+# Contract Type Configuration URLs
 router.register(r'contract-configs', views.ContractTypeConfigViewSet, basename='contractconfig')
 
 # Vacancy Management URLs
 router.register(r'vacant-positions', views.VacantPositionViewSet, basename='vacantposition')
 
-# Organizational Chart URLs (ENHANCED with department-specific charts)
+# Organizational Chart URLs
 router.register(r'org-chart', views.OrgChartViewSet, basename='orgchart')
-
-
 
 # Employee Grading Integration URLs
 router.register(r'employee-grading', views.EmployeeGradingViewSet, basename='employeegrading')
 
-# NEW: Contract Status Management URLs
+# Contract Status Management URLs
 router.register(r'contract-status', views.ContractStatusManagementViewSet, basename='contractstatus')
 
-
+# Bulk Upload URLs
 router.register(r'bulk-upload', views.BulkEmployeeUploadViewSet, basename='bulkupload')
-# NEW: Employee Analytics URLs
+
+# Employee Analytics URLs
 router.register(r'employee-analytics', views.EmployeeAnalyticsViewSet, basename='employeeanalytics')
 
 urlpatterns = [

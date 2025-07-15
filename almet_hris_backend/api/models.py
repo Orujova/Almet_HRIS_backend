@@ -33,7 +33,6 @@ class MicrosoftUser(models.Model):
         verbose_name = "Microsoft User"
         verbose_name_plural = "Microsoft Users"
 
-# Soft Delete Manager
 class ActiveManager(models.Manager):
     """Manager that excludes soft-deleted objects"""
     def get_queryset(self):
@@ -44,7 +43,6 @@ class AllObjectsManager(models.Manager):
     def get_queryset(self):
         return super().get_queryset()
 
-# Base model with soft delete functionality
 class SoftDeleteModel(models.Model):
     is_deleted = models.BooleanField(default=False, db_index=True)
     deleted_at = models.DateTimeField(null=True, blank=True)
@@ -127,7 +125,6 @@ class JobFunction(SoftDeleteModel):
     class Meta:
         ordering = ['name']
 
-# Position Groups with enhanced grading integration
 class PositionGroup(SoftDeleteModel):
     POSITION_LEVELS = [
         ('VC', 'Vice Chairman'),
@@ -476,39 +473,18 @@ class VacantPosition(SoftDeleteModel):
         verbose_name = "Vacant Position"
         verbose_name_plural = "Vacant Positions"
 
-class EmployeeDocument(SoftDeleteModel):
-    DOCUMENT_TYPES = [
-        ('CONTRACT', 'Employment Contract'),
-        ('ID', 'ID Document'),
-        ('CERTIFICATE', 'Certificate'),
-        ('CV', 'Curriculum Vitae'),
-        ('PERFORMANCE', 'Performance Review'),
-        ('OTHER', 'Other'),
-    ]
-    
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    employee = models.ForeignKey('Employee', on_delete=models.CASCADE, related_name='documents')
-    name = models.CharField(max_length=255)
-    document_type = models.CharField(max_length=20, choices=DOCUMENT_TYPES, default='OTHER')
-    file_path = models.CharField(max_length=500, blank=True, null=True)  # Optional file path
-    file_size = models.PositiveIntegerField(null=True, blank=True)
-    mime_type = models.CharField(max_length=100, blank=True, null=True)
-    uploaded_at = models.DateTimeField(auto_now_add=True)
-    uploaded_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='uploaded_documents')
-
-    def __str__(self):
-        return f"{self.employee.full_name} - {self.name}"
-
-    class Meta:
-        ordering = ['-uploaded_at']
-
 class Employee(SoftDeleteModel):
     GENDER_CHOICES = [
         ('MALE', 'Male'),
         ('FEMALE', 'Female'),
     ]
     
-   
+    profile_image = models.ImageField(
+        upload_to='employee_profiles/%Y/%m/',
+        null=True, 
+        blank=True,
+        help_text="Employee profile photo"
+    )
     RENEWAL_STATUS_CHOICES = [
         ('PENDING', 'Pending'),
         ('APPROVED', 'Approved'),
@@ -530,7 +506,7 @@ class Employee(SoftDeleteModel):
     address = models.TextField(blank=True, null=True)
     phone = models.CharField(max_length=20, blank=True, null=True)
     emergency_contact = models.TextField(blank=True, null=True)
-    profile_image = models.CharField(max_length=500, blank=True, null=True)
+    
     
     # Job Information
     business_function = models.ForeignKey(BusinessFunction, on_delete=models.PROTECT, related_name='employees')
@@ -850,7 +826,24 @@ class Employee(SoftDeleteModel):
                 'new_manager_name': new_manager_name
             }
         )
-
+    
+    
+    def get_profile_image_url(self, request=None):
+        """Get profile image URL safely"""
+        if self.profile_image:
+            try:
+                if hasattr(self.profile_image, 'url'):
+                    if request:
+                        return request.build_absolute_uri(self.profile_image.url)
+                    return self.profile_image.url
+            except Exception as e:
+                logger.warning(f"Could not get profile image URL for employee {self.employee_id}: {e}")
+        return None
+    
+    def has_profile_image(self):
+        """Check if employee has a profile image"""
+        return bool(self.profile_image and hasattr(self.profile_image, 'url'))
+    
     @property
     def years_of_service(self):
         """Calculate years of service"""
@@ -938,7 +931,217 @@ class Employee(SoftDeleteModel):
             models.Index(fields=['line_manager']),
         ]
 
-# Employee Activity Log for tracking changes
+class EmployeeDocument(SoftDeleteModel):
+    DOCUMENT_TYPES = [
+        ('CONTRACT', 'Employment Contract'),
+        ('ID', 'ID Document'),
+        ('CERTIFICATE', 'Certificate'),
+        ('CV', 'Curriculum Vitae'),
+        ('PERFORMANCE', 'Performance Review'),
+        ('MEDICAL', 'Medical Certificate'),
+        ('TRAINING', 'Training Certificate'),
+        ('OTHER', 'Other'),
+    ]
+    
+    DOCUMENT_STATUS_CHOICES = [
+        ('ACTIVE', 'Active'),
+        ('PENDING', 'Pending Review'),
+        ('APPROVED', 'Approved'),
+        ('REJECTED', 'Rejected'),
+        ('EXPIRED', 'Expired'),
+        ('ARCHIVED', 'Archived'),
+    ]
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    employee = models.ForeignKey('Employee', on_delete=models.CASCADE, related_name='documents')
+    name = models.CharField(max_length=255, help_text="Document name or title")
+    document_type = models.CharField(max_length=20, choices=DOCUMENT_TYPES, default='OTHER')
+    
+    # FIXED: Added missing version field
+    version = models.PositiveIntegerField(default=1, help_text="Document version number")
+    
+    # Actual file field
+    document_file = models.FileField(
+        upload_to='employee_documents/%Y/%m/',
+        help_text="Upload document file",
+        null=True,
+        blank=True
+    )
+    
+    # Document status field
+    document_status = models.CharField(
+        max_length=20, 
+        choices=DOCUMENT_STATUS_CHOICES, 
+        default='ACTIVE',
+        help_text="Current status of the document"
+    )
+    
+    # File metadata
+    file_size = models.PositiveIntegerField(null=True, blank=True, help_text="File size in bytes")
+    mime_type = models.CharField(max_length=100, blank=True, null=True)
+    original_filename = models.CharField(max_length=255, blank=True, null=True)
+    
+    # Document metadata
+    description = models.TextField(blank=True, help_text="Document description")
+    expiry_date = models.DateField(null=True, blank=True, help_text="Document expiry date")
+    is_confidential = models.BooleanField(default=False, help_text="Mark as confidential")
+    is_required = models.BooleanField(default=False, help_text="Is this document required for employee?")
+    
+    
+    notify_before_expiry_days = models.PositiveIntegerField(
+        default=30, 
+        help_text="Days before expiry to send notification"
+    )
+    
+    # Upload tracking
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+    uploaded_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='uploaded_documents')
+    
+    # File access tracking
+    download_count = models.PositiveIntegerField(default=0)
+    last_accessed = models.DateTimeField(null=True, blank=True)
+    
+    # Version control (ENHANCED)
+    replaced_by = models.ForeignKey(
+        'self', 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True, 
+        related_name='replaces',
+        help_text="Document that replaces this version"
+    )
+    is_current_version = models.BooleanField(default=True, help_text="Is this the current version?")
+    
+    # Timestamps from SoftDeleteModel
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    # In api/models.py - Replace the EmployeeDocument save method
+
+    def save(self, *args, **kwargs):
+        # Auto-populate file metadata
+        if self.document_file:
+            self.file_size = self.document_file.size
+            self.original_filename = self.document_file.name
+            # Get MIME type
+            import mimetypes
+            self.mime_type, _ = mimetypes.guess_type(self.document_file.name)
+        
+        # Ensure notify_before_expiry_days has a default value
+        if self.notify_before_expiry_days is None:
+            self.notify_before_expiry_days = 30
+        
+        # FIXED: Handle version control more carefully
+        if self.pk is None:  # New document
+            # Only handle versioning if we're NOT explicitly setting version and name
+            if not hasattr(self, '_skip_version_check'):
+                # Check if there are existing documents with the same name for this employee
+                existing_docs = EmployeeDocument.objects.filter(
+                    employee=self.employee,
+                    name=self.name,
+                    document_type=self.document_type,
+                    is_deleted=False
+                ).exclude(pk=self.pk if self.pk else None).order_by('-version')
+                
+                if existing_docs.exists() and not self.version:
+                    # This is a new version of an existing document
+                    latest_doc = existing_docs.first()
+                    self.version = latest_doc.version + 1
+                    
+                    # Mark previous versions as not current
+                    existing_docs.update(is_current_version=False)
+                    
+                    # Set replacement relationship will be handled in serializer
+                elif not self.version:
+                    # New document with unique name
+                    self.version = 1
+        
+        # Ensure version is set
+        if not self.version:
+            self.version = 1
+        
+        # Ensure is_current_version is set
+        if not hasattr(self, 'is_current_version') or self.is_current_version is None:
+            self.is_current_version = True
+        
+        super().save(*args, **kwargs)
+    
+    def get_file_size_display(self):
+        """Human readable file size"""
+        if self.file_size:
+            if self.file_size < 1024:
+                return f"{self.file_size} B"
+            elif self.file_size < 1024 * 1024:
+                return f"{self.file_size / 1024:.1f} KB"
+            else:
+                return f"{self.file_size / (1024 * 1024):.1f} MB"
+        return "Unknown"
+    
+    def is_image(self):
+        """Check if document is an image"""
+        if self.mime_type:
+            return self.mime_type.startswith('image/')
+        return False
+    
+    def is_pdf(self):
+        """Check if document is a PDF"""
+        return self.mime_type == 'application/pdf'
+    
+    def is_expired(self):
+        """Check if document is expired"""
+        return self.expiry_date and self.expiry_date < date.today()
+    
+    def increment_download_count(self):
+        """Increment download counter"""
+        self.download_count += 1
+        self.last_accessed = timezone.now()
+        self.save(update_fields=['download_count', 'last_accessed'])
+    
+    def get_version_history(self):
+        """Get all versions of this document"""
+        if not self.name or not self.employee_id:
+            return EmployeeDocument.objects.none()
+        
+        return EmployeeDocument.objects.filter(
+            employee=self.employee,
+            name=self.name,
+            document_type=self.document_type
+        ).order_by('-version')
+    
+    def get_previous_version(self):
+        """Get the previous version of this document"""
+        try:
+            return EmployeeDocument.objects.filter(
+                employee=self.employee,
+                name=self.name,
+                document_type=self.document_type,
+                version__lt=self.version,
+                is_deleted=False
+            ).order_by('-version').first()
+        except:
+            return None
+    
+    def get_next_version(self):
+        """Get the next version of this document"""
+        return self.replaced_by
+    
+    def __str__(self):
+        version_str = f" (v{self.version})" if self.version > 1 else ""
+        return f"{self.employee.full_name} - {self.name}{version_str}"
+    
+    class Meta:
+        ordering = ['-uploaded_at']
+        verbose_name = "Employee Document"
+        verbose_name_plural = "Employee Documents"
+        # ENHANCED: Unique constraint to prevent duplicate current versions
+        constraints = [
+            models.UniqueConstraint(
+                fields=['employee', 'name', 'document_type'],
+                condition=models.Q(is_current_version=True, is_deleted=False),
+                name='unique_current_version_per_employee_document'
+            )
+        ]
+
 class EmployeeActivity(models.Model):
     ACTIVITY_TYPES = [
         ('CREATED', 'Employee Created'),
@@ -971,7 +1174,6 @@ class EmployeeActivity(models.Model):
         ordering = ['-created_at']
         verbose_name = "Employee Activity"
         verbose_name_plural = "Employee Activities"
-
 
 class ContractStatusManager:
     """Helper class for managing contract-based status transitions"""
@@ -1027,7 +1229,6 @@ class ContractStatusManager:
             is_deleted=False
         ).select_related('status', 'business_function', 'department')
 
-# Signal handlers for automatic status updates
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 

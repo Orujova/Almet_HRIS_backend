@@ -1,5 +1,3 @@
-# api/views.py - ENHANCED: Complete Employee Management with Advanced Contract Status Management
-
 from django.shortcuts import render
 from django.utils import timezone
 from rest_framework import status, viewsets
@@ -14,10 +12,10 @@ from django_filters.rest_framework import DjangoFilterBackend
 from django_filters import rest_framework as django_filters
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
+from django.db import models 
 import logging
 import traceback
 from rest_framework.parsers import JSONParser, MultiPartParser, FormParser
-from rest_framework.parsers import MultiPartParser, FormParser
 from datetime import datetime, timedelta, date
 from django.utils.dateparse import parse_date
 from django.db import transaction
@@ -43,15 +41,16 @@ from .serializers import (
     EmployeeStatusSerializer, EmployeeDocumentSerializer, EmployeeActivitySerializer,
     UserSerializer, OrgChartNodeSerializer,
     VacantPositionListSerializer, VacantPositionDetailSerializer, VacantPositionCreateSerializer,
-    
-    
-    EmployeeGradingUpdateSerializer, EmployeeGradingListSerializer,
-   BulkEmployeeGradingUpdateSerializer,
-    EmployeeExportSerializer,
-    ContractTypeConfigSerializer, BulkContractExtensionSerializer,ContractExtensionSerializer,SingleEmployeeTagUpdateSerializer,SingleLineManagerAssignmentSerializer,BulkEmployeeTagUpdateSerializer,BulkSoftDeleteSerializer,BulkRestoreSerializer,BulkLineManagerAssignmentSerializer
+    DocumentUploadSerializer,  ProfileImageDeleteSerializer,
+    ProfileImageUploadSerializer, EmployeeGradingListSerializer,
+    BulkEmployeeGradingUpdateSerializer, EmployeeExportSerializer,
+    ContractTypeConfigSerializer, BulkContractExtensionSerializer, ContractExtensionSerializer,
+    SingleEmployeeTagUpdateSerializer, SingleLineManagerAssignmentSerializer,
+    BulkEmployeeTagUpdateSerializer, BulkSoftDeleteSerializer, BulkRestoreSerializer,
+    BulkLineManagerAssignmentSerializer,DocumentReplaceSerializer
 )
 from .auth import MicrosoftTokenValidator
-
+from drf_yasg.inspectors import SwaggerAutoSchema
 logger = logging.getLogger(__name__)
 
 class StandardResultsSetPagination(PageNumberPagination):
@@ -70,6 +69,13 @@ class StandardResultsSetPagination(PageNumberPagination):
             'previous': self.get_previous_link(),
             'results': data
         })
+
+class FileUploadAutoSchema(SwaggerAutoSchema):
+    def get_consumes(self):
+        """Force multipart/form-data for file uploads"""
+        if self.method.lower() == 'post':
+            return ['multipart/form-data']
+        return super().get_consumes()
 
 @swagger_auto_schema(
     method='post',
@@ -580,6 +586,8 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             return EmployeeCreateUpdateSerializer
         else:
             return EmployeeDetailSerializer
+    
+    
     
     def list(self, request, *args, **kwargs):
         """Enhanced list with filtering and sorting"""
@@ -2254,7 +2262,44 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 'manager_notifications': list(set([emp['line_manager'] for emp in expiry_analysis['employees'] if emp['line_manager']]))
             }
         })
- 
+    
+  
+   
+    @action(detail=True, methods=['get'])
+    def documents(self, request, pk=None):
+        """Get all documents for specific employee"""
+        try:
+            employee = self.get_object()
+            documents = employee.documents.filter(is_deleted=False).order_by('-uploaded_at')
+            
+            # Apply filters
+            document_type = request.query_params.get('document_type')
+            if document_type:
+                documents = documents.filter(document_type=document_type)
+            
+            is_confidential = request.query_params.get('is_confidential')
+            if is_confidential is not None:
+                documents = documents.filter(is_confidential=is_confidential.lower() == 'true')
+            
+            serializer = EmployeeDocumentSerializer(documents, many=True, context={'request': request})
+            
+            return Response({
+                'employee': {
+                    'id': employee.id,
+                    'employee_id': employee.employee_id,
+                    'name': employee.full_name
+                },
+                'documents_count': documents.count(),
+                'documents': serializer.data
+            })
+            
+        except Exception as e:
+            logger.error(f"Get employee documents failed: {str(e)}")
+            return Response(
+                {'error': f'Failed to get documents: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
     @action(detail=False, methods=['get'])
     def contracts_expiring_soon(self, request):
         """Get employees whose contracts are expiring soon"""
@@ -3108,6 +3153,715 @@ class OrgChartViewSet(viewsets.ReadOnlyModelViewSet):
                 children.append(child_data)
         return children
 
+class EmployeeDocumentViewSet(viewsets.ModelViewSet):
+    permission_classes = [IsAuthenticated]
+    serializer_class = EmployeeDocumentSerializer
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_fields = ['document_type', 'is_confidential', 'employee', 'is_current_version']
+    search_fields = ['name', 'description', 'original_filename']
+    ordering_fields = ['uploaded_at', 'name', 'file_size', 'version']
+    ordering = ['-uploaded_at']
+    
+    def get_queryset(self):
+        return EmployeeDocument.objects.select_related('employee', 'uploaded_by').all()
+    
+    def get_serializer_class(self):
+        if hasattr(self, 'action') and self.action == 'create':
+            return DocumentUploadSerializer
+        elif hasattr(self, 'action') and self.action == 'replace_document':
+            return DocumentReplaceSerializer
+        
+        return EmployeeDocumentSerializer
+    
+    @swagger_auto_schema(
+        auto_schema=FileUploadAutoSchema,
+        operation_description="Upload a document for an employee",
+        consumes=['multipart/form-data'],
+        manual_parameters=[
+            openapi.Parameter(
+                'employee_id',
+                openapi.IN_FORM,
+                description="Employee ID",
+                type=openapi.TYPE_INTEGER,
+                required=True
+            ),
+            openapi.Parameter(
+                'name',
+                openapi.IN_FORM,
+                description="Document name/title",
+                type=openapi.TYPE_STRING,
+                required=True
+            ),
+            openapi.Parameter(
+                'document_type',
+                openapi.IN_FORM,
+                description="Document type",
+                type=openapi.TYPE_STRING,
+                enum=['CONTRACT', 'ID', 'CERTIFICATE', 'CV', 'PERFORMANCE', 'MEDICAL', 'TRAINING', 'OTHER'],
+                required=False
+            ),
+            openapi.Parameter(
+                'document_file',
+                openapi.IN_FORM,
+                description="Document file to upload",
+                type=openapi.TYPE_FILE,
+                required=True
+            ),
+            openapi.Parameter(
+                'description',
+                openapi.IN_FORM,
+                description="Document description (optional)",
+                type=openapi.TYPE_STRING,
+                required=False
+            ),
+            openapi.Parameter(
+                'expiry_date',
+                openapi.IN_FORM,
+                description="Document expiry date (YYYY-MM-DD format, optional)",
+                type=openapi.TYPE_STRING,
+                format=openapi.FORMAT_DATE,
+                required=False
+            ),
+            openapi.Parameter(
+                'is_confidential',
+                openapi.IN_FORM,
+                description="Mark as confidential (default: false)",
+                type=openapi.TYPE_BOOLEAN,
+                required=False
+            ),
+            openapi.Parameter(
+                'replace_existing',
+                openapi.IN_FORM,
+                description="Replace existing document with same name and type",
+                type=openapi.TYPE_BOOLEAN,
+                required=False
+            ),
+        ],
+        responses={
+            201: openapi.Response(
+                description="Document uploaded successfully",
+                schema=EmployeeDocumentSerializer
+            ),
+            400: openapi.Response(description="Bad request - validation error"),
+            404: openapi.Response(description="Employee not found"),
+            413: openapi.Response(description="File too large"),
+        }
+    )
+    def create(self, request, *args, **kwargs):
+        """Upload a document for an employee with proper version handling"""
+        try:
+            logger.info(f"Document upload request from user: {request.user}")
+            logger.info(f"Request data: {request.data}")
+            logger.info(f"Files: {list(request.FILES.keys())}")
+            
+            serializer = self.get_serializer(data=request.data)
+            if not serializer.is_valid():
+                logger.error(f"Document upload validation failed: {serializer.errors}")
+                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            
+            document = serializer.save()
+            
+            # Log activity
+            EmployeeActivity.objects.create(
+                employee=document.employee,
+                activity_type='DOCUMENT_UPLOADED',
+                description=f"Document '{document.name}' uploaded (v{document.version})",
+                performed_by=request.user,
+                metadata={
+                    'document_id': str(document.id),
+                    'document_type': document.document_type,
+                    'file_size': document.file_size,
+                    'version': document.version,
+                    'is_current_version': document.is_current_version
+                }
+            )
+            
+            response_serializer = EmployeeDocumentSerializer(document, context={'request': request})
+            return Response(response_serializer.data, status=status.HTTP_201_CREATED)
+            
+        except Exception as e:
+            logger.error(f"Document upload failed: {str(e)}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return Response(
+                {'error': f'Document upload failed: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+  
+    @swagger_auto_schema(
+        operation_description="Replace an existing document with a new version",
+        consumes=['multipart/form-data'],
+        manual_parameters=[
+            openapi.Parameter(
+                'document_file',
+                openapi.IN_FORM,
+                description="New document file",
+                type=openapi.TYPE_FILE,
+                required=True
+            ),
+            openapi.Parameter(
+                'description',
+                openapi.IN_FORM,
+                description="Description for new version",
+                type=openapi.TYPE_STRING,
+                required=False
+            ),
+        ]
+    )
+    @action(detail=True, methods=['post'], parser_classes=[MultiPartParser, FormParser])
+    def replace_document(self, request, pk=None):
+        """Replace an existing document with a new version"""
+        try:
+            original_document = self.get_object()
+            
+            serializer = DocumentReplaceSerializer(data=request.data)
+            if not serializer.is_valid():
+                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Create new version
+            new_document = EmployeeDocument.objects.create(
+                employee=original_document.employee,
+                name=original_document.name,
+                document_type=original_document.document_type,
+                document_file=serializer.validated_data['document_file'],
+                description=serializer.validated_data.get('description', ''),
+                expiry_date=original_document.expiry_date,
+                is_confidential=original_document.is_confidential,
+                is_required=original_document.is_required,
+                uploaded_by=request.user,
+                version=original_document.version + 1,
+                is_current_version=True
+            )
+            
+            # Mark original as not current and set replacement relationship
+            original_document.is_current_version = False
+            original_document.replaced_by = new_document
+            original_document.save()
+            
+            # Log activity
+            EmployeeActivity.objects.create(
+                employee=new_document.employee,
+                activity_type='DOCUMENT_UPLOADED',
+                description=f"Document '{new_document.name}' replaced with new version (v{new_document.version})",
+                performed_by=request.user,
+                metadata={
+                    'document_id': str(new_document.id),
+                    'replaced_document_id': str(original_document.id),
+                    'old_version': original_document.version,
+                    'new_version': new_document.version,
+                    'document_type': new_document.document_type
+                }
+            )
+            
+            response_serializer = EmployeeDocumentSerializer(new_document, context={'request': request})
+            return Response({
+                'message': f'Document replaced successfully with version {new_document.version}',
+                'old_version': original_document.version,
+                'new_version': new_document.version,
+                'document': response_serializer.data
+            })
+            
+        except Exception as e:
+            logger.error(f"Document replacement failed: {str(e)}")
+            return Response(
+                {'error': f'Document replacement failed: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    
+    
+    @action(detail=False, methods=['get'])
+    def expired_documents(self, request):
+        """Get all expired documents"""
+        try:
+            today = date.today()
+            expired_docs = self.get_queryset().filter(
+                expiry_date__lt=today,
+                is_current_version=True,
+                is_deleted=False
+            ).select_related('employee')
+            
+            serializer = self.get_serializer(expired_docs, many=True)
+            
+            return Response({
+                'count': expired_docs.count(),
+                'expired_documents': serializer.data
+            })
+            
+        except Exception as e:
+            logger.error(f"Get expired documents failed: {str(e)}")
+            return Response(
+                {'error': f'Failed to get expired documents: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    @action(detail=False, methods=['get'])
+    def expiring_soon(self, request):
+        """Get documents expiring within specified days"""
+        try:
+            days = int(request.query_params.get('days', 30))
+            today = date.today()
+            expiry_date = today + timedelta(days=days)
+            
+            expiring_docs = self.get_queryset().filter(
+                expiry_date__gte=today,
+                expiry_date__lte=expiry_date,
+                is_current_version=True,
+                is_deleted=False
+            ).select_related('employee').order_by('expiry_date')
+            
+            serializer = self.get_serializer(expiring_docs, many=True)
+            
+            # Group by urgency
+            grouped_docs = {
+                'critical': [],  # < 7 days
+                'urgent': [],    # 7-14 days  
+                'warning': [],   # 15-30 days
+                'info': []       # > 30 days
+            }
+            
+            for doc_data in serializer.data:
+                doc_obj = expiring_docs.get(id=doc_data['id'])
+                days_left = (doc_obj.expiry_date - today).days
+                
+                if days_left <= 7:
+                    grouped_docs['critical'].append(doc_data)
+                elif days_left <= 14:
+                    grouped_docs['urgent'].append(doc_data)
+                elif days_left <= 30:
+                    grouped_docs['warning'].append(doc_data)
+                else:
+                    grouped_docs['info'].append(doc_data)
+            
+            return Response({
+                'days_ahead': days,
+                'total_count': expiring_docs.count(),
+                'grouped_by_urgency': grouped_docs,
+                'all_documents': serializer.data
+            })
+            
+        except Exception as e:
+            logger.error(f"Get expiring documents failed: {str(e)}")
+            return Response(
+                {'error': f'Failed to get expiring documents: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    @swagger_auto_schema(
+        auto_schema=FileUploadAutoSchema,
+        operation_description="Bulk upload multiple documents for an employee",
+        consumes=['multipart/form-data'],
+        manual_parameters=[
+            openapi.Parameter(
+                'employee_id',
+                openapi.IN_FORM,
+                description="Employee ID",
+                type=openapi.TYPE_INTEGER,
+                required=True
+            ),
+            openapi.Parameter(
+                'documents',
+                openapi.IN_FORM,
+                description="Multiple document files (select multiple files)",
+                type=openapi.TYPE_ARRAY,
+                items=openapi.Items(type=openapi.TYPE_FILE),
+                required=True
+            ),
+            openapi.Parameter(
+                'document_type',
+                openapi.IN_FORM,
+                description="Document type for all files",
+                type=openapi.TYPE_STRING,
+                enum=['CONTRACT', 'ID', 'CERTIFICATE', 'CV', 'PERFORMANCE', 'MEDICAL', 'TRAINING', 'OTHER'],
+                required=False
+            ),
+            openapi.Parameter(
+                'is_confidential',
+                openapi.IN_FORM,
+                description="Mark all as confidential",
+                type=openapi.TYPE_BOOLEAN,
+                required=False
+            ),
+            openapi.Parameter(
+                'replace_existing',
+                openapi.IN_FORM,
+                description="Replace existing documents with same names",
+                type=openapi.TYPE_BOOLEAN,
+                required=False
+            ),
+        ],
+        responses={
+            200: openapi.Response(
+                description="Bulk upload completed",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'success': openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                        'message': openapi.Schema(type=openapi.TYPE_STRING),
+                        'uploaded_count': openapi.Schema(type=openapi.TYPE_INTEGER),
+                        'failed_count': openapi.Schema(type=openapi.TYPE_INTEGER),
+                    }
+                )
+            ),
+            400: openapi.Response(description="Bad request"),
+            404: openapi.Response(description="Employee not found")
+        }
+    )
+    @action(detail=False, methods=['post'], parser_classes=[MultiPartParser, FormParser])
+    def bulk_upload(self, request):
+        """Bulk upload documents for an employee with version control"""
+        try:
+            employee_id = request.data.get('employee_id')
+            if not employee_id:
+                return Response(
+                    {'error': 'employee_id is required'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            try:
+                employee = Employee.objects.get(id=employee_id)
+            except Employee.DoesNotExist:
+                return Response(
+                    {'error': 'Employee not found'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            
+            documents = request.FILES.getlist('documents')
+            if not documents:
+                return Response(
+                    {'error': 'No documents provided'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            document_type = request.data.get('document_type', 'OTHER')
+            is_confidential = request.data.get('is_confidential', 'false').lower() == 'true'
+            replace_existing = request.data.get('replace_existing', 'false').lower() == 'true'
+            
+            uploaded_documents = []
+            failed_uploads = []
+            
+            with transaction.atomic():
+                for i, doc_file in enumerate(documents):
+                    try:
+                        # Validate individual file
+                        if doc_file.size > 50 * 1024 * 1024:
+                            failed_uploads.append({
+                                'filename': doc_file.name,
+                                'error': 'File size exceeds 50MB limit'
+                            })
+                            continue
+                        
+                        # Determine version number
+                        version = 1
+                        if replace_existing:
+                            existing_docs = EmployeeDocument.objects.filter(
+                                employee=employee,
+                                name=doc_file.name,
+                                document_type=document_type,
+                                is_deleted=False
+                            )
+                            
+                            if existing_docs.exists():
+                                # Mark existing as not current
+                                existing_docs.update(is_current_version=False)
+                                
+                                # Set new version number
+                                latest_version = existing_docs.aggregate(
+                                    max_version=models.Max('version')
+                                )['max_version'] or 0
+                                version = latest_version + 1
+                        
+                        # Create document with proper version handling
+                        document = EmployeeDocument.objects.create(
+                            employee=employee,
+                            name=doc_file.name,
+                            document_type=document_type,
+                            document_file=doc_file,
+                            is_confidential=is_confidential,
+                            uploaded_by=request.user,
+                            version=version,
+                            is_current_version=True,
+                            document_status='ACTIVE'
+                        )
+                        
+                        uploaded_documents.append(document)
+                        
+                    except Exception as e:
+                        failed_uploads.append({
+                            'filename': doc_file.name,
+                            'error': str(e)
+                        })
+            
+            # Log activity
+            if uploaded_documents:
+                EmployeeActivity.objects.create(
+                    employee=employee,
+                    activity_type='DOCUMENT_UPLOADED',
+                    description=f"Bulk uploaded {len(uploaded_documents)} documents",
+                    performed_by=request.user,
+                    metadata={
+                        'bulk_upload': True,
+                        'uploaded_count': len(uploaded_documents),
+                        'failed_count': len(failed_uploads),
+                        'document_type': document_type,
+                        'replace_existing': replace_existing
+                    }
+                )
+            
+            serializer = EmployeeDocumentSerializer(uploaded_documents, many=True, context={'request': request})
+            
+            return Response({
+                'success': True,
+                'message': f'Uploaded {len(uploaded_documents)} documents successfully',
+                'uploaded_count': len(uploaded_documents),
+                'failed_count': len(failed_uploads),
+                'uploaded_documents': serializer.data,
+                'failed_uploads': failed_uploads
+            })
+            
+        except Exception as e:
+            logger.error(f"Bulk document upload failed: {str(e)}")
+            return Response(
+                {'error': f'Bulk upload failed: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 
-   
+class ProfileImageViewSet(viewsets.ViewSet):
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+    
+    @swagger_auto_schema(
+        operation_description="Upload or update employee profile image",
+        manual_parameters=[
+            openapi.Parameter(
+                'employee_id',
+                openapi.IN_FORM,
+                description='Employee ID',
+                type=openapi.TYPE_INTEGER,
+                required=True
+            ),
+            openapi.Parameter(
+                'profile_image',
+                openapi.IN_FORM,
+                description='Profile image file',
+                type=openapi.TYPE_FILE,
+                required=True
+            )
+        ],
+        consumes=['multipart/form-data'],
+        responses={
+            200: openapi.Response(
+                description="Profile image updated successfully",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'success': openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                        'message': openapi.Schema(type=openapi.TYPE_STRING),
+                        'profile_image_url': openapi.Schema(type=openapi.TYPE_STRING, nullable=True),
+                    }
+                )
+            )
+        }
+    )
+    @action(detail=False, methods=['post'])
+    def upload(self, request):
+        """Upload or update employee profile image"""
+        try:
+            logger.info(f"Profile image upload request from user: {request.user}")
+            
+            # Validate request data
+            if 'employee_id' not in request.data:
+                return Response(
+                    {'error': 'employee_id is required'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            if 'profile_image' not in request.FILES:
+                return Response(
+                    {'error': 'profile_image file is required'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            logger.info(f"Employee ID: {request.data['employee_id']}")
+            logger.info(f"Image file: {request.FILES['profile_image'].name}")
+            
+            serializer = ProfileImageUploadSerializer(data=request.data, context={'request': request})
+            if not serializer.is_valid():
+                logger.error(f"Profile image upload validation failed: {serializer.errors}")
+                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            
+            employee = serializer.save()
+            
+            # Refresh employee from database to get the saved image
+            employee.refresh_from_db()
+            
+            # DEBUG: Let's check what we have
+            logger.info(f"Employee after save: {employee.employee_id}")
+            logger.info(f"Profile image field: {employee.profile_image}")
+            logger.info(f"Profile image name: {employee.profile_image.name if employee.profile_image else 'None'}")
+            
+            # Build profile image URL with better error handling
+            profile_image_url = None
+            if employee.profile_image:
+                try:
+                    # Check if the file exists and has a URL
+                    if hasattr(employee.profile_image, 'url') and employee.profile_image.name:
+                        profile_image_url = request.build_absolute_uri(employee.profile_image.url)
+                        logger.info(f"Built profile image URL: {profile_image_url}")
+                    else:
+                        logger.warning(f"Profile image exists but no URL available: {employee.profile_image}")
+                except Exception as e:
+                    logger.error(f"Error building profile image URL: {e}")
+                    # Try to construct URL manually
+                    if employee.profile_image.name:
+                        profile_image_url = request.build_absolute_uri(f"/media/{employee.profile_image.name}")
+                        logger.info(f"Manually constructed URL: {profile_image_url}")
+            else:
+                logger.warning("No profile image found after save")
+            
+            logger.info(f"Profile image uploaded successfully for employee {employee.employee_id}")
+            
+            return Response({
+                'success': True,
+                'message': f'Profile image updated for {employee.full_name}',
+                'employee_id': employee.id,
+                'employee_name': employee.full_name,
+                'profile_image_url': profile_image_url,
+                'debug_info': {
+                    'has_profile_image': bool(employee.profile_image),
+                    'image_name': employee.profile_image.name if employee.profile_image else None,
+                    'image_size': employee.profile_image.size if employee.profile_image else None
+                }
+            })
+            
+        except Exception as e:
+            logger.error(f"Profile image upload failed: {str(e)}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return Response(
+                {'error': f'Profile image upload failed: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    @swagger_auto_schema(
+        operation_description="Delete employee profile image",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['employee_id'],
+            properties={
+                'employee_id': openapi.Schema(type=openapi.TYPE_INTEGER, description='Employee ID')
+            }
+        ),
+        responses={200: "Profile image deleted successfully"}
+    )
+    @action(detail=False, methods=['post'], parser_classes=[JSONParser])
+    def delete(self, request):
+        """Delete employee profile image"""
+        try:
+            serializer = ProfileImageDeleteSerializer(data=request.data, context={'request': request})
+            if not serializer.is_valid():
+                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            
+            employee = serializer.save()
+            
+            return Response({
+                'success': True,
+                'message': f'Profile image deleted for {employee.full_name}',
+                'employee_id': employee.id,
+                'employee_name': employee.full_name
+            })
+            
+        except Exception as e:
+            logger.error(f"Profile image delete failed: {str(e)}")
+            return Response(
+                {'error': f'Profile image delete failed: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    @swagger_auto_schema(
+        operation_description="Get employee profile image URL",
+        manual_parameters=[
+            openapi.Parameter(
+                'employee_id',
+                openapi.IN_QUERY,
+                description='Employee ID',
+                type=openapi.TYPE_INTEGER,
+                required=True
+            )
+        ],
+        responses={
+            200: openapi.Response(
+                description="Profile image URL retrieved successfully",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'employee_id': openapi.Schema(type=openapi.TYPE_INTEGER),
+                        'employee_name': openapi.Schema(type=openapi.TYPE_STRING),
+                        'profile_image_url': openapi.Schema(type=openapi.TYPE_STRING, nullable=True),
+                        'has_image': openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                    }
+                )
+            )
+        }
+    )
+    @action(detail=False, methods=['get'])
+    def get_image(self, request):
+        """Get employee profile image URL"""
+        try:
+            employee_id = request.query_params.get('employee_id')
+            if not employee_id:
+                return Response(
+                    {'error': 'employee_id parameter is required'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            try:
+                employee = Employee.objects.get(id=employee_id)
+            except Employee.DoesNotExist:
+                return Response(
+                    {'error': 'Employee not found'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            
+            # DEBUG: Check what we have
+            logger.info(f"Getting image for employee: {employee.employee_id}")
+            logger.info(f"Profile image field: {employee.profile_image}")
+            logger.info(f"Profile image name: {employee.profile_image.name if employee.profile_image else 'None'}")
+            
+            profile_image_url = None
+            has_image = False
+            
+            if employee.profile_image:
+                try:
+                    if hasattr(employee.profile_image, 'url') and employee.profile_image.name:
+                        profile_image_url = request.build_absolute_uri(employee.profile_image.url)
+                        has_image = True
+                        logger.info(f"Found profile image URL: {profile_image_url}")
+                    else:
+                        logger.warning(f"Profile image exists but no URL: {employee.profile_image}")
+                except Exception as e:
+                    logger.error(f"Error getting profile image URL: {e}")
+                    # Try manual construction
+                    if employee.profile_image.name:
+                        profile_image_url = request.build_absolute_uri(f"/media/{employee.profile_image.name}")
+                        has_image = True
+                        logger.info(f"Manually constructed URL: {profile_image_url}")
+            
+            return Response({
+                'employee_id': employee.id,
+                'employee_name': employee.full_name,
+                'profile_image_url': profile_image_url,
+                'has_image': has_image,
+                'debug_info': {
+                    'image_field_value': str(employee.profile_image),
+                    'image_name': employee.profile_image.name if employee.profile_image else None,
+                    'image_size': employee.profile_image.size if employee.profile_image else None
+                }
+            })
+            
+        except Exception as e:
+            logger.error(f"Get profile image failed: {str(e)}")
+            return Response(
+                {'error': f'Failed to get profile image: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
