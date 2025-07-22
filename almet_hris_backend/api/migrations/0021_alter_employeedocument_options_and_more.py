@@ -14,52 +14,7 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.AlterModelOptions(
-            name='employeedocument',
-            options={'ordering': ['-uploaded_at'], 'verbose_name': 'Employee Document', 'verbose_name_plural': 'Employee Documents'},
-        ),
-        migrations.RemoveField(
-            model_name='employeedocument',
-            name='file_path',
-        ),
        
-        migrations.AddField(
-            model_name='employeedocument',
-            name='document_file',
-            field=models.FileField(blank=True, help_text='Upload document file', null=True, upload_to='employee_documents/%Y/%m/'),
-        ),
-        migrations.AddField(
-            model_name='employeedocument',
-            name='download_count',
-            field=models.PositiveIntegerField(default=0),
-        ),
-       
-      
-        migrations.AddField(
-            model_name='employeedocument',
-            name='last_accessed',
-            field=models.DateTimeField(blank=True, null=True),
-        ),
-        migrations.AddField(
-            model_name='employeedocument',
-            name='original_filename',
-            field=models.CharField(blank=True, max_length=255, null=True),
-        ),
-        migrations.AlterField(
-            model_name='employeedocument',
-            name='document_type',
-            field=models.CharField(choices=[('CONTRACT', 'Employment Contract'), ('ID', 'ID Document'), ('CERTIFICATE', 'Certificate'), ('CV', 'Curriculum Vitae'), ('PERFORMANCE', 'Performance Review'), ('MEDICAL', 'Medical Certificate'), ('TRAINING', 'Training Certificate'), ('OTHER', 'Other')], default='OTHER', max_length=20),
-        ),
-        migrations.AlterField(
-            model_name='employeedocument',
-            name='file_size',
-            field=models.PositiveIntegerField(blank=True, help_text='File size in bytes', null=True),
-        ),
-        migrations.AlterField(
-            model_name='employeedocument',
-            name='name',
-            field=models.CharField(help_text='Document name or title', max_length=255),
-        ),
         migrations.CreateModel(
             name='FileUploadSession',
             fields=[

@@ -176,11 +176,7 @@ class Migration(migrations.Migration):
             name='performed_by',
             field=models.ForeignKey(null=True, on_delete=django.db.models.deletion.SET_NULL, to=settings.AUTH_USER_MODEL),
         ),
-        migrations.AlterField(
-            model_name='employeedocument',
-            name='document_type',
-            field=models.CharField(choices=[('CONTRACT', 'Employment Contract'), ('ID', 'ID Document'), ('CERTIFICATE', 'Certificate'), ('CV', 'Curriculum Vitae'), ('PERFORMANCE', 'Performance Review'), ('OTHER', 'Other')], default='OTHER', max_length=20),
-        ),
+      
         migrations.AlterField(
             model_name='employeetag',
             name='tag_type',

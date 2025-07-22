@@ -20,8 +20,7 @@ router.register(r'employees', views.EmployeeViewSet, basename='employee')
 router.register(r'employee-tags', views.EmployeeTagViewSet, basename='employeetag')
 router.register(r'employee-statuses', views.EmployeeStatusViewSet, basename='employeestatus')
 
-# NEW: File Management URLs
-router.register(r'employee-documents', views.EmployeeDocumentViewSet, basename='employeedocument')
+
 router.register(r'profile-images', views.ProfileImageViewSet, basename='profileimage')
 
 
@@ -37,14 +36,12 @@ router.register(r'org-chart', views.OrgChartViewSet, basename='orgchart')
 # Employee Grading Integration URLs
 router.register(r'employee-grading', views.EmployeeGradingViewSet, basename='employeegrading')
 
-# Contract Status Management URLs
-router.register(r'contract-status', views.ContractStatusManagementViewSet, basename='contractstatus')
+
 
 # Bulk Upload URLs
 router.register(r'bulk-upload', views.BulkEmployeeUploadViewSet, basename='bulkupload')
 
-# Employee Analytics URLs
-router.register(r'employee-analytics', views.EmployeeAnalyticsViewSet, basename='employeeanalytics')
+
 
 urlpatterns = [
     # Authentication endpoints

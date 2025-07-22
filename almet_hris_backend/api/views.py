@@ -30,7 +30,7 @@ from django.contrib.auth.models import User
 from .status_management import EmployeeStatusManager, LineManagerStatusIntegration, StatusAutomationRules
 from .models import (
     Employee, BusinessFunction, Department, Unit, JobFunction, 
-    PositionGroup, EmployeeTag, EmployeeDocument, EmployeeStatus,
+    PositionGroup, EmployeeTag, EmployeeStatus,
     EmployeeActivity, VacantPosition, ContractTypeConfig,
     ContractStatusManager
 )
@@ -38,21 +38,20 @@ from .serializers import (
     EmployeeListSerializer, EmployeeDetailSerializer, EmployeeCreateUpdateSerializer,
     BusinessFunctionSerializer, DepartmentSerializer, UnitSerializer,
     JobFunctionSerializer, PositionGroupSerializer, EmployeeTagSerializer,
-    EmployeeStatusSerializer, EmployeeDocumentSerializer, EmployeeActivitySerializer,
+    EmployeeStatusSerializer,  EmployeeActivitySerializer,
     UserSerializer, OrgChartNodeSerializer,
     VacantPositionListSerializer, VacantPositionDetailSerializer, VacantPositionCreateSerializer,
-    DocumentUploadSerializer,  ProfileImageDeleteSerializer,
+     ProfileImageDeleteSerializer,
     ProfileImageUploadSerializer, EmployeeGradingListSerializer,
     BulkEmployeeGradingUpdateSerializer, EmployeeExportSerializer,
     ContractTypeConfigSerializer, BulkContractExtensionSerializer, ContractExtensionSerializer,
     SingleEmployeeTagUpdateSerializer, SingleLineManagerAssignmentSerializer,
     BulkEmployeeTagUpdateSerializer, BulkSoftDeleteSerializer, BulkRestoreSerializer,
-    BulkLineManagerAssignmentSerializer,DocumentReplaceSerializer
+    BulkLineManagerAssignmentSerializer
 )
 from .auth import MicrosoftTokenValidator
 from drf_yasg.inspectors import SwaggerAutoSchema
 logger = logging.getLogger(__name__)
-
 class StandardResultsSetPagination(PageNumberPagination):
     page_size = 25
     page_size_query_param = 'page_size'
@@ -69,13 +68,72 @@ class StandardResultsSetPagination(PageNumberPagination):
             'previous': self.get_previous_link(),
             'results': data
         })
-
+class ModernPagination(PageNumberPagination):
+    """Modern, user-friendly pagination with enhanced features"""
+    page_size = 20  # Default page size
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+    page_query_param = 'page'
+    
+    # Custom page size options for frontend
+    page_size_options = [10, 20, 50, 100]
+    
+    def get_paginated_response(self, data):
+        """Enhanced pagination response with modern UI support"""
+        current_page = self.page.number
+        total_pages = self.page.paginator.num_pages
+        total_count = self.page.paginator.count
+        
+        # Calculate pagination window (show 5 pages around current)
+        start_page = max(1, current_page - 2)
+        end_page = min(total_pages, current_page + 2)
+        
+        # Adjust window if we're near the beginning or end
+        if end_page - start_page < 4:
+            if start_page == 1:
+                end_page = min(total_pages, start_page + 4)
+            else:
+                start_page = max(1, end_page - 4)
+        
+        # Generate page numbers for frontend
+        page_numbers = list(range(start_page, end_page + 1))
+        
+        # Calculate range display
+        start_item = (current_page - 1) * self.page_size + 1
+        end_item = min(current_page * self.page_size, total_count)
+        
+        return Response({
+            'count': total_count,
+            'total_pages': total_pages,
+            'current_page': current_page,
+            'page_size': self.page_size,
+            'page_size_options': self.page_size_options,
+            'has_next': self.page.has_next(),
+            'has_previous': self.page.has_previous(),
+            'next': self.get_next_link(),
+            'previous': self.get_previous_link(),
+            'page_numbers': page_numbers,  # For modern pagination UI
+            'start_page': start_page,
+            'end_page': end_page,
+            'show_first': start_page > 1,
+            'show_last': end_page < total_pages,
+            'range_display': f"Showing {start_item}-{end_item} of {total_count}",
+            'results': data
+        })
 class FileUploadAutoSchema(SwaggerAutoSchema):
+    """Custom schema for file upload endpoints"""
+    
     def get_consumes(self):
         """Force multipart/form-data for file uploads"""
-        if self.method.lower() == 'post':
+        if self.method.lower() in ['post', 'put', 'patch']:
             return ['multipart/form-data']
         return super().get_consumes()
+    
+    def get_request_body_schema(self, serializer):
+        """Override request body schema for file uploads"""
+        if self.method.lower() in ['post', 'put', 'patch']:
+            return None  # Don't generate request body schema, use manual parameters
+        return super().get_request_body_schema(serializer)
 
 @swagger_auto_schema(
     method='post',
@@ -225,7 +283,9 @@ def user_info(request):
             "success": False
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-class EmployeeFilter:
+class ComprehensiveEmployeeFilter:
+    """Complete filtering system for all employee fields"""
+    
     def __init__(self, queryset, params):
         self.queryset = queryset
         self.params = params
@@ -233,7 +293,291 @@ class EmployeeFilter:
     def filter(self):
         queryset = self.queryset
         
-        # Text search across multiple fields
+        # 1. SPECIFIC EMPLOYEE FILTERS
+        # Employee Name and HC Number
+        specific_employee = self.params.get('specific_employee')
+        if specific_employee:
+            queryset = queryset.filter(
+                Q(full_name__icontains=specific_employee) |
+                Q(employee_id__icontains=specific_employee) |
+                Q(user__first_name__icontains=specific_employee) |
+                Q(user__last_name__icontains=specific_employee)
+            )
+        
+        # Employee ID exact match
+        employee_id = self.params.get('employee_id')
+        if employee_id:
+            queryset = queryset.filter(employee_id__iexact=employee_id)
+        
+        # Employee name exact search
+        employee_name = self.params.get('employee_name')
+        if employee_name:
+            queryset = queryset.filter(
+                Q(full_name__icontains=employee_name) |
+                Q(user__first_name__icontains=employee_name) |
+                Q(user__last_name__icontains=employee_name)
+            )
+        
+        # 2. JOB TITLE FILTER
+       
+        
+        # Multiple job titles
+        job_titles = self.params.getlist('job_titles')
+        if job_titles:
+            queryset = queryset.filter(job_title__in=job_titles)
+        
+        # 3. EMPLOYMENT STATUS FILTERS
+      
+ 
+        
+        # Multiple status filtering
+        status_names = self.params.getlist('employment_statuses')
+        if status_names:
+            queryset = queryset.filter(status__name__in=status_names)
+        
+      
+        
+        # 4. CONTRACT DURATION FILTERS
+  
+        
+        # Multiple contract durations
+        contract_durations = self.params.getlist('contract_durations')
+        if contract_durations:
+            queryset = queryset.filter(contract_duration__in=contract_durations)
+        
+        # 5. GENDER FILTER
+
+        
+        # Multiple genders
+        genders = self.params.getlist('genders')
+        if genders:
+            queryset = queryset.filter(gender__in=genders)
+        
+        # 6. BUSINESS FUNCTIONS FILTER
+   
+        
+        # Multiple business functions
+        business_functions = self.params.getlist('business_functions')
+        if business_functions:
+            queryset = queryset.filter(business_function__id__in=business_functions)
+        
+       
+        
+        # 7. DEPARTMENTS FILTER
+      
+        
+        # Multiple departments
+        departments = self.params.getlist('departments')
+        if departments:
+            queryset = queryset.filter(department__id__in=departments)
+        
+     
+        
+        # 8. UNITS FILTER
+       
+        
+        # Multiple units
+        units = self.params.getlist('units')
+        if units:
+            queryset = queryset.filter(unit__id__in=units)
+        
+       
+        
+        # Filter employees with no unit
+        no_unit = self.params.get('no_unit')
+        if no_unit and no_unit.lower() == 'true':
+            queryset = queryset.filter(unit__isnull=True)
+        
+        # 9. JOB FUNCTIONS FILTER
+        job_function = self.params.get('job_function')
+        if job_function:
+            queryset = queryset.filter(job_function__id=job_function)
+        
+        # Multiple job functions
+        job_functions = self.params.getlist('job_functions')
+        if job_functions:
+            queryset = queryset.filter(job_function__id__in=job_functions)
+        
+  
+        
+        # 10. POSITION GROUPS FILTER
+        position_group = self.params.get('position_group')
+        if position_group:
+            queryset = queryset.filter(position_group__id=position_group)
+        
+        # Multiple position groups
+        position_groups = self.params.getlist('position_groups')
+        if position_groups:
+            queryset = queryset.filter(position_group__id__in=position_groups)
+        
+        
+        
+        
+        # 11. GRADING LEVELS FILTER
+      
+        
+        # Multiple grading levels
+        grading_levels = self.params.getlist('grading_levels')
+        if grading_levels:
+            queryset = queryset.filter(grading_level__in=grading_levels)
+        
+       
+        
+        # 12. LINE MANAGER FILTER
+        line_manager = self.params.get('line_manager')
+        if line_manager:
+            queryset = queryset.filter(line_manager__id=line_manager)
+        
+        # Multiple line managers
+        line_managers = self.params.getlist('line_managers')
+        if line_managers:
+            queryset = queryset.filter(line_manager__id__in=line_managers)
+        
+       
+        
+
+        
+        # 13. TAGS FILTER
+        tag = self.params.get('tag')
+        if tag:
+            queryset = queryset.filter(tags__id=tag)
+        
+       
+        
+       
+        
+        # 14. IS DELETED FILTER
+        is_deleted = self.params.get('is_deleted')
+        if is_deleted:
+            if is_deleted.lower() == 'true':
+                # Import here to avoid circular import
+                from .models import Employee
+                # Use all_objects manager to include deleted employees
+                queryset = Employee.all_objects.filter(
+                    pk__in=queryset.values_list('pk', flat=True),
+                    is_deleted=True
+                )
+            elif is_deleted.lower() == 'false':
+                queryset = queryset.filter(is_deleted=False)
+            elif is_deleted.lower() == 'all':
+                # Include both deleted and non-deleted
+                from .models import Employee
+                queryset = Employee.all_objects.filter(
+                    pk__in=queryset.values_list('pk', flat=True)
+                )
+        
+        # 15. IS VISIBLE IN ORG CHART FILTER
+        is_visible_in_org_chart = self.params.get('is_visible_in_org_chart')
+        if is_visible_in_org_chart:
+            visible = is_visible_in_org_chart.lower() == 'true'
+            queryset = queryset.filter(is_visible_in_org_chart=visible)
+        
+        # 16. DATE RANGE FILTERS
+        # Start Date Range
+        start_date_from = self.params.get('start_date_from')
+        start_date_to = self.params.get('start_date_to')
+        if start_date_from:
+            try:
+                start_date_from = parse_date(start_date_from)
+                queryset = queryset.filter(start_date__gte=start_date_from)
+            except:
+                pass
+        if start_date_to:
+            try:
+                start_date_to = parse_date(start_date_to)
+                queryset = queryset.filter(start_date__lte=start_date_to)
+            except:
+                pass
+        
+        # Contract End Date Range
+        contract_end_from = self.params.get('contract_end_from')
+        contract_end_to = self.params.get('contract_end_to')
+        if contract_end_from:
+            try:
+                contract_end_from = parse_date(contract_end_from)
+                queryset = queryset.filter(contract_end_date__gte=contract_end_from)
+            except:
+                pass
+        if contract_end_to:
+            try:
+                contract_end_to = parse_date(contract_end_to)
+                queryset = queryset.filter(contract_end_date__lte=contract_end_to)
+            except:
+                pass
+        
+        # End Date Range (employment end date)
+        end_date_from = self.params.get('end_date_from')
+        end_date_to = self.params.get('end_date_to')
+        if end_date_from:
+            try:
+                end_date_from = parse_date(end_date_from)
+                queryset = queryset.filter(end_date__gte=end_date_from)
+            except:
+                pass
+        if end_date_to:
+            try:
+                end_date_to = parse_date(end_date_to)
+                queryset = queryset.filter(end_date__lte=end_date_to)
+            except:
+                pass
+        
+        # 17. YEARS OF SERVICE FILTER
+        min_years = self.params.get('min_years')
+        max_years = self.params.get('max_years')
+        if min_years or max_years:
+            today = date.today()
+            
+            if min_years:
+                try:
+                    min_years = float(min_years)
+                    min_date = today - timedelta(days=int(min_years * 365.25))
+                    queryset = queryset.filter(start_date__lte=min_date)
+                except:
+                    pass
+            
+            if max_years:
+                try:
+                    max_years = float(max_years)
+                    max_date = today - timedelta(days=int(max_years * 365.25))
+                    queryset = queryset.filter(start_date__gte=max_date)
+                except:
+                    pass
+        
+        # 18. ADDITIONAL SPECIALIZED FILTERS
+        
+        # Active headcount only
+        active_only = self.params.get('active_only')
+        if active_only and active_only.lower() == 'true':
+            queryset = queryset.filter(status__affects_headcount=True)
+        
+        # Org chart visible only
+        org_chart_visible = self.params.get('org_chart_visible')
+        if org_chart_visible and org_chart_visible.lower() == 'true':
+            queryset = queryset.filter(is_visible_in_org_chart=True, status__allows_org_chart=True)
+        
+        # Status needs update filter
+        status_needs_update = self.params.get('status_needs_update')
+        if status_needs_update and status_needs_update.lower() == 'true':
+            # This requires special handling - will be processed in view
+            pass
+        
+        # Contract expiring soon
+        contract_expiring_days = self.params.get('contract_expiring_days')
+        if contract_expiring_days:
+            try:
+                days = int(contract_expiring_days)
+                expiry_date = date.today() + timedelta(days=days)
+                queryset = queryset.filter(
+                    contract_end_date__lte=expiry_date,
+                    contract_end_date__gte=date.today()
+                )
+            except:
+                pass
+        
+     
+        
+        
+        # General text search across multiple fields
         search = self.params.get('search')
         if search:
             queryset = queryset.filter(
@@ -243,99 +587,90 @@ class EmployeeFilter:
                 Q(job_title__icontains=search) |
                 Q(business_function__name__icontains=search) |
                 Q(department__name__icontains=search) |
-                Q(father_name__icontains=search)  # NEW: Include father_name in search
+                Q(father_name__icontains=search) |
+                Q(phone__icontains=search)
             )
-        
-        # Multiple status filtering
-        status_names = self.params.getlist('status')
-        if status_names:
-            queryset = queryset.filter(status__name__in=status_names)
-        
-        # Multiple business function filtering
-        business_functions = self.params.getlist('business_function')
-        if business_functions:
-            queryset = queryset.filter(business_function__id__in=business_functions)
-        
-        # Multiple department filtering
-        departments = self.params.getlist('department')
-        if departments:
-            queryset = queryset.filter(department__id__in=departments)
-        
-        # Multiple position group filtering
-        position_groups = self.params.getlist('position_group')
-        if position_groups:
-            queryset = queryset.filter(position_group__id__in=position_groups)
-        
-        # Multiple line manager filtering (ENHANCED)
-        line_managers = self.params.getlist('line_manager')
-        if line_managers:
-            queryset = queryset.filter(line_manager__id__in=line_managers)
-        
-        # Multiple tag filtering
-        tags = self.params.getlist('tags')
-        if tags:
-            queryset = queryset.filter(tags__id__in=tags)
-        
-        # Multiple contract duration filtering
-        contract_durations = self.params.getlist('contract_duration')
-        if contract_durations:
-            queryset = queryset.filter(contract_duration__in=contract_durations)
-        
-        # Date range filtering
-        start_date_from = self.params.get('start_date_from')
-        start_date_to = self.params.get('start_date_to')
-        if start_date_from:
-            queryset = queryset.filter(start_date__gte=start_date_from)
-        if start_date_to:
-            queryset = queryset.filter(start_date__lte=start_date_to)
-        
-        # Active headcount only
-        active_only = self.params.get('active_only')
-        if active_only and active_only.lower() == 'true':
-            queryset = queryset.filter(status__affects_headcount=True)
-        
-        # Org chart visibility
-        org_chart_visible = self.params.get('org_chart_visible')
-        if org_chart_visible and org_chart_visible.lower() == 'true':
-            queryset = queryset.filter(is_visible_in_org_chart=True)
-        
-        # Include deleted filter
-        include_deleted = self.params.get('include_deleted')
-        if include_deleted and include_deleted.lower() == 'true':
-            # Use all_objects manager to include soft-deleted employees
-            queryset = Employee.all_objects.filter(
-                pk__in=queryset.values_list('pk', flat=True)
-            )
-        
-        # Status needs update filter (NEW)
-        status_needs_update = self.params.get('status_needs_update')
-        if status_needs_update and status_needs_update.lower() == 'true':
-            # This requires special handling - we'll filter this in the view
-            pass
         
         return queryset
 
-class EmployeeSorter:
+class AdvancedEmployeeSorter:
+    """Advanced sorting system with all required fields"""
+    
     SORTABLE_FIELDS = {
+        # Basic Information
+        'employee_name': 'full_name',
+        'name': 'full_name',  # Alias
+        'full_name': 'full_name',
+        'first_name': 'user__first_name',
+        'last_name': 'user__last_name',
         'employee_id': 'employee_id',
-        'name': 'full_name',
+     
+        
+        # Contact Information  
         'email': 'user__email',
+     
+        'phone': 'phone',
+        'father_name': 'father_name',
+        
+        # Job Information
+        'job_title': 'job_title',
+    
+        
+        # Organizational Structure
+        'business_function': 'business_function__name',
+       
+      
+        'department': 'department__name',
+        
+        'unit': 'unit__name',
+       
+        'job_function': 'job_function__name',
+     
+        
+        # Position & Grading
+       
+        'position_group_name': 'position_group__name',
+       
+    
+        'grade': 'grading_level', 
+        
+        # Management Hierarchy
+        'line_manager': 'line_manager__full_name',
+     
+        
+        # Employment Dates
         'start_date': 'start_date',
         'end_date': 'end_date',
-        'business_function': 'business_function__name',
-        'department': 'department__name',
-        'unit': 'unit__name',
-        'job_title': 'job_title',
-        'position_group': 'position_group__hierarchy_level',
-        'grading_level': 'grading_level',
-        'status': 'status__name',
-        'line_manager': 'line_manager__full_name',
-        'contract_duration': 'contract_duration',
+        'contract_start_date': 'contract_start_date',
         'contract_end_date': 'contract_end_date',
+        
+        # Contract Information
+        'contract_duration': 'contract_duration',
+     
+        
+        # Status
+        'status': 'status__name',
+  
+        
+        # Personal Information
+        'date_of_birth': 'date_of_birth',
+   
+        'gender': 'gender',
+        
+        # Metadata
         'created_at': 'created_at',
         'updated_at': 'updated_at',
-        'years_of_service': 'start_date',  # Will be calculated
-        'father_name': 'father_name',  # NEW FIELD
+        'years_of_service': 'start_date',  # Calculated field - reverse order
+        
+        # Visibility & Status
+        'is_visible_in_org_chart': 'is_visible_in_org_chart',
+        'is_deleted': 'is_deleted',
+    }
+    
+    # Special handling for calculated fields
+    CALCULATED_FIELDS = {
+        'years_of_service': 'start_date',  # Sort by start_date but reverse
+        
     }
     
     def __init__(self, queryset, sort_params):
@@ -343,11 +678,18 @@ class EmployeeSorter:
         self.sort_params = sort_params or []
     
     def sort(self):
+        """Apply sorting based on parameters"""
         if not self.sort_params:
+            # Default sorting
             return self.queryset.order_by('employee_id')
         
         order_fields = []
+        
         for sort_param in self.sort_params:
+            if not sort_param.strip():
+                continue
+                
+            # Determine if descending
             if sort_param.startswith('-'):
                 field_name = sort_param[1:]
                 descending = True
@@ -355,14 +697,30 @@ class EmployeeSorter:
                 field_name = sort_param
                 descending = False
             
+            # Check if field is sortable
             if field_name in self.SORTABLE_FIELDS:
                 db_field = self.SORTABLE_FIELDS[field_name]
+                
+                # Handle special calculated fields
+                if field_name in self.CALCULATED_FIELDS:
+                    # For years_of_service and age, we need to reverse the logic
+                    if field_name in ['years_of_service', 'age']:
+                        # Reverse the order for calculated fields
+                        descending = not descending
+                
+                # Apply descending prefix
                 if descending:
                     db_field = f'-{db_field}'
+                
                 order_fields.append(db_field)
         
         if order_fields:
+            # Add secondary sort for consistency
+            if 'employee_id' not in [f.lstrip('-') for f in order_fields]:
+                order_fields.append('employee_id')
+            
             return self.queryset.order_by(*order_fields)
+        
         return self.queryset.order_by('employee_id')
 
 class BusinessFunctionViewSet(viewsets.ModelViewSet):
@@ -569,9 +927,13 @@ class VacantPositionViewSet(viewsets.ModelViewSet):
 
 class EmployeeViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
-    pagination_class = StandardResultsSetPagination
+    permission_classes = [IsAuthenticated]
+    pagination_class = ModernPagination  # Use modern pagination
     parser_classes = [JSONParser, MultiPartParser, FormParser]
+    
     def get_queryset(self):
+        # Import here to avoid circular import
+        from .models import Employee
         return Employee.objects.select_related(
             'user', 'business_function', 'department', 'unit', 'job_function',
             'position_group', 'status', 'line_manager'
@@ -580,6 +942,10 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         ).all()
     
     def get_serializer_class(self):
+        # Import here to avoid circular import
+        from .serializers import (
+            EmployeeListSerializer, EmployeeDetailSerializer, EmployeeCreateUpdateSerializer
+        )
         if self.action == 'list':
             return EmployeeListSerializer
         elif self.action in ['create', 'update', 'partial_update']:
@@ -587,43 +953,390 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         else:
             return EmployeeDetailSerializer
     
-    
-    
     def list(self, request, *args, **kwargs):
-        """Enhanced list with filtering and sorting"""
-        queryset = self.get_queryset()
+        """Enhanced list with comprehensive filtering, sorting, and modern pagination"""
         
-        # Apply custom filtering
-        employee_filter = EmployeeFilter(queryset, request.query_params)
-        queryset = employee_filter.filter()
+        try:
+            # Get base queryset
+            queryset = self.get_queryset()
+            
+            # Apply comprehensive filtering
+            employee_filter = ComprehensiveEmployeeFilter(queryset, request.query_params)
+            queryset = employee_filter.filter()
+            
+            # Apply advanced sorting
+            ordering = request.query_params.get('ordering', '')
+            sort_params = [param.strip() for param in ordering.split(',') if param.strip()]
+            employee_sorter = AdvancedEmployeeSorter(queryset, sort_params)
+            queryset = employee_sorter.sort()
+            
+            # Handle special filter: status_needs_update
+            # This requires individual checking, so we do it after other filters
+            status_needs_update = request.query_params.get('status_needs_update')
+            if status_needs_update and status_needs_update.lower() == 'true':
+                employees_needing_update = []
+                for employee in queryset:
+                    try:
+                        preview = employee.get_status_preview()
+                        if preview and preview.get('needs_update', False):
+                            employees_needing_update.append(employee.id)
+                    except Exception as e:
+                        logger.warning(f"Error checking status for employee {employee.employee_id}: {e}")
+                        pass
+                
+                queryset = queryset.filter(id__in=employees_needing_update)
+            
+            # Apply pagination
+            page = self.paginate_queryset(queryset)
+            if page is not None:
+                serializer = self.get_serializer(page, many=True)
+                paginated_response = self.get_paginated_response(serializer.data)
+                
+                # Add filter summary to response
+                paginated_response.data['filter_summary'] = {
+                    'total_before_filters': self.get_queryset().count(),
+                    'total_after_filters': queryset.count(),
+                    'active_filters': self._get_active_filters_summary(request.query_params),
+                    'sort_applied': bool(sort_params),
+                    'sort_fields': sort_params
+                }
+                
+                return paginated_response
+            
+            # Fallback (shouldn't happen with pagination)
+            serializer = self.get_serializer(queryset, many=True)
+            return Response({
+                'count': queryset.count(),
+                'results': serializer.data
+            })
+            
+        except Exception as e:
+            logger.error(f"Error in employee list view: {str(e)}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return Response(
+                {'error': f'Failed to retrieve employees: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    def _get_active_filters_summary(self, params):
+        """Generate summary of active filters for debugging/UI"""
+        active_filters = {}
         
-        # Apply sorting
-        sort_params = request.query_params.get('ordering', '').split(',')
-        sort_params = [param.strip() for param in sort_params if param.strip()]
-        employee_sorter = EmployeeSorter(queryset, sort_params)
-        queryset = employee_sorter.sort()
+        # Define filter categories
+        filter_categories = {
+            'employee': ['specific_employee', 'employee_id', 'employee_name'],
+            'job': [ 'job_titles'],
+            'status': [ 'employment_statuses'],
+            'contract': [ 'contract_durations'],
+            'personal': [ 'genders', 'father_name', 'phone', 'email'],
+            'organization': [ 'business_functions',  'departments', 'units'],
+            'position': [ 'job_functions',  'position_groups', 'grading_level'],
+            'management': ['line_manager', 'line_managers', 'no_line_manager'],
+            'tags': ['tag'],
+            'dates': ['start_date_from', 'start_date_to', 'contract_end_from', 'contract_end_to'],
+            'visibility': ['is_deleted', 'is_visible_in_org_chart', 'active_only'],
+            'special': ['status_needs_update', 'contract_expiring_days']
+        }
         
-        # Filter employees whose status needs update (if requested)
-        status_needs_update = request.query_params.get('status_needs_update')
-        if status_needs_update and status_needs_update.lower() == 'true':
-            employees_needing_update = []
-            for employee in queryset:
-                try:
-                    preview = employee.get_status_preview()
-                    if preview['needs_update']:
-                        employees_needing_update.append(employee.id)
-                except:
-                    pass
-            queryset = queryset.filter(id__in=employees_needing_update)
+        for category, fields in filter_categories.items():
+            category_filters = {}
+            for field in fields:
+                if field in params:
+                    value = params.get(field)
+                    if value:
+                        category_filters[field] = value
+            if category_filters:
+                active_filters[category] = category_filters
         
-        # Paginate
-        page = self.paginate_queryset(queryset)
-        if page is not None:
-            serializer = self.get_serializer(page, many=True)
-            return self.get_paginated_response(serializer.data)
+        # Add search if present
+        if params.get('search'):
+            active_filters['search'] = params.get('search')
         
-        serializer = self.get_serializer(queryset, many=True)
-        return Response(serializer.data)
+        return active_filters
+    
+    @swagger_auto_schema(
+        method='get',
+        operation_description="Get available filter options for dropdowns",
+        responses={
+            200: openapi.Response(
+                description="Filter options retrieved successfully",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'success': openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                        'filter_options': openapi.Schema(type=openapi.TYPE_OBJECT),
+                        'total_employees': openapi.Schema(type=openapi.TYPE_INTEGER),
+                        'active_employees': openapi.Schema(type=openapi.TYPE_INTEGER)
+                    }
+                )
+            )
+        }
+    )
+    @action(detail=False, methods=['get'], url_path='filter-options')
+    def get_filter_options(self, request):
+        """Get available options for filters - helpful for frontend dropdowns"""
+        
+        try:
+            # Import models here to avoid circular import
+            from .models import (
+                EmployeeStatus, ContractTypeConfig, BusinessFunction, 
+                Department, Unit, JobFunction, PositionGroup, EmployeeTag, Employee
+            )
+            
+            # Get all active options for dropdowns
+            filter_options = {
+                'employment_statuses': [
+                    {'value': status.name, 'label': status.name, 'color': status.color}
+                    for status in EmployeeStatus.objects.filter(is_active=True).order_by('order', 'name')
+                ],
+                'contract_durations': [
+                    {'value': config.contract_type, 'label': config.display_name}
+                    for config in ContractTypeConfig.objects.filter(is_active=True).order_by('contract_type')
+                ],
+                'genders': [
+                    {'value': 'MALE', 'label': 'Male'},
+                    {'value': 'FEMALE', 'label': 'Female'}
+                ],
+                'business_functions': [
+                    {'value': bf.id, 'label': f"{bf.code} - {bf.name}", 'code': bf.code}
+                    for bf in BusinessFunction.objects.filter(is_active=True).order_by('code')
+                ],
+                'departments': [
+                    {'value': dept.id, 'label': dept.name, 'business_function_id': dept.business_function.id}
+                    for dept in Department.objects.select_related('business_function').filter(is_active=True).order_by('business_function__code', 'name')
+                ],
+                'units': [
+                    {'value': unit.id, 'label': unit.name, 'department_id': unit.department.id}
+                    for unit in Unit.objects.select_related('department').filter(is_active=True).order_by('department__name', 'name')
+                ],
+                'job_functions': [
+                    {'value': jf.id, 'label': jf.name}
+                    for jf in JobFunction.objects.filter(is_active=True).order_by('name')
+                ],
+                'position_groups': [
+                    {'value': pg.id, 'label': pg.get_name_display(), 'hierarchy_level': pg.hierarchy_level}
+                    for pg in PositionGroup.objects.filter(is_active=True).order_by('hierarchy_level')
+                ],
+                'line_managers': [
+                    {'value': emp.id, 'label': f"{emp.full_name} ({emp.employee_id})", 'job_title': emp.job_title}
+                    for emp in Employee.objects.filter(
+                        status__affects_headcount=True,
+                        position_group__hierarchy_level__lte=4,  # Only management positions
+                        is_deleted=False
+                    ).order_by('full_name')
+                ],
+                'tags': [
+                    {'value': tag.id, 'label': tag.name, 'type': tag.tag_type, 'color': tag.color}
+                    for tag in EmployeeTag.objects.filter(is_active=True).order_by('tag_type', 'name')
+                ],
+                'grading_levels': self._get_all_grading_levels(),
+                'job_titles': list(
+                    Employee.objects.filter(is_deleted=False)
+                    .values_list('job_title', flat=True)
+                    .distinct()
+                    .order_by('job_title')
+                ),
+                'page_size_options': [10, 20, 50, 100],
+                'sort_options': [
+                    {'value': 'employee_name', 'label': 'Employee Name'},
+                    {'value': 'email', 'label': 'Email Address'},
+                    {'value': 'business_function', 'label': 'Business Function'},
+                    {'value': 'department', 'label': 'Department'},
+                    {'value': 'unit', 'label': 'Unit'},
+                    {'value': 'job_function', 'label': 'Job Function'},
+                    {'value': 'position', 'label': 'Position'},
+                    {'value': 'job_title', 'label': 'Job Title'},
+                    {'value': 'line_manager', 'label': 'Line Manager'},
+                    {'value': 'start_date', 'label': 'Start Date'},
+                    {'value': 'end_date', 'label': 'End Date'},
+                    {'value': 'status', 'label': 'Status'},
+                    {'value': 'years_of_service', 'label': 'Years of Service'},
+                    {'value': 'created_at', 'label': 'Created Date'},
+                ]
+            }
+            
+            return Response({
+                'success': True,
+                'filter_options': filter_options,
+                'generated_at': timezone.now(),
+                'total_employees': Employee.objects.count(),
+                'active_employees': Employee.objects.filter(status__affects_headcount=True).count()
+            })
+            
+        except Exception as e:
+            logger.error(f"Error getting filter options: {str(e)}")
+            return Response(
+                {'error': f'Failed to get filter options: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    def _get_all_grading_levels(self):
+        """Get all available grading levels from position groups"""
+        from .models import PositionGroup
+        
+        grading_levels = []
+        
+        for pg in PositionGroup.objects.filter(is_active=True):
+            levels = pg.get_grading_levels()
+            for level in levels:
+                grading_levels.append({
+                    'value': level['code'],
+                    'label': f"{level['display']} - {level['full_name']}",
+                    'position_group_id': pg.id,
+                    'position_group_name': pg.get_name_display()
+                })
+        
+        return grading_levels
+    
+    
+    
+    @swagger_auto_schema(
+        auto_schema=FileUploadAutoSchema,
+        operation_description="Create a new employee with optional document and profile photo",
+        manual_parameters=[
+            # Required fields
+            openapi.Parameter('first_name', openapi.IN_FORM, description="First name", type=openapi.TYPE_STRING, required=True),
+            openapi.Parameter('last_name', openapi.IN_FORM, description="Last name", type=openapi.TYPE_STRING, required=True),
+            openapi.Parameter('email', openapi.IN_FORM, description="Email", type=openapi.TYPE_STRING, required=True),
+            openapi.Parameter('employee_id', openapi.IN_FORM, description="Employee ID", type=openapi.TYPE_STRING, required=True),
+            openapi.Parameter('job_title', openapi.IN_FORM, description="Job title", type=openapi.TYPE_STRING, required=True),
+            openapi.Parameter('start_date', openapi.IN_FORM, description="Start date (YYYY-MM-DD)", type=openapi.TYPE_STRING, required=True),
+            openapi.Parameter('business_function', openapi.IN_FORM, description="Business function ID", type=openapi.TYPE_INTEGER, required=True),
+            openapi.Parameter('department', openapi.IN_FORM, description="Department ID", type=openapi.TYPE_INTEGER, required=True),
+            openapi.Parameter('job_function', openapi.IN_FORM, description="Job function ID", type=openapi.TYPE_INTEGER, required=True),
+            openapi.Parameter('position_group', openapi.IN_FORM, description="Position group ID", type=openapi.TYPE_INTEGER, required=True),
+            openapi.Parameter('contract_duration', openapi.IN_FORM, description="Contract duration", type=openapi.TYPE_STRING, required=True),
+            
+            # Optional basic fields
+            openapi.Parameter('father_name', openapi.IN_FORM, description="Father name", type=openapi.TYPE_STRING, required=False),
+            openapi.Parameter('date_of_birth', openapi.IN_FORM, description="Date of birth (YYYY-MM-DD)", type=openapi.TYPE_STRING, required=False),
+            openapi.Parameter('gender', openapi.IN_FORM, description="Gender", type=openapi.TYPE_STRING, enum=['MALE', 'FEMALE'], required=False),
+            openapi.Parameter('phone', openapi.IN_FORM, description="Phone number", type=openapi.TYPE_STRING, required=False),
+            openapi.Parameter('address', openapi.IN_FORM, description="Address", type=openapi.TYPE_STRING, required=False),
+            openapi.Parameter('emergency_contact', openapi.IN_FORM, description="Emergency contact", type=openapi.TYPE_STRING, required=False),
+            openapi.Parameter('unit', openapi.IN_FORM, description="Unit ID", type=openapi.TYPE_INTEGER, required=False),
+            openapi.Parameter('grading_level', openapi.IN_FORM, description="Grading level", type=openapi.TYPE_STRING, required=False),
+            openapi.Parameter('contract_start_date', openapi.IN_FORM, description="Contract start date (YYYY-MM-DD)", type=openapi.TYPE_STRING, required=False),
+            openapi.Parameter('line_manager', openapi.IN_FORM, description="Line manager ID", type=openapi.TYPE_INTEGER, required=False),
+            openapi.Parameter('is_visible_in_org_chart', openapi.IN_FORM, description="Visible in org chart", type=openapi.TYPE_BOOLEAN, required=False),
+            openapi.Parameter('notes', openapi.IN_FORM, description="Notes", type=openapi.TYPE_STRING, required=False),
+            openapi.Parameter('end_date', openapi.IN_FORM, description="End date (YYYY-MM-DD)", type=openapi.TYPE_STRING, required=False),
+            
+            # File fields
+            openapi.Parameter(
+                'document',
+                openapi.IN_FORM,
+                description="Employee document file (PDF, DOC, DOCX, TXT, XLS, XLSX)",
+                type=openapi.TYPE_FILE,
+                required=False
+            ),
+            openapi.Parameter(
+                'profile_photo',
+                openapi.IN_FORM,
+                description="Profile photo (JPG, PNG, GIF, BMP)",
+                type=openapi.TYPE_FILE,
+                required=False
+            ),
+            openapi.Parameter(
+                'document_type',
+                openapi.IN_FORM,
+                description="Document type",
+                type=openapi.TYPE_STRING,
+                enum=['CONTRACT', 'ID', 'CERTIFICATE', 'CV', 'PERFORMANCE', 'MEDICAL', 'TRAINING', 'OTHER'],
+                required=False
+            ),
+            openapi.Parameter(
+                'document_name',
+                openapi.IN_FORM,
+                description="Document name (optional, will use filename if not provided)",
+                type=openapi.TYPE_STRING,
+                required=False
+            ),
+        ],
+        responses={
+            201: openapi.Response(description="Employee created successfully", schema=EmployeeDetailSerializer),
+            400: openapi.Response(description="Bad request - validation errors"),
+        }
+    )
+    def create(self, request, *args, **kwargs):
+        """Create a new employee with optional document and profile photo"""
+        return super().create(request, *args, **kwargs)
+    
+    @swagger_auto_schema(
+        auto_schema=FileUploadAutoSchema,
+        operation_description="Update an existing employee with optional document and profile photo",
+        manual_parameters=[
+            # All fields are optional for update
+            openapi.Parameter('first_name', openapi.IN_FORM, description="First name", type=openapi.TYPE_STRING, required=False),
+            openapi.Parameter('last_name', openapi.IN_FORM, description="Last name", type=openapi.TYPE_STRING, required=False),
+            openapi.Parameter('email', openapi.IN_FORM, description="Email", type=openapi.TYPE_STRING, required=False),
+            openapi.Parameter('employee_id', openapi.IN_FORM, description="Employee ID", type=openapi.TYPE_STRING, required=False),
+            openapi.Parameter('job_title', openapi.IN_FORM, description="Job title", type=openapi.TYPE_STRING, required=False),
+            openapi.Parameter('start_date', openapi.IN_FORM, description="Start date (YYYY-MM-DD)", type=openapi.TYPE_STRING, required=False),
+            openapi.Parameter('business_function', openapi.IN_FORM, description="Business function ID", type=openapi.TYPE_INTEGER, required=False),
+            openapi.Parameter('department', openapi.IN_FORM, description="Department ID", type=openapi.TYPE_INTEGER, required=False),
+            openapi.Parameter('job_function', openapi.IN_FORM, description="Job function ID", type=openapi.TYPE_INTEGER, required=False),
+            openapi.Parameter('position_group', openapi.IN_FORM, description="Position group ID", type=openapi.TYPE_INTEGER, required=False),
+            openapi.Parameter('contract_duration', openapi.IN_FORM, description="Contract duration", type=openapi.TYPE_STRING, required=False),
+            
+            # Optional fields
+            openapi.Parameter('father_name', openapi.IN_FORM, description="Father name", type=openapi.TYPE_STRING, required=False),
+            openapi.Parameter('date_of_birth', openapi.IN_FORM, description="Date of birth (YYYY-MM-DD)", type=openapi.TYPE_STRING, required=False),
+            openapi.Parameter('gender', openapi.IN_FORM, description="Gender", type=openapi.TYPE_STRING, enum=['MALE', 'FEMALE'], required=False),
+            openapi.Parameter('phone', openapi.IN_FORM, description="Phone number", type=openapi.TYPE_STRING, required=False),
+            openapi.Parameter('address', openapi.IN_FORM, description="Address", type=openapi.TYPE_STRING, required=False),
+            openapi.Parameter('emergency_contact', openapi.IN_FORM, description="Emergency contact", type=openapi.TYPE_STRING, required=False),
+            openapi.Parameter('unit', openapi.IN_FORM, description="Unit ID", type=openapi.TYPE_INTEGER, required=False),
+            openapi.Parameter('grading_level', openapi.IN_FORM, description="Grading level", type=openapi.TYPE_STRING, required=False),
+            openapi.Parameter('contract_start_date', openapi.IN_FORM, description="Contract start date (YYYY-MM-DD)", type=openapi.TYPE_STRING, required=False),
+            openapi.Parameter('line_manager', openapi.IN_FORM, description="Line manager ID", type=openapi.TYPE_INTEGER, required=False),
+            openapi.Parameter('is_visible_in_org_chart', openapi.IN_FORM, description="Visible in org chart", type=openapi.TYPE_BOOLEAN, required=False),
+            openapi.Parameter('notes', openapi.IN_FORM, description="Notes", type=openapi.TYPE_STRING, required=False),
+            
+            # File fields
+            openapi.Parameter(
+                'document',
+                openapi.IN_FORM,
+                description="Employee document file (PDF, DOC, DOCX, TXT, XLS, XLSX)",
+                type=openapi.TYPE_FILE,
+                required=False
+            ),
+            openapi.Parameter(
+                'profile_photo',
+                openapi.IN_FORM,
+                description="Profile photo (JPG, PNG, GIF, BMP)",
+                type=openapi.TYPE_FILE,
+                required=False
+            ),
+            openapi.Parameter(
+                'document_type',
+                openapi.IN_FORM,
+                description="Document type",
+                type=openapi.TYPE_STRING,
+                enum=['CONTRACT', 'ID', 'CERTIFICATE', 'CV', 'PERFORMANCE', 'MEDICAL', 'TRAINING', 'OTHER'],
+                required=False
+            ),
+            openapi.Parameter(
+                'document_name',
+                openapi.IN_FORM,
+                description="Document name (optional, will use filename if not provided)",
+                type=openapi.TYPE_STRING,
+                required=False
+            ),
+        ],
+        responses={
+            200: openapi.Response(description="Employee updated successfully", schema=EmployeeDetailSerializer),
+            400: openapi.Response(description="Bad request - validation errors"),
+            404: openapi.Response(description="Employee not found"),
+        }
+    )
+    def update(self, request, *args, **kwargs):
+        """Update an existing employee with optional document and profile photo"""
+        return super().update(request, *args, **kwargs)
+    
+    
+    
+    
     
     def destroy(self, request, *args, **kwargs):
         """Override destroy to use soft delete"""
@@ -639,7 +1352,8 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         )
         
         return Response(status=status.HTTP_204_NO_CONTENT)
-
+    
+   
     def _generate_bulk_template(self):
         """Generate Excel template with dropdowns and validation"""
         from openpyxl import Workbook
@@ -1138,13 +1852,13 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         else:
             # If no specific IDs, use filtered results
             queryset = self.get_queryset()
-            employee_filter = EmployeeFilter(queryset, request.query_params)
+            employee_filter = ComprehensiveEmployeeFilter(queryset, request.query_params)
             queryset = employee_filter.filter()
         
         # Apply sorting
         sort_params = request.query_params.get('ordering', '').split(',')
         sort_params = [param.strip() for param in sort_params if param.strip()]
-        employee_sorter = EmployeeSorter(queryset, sort_params)
+        employee_sorter = AdvancedEmployeeSorter(queryset, sort_params)
         queryset = employee_sorter.sort()
         
         # Define default fields for export (ENHANCED with father_name)
@@ -1733,8 +2447,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 })
         except (Employee.DoesNotExist, EmployeeTag.DoesNotExist) as e:
             return Response({'error': str(e)}, status=status.HTTP_404_NOT_FOUND)
-    
-    
+       
     @swagger_auto_schema(
         method='post',
         operation_description="Remove tag from single employee",
@@ -1994,7 +2707,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             employee.contract_start_date = new_start_date
             employee.contract_extensions += 1
             employee.last_extension_date = timezone.now().date()
-            employee.renewal_status = 'APPROVED'
+            
             
             if request.user:
                 employee.updated_by = request.user
@@ -2074,7 +2787,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                         employee.contract_start_date = new_start_date
                         employee.contract_extensions += 1
                         employee.last_extension_date = timezone.now().date()
-                        employee.renewal_status = 'APPROVED'
+                       
                         
                         if request.user:
                             employee.updated_by = request.user
@@ -2258,47 +2971,10 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             'all_employees': expiry_analysis['employees'],
             'notification_recommendations': {
                 'critical_contracts': [emp for emp in expiry_analysis['employees'] if emp['urgency'] == 'critical'],
-                'renewal_decisions_needed': [emp for emp in expiry_analysis['employees'] if emp['renewal_status'] == 'PENDING'],
+              
                 'manager_notifications': list(set([emp['line_manager'] for emp in expiry_analysis['employees'] if emp['line_manager']]))
             }
         })
-    
-  
-   
-    @action(detail=True, methods=['get'])
-    def documents(self, request, pk=None):
-        """Get all documents for specific employee"""
-        try:
-            employee = self.get_object()
-            documents = employee.documents.filter(is_deleted=False).order_by('-uploaded_at')
-            
-            # Apply filters
-            document_type = request.query_params.get('document_type')
-            if document_type:
-                documents = documents.filter(document_type=document_type)
-            
-            is_confidential = request.query_params.get('is_confidential')
-            if is_confidential is not None:
-                documents = documents.filter(is_confidential=is_confidential.lower() == 'true')
-            
-            serializer = EmployeeDocumentSerializer(documents, many=True, context={'request': request})
-            
-            return Response({
-                'employee': {
-                    'id': employee.id,
-                    'employee_id': employee.employee_id,
-                    'name': employee.full_name
-                },
-                'documents_count': documents.count(),
-                'documents': serializer.data
-            })
-            
-        except Exception as e:
-            logger.error(f"Get employee documents failed: {str(e)}")
-            return Response(
-                {'error': f'Failed to get documents: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
     
     @action(detail=False, methods=['get'])
     def contracts_expiring_soon(self, request):
@@ -2321,7 +2997,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         queryset = self.get_queryset()
         
         # Apply filtering
-        employee_filter = EmployeeFilter(queryset, request.query_params)
+        employee_filter = ComprehensiveEmployeeFilter(queryset, request.query_params)
         queryset = employee_filter.filter()
         
         total_employees = queryset.count()
@@ -2779,241 +3455,6 @@ class EmployeeGradingViewSet(viewsets.ViewSet):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
-class ContractStatusManagementViewSet(viewsets.ViewSet):
-    """ViewSet for contract status management operations"""
-    permission_classes = [IsAuthenticated]
-    
-    @action(detail=False, methods=['get'])
-    def employees_needing_updates(self, request):
-        """Get employees whose status needs to be updated"""
-        try:
-            needing_updates = EmployeeStatusManager.get_employees_needing_update()
-            
-            # Convert to serializable format
-            employees_data = []
-            for employee_info in needing_updates:
-                employee = employee_info['employee']
-                employees_data.append({
-                    'employee_id': employee.employee_id,
-                    'employee_name': employee.full_name,
-                    'current_status': employee_info['current_status'],
-                    'required_status': employee_info['required_status'],
-                    'reason': employee_info['reason'],
-                    'contract_type': employee.contract_duration,
-                    'days_since_start': (date.today() - employee.start_date).days,
-                    'department': employee.department.name,
-                    'business_function': employee.business_function.name,
-                    'line_manager': employee.line_manager.full_name if employee.line_manager else None
-                })
-            
-            return Response({
-                'count': len(employees_data),
-                'employees': employees_data
-            })
-            
-        except Exception as e:
-            logger.error(f"Error getting employees needing updates: {str(e)}")
-            return Response(
-                {'error': f'Failed to get employees needing updates: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-    
- 
-   
-    @action(detail=False, methods=['get'])
-    def status_analysis(self, request):
-        """Get comprehensive status analysis"""
-        try:
-            analytics = EmployeeStatusManager.get_status_transition_analytics()
-            
-            return Response(analytics)
-            
-        except Exception as e:
-            logger.error(f"Error getting status analysis: {str(e)}")
-            return Response(
-                {'error': f'Failed to get status analysis: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-
-class EmployeeAnalyticsViewSet(viewsets.ViewSet):
-    """ViewSet for detailed employee analytics and reporting"""
-    permission_classes = [IsAuthenticated]
-    
-    @action(detail=False, methods=['get'])
-    def demographic_analysis(self, request):
-        """Get demographic analysis of employees"""
-        active_employees = Employee.objects.filter(
-            status__affects_headcount=True,
-            is_deleted=False
-        )
-        
-        # Gender distribution
-        gender_stats = {}
-        for gender_choice in Employee.GENDER_CHOICES:
-            count = active_employees.filter(gender=gender_choice[0]).count()
-            gender_stats[gender_choice[1]] = count
-        
-        # Age distribution (approximate)
-        from datetime import date
-        import datetime
-        
-        age_groups = {
-            '20-25': 0,
-            '26-30': 0,
-            '31-35': 0,
-            '36-40': 0,
-            '41-45': 0,
-            '46-50': 0,
-            '50+': 0,
-            'Unknown': 0
-        }
-        
-        for employee in active_employees:
-            if employee.date_of_birth:
-                age = (date.today() - employee.date_of_birth).days // 365
-                if 20 <= age <= 25:
-                    age_groups['20-25'] += 1
-                elif 26 <= age <= 30:
-                    age_groups['26-30'] += 1
-                elif 31 <= age <= 35:
-                    age_groups['31-35'] += 1
-                elif 36 <= age <= 40:
-                    age_groups['36-40'] += 1
-                elif 41 <= age <= 45:
-                    age_groups['41-45'] += 1
-                elif 46 <= age <= 50:
-                    age_groups['46-50'] += 1
-                elif age > 50:
-                    age_groups['50+'] += 1
-            else:
-                age_groups['Unknown'] += 1
-        
-        # Years of service distribution
-        service_groups = {
-            '0-1 year': 0,
-            '1-3 years': 0,
-            '3-5 years': 0,
-            '5-10 years': 0,
-            '10+ years': 0
-        }
-        
-        for employee in active_employees:
-            years = employee.years_of_service
-            if years <= 1:
-                service_groups['0-1 year'] += 1
-            elif years <= 3:
-                service_groups['1-3 years'] += 1
-            elif years <= 5:
-                service_groups['3-5 years'] += 1
-            elif years <= 10:
-                service_groups['5-10 years'] += 1
-            else:
-                service_groups['10+ years'] += 1
-        
-        return Response({
-            'total_active_employees': active_employees.count(),
-            'gender_distribution': gender_stats,
-            'age_distribution': age_groups,
-            'service_years_distribution': service_groups
-        })
-    
-    @action(detail=False, methods=['get'])
-    def contract_trends(self, request):
-        """Analyze contract trends and patterns"""
-        all_employees = Employee.objects.filter(is_deleted=False)
-        
-        # Contract type distribution
-        contract_distribution = {}
-        for contract_choice in Employee.contract_duration:
-            count = all_employees.filter(contract_duration=contract_choice[0]).count()
-            contract_distribution[contract_choice[1]] = count
-        
-        # Contract extensions analysis
-        extension_stats = {
-            'employees_with_extensions': all_employees.filter(contract_extensions__gt=0).count(),
-            'total_extensions': sum(all_employees.values_list('contract_extensions', flat=True)),
-            'avg_extensions_per_employee': 0
-        }
-        
-        employees_with_extensions = all_employees.filter(contract_extensions__gt=0)
-        if employees_with_extensions.exists():
-            extension_stats['avg_extensions_per_employee'] = round(
-                sum(employees_with_extensions.values_list('contract_extensions', flat=True)) / employees_with_extensions.count(), 2
-            )
-        
-        # Contract renewal status
-        renewal_distribution = {}
-        for renewal_choice in Employee.RENEWAL_STATUS_CHOICES:
-            count = all_employees.filter(renewal_status=renewal_choice[0]).count()
-            renewal_distribution[renewal_choice[1]] = count
-        
-        # Upcoming contract endings
-        upcoming_endings = {}
-        for days in [7, 14, 30, 60, 90]:
-            count = all_employees.filter(
-                contract_end_date__lte=date.today() + timedelta(days=days),
-                contract_end_date__gte=date.today(),
-                contract_duration__in=['3_MONTHS', '6_MONTHS', '1_YEAR', '2_YEARS', '3_YEARS']
-            ).count()
-            upcoming_endings[f'{days}_days'] = count
-        
-        return Response({
-            'contract_type_distribution': contract_distribution,
-            'extension_statistics': extension_stats,
-            'renewal_status_distribution': renewal_distribution,
-            'upcoming_contract_endings': upcoming_endings
-        })
-    
-    @action(detail=False, methods=['get'])
-    def performance_indicators(self, request):
-        """Get HR performance indicators"""
-        active_employees = Employee.objects.filter(
-            status__affects_headcount=True,
-            is_deleted=False
-        )
-        
-        # Hiring trends (last 12 months)
-        hiring_trends = {}
-        for i in range(12):
-            month_date = date.today().replace(day=1) - timedelta(days=i*30)
-            month_name = month_date.strftime('%Y-%m')
-            
-            hires_count = Employee.objects.filter(
-                start_date__year=month_date.year,
-                start_date__month=month_date.month
-            ).count()
-            
-            hiring_trends[month_name] = hires_count
-        
-        # Turnover indicators
-        departed_employees = Employee.objects.filter(
-            end_date__isnull=False,
-            end_date__gte=date.today() - timedelta(days=365)  # Last year
-        ).count()
-        
-        turnover_rate = round((departed_employees / active_employees.count()) * 100, 2) if active_employees.count() > 0 else 0
-        
-        # Status distribution trends
-        status_health = {}
-        for emp_status in EmployeeStatus.objects.filter(is_active=True):
-            count = Employee.objects.filter(status=emp_status, is_deleted=False).count()
-            status_health[emp_status.name] = {
-                'count': count,
-                'percentage': round((count / Employee.objects.filter(is_deleted=False).count()) * 100, 1) if Employee.objects.filter(is_deleted=False).count() > 0 else 0
-            }
-        
-        return Response({
-            'active_headcount': active_employees.count(),
-            'hiring_trends_12_months': hiring_trends,
-            'annual_turnover_rate': turnover_rate,
-            'departed_employees_last_year': departed_employees,
-            'status_distribution_health': status_health,
-            'management_coverage': {
-                'with_line_manager': active_employees.filter(line_manager__isnull=False).count(),
-                'without_line_manager': active_employees.filter(line_manager__isnull=True).count()
-            }
-        })
-
 class OrgChartViewSet(viewsets.ReadOnlyModelViewSet):
     """ViewSet for organizational chart data"""
     permission_classes = [IsAuthenticated]
@@ -3152,481 +3593,6 @@ class OrgChartViewSet(viewsets.ReadOnlyModelViewSet):
                 child_data['children'] = self._get_department_children(employee, employees_dict)
                 children.append(child_data)
         return children
-
-class EmployeeDocumentViewSet(viewsets.ModelViewSet):
-    permission_classes = [IsAuthenticated]
-    serializer_class = EmployeeDocumentSerializer
-    parser_classes = [MultiPartParser, FormParser, JSONParser]
-    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ['document_type', 'is_confidential', 'employee', 'is_current_version']
-    search_fields = ['name', 'description', 'original_filename']
-    ordering_fields = ['uploaded_at', 'name', 'file_size', 'version']
-    ordering = ['-uploaded_at']
-    
-    def get_queryset(self):
-        return EmployeeDocument.objects.select_related('employee', 'uploaded_by').all()
-    
-    def get_serializer_class(self):
-        if hasattr(self, 'action') and self.action == 'create':
-            return DocumentUploadSerializer
-        elif hasattr(self, 'action') and self.action == 'replace_document':
-            return DocumentReplaceSerializer
-        
-        return EmployeeDocumentSerializer
-    
-    @swagger_auto_schema(
-        auto_schema=FileUploadAutoSchema,
-        operation_description="Upload a document for an employee",
-        consumes=['multipart/form-data'],
-        manual_parameters=[
-            openapi.Parameter(
-                'employee_id',
-                openapi.IN_FORM,
-                description="Employee ID",
-                type=openapi.TYPE_INTEGER,
-                required=True
-            ),
-            openapi.Parameter(
-                'name',
-                openapi.IN_FORM,
-                description="Document name/title",
-                type=openapi.TYPE_STRING,
-                required=True
-            ),
-            openapi.Parameter(
-                'document_type',
-                openapi.IN_FORM,
-                description="Document type",
-                type=openapi.TYPE_STRING,
-                enum=['CONTRACT', 'ID', 'CERTIFICATE', 'CV', 'PERFORMANCE', 'MEDICAL', 'TRAINING', 'OTHER'],
-                required=False
-            ),
-            openapi.Parameter(
-                'document_file',
-                openapi.IN_FORM,
-                description="Document file to upload",
-                type=openapi.TYPE_FILE,
-                required=True
-            ),
-            openapi.Parameter(
-                'description',
-                openapi.IN_FORM,
-                description="Document description (optional)",
-                type=openapi.TYPE_STRING,
-                required=False
-            ),
-            openapi.Parameter(
-                'expiry_date',
-                openapi.IN_FORM,
-                description="Document expiry date (YYYY-MM-DD format, optional)",
-                type=openapi.TYPE_STRING,
-                format=openapi.FORMAT_DATE,
-                required=False
-            ),
-            openapi.Parameter(
-                'is_confidential',
-                openapi.IN_FORM,
-                description="Mark as confidential (default: false)",
-                type=openapi.TYPE_BOOLEAN,
-                required=False
-            ),
-            openapi.Parameter(
-                'replace_existing',
-                openapi.IN_FORM,
-                description="Replace existing document with same name and type",
-                type=openapi.TYPE_BOOLEAN,
-                required=False
-            ),
-        ],
-        responses={
-            201: openapi.Response(
-                description="Document uploaded successfully",
-                schema=EmployeeDocumentSerializer
-            ),
-            400: openapi.Response(description="Bad request - validation error"),
-            404: openapi.Response(description="Employee not found"),
-            413: openapi.Response(description="File too large"),
-        }
-    )
-    def create(self, request, *args, **kwargs):
-        """Upload a document for an employee with proper version handling"""
-        try:
-            logger.info(f"Document upload request from user: {request.user}")
-            logger.info(f"Request data: {request.data}")
-            logger.info(f"Files: {list(request.FILES.keys())}")
-            
-            serializer = self.get_serializer(data=request.data)
-            if not serializer.is_valid():
-                logger.error(f"Document upload validation failed: {serializer.errors}")
-                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-            
-            document = serializer.save()
-            
-            # Log activity
-            EmployeeActivity.objects.create(
-                employee=document.employee,
-                activity_type='DOCUMENT_UPLOADED',
-                description=f"Document '{document.name}' uploaded (v{document.version})",
-                performed_by=request.user,
-                metadata={
-                    'document_id': str(document.id),
-                    'document_type': document.document_type,
-                    'file_size': document.file_size,
-                    'version': document.version,
-                    'is_current_version': document.is_current_version
-                }
-            )
-            
-            response_serializer = EmployeeDocumentSerializer(document, context={'request': request})
-            return Response(response_serializer.data, status=status.HTTP_201_CREATED)
-            
-        except Exception as e:
-            logger.error(f"Document upload failed: {str(e)}")
-            logger.error(f"Traceback: {traceback.format_exc()}")
-            return Response(
-                {'error': f'Document upload failed: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-    
-  
-    @swagger_auto_schema(
-        operation_description="Replace an existing document with a new version",
-        consumes=['multipart/form-data'],
-        manual_parameters=[
-            openapi.Parameter(
-                'document_file',
-                openapi.IN_FORM,
-                description="New document file",
-                type=openapi.TYPE_FILE,
-                required=True
-            ),
-            openapi.Parameter(
-                'description',
-                openapi.IN_FORM,
-                description="Description for new version",
-                type=openapi.TYPE_STRING,
-                required=False
-            ),
-        ]
-    )
-    @action(detail=True, methods=['post'], parser_classes=[MultiPartParser, FormParser])
-    def replace_document(self, request, pk=None):
-        """Replace an existing document with a new version"""
-        try:
-            original_document = self.get_object()
-            
-            serializer = DocumentReplaceSerializer(data=request.data)
-            if not serializer.is_valid():
-                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-            
-            # Create new version
-            new_document = EmployeeDocument.objects.create(
-                employee=original_document.employee,
-                name=original_document.name,
-                document_type=original_document.document_type,
-                document_file=serializer.validated_data['document_file'],
-                description=serializer.validated_data.get('description', ''),
-                expiry_date=original_document.expiry_date,
-                is_confidential=original_document.is_confidential,
-                is_required=original_document.is_required,
-                uploaded_by=request.user,
-                version=original_document.version + 1,
-                is_current_version=True
-            )
-            
-            # Mark original as not current and set replacement relationship
-            original_document.is_current_version = False
-            original_document.replaced_by = new_document
-            original_document.save()
-            
-            # Log activity
-            EmployeeActivity.objects.create(
-                employee=new_document.employee,
-                activity_type='DOCUMENT_UPLOADED',
-                description=f"Document '{new_document.name}' replaced with new version (v{new_document.version})",
-                performed_by=request.user,
-                metadata={
-                    'document_id': str(new_document.id),
-                    'replaced_document_id': str(original_document.id),
-                    'old_version': original_document.version,
-                    'new_version': new_document.version,
-                    'document_type': new_document.document_type
-                }
-            )
-            
-            response_serializer = EmployeeDocumentSerializer(new_document, context={'request': request})
-            return Response({
-                'message': f'Document replaced successfully with version {new_document.version}',
-                'old_version': original_document.version,
-                'new_version': new_document.version,
-                'document': response_serializer.data
-            })
-            
-        except Exception as e:
-            logger.error(f"Document replacement failed: {str(e)}")
-            return Response(
-                {'error': f'Document replacement failed: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-    
-    
-    
-    @action(detail=False, methods=['get'])
-    def expired_documents(self, request):
-        """Get all expired documents"""
-        try:
-            today = date.today()
-            expired_docs = self.get_queryset().filter(
-                expiry_date__lt=today,
-                is_current_version=True,
-                is_deleted=False
-            ).select_related('employee')
-            
-            serializer = self.get_serializer(expired_docs, many=True)
-            
-            return Response({
-                'count': expired_docs.count(),
-                'expired_documents': serializer.data
-            })
-            
-        except Exception as e:
-            logger.error(f"Get expired documents failed: {str(e)}")
-            return Response(
-                {'error': f'Failed to get expired documents: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-    
-    @action(detail=False, methods=['get'])
-    def expiring_soon(self, request):
-        """Get documents expiring within specified days"""
-        try:
-            days = int(request.query_params.get('days', 30))
-            today = date.today()
-            expiry_date = today + timedelta(days=days)
-            
-            expiring_docs = self.get_queryset().filter(
-                expiry_date__gte=today,
-                expiry_date__lte=expiry_date,
-                is_current_version=True,
-                is_deleted=False
-            ).select_related('employee').order_by('expiry_date')
-            
-            serializer = self.get_serializer(expiring_docs, many=True)
-            
-            # Group by urgency
-            grouped_docs = {
-                'critical': [],  # < 7 days
-                'urgent': [],    # 7-14 days  
-                'warning': [],   # 15-30 days
-                'info': []       # > 30 days
-            }
-            
-            for doc_data in serializer.data:
-                doc_obj = expiring_docs.get(id=doc_data['id'])
-                days_left = (doc_obj.expiry_date - today).days
-                
-                if days_left <= 7:
-                    grouped_docs['critical'].append(doc_data)
-                elif days_left <= 14:
-                    grouped_docs['urgent'].append(doc_data)
-                elif days_left <= 30:
-                    grouped_docs['warning'].append(doc_data)
-                else:
-                    grouped_docs['info'].append(doc_data)
-            
-            return Response({
-                'days_ahead': days,
-                'total_count': expiring_docs.count(),
-                'grouped_by_urgency': grouped_docs,
-                'all_documents': serializer.data
-            })
-            
-        except Exception as e:
-            logger.error(f"Get expiring documents failed: {str(e)}")
-            return Response(
-                {'error': f'Failed to get expiring documents: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-    
-    @swagger_auto_schema(
-        auto_schema=FileUploadAutoSchema,
-        operation_description="Bulk upload multiple documents for an employee",
-        consumes=['multipart/form-data'],
-        manual_parameters=[
-            openapi.Parameter(
-                'employee_id',
-                openapi.IN_FORM,
-                description="Employee ID",
-                type=openapi.TYPE_INTEGER,
-                required=True
-            ),
-            openapi.Parameter(
-                'documents',
-                openapi.IN_FORM,
-                description="Multiple document files (select multiple files)",
-                type=openapi.TYPE_ARRAY,
-                items=openapi.Items(type=openapi.TYPE_FILE),
-                required=True
-            ),
-            openapi.Parameter(
-                'document_type',
-                openapi.IN_FORM,
-                description="Document type for all files",
-                type=openapi.TYPE_STRING,
-                enum=['CONTRACT', 'ID', 'CERTIFICATE', 'CV', 'PERFORMANCE', 'MEDICAL', 'TRAINING', 'OTHER'],
-                required=False
-            ),
-            openapi.Parameter(
-                'is_confidential',
-                openapi.IN_FORM,
-                description="Mark all as confidential",
-                type=openapi.TYPE_BOOLEAN,
-                required=False
-            ),
-            openapi.Parameter(
-                'replace_existing',
-                openapi.IN_FORM,
-                description="Replace existing documents with same names",
-                type=openapi.TYPE_BOOLEAN,
-                required=False
-            ),
-        ],
-        responses={
-            200: openapi.Response(
-                description="Bulk upload completed",
-                schema=openapi.Schema(
-                    type=openapi.TYPE_OBJECT,
-                    properties={
-                        'success': openapi.Schema(type=openapi.TYPE_BOOLEAN),
-                        'message': openapi.Schema(type=openapi.TYPE_STRING),
-                        'uploaded_count': openapi.Schema(type=openapi.TYPE_INTEGER),
-                        'failed_count': openapi.Schema(type=openapi.TYPE_INTEGER),
-                    }
-                )
-            ),
-            400: openapi.Response(description="Bad request"),
-            404: openapi.Response(description="Employee not found")
-        }
-    )
-    @action(detail=False, methods=['post'], parser_classes=[MultiPartParser, FormParser])
-    def bulk_upload(self, request):
-        """Bulk upload documents for an employee with version control"""
-        try:
-            employee_id = request.data.get('employee_id')
-            if not employee_id:
-                return Response(
-                    {'error': 'employee_id is required'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            
-            try:
-                employee = Employee.objects.get(id=employee_id)
-            except Employee.DoesNotExist:
-                return Response(
-                    {'error': 'Employee not found'},
-                    status=status.HTTP_404_NOT_FOUND
-                )
-            
-            documents = request.FILES.getlist('documents')
-            if not documents:
-                return Response(
-                    {'error': 'No documents provided'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            
-            document_type = request.data.get('document_type', 'OTHER')
-            is_confidential = request.data.get('is_confidential', 'false').lower() == 'true'
-            replace_existing = request.data.get('replace_existing', 'false').lower() == 'true'
-            
-            uploaded_documents = []
-            failed_uploads = []
-            
-            with transaction.atomic():
-                for i, doc_file in enumerate(documents):
-                    try:
-                        # Validate individual file
-                        if doc_file.size > 50 * 1024 * 1024:
-                            failed_uploads.append({
-                                'filename': doc_file.name,
-                                'error': 'File size exceeds 50MB limit'
-                            })
-                            continue
-                        
-                        # Determine version number
-                        version = 1
-                        if replace_existing:
-                            existing_docs = EmployeeDocument.objects.filter(
-                                employee=employee,
-                                name=doc_file.name,
-                                document_type=document_type,
-                                is_deleted=False
-                            )
-                            
-                            if existing_docs.exists():
-                                # Mark existing as not current
-                                existing_docs.update(is_current_version=False)
-                                
-                                # Set new version number
-                                latest_version = existing_docs.aggregate(
-                                    max_version=models.Max('version')
-                                )['max_version'] or 0
-                                version = latest_version + 1
-                        
-                        # Create document with proper version handling
-                        document = EmployeeDocument.objects.create(
-                            employee=employee,
-                            name=doc_file.name,
-                            document_type=document_type,
-                            document_file=doc_file,
-                            is_confidential=is_confidential,
-                            uploaded_by=request.user,
-                            version=version,
-                            is_current_version=True,
-                            document_status='ACTIVE'
-                        )
-                        
-                        uploaded_documents.append(document)
-                        
-                    except Exception as e:
-                        failed_uploads.append({
-                            'filename': doc_file.name,
-                            'error': str(e)
-                        })
-            
-            # Log activity
-            if uploaded_documents:
-                EmployeeActivity.objects.create(
-                    employee=employee,
-                    activity_type='DOCUMENT_UPLOADED',
-                    description=f"Bulk uploaded {len(uploaded_documents)} documents",
-                    performed_by=request.user,
-                    metadata={
-                        'bulk_upload': True,
-                        'uploaded_count': len(uploaded_documents),
-                        'failed_count': len(failed_uploads),
-                        'document_type': document_type,
-                        'replace_existing': replace_existing
-                    }
-                )
-            
-            serializer = EmployeeDocumentSerializer(uploaded_documents, many=True, context={'request': request})
-            
-            return Response({
-                'success': True,
-                'message': f'Uploaded {len(uploaded_documents)} documents successfully',
-                'uploaded_count': len(uploaded_documents),
-                'failed_count': len(failed_uploads),
-                'uploaded_documents': serializer.data,
-                'failed_uploads': failed_uploads
-            })
-            
-        except Exception as e:
-            logger.error(f"Bulk document upload failed: {str(e)}")
-            return Response(
-                {'error': f'Bulk upload failed: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-
 
 class ProfileImageViewSet(viewsets.ViewSet):
     permission_classes = [IsAuthenticated]
@@ -3777,35 +3743,7 @@ class ProfileImageViewSet(viewsets.ViewSet):
                 {'error': f'Profile image delete failed: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-    
-    @swagger_auto_schema(
-        operation_description="Get employee profile image URL",
-        manual_parameters=[
-            openapi.Parameter(
-                'employee_id',
-                openapi.IN_QUERY,
-                description='Employee ID',
-                type=openapi.TYPE_INTEGER,
-                required=True
-            )
-        ],
-        responses={
-            200: openapi.Response(
-                description="Profile image URL retrieved successfully",
-                schema=openapi.Schema(
-                    type=openapi.TYPE_OBJECT,
-                    properties={
-                        'employee_id': openapi.Schema(type=openapi.TYPE_INTEGER),
-                        'employee_name': openapi.Schema(type=openapi.TYPE_STRING),
-                        'profile_image_url': openapi.Schema(type=openapi.TYPE_STRING, nullable=True),
-                        'has_image': openapi.Schema(type=openapi.TYPE_BOOLEAN),
-                    }
-                )
-            )
-        }
-    )
-    @action(detail=False, methods=['get'])
-    def get_image(self, request):
+  
         """Get employee profile image URL"""
         try:
             employee_id = request.query_params.get('employee_id')

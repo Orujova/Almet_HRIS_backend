@@ -162,20 +162,40 @@ class Migration(migrations.Migration):
         migrations.CreateModel(
             name='EmployeeDocument',
             fields=[
-                ('id', models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
+                ('id', models.BigAutoField(primary_key=True, serialize=False)),
                 ('name', models.CharField(max_length=255)),
-                ('document_type', models.CharField(choices=[('CONTRACT', 'Employment Contract'), ('ID', 'ID Document'), ('CERTIFICATE', 'Certificate'), ('CV', 'Curriculum Vitae'), ('OTHER', 'Other')], default='OTHER', max_length=20)),
+                ('document_type', models.CharField(
+                    choices=[
+                        ('CONTRACT', 'Employment Contract'),
+                        ('ID', 'ID Document'),
+                        ('CERTIFICATE', 'Certificate'),
+                        ('CV', 'Curriculum Vitae'),
+                        ('OTHER', 'Other')
+                    ],
+                    default='OTHER',
+                    max_length=20
+                )),
                 ('file_path', models.CharField(max_length=500)),
                 ('file_size', models.PositiveIntegerField(blank=True, null=True)),
                 ('mime_type', models.CharField(blank=True, max_length=100, null=True)),
                 ('uploaded_at', models.DateTimeField(auto_now_add=True)),
-                ('employee', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='documents', to='api.employee')),
-                ('uploaded_by', models.ForeignKey(null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='uploaded_documents', to=settings.AUTH_USER_MODEL)),
+                ('employee', models.ForeignKey(
+                    on_delete=django.db.models.deletion.CASCADE,
+                    related_name='documents',
+                    to='api.employee'
+                )),
+                ('uploaded_by', models.ForeignKey(
+                    null=True,
+                    on_delete=django.db.models.deletion.SET_NULL,
+                    related_name='uploaded_documents',
+                    to=settings.AUTH_USER_MODEL
+                )),
             ],
             options={
                 'ordering': ['-uploaded_at'],
             },
         ),
+
         migrations.CreateModel(
             name='MicrosoftUser',
             fields=[

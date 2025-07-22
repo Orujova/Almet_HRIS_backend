@@ -485,12 +485,7 @@ class Employee(SoftDeleteModel):
         blank=True,
         help_text="Employee profile photo"
     )
-    RENEWAL_STATUS_CHOICES = [
-        ('PENDING', 'Pending'),
-        ('APPROVED', 'Approved'),
-        ('REJECTED', 'Rejected'),
-        ('NOT_APPLICABLE', 'Not Applicable'),
-    ]
+
     
     # Basic Information
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='employee_profile')
@@ -533,7 +528,7 @@ class Employee(SoftDeleteModel):
     contract_end_date = models.DateField(null=True, blank=True, editable=False)  # Auto-calculated
     contract_extensions = models.IntegerField(default=0, help_text="Number of contract extensions")
     last_extension_date = models.DateField(null=True, blank=True)
-    renewal_status = models.CharField(max_length=20, choices=RENEWAL_STATUS_CHOICES, default='NOT_APPLICABLE')
+    
     
     # Management Hierarchy (ENHANCED)
     line_manager = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='direct_reports', help_text="Line manager for this employee")
@@ -605,11 +600,7 @@ class Employee(SoftDeleteModel):
         if not self.status_id:
             self.auto_assign_status()
         
-        # Set renewal status based on contract
-        if self.contract_duration == 'PERMANENT':
-            self.renewal_status = 'NOT_APPLICABLE'
-        elif not self.renewal_status or self.renewal_status == 'NOT_APPLICABLE':
-            self.renewal_status = 'PENDING'
+        
         
         # Link to vacant position if applicable
         if not self.filled_vacancy and hasattr(self, '_vacancy_id'):
@@ -743,7 +734,7 @@ class Employee(SoftDeleteModel):
             self.contract_end_date = new_end_date
             self.contract_extensions += 1
             self.last_extension_date = timezone.now().date()
-            self.renewal_status = 'APPROVED'
+           
             
             if user:
                 self.updated_by = user
@@ -952,12 +943,13 @@ class EmployeeDocument(SoftDeleteModel):
         ('ARCHIVED', 'Archived'),
     ]
     
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    
+    
     employee = models.ForeignKey('Employee', on_delete=models.CASCADE, related_name='documents')
     name = models.CharField(max_length=255, help_text="Document name or title")
     document_type = models.CharField(max_length=20, choices=DOCUMENT_TYPES, default='OTHER')
     
-    # FIXED: Added missing version field
+    # Version field
     version = models.PositiveIntegerField(default=1, help_text="Document version number")
     
     # Actual file field
@@ -987,7 +979,6 @@ class EmployeeDocument(SoftDeleteModel):
     is_confidential = models.BooleanField(default=False, help_text="Mark as confidential")
     is_required = models.BooleanField(default=False, help_text="Is this document required for employee?")
     
-    
     notify_before_expiry_days = models.PositiveIntegerField(
         default=30, 
         help_text="Days before expiry to send notification"
@@ -1001,7 +992,7 @@ class EmployeeDocument(SoftDeleteModel):
     download_count = models.PositiveIntegerField(default=0)
     last_accessed = models.DateTimeField(null=True, blank=True)
     
-    # Version control (ENHANCED)
+    # Version control
     replaced_by = models.ForeignKey(
         'self', 
         on_delete=models.SET_NULL, 
@@ -1016,8 +1007,6 @@ class EmployeeDocument(SoftDeleteModel):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
-    # In api/models.py - Replace the EmployeeDocument save method
-
     def save(self, *args, **kwargs):
         # Auto-populate file metadata
         if self.document_file:
@@ -1031,9 +1020,8 @@ class EmployeeDocument(SoftDeleteModel):
         if self.notify_before_expiry_days is None:
             self.notify_before_expiry_days = 30
         
-        # FIXED: Handle version control more carefully
+        # Handle version control more carefully
         if self.pk is None:  # New document
-            # Only handle versioning if we're NOT explicitly setting version and name
             if not hasattr(self, '_skip_version_check'):
                 # Check if there are existing documents with the same name for this employee
                 existing_docs = EmployeeDocument.objects.filter(
@@ -1050,8 +1038,6 @@ class EmployeeDocument(SoftDeleteModel):
                     
                     # Mark previous versions as not current
                     existing_docs.update(is_current_version=False)
-                    
-                    # Set replacement relationship will be handled in serializer
                 elif not self.version:
                     # New document with unique name
                     self.version = 1
@@ -1133,7 +1119,7 @@ class EmployeeDocument(SoftDeleteModel):
         ordering = ['-uploaded_at']
         verbose_name = "Employee Document"
         verbose_name_plural = "Employee Documents"
-        # ENHANCED: Unique constraint to prevent duplicate current versions
+        # Unique constraint to prevent duplicate current versions
         constraints = [
             models.UniqueConstraint(
                 fields=['employee', 'name', 'document_type'],

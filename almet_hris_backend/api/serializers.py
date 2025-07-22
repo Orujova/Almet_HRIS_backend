@@ -242,226 +242,6 @@ class EmployeeDocumentSerializer(serializers.ModelSerializer):
             'has_next': obj.get_next_version() is not None
         }
 
-class DocumentUploadSerializer(serializers.Serializer):
-    """File upload serializer - Fixed version handling"""
-    employee_id = serializers.IntegerField(
-        help_text="Employee ID to associate document with"
-    )
-    name = serializers.CharField(
-        max_length=255,
-        help_text="Document name or title"
-    )
-    document_type = serializers.ChoiceField(
-        choices=EmployeeDocument.DOCUMENT_TYPES,
-        default='OTHER',
-        help_text="Type of document being uploaded"
-    )
-    document_file = serializers.FileField(
-        help_text="Document file to upload (PDF, DOC, DOCX, JPG, PNG, etc.)"
-    )
-    description = serializers.CharField(
-        required=False,
-        allow_blank=True,
-        help_text="Optional document description"
-    )
-    expiry_date = serializers.DateField(
-        required=False,
-        allow_null=True,
-        help_text="Document expiry date (YYYY-MM-DD format)"
-    )
-    is_confidential = serializers.BooleanField(
-        default=False,
-        help_text="Mark document as confidential"
-    )
-    is_required = serializers.BooleanField(
-        default=False,
-        help_text="Mark document as required"
-    )
-    replace_existing = serializers.BooleanField(
-        default=False,
-        help_text="Replace existing document with same name and type"
-    )
-    
-    def validate_employee_id(self, value):
-        try:
-            Employee.objects.get(id=value)
-        except Employee.DoesNotExist:
-            raise serializers.ValidationError("Employee not found.")
-        return value
-    
-    def validate_document_file(self, value):
-        # File size validation (50MB max)
-        if value.size > 50 * 1024 * 1024:
-            raise serializers.ValidationError("File size cannot exceed 50MB.")
-        
-        # File type validation
-        allowed_types = [
-            'application/pdf', 'application/msword', 
-            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-            'image/jpeg', 'image/png', 'image/gif', 'image/bmp',
-            'text/plain', 'application/vnd.ms-excel',
-            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-        ]
-        
-        import mimetypes
-        file_type, _ = mimetypes.guess_type(value.name)
-        
-        if file_type and file_type not in allowed_types:
-            raise serializers.ValidationError(f"File type {file_type} is not allowed.")
-        
-        return value
-    
-    def create(self, validated_data):
-        employee_id = validated_data.pop('employee_id')
-        replace_existing = validated_data.pop('replace_existing', False)
-        
-        employee = Employee.objects.get(id=employee_id)
-        validated_data['employee'] = employee
-        validated_data['uploaded_by'] = self.context['request'].user
-        
-        # Set default status
-        validated_data['document_status'] = 'ACTIVE'
-        
-        # FIXED: Handle existing documents and versioning properly
-        if replace_existing:
-            # Check for existing documents with same name and type
-            existing_docs = EmployeeDocument.objects.filter(
-                employee=employee,
-                name=validated_data['name'],
-                document_type=validated_data['document_type'],
-                is_deleted=False
-            ).order_by('-version')
-            
-            if existing_docs.exists():
-                # Mark existing documents as not current
-                existing_docs.update(is_current_version=False)
-                
-                # Set version number
-                latest_version = existing_docs.first().version
-                validated_data['version'] = latest_version + 1
-                
-                # Set the latest document as replaced by the new one
-                latest_doc = existing_docs.first()
-                validated_data['_replace_document_id'] = latest_doc.id
-            else:
-                validated_data['version'] = 1
-        else:
-            # For new documents, check if same name+type already exists
-            existing_count = EmployeeDocument.objects.filter(
-                employee=employee,
-                name=validated_data['name'],
-                document_type=validated_data['document_type'],
-                is_deleted=False
-            ).count()
-            
-            if existing_count > 0:
-                # Auto-increment the name to make it unique
-                base_name = validated_data['name']
-                counter = 1
-                while EmployeeDocument.objects.filter(
-                    employee=employee,
-                    name=f"{base_name} ({counter})",
-                    document_type=validated_data['document_type'],
-                    is_deleted=False
-                ).exists():
-                    counter += 1
-                
-                validated_data['name'] = f"{base_name} ({counter})"
-            
-            validated_data['version'] = 1
-        
-        # Ensure is_current_version is True for new uploads
-        validated_data['is_current_version'] = True
-        
-        # Create the document
-        document = EmployeeDocument.objects.create(**validated_data)
-        
-        # Handle replacement relationship
-        if replace_existing and '_replace_document_id' in validated_data:
-            try:
-                replaced_doc = EmployeeDocument.objects.get(id=validated_data['_replace_document_id'])
-                replaced_doc.replaced_by = document
-                replaced_doc.save()
-            except EmployeeDocument.DoesNotExist:
-                pass
-        
-        return document
-    
-class BulkDocumentUploadSerializer(serializers.Serializer):
-    """Bulk document upload serializer - Fixed version handling"""
-    employee_id = serializers.IntegerField(
-        help_text="Employee ID to upload documents for"
-    )
-    documents = serializers.ListField(
-        child=serializers.FileField(),
-        min_length=1,
-        max_length=10,
-        help_text="List of document files (max 10 files)"
-    )
-    document_type = serializers.ChoiceField(
-        choices=EmployeeDocument.DOCUMENT_TYPES,
-        default='OTHER',
-        help_text="Document type for all uploaded files"
-    )
-    is_confidential = serializers.BooleanField(
-        default=False,
-        help_text="Mark all documents as confidential"
-    )
-    replace_existing = serializers.BooleanField(
-        default=False,
-        help_text="Replace existing documents with same names"
-    )
-    
-    def validate_employee_id(self, value):
-        try:
-            Employee.objects.get(id=value)
-        except Employee.DoesNotExist:
-            raise serializers.ValidationError("Employee not found.")
-        return value
-    
-    def validate_documents(self, value):
-        total_size = sum(doc.size for doc in value)
-        if total_size > 100 * 1024 * 1024:  # 100MB total
-            raise serializers.ValidationError("Total file size cannot exceed 100MB.")
-        
-        for doc in value:
-            if doc.size > 50 * 1024 * 1024:  # 50MB per file
-                raise serializers.ValidationError(f"File {doc.name} exceeds 50MB limit.")
-        
-        return value
-
-class DocumentReplaceSerializer(serializers.Serializer):
-    """Serializer for replacing an existing document"""
-    document_file = serializers.FileField(
-        help_text="New document file to replace the existing one"
-    )
-    description = serializers.CharField(
-        required=False,
-        allow_blank=True,
-        help_text="Optional description for the new version"
-    )
-    
-    def validate_document_file(self, value):
-        # Same validation as DocumentUploadSerializer
-        if value.size > 50 * 1024 * 1024:
-            raise serializers.ValidationError("File size cannot exceed 50MB.")
-        
-        allowed_types = [
-            'application/pdf', 'application/msword', 
-            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-            'image/jpeg', 'image/png', 'image/gif', 'image/bmp',
-            'text/plain', 'application/vnd.ms-excel',
-            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-        ]
-        
-        import mimetypes
-        file_type, _ = mimetypes.guess_type(value.name)
-        
-        if file_type and file_type not in allowed_types:
-            raise serializers.ValidationError(f"File type {file_type} is not allowed.")
-        
-        return value
-
 class ProfileImageUploadSerializer(serializers.Serializer):
     employee_id = serializers.IntegerField()
     profile_image = serializers.ImageField()
@@ -594,8 +374,8 @@ class EmployeeListSerializer(serializers.ModelSerializer):
     years_of_service = serializers.ReadOnlyField()
     current_status_display = serializers.ReadOnlyField()
     contract_duration_display = serializers.CharField(source='get_contract_duration_display', read_only=True)
-    grading_display = serializers.CharField(source='get_grading_display', read_only=True)
-    renewal_status_display = serializers.CharField(source='get_renewal_status_display', read_only=True)
+   
+    
     direct_reports_count = serializers.SerializerMethodField()
     status_needs_update = serializers.SerializerMethodField()
     profile_image_url = serializers.SerializerMethodField()
@@ -603,15 +383,15 @@ class EmployeeListSerializer(serializers.ModelSerializer):
     class Meta:
         model = Employee
         fields = [
-            'id', 'employee_id', 'name', 'email', 'date_of_birth', 'gender', 'father_name', 'phone',
+            'id', 'employee_id', 'name', 'email','father_name', 'date_of_birth', 'gender',  'phone',
             'business_function_name', 'business_function_code', 'department_name', 'unit_name',
             'job_function_name', 'job_title', 'position_group_name', 'position_group_level',
-            'grading_level', 'grading_display', 'start_date', 'end_date',
+            'grading_level',  'start_date', 'end_date',
             'contract_duration', 'contract_duration_display', 'contract_start_date', 'contract_end_date',
-            'contract_extensions', 'last_extension_date', 'renewal_status', 'renewal_status_display',
+            'contract_extensions', 'last_extension_date',  
             'line_manager_name', 'line_manager_hc_number', 'status_name', 'status_color',
             'tag_names', 'years_of_service', 'current_status_display', 'is_visible_in_org_chart',
-            'direct_reports_count', 'status_needs_update', 'created_at', 'updated_at','profile_image_url',
+            'direct_reports_count', 'status_needs_update', 'created_at', 'updated_at','profile_image_url','is_deleted'
         ]
     
     def get_profile_image_url(self, obj):
@@ -627,6 +407,7 @@ class EmployeeListSerializer(serializers.ModelSerializer):
                 # Log error but don't fail serialization
                 logger.warning(f"Could not get profile image URL for employee {obj.employee_id}: {e}")
         return None
+    
     def get_tag_names(self, obj):
         return [
             {
@@ -651,6 +432,7 @@ class EmployeeListSerializer(serializers.ModelSerializer):
 
 class EmployeeDetailSerializer(serializers.ModelSerializer):
     """Detailed employee serializer for individual views"""
+     
     name = serializers.CharField(source='full_name', read_only=True)
     email = serializers.CharField(source='user.email', read_only=True)
     first_name = serializers.CharField(source='user.first_name', read_only=True)
@@ -664,6 +446,7 @@ class EmployeeDetailSerializer(serializers.ModelSerializer):
     position_group_detail = PositionGroupSerializer(source='position_group', read_only=True)
     status_detail = EmployeeStatusSerializer(source='status', read_only=True)
     line_manager_detail = serializers.SerializerMethodField()
+   
     
     # Enhanced fields
     documents = EmployeeDocumentSerializer(many=True, read_only=True)
@@ -673,7 +456,6 @@ class EmployeeDetailSerializer(serializers.ModelSerializer):
     
     # Calculated fields
     years_of_service = serializers.ReadOnlyField()
-    grading_display = serializers.CharField(source='get_grading_display', read_only=True)
     contract_duration_display = serializers.CharField(source='get_contract_duration_display', read_only=True)
     
     # Contract status analysis
@@ -745,9 +527,87 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
     tag_ids = serializers.ListField(child=serializers.IntegerField(), write_only=True, required=False)
     vacancy_id = serializers.IntegerField(write_only=True, required=False, help_text="Link to vacant position")
     
+    # ƏLAVƏ SAHƏLƏRİ
+    document = serializers.FileField(
+        write_only=True, 
+        required=False, 
+        help_text="Employee document file (PDF, DOC, DOCX, etc.)"
+    )
+    profile_photo = serializers.ImageField(
+        write_only=True, 
+        required=False, 
+        help_text="Employee profile photo (JPG, PNG, etc.)"
+    )
+    
+    # Document metadata (optional)
+    document_type = serializers.ChoiceField(
+        choices=EmployeeDocument.DOCUMENT_TYPES,
+        write_only=True,
+        required=False,
+        default='OTHER',
+        help_text="Type of document being uploaded"
+    )
+    document_name = serializers.CharField(
+        write_only=True,
+        required=False,
+        max_length=255,
+        help_text="Name for the document (optional, will use filename if not provided)"
+    )
+    
     class Meta:
         model = Employee
-        exclude = ['user', 'full_name', 'tags', 'filled_vacancy', 'status', 'created_by', 'updated_by']
+        exclude = [
+            'user', 'full_name', 'tags', 'filled_vacancy', 'status', 
+            'created_by', 'updated_by', 'profile_image'
+        ]
+        read_only_fields = [
+            # Avtomatik sahələr - POST/PUT zamanı dəyişdirilə bilməz
+            'contract_extensions', 'last_extension_date', 
+            'deleted_by', 'deleted_at', 'is_deleted',
+            'contract_end_date',  # Avtomatik hesablanır
+            'created_at', 'updated_at'  # Avtomatik timestamp-lər
+        ]
+    
+    def validate_document(self, value):
+        """Validate document file"""
+        if value:
+            # File size validation (50MB max)
+            if value.size > 50 * 1024 * 1024:
+                raise serializers.ValidationError("Document size cannot exceed 50MB.")
+            
+            # File type validation
+            allowed_types = [
+                'application/pdf', 'application/msword', 
+                'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                'text/plain', 'application/vnd.ms-excel',
+                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            ]
+            
+            import mimetypes
+            file_type, _ = mimetypes.guess_type(value.name)
+            
+            if file_type and file_type not in allowed_types:
+                raise serializers.ValidationError(f"Document type {file_type} is not allowed.")
+        
+        return value
+    
+    def validate_profile_photo(self, value):
+        """Validate profile photo"""
+        if value:
+            # Image size validation (10MB max)
+            if value.size > 10 * 1024 * 1024:
+                raise serializers.ValidationError("Profile photo size cannot exceed 10MB.")
+            
+            # Image format validation
+            allowed_formats = ['image/jpeg', 'image/png', 'image/gif', 'image/bmp']
+            
+            import mimetypes
+            file_type, _ = mimetypes.guess_type(value.name)
+            
+            if file_type and file_type not in allowed_formats:
+                raise serializers.ValidationError(f"Image format {file_type} is not allowed.")
+        
+        return value
     
     def validate_contract_duration(self, value):
         """Validate that contract duration exists in configurations"""
@@ -772,7 +632,6 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
             pass
         
         return value
-    
     
     def validate_employee_id(self, value):
         if self.instance:
@@ -822,9 +681,15 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
         first_name = validated_data.pop('first_name')
         last_name = validated_data.pop('last_name')
         email = validated_data.pop('email')
-        father_name = validated_data.pop('father_name', '')  # NEW FIELD
+        father_name = validated_data.pop('father_name', '')
         tag_ids = validated_data.pop('tag_ids', [])
         vacancy_id = validated_data.pop('vacancy_id', None)
+        
+        # ƏLAVƏ SAHƏLƏRİ EXTRACT ET
+        document = validated_data.pop('document', None)
+        profile_photo = validated_data.pop('profile_photo', None)
+        document_type = validated_data.pop('document_type', 'OTHER')
+        document_name = validated_data.pop('document_name', '')
         
         # Create user
         user = User.objects.create_user(
@@ -838,6 +703,10 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
         validated_data['user'] = user
         validated_data['created_by'] = self.context['request'].user
         
+        # Set profile photo if provided
+        if profile_photo:
+            validated_data['profile_image'] = profile_photo
+        
         if vacancy_id:
             validated_data['_vacancy_id'] = vacancy_id
         
@@ -848,11 +717,7 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
         # Set default values for new fields
         if 'contract_extensions' not in validated_data:
             validated_data['contract_extensions'] = 0
-        if 'renewal_status' not in validated_data:
-            if validated_data.get('contract_duration') == 'PERMANENT':
-                validated_data['renewal_status'] = 'NOT_APPLICABLE'
-            else:
-                validated_data['renewal_status'] = 'PENDING'
+        
         if 'notes' not in validated_data:
             validated_data['notes'] = ''
         if 'grading_level' not in validated_data:
@@ -866,12 +731,37 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
         if tag_ids:
             employee.tags.set(tag_ids)
         
+        # DOKUMENT ƏLAVƏSİ
+        if document:
+            doc_name = document_name or document.name
+            EmployeeDocument.objects.create(
+                employee=employee,
+                name=doc_name,
+                document_type=document_type,
+                document_file=document,
+                uploaded_by=self.context['request'].user,
+                document_status='ACTIVE',
+                version=1,
+                is_current_version=True
+            )
+        
         # Log activity
+        activity_description = f"Employee {employee.full_name} was created"
+        if document:
+            activity_description += f" with document '{doc_name}'"
+        if profile_photo:
+            activity_description += " with profile photo"
+        
         EmployeeActivity.objects.create(
             employee=employee,
             activity_type='CREATED',
-            description=f"Employee {employee.full_name} was created",
-            performed_by=self.context['request'].user
+            description=activity_description,
+            performed_by=self.context['request'].user,
+            metadata={
+                'has_document': bool(document),
+                'has_profile_photo': bool(profile_photo),
+                'document_type': document_type if document else None
+            }
         )
         
         return employee
@@ -882,9 +772,15 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
         first_name = validated_data.pop('first_name', None)
         last_name = validated_data.pop('last_name', None)
         email = validated_data.pop('email', None)
-        father_name = validated_data.pop('father_name', None)  # NEW FIELD
+        father_name = validated_data.pop('father_name', None)
         tag_ids = validated_data.pop('tag_ids', None)
         vacancy_id = validated_data.pop('vacancy_id', None)
+        
+        # ƏLAVƏ SAHƏLƏRİ EXTRACT ET
+        document = validated_data.pop('document', None)
+        profile_photo = validated_data.pop('profile_photo', None)
+        document_type = validated_data.pop('document_type', 'OTHER')
+        document_name = validated_data.pop('document_name', '')
         
         # Track changes for activity log
         changes = []
@@ -903,6 +799,22 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
                 user.username = email
                 changes.append(f"Email changed to {email}")
             user.save()
+        
+        # Update profile photo if provided
+        if profile_photo:
+            # Delete old profile image if exists
+            if instance.profile_image:
+                try:
+                    if hasattr(instance.profile_image, 'path'):
+                        import os
+                        old_image_path = instance.profile_image.path
+                        if os.path.exists(old_image_path):
+                            os.remove(old_image_path)
+                except Exception as e:
+                    logger.warning(f"Could not delete old profile image: {e}")
+            
+            instance.profile_image = profile_photo
+            changes.append("Profile photo updated")
         
         # Update father_name if provided
         if father_name is not None and instance.father_name != father_name:
@@ -932,6 +844,21 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
             employee.tags.set(tag_ids)
             changes.append("Tags updated")
         
+        # DOKUMENT ƏLAVƏSİ
+        if document:
+            doc_name = document_name or document.name
+            EmployeeDocument.objects.create(
+                employee=employee,
+                name=doc_name,
+                document_type=document_type,
+                document_file=document,
+                uploaded_by=self.context['request'].user,
+                document_status='ACTIVE',
+                version=1,
+                is_current_version=True
+            )
+            changes.append(f"Document '{doc_name}' uploaded")
+        
         # Link to vacancy if provided
         if vacancy_id:
             try:
@@ -948,7 +875,12 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
                 activity_type='UPDATED',
                 description=f"Employee {employee.full_name} was updated: {'; '.join(changes)}",
                 performed_by=self.context['request'].user,
-                metadata={'changes': changes}
+                metadata={
+                    'changes': changes,
+                    'has_new_document': bool(document),
+                    'has_new_profile_photo': bool(profile_photo),
+                    'document_type': document_type if document else None
+                }
             )
         
         return employee

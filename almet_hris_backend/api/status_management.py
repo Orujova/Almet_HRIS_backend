@@ -247,7 +247,7 @@ class EmployeeStatusManager:
                 'contract_end_date': employee.contract_end_date,
                 'days_remaining': days_left,
                 'urgency': urgency,
-                'renewal_status': employee.renewal_status
+                
             })
         
         return analysis

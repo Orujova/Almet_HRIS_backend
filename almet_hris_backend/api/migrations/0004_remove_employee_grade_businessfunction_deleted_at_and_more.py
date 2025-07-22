@@ -62,21 +62,7 @@ class Migration(migrations.Migration):
             name='is_deleted',
             field=models.BooleanField(db_index=True, default=False),
         ),
-        migrations.AddField(
-            model_name='employeedocument',
-            name='deleted_at',
-            field=models.DateTimeField(blank=True, null=True),
-        ),
-        migrations.AddField(
-            model_name='employeedocument',
-            name='deleted_by',
-            field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='deleted_%(class)ss', to=settings.AUTH_USER_MODEL),
-        ),
-        migrations.AddField(
-            model_name='employeedocument',
-            name='is_deleted',
-            field=models.BooleanField(db_index=True, default=False),
-        ),
+     
         migrations.AddField(
             model_name='employeestatus',
             name='deleted_at',

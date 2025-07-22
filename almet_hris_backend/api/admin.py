@@ -603,7 +603,7 @@ class EmployeeAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
             'fields': (
                 ('start_date', 'end_date'),
                 ('contract_duration', 'contract_start_date', 'contract_end_date'),
-                ('contract_extensions', 'last_extension_date', 'renewal_status')
+                ('contract_extensions', 'last_extension_date')
             )
         }),
         ('Status & Visibility', {
