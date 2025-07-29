@@ -53,7 +53,7 @@ from .auth import MicrosoftTokenValidator
 from drf_yasg.inspectors import SwaggerAutoSchema
 logger = logging.getLogger(__name__)
 class StandardResultsSetPagination(PageNumberPagination):
-    page_size = 25
+    page_size = 2
     page_size_query_param = 'page_size'
     max_page_size = 100
     page_query_param = 'page'
@@ -68,15 +68,16 @@ class StandardResultsSetPagination(PageNumberPagination):
             'previous': self.get_previous_link(),
             'results': data
         })
+
 class ModernPagination(PageNumberPagination):
-    """Modern, user-friendly pagination with enhanced features"""
-    page_size = 20  # Default page size
+    """Modern, user-friendly pagination - DEFAULT: No pagination unless requested"""
+    page_size = 20  # Default page size when pagination is used
     page_size_query_param = 'page_size'
-    max_page_size = 100
+    max_page_size = 1000  # Increased max page size
     page_query_param = 'page'
     
     # Custom page size options for frontend
-    page_size_options = [10, 20, 50, 100]
+    page_size_options = [10, 20, 50, 100, 500, 1000, "All"]
     
     def get_paginated_response(self, data):
         """Enhanced pagination response with modern UI support"""
@@ -118,6 +119,7 @@ class ModernPagination(PageNumberPagination):
             'show_first': start_page > 1,
             'show_last': end_page < total_pages,
             'range_display': f"Showing {start_item}-{end_item} of {total_count}",
+            'pagination_used': True,  # NEW: Indicates pagination was used
             'results': data
         })
 class FileUploadAutoSchema(SwaggerAutoSchema):
@@ -283,303 +285,93 @@ def user_info(request):
             "success": False
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+# api/views.py - COMPLETELY FIXED ComprehensiveEmployeeFilter
+
 class ComprehensiveEmployeeFilter:
-    """Complete filtering system for all employee fields"""
+    """
+    COMPLETELY FIXED: Frontend component-lərinə uyğun tam filter sistemi
+    Comma-separated values-ları düzgün parse edir və backend-də işləyir
+    """
     
     def __init__(self, queryset, params):
         self.queryset = queryset
         self.params = params
     
+    def parse_comma_separated(self, param_value):
+        """Parse comma-separated string into list of cleaned values"""
+        if not param_value:
+            return []
+        
+        if isinstance(param_value, list):
+            # Already a list - flatten and clean
+            result = []
+            for item in param_value:
+                if isinstance(item, str) and ',' in item:
+                    # Split comma-separated items in list
+                    result.extend([val.strip() for val in item.split(',') if val.strip()])
+                elif item:
+                    result.append(str(item).strip())
+            return result
+        elif isinstance(param_value, str):
+            # Split comma-separated string
+            return [val.strip() for val in param_value.split(',') if val.strip()]
+        else:
+            return [str(param_value).strip()] if param_value else []
+    
+    def parse_int_list(self, param_value):
+        """Parse comma-separated string into list of integers"""
+        string_values = self.parse_comma_separated(param_value)
+        int_values = []
+        for val in string_values:
+            try:
+                int_values.append(int(val))
+            except (ValueError, TypeError):
+                continue
+        return int_values
+    
+    def get_filter_values(self, param_name):
+        """Get filter values, handling both getlist() and comma-separated strings"""
+        # Try getlist first (for Django QueryDict)
+        if hasattr(self.params, 'getlist'):
+            values = self.params.getlist(param_name)
+            if values:
+                # Process each value in case it contains comma-separated items
+                all_values = []
+                for value in values:
+                    all_values.extend(self.parse_comma_separated(value))
+                return all_values
+        
+        # Fallback to get() for single value (might be comma-separated)
+        single_value = self.params.get(param_name)
+        if single_value:
+            return self.parse_comma_separated(single_value)
+        
+        return []
+    
+    def get_int_filter_values(self, param_name):
+        """Get integer filter values"""
+        string_values = self.get_filter_values(param_name)
+        int_values = []
+        for val in string_values:
+            try:
+                int_values.append(int(val))
+            except (ValueError, TypeError):
+                continue
+        return int_values
+    
     def filter(self):
         queryset = self.queryset
         
-        # 1. SPECIFIC EMPLOYEE FILTERS
-        # Employee Name and HC Number
-        specific_employee = self.params.get('specific_employee')
-        if specific_employee:
-            queryset = queryset.filter(
-                Q(full_name__icontains=specific_employee) |
-                Q(employee_id__icontains=specific_employee) |
-                Q(user__first_name__icontains=specific_employee) |
-                Q(user__last_name__icontains=specific_employee)
-            )
+        print(f"🔍 FILTER DEBUG: Raw params = {dict(self.params)}")
         
-        # Employee ID exact match
-        employee_id = self.params.get('employee_id')
-        if employee_id:
-            queryset = queryset.filter(employee_id__iexact=employee_id)
+        # ===========================================
+        # 1. SEARCH FILTERS (Text-based)
+        # ===========================================
         
-        # Employee name exact search
-        employee_name = self.params.get('employee_name')
-        if employee_name:
-            queryset = queryset.filter(
-                Q(full_name__icontains=employee_name) |
-                Q(user__first_name__icontains=employee_name) |
-                Q(user__last_name__icontains=employee_name)
-            )
-        
-        # 2. JOB TITLE FILTER
-       
-        
-        # Multiple job titles
-        job_titles = self.params.getlist('job_titles')
-        if job_titles:
-            queryset = queryset.filter(job_title__in=job_titles)
-        
-        # 3. EMPLOYMENT STATUS FILTERS
-      
- 
-        
-        # Multiple status filtering
-        status_names = self.params.getlist('employment_statuses')
-        if status_names:
-            queryset = queryset.filter(status__name__in=status_names)
-        
-      
-        
-        # 4. CONTRACT DURATION FILTERS
-  
-        
-        # Multiple contract durations
-        contract_durations = self.params.getlist('contract_durations')
-        if contract_durations:
-            queryset = queryset.filter(contract_duration__in=contract_durations)
-        
-        # 5. GENDER FILTER
-
-        
-        # Multiple genders
-        genders = self.params.getlist('genders')
-        if genders:
-            queryset = queryset.filter(gender__in=genders)
-        
-        # 6. BUSINESS FUNCTIONS FILTER
-   
-        
-        # Multiple business functions
-        business_functions = self.params.getlist('business_functions')
-        if business_functions:
-            queryset = queryset.filter(business_function__id__in=business_functions)
-        
-       
-        
-        # 7. DEPARTMENTS FILTER
-      
-        
-        # Multiple departments
-        departments = self.params.getlist('departments')
-        if departments:
-            queryset = queryset.filter(department__id__in=departments)
-        
-     
-        
-        # 8. UNITS FILTER
-       
-        
-        # Multiple units
-        units = self.params.getlist('units')
-        if units:
-            queryset = queryset.filter(unit__id__in=units)
-        
-       
-        
-        # Filter employees with no unit
-        no_unit = self.params.get('no_unit')
-        if no_unit and no_unit.lower() == 'true':
-            queryset = queryset.filter(unit__isnull=True)
-        
-        # 9. JOB FUNCTIONS FILTER
-        job_function = self.params.get('job_function')
-        if job_function:
-            queryset = queryset.filter(job_function__id=job_function)
-        
-        # Multiple job functions
-        job_functions = self.params.getlist('job_functions')
-        if job_functions:
-            queryset = queryset.filter(job_function__id__in=job_functions)
-        
-  
-        
-        # 10. POSITION GROUPS FILTER
-        position_group = self.params.get('position_group')
-        if position_group:
-            queryset = queryset.filter(position_group__id=position_group)
-        
-        # Multiple position groups
-        position_groups = self.params.getlist('position_groups')
-        if position_groups:
-            queryset = queryset.filter(position_group__id__in=position_groups)
-        
-        
-        
-        
-        # 11. GRADING LEVELS FILTER
-      
-        
-        # Multiple grading levels
-        grading_levels = self.params.getlist('grading_levels')
-        if grading_levels:
-            queryset = queryset.filter(grading_level__in=grading_levels)
-        
-       
-        
-        # 12. LINE MANAGER FILTER
-        line_manager = self.params.get('line_manager')
-        if line_manager:
-            queryset = queryset.filter(line_manager__id=line_manager)
-        
-        # Multiple line managers
-        line_managers = self.params.getlist('line_managers')
-        if line_managers:
-            queryset = queryset.filter(line_manager__id__in=line_managers)
-        
-       
-        
-
-        
-        # 13. TAGS FILTER
-        tag = self.params.get('tag')
-        if tag:
-            queryset = queryset.filter(tags__id=tag)
-        
-       
-        
-       
-        
-        # 14. IS DELETED FILTER
-        is_deleted = self.params.get('is_deleted')
-        if is_deleted:
-            if is_deleted.lower() == 'true':
-                # Import here to avoid circular import
-                from .models import Employee
-                # Use all_objects manager to include deleted employees
-                queryset = Employee.all_objects.filter(
-                    pk__in=queryset.values_list('pk', flat=True),
-                    is_deleted=True
-                )
-            elif is_deleted.lower() == 'false':
-                queryset = queryset.filter(is_deleted=False)
-            elif is_deleted.lower() == 'all':
-                # Include both deleted and non-deleted
-                from .models import Employee
-                queryset = Employee.all_objects.filter(
-                    pk__in=queryset.values_list('pk', flat=True)
-                )
-        
-        # 15. IS VISIBLE IN ORG CHART FILTER
-        is_visible_in_org_chart = self.params.get('is_visible_in_org_chart')
-        if is_visible_in_org_chart:
-            visible = is_visible_in_org_chart.lower() == 'true'
-            queryset = queryset.filter(is_visible_in_org_chart=visible)
-        
-        # 16. DATE RANGE FILTERS
-        # Start Date Range
-        start_date_from = self.params.get('start_date_from')
-        start_date_to = self.params.get('start_date_to')
-        if start_date_from:
-            try:
-                start_date_from = parse_date(start_date_from)
-                queryset = queryset.filter(start_date__gte=start_date_from)
-            except:
-                pass
-        if start_date_to:
-            try:
-                start_date_to = parse_date(start_date_to)
-                queryset = queryset.filter(start_date__lte=start_date_to)
-            except:
-                pass
-        
-        # Contract End Date Range
-        contract_end_from = self.params.get('contract_end_from')
-        contract_end_to = self.params.get('contract_end_to')
-        if contract_end_from:
-            try:
-                contract_end_from = parse_date(contract_end_from)
-                queryset = queryset.filter(contract_end_date__gte=contract_end_from)
-            except:
-                pass
-        if contract_end_to:
-            try:
-                contract_end_to = parse_date(contract_end_to)
-                queryset = queryset.filter(contract_end_date__lte=contract_end_to)
-            except:
-                pass
-        
-        # End Date Range (employment end date)
-        end_date_from = self.params.get('end_date_from')
-        end_date_to = self.params.get('end_date_to')
-        if end_date_from:
-            try:
-                end_date_from = parse_date(end_date_from)
-                queryset = queryset.filter(end_date__gte=end_date_from)
-            except:
-                pass
-        if end_date_to:
-            try:
-                end_date_to = parse_date(end_date_to)
-                queryset = queryset.filter(end_date__lte=end_date_to)
-            except:
-                pass
-        
-        # 17. YEARS OF SERVICE FILTER
-        min_years = self.params.get('min_years')
-        max_years = self.params.get('max_years')
-        if min_years or max_years:
-            today = date.today()
-            
-            if min_years:
-                try:
-                    min_years = float(min_years)
-                    min_date = today - timedelta(days=int(min_years * 365.25))
-                    queryset = queryset.filter(start_date__lte=min_date)
-                except:
-                    pass
-            
-            if max_years:
-                try:
-                    max_years = float(max_years)
-                    max_date = today - timedelta(days=int(max_years * 365.25))
-                    queryset = queryset.filter(start_date__gte=max_date)
-                except:
-                    pass
-        
-        # 18. ADDITIONAL SPECIALIZED FILTERS
-        
-        # Active headcount only
-        active_only = self.params.get('active_only')
-        if active_only and active_only.lower() == 'true':
-            queryset = queryset.filter(status__affects_headcount=True)
-        
-        # Org chart visible only
-        org_chart_visible = self.params.get('org_chart_visible')
-        if org_chart_visible and org_chart_visible.lower() == 'true':
-            queryset = queryset.filter(is_visible_in_org_chart=True, status__allows_org_chart=True)
-        
-        # Status needs update filter
-        status_needs_update = self.params.get('status_needs_update')
-        if status_needs_update and status_needs_update.lower() == 'true':
-            # This requires special handling - will be processed in view
-            pass
-        
-        # Contract expiring soon
-        contract_expiring_days = self.params.get('contract_expiring_days')
-        if contract_expiring_days:
-            try:
-                days = int(contract_expiring_days)
-                expiry_date = date.today() + timedelta(days=days)
-                queryset = queryset.filter(
-                    contract_end_date__lte=expiry_date,
-                    contract_end_date__gte=date.today()
-                )
-            except:
-                pass
-        
-     
-        
-        
-        # General text search across multiple fields
+        # General search - multiple fields
         search = self.params.get('search')
         if search:
+            print(f"🔍 Applying general search: {search}")
             queryset = queryset.filter(
                 Q(full_name__icontains=search) |
                 Q(employee_id__icontains=search) |
@@ -591,52 +383,312 @@ class ComprehensiveEmployeeFilter:
                 Q(phone__icontains=search)
             )
         
+        # FIXED: Specific employee search (from employee_search field)
+        employee_search_values = self.get_filter_values('employee_search')
+        if employee_search_values:
+            print(f"🔍 Applying employee search: {employee_search_values}")
+            # Try to find by ID first, then by other fields
+            employee_q = Q()
+            for search_val in employee_search_values:
+                try:
+                    # Try as integer ID first
+                    emp_id = int(search_val)
+                    employee_q |= Q(id=emp_id)
+                except (ValueError, TypeError):
+                    pass
+                
+                # Also search by string fields
+                employee_q |= (
+                    Q(employee_id__icontains=search_val) |
+                    Q(full_name__icontains=search_val) |
+                    Q(user__first_name__icontains=search_val) |
+                    Q(user__last_name__icontains=search_val) |
+                    Q(user__email__icontains=search_val)
+                )
+            
+            if employee_q:
+                queryset = queryset.filter(employee_q)
+        
+        # Line manager search
+        line_manager_search = self.params.get('line_manager_search')
+        if line_manager_search:
+            print(f"🔍 Applying line manager search: {line_manager_search}")
+            queryset = queryset.filter(
+                Q(line_manager__id=line_manager_search) |
+                Q(line_manager__employee_id__icontains=line_manager_search) |
+                Q(line_manager__full_name__icontains=line_manager_search)
+            )
+        
+        # Job title search
+        job_title_search = self.params.get('job_title_search')
+        if job_title_search:
+            print(f"🔍 Applying job title search: {job_title_search}")
+            queryset = queryset.filter(job_title__icontains=job_title_search)
+        
+        # ===========================================
+        # 2. MULTI-SELECT FILTERS (Arrays) - COMPLETELY FIXED
+        # ===========================================
+        
+        # FIXED: Business Functions (array)
+        business_function_ids = self.get_int_filter_values('business_function')
+        if business_function_ids:
+            print(f"🏭 Applying business function filter: {business_function_ids}")
+            queryset = queryset.filter(business_function__id__in=business_function_ids)
+        
+        # FIXED: Departments (array)
+        department_ids = self.get_int_filter_values('department')
+        if department_ids:
+            print(f"🏢 Applying department filter: {department_ids}")
+            queryset = queryset.filter(department__id__in=department_ids)
+        
+        # FIXED: Units (array)
+        unit_ids = self.get_int_filter_values('unit')
+        if unit_ids:
+            print(f"🏢 Applying unit filter: {unit_ids}")
+            queryset = queryset.filter(unit__id__in=unit_ids)
+        
+        # FIXED: Job Functions (array)
+        job_function_ids = self.get_int_filter_values('job_function')
+        if job_function_ids:
+            print(f"💼 Applying job function filter: {job_function_ids}")
+            queryset = queryset.filter(job_function__id__in=job_function_ids)
+        
+        # FIXED: Position Groups (array)
+        position_group_ids = self.get_int_filter_values('position_group')
+        if position_group_ids:
+            print(f"📊 Applying position group filter: {position_group_ids}")
+            queryset = queryset.filter(position_group__id__in=position_group_ids)
+        
+        # FIXED: Employment Status (array) - Special handling for status names
+        status_values = self.get_filter_values('status')
+        if status_values:
+            print(f"🎯 Applying status filter: {status_values}")
+            # Status filter can be either IDs or names
+            status_q = Q()
+            for status_val in status_values:
+                try:
+                    # Try as integer ID first
+                    status_id = int(status_val)
+                    status_q |= Q(status__id=status_id)
+                except (ValueError, TypeError):
+                    # Try as status name
+                    status_q |= Q(status__name=status_val) | Q(current_status_display=status_val)
+            
+            if status_q:
+                queryset = queryset.filter(status_q)
+        
+        # FIXED: Grading Levels (array)
+        grading_levels = self.get_filter_values('grading_level')
+        if grading_levels:
+            print(f"📈 Applying grading level filter: {grading_levels}")
+            queryset = queryset.filter(grading_level__in=grading_levels)
+        
+        # FIXED: Contract Duration (array)
+        contract_durations = self.get_filter_values('contract_duration')
+        if contract_durations:
+            print(f"📋 Applying contract duration filter: {contract_durations}")
+            queryset = queryset.filter(contract_duration__in=contract_durations)
+        
+        # FIXED: Line Managers (array)
+        line_manager_ids = self.get_int_filter_values('line_manager')
+        if line_manager_ids:
+            print(f"👨‍💼 Applying line manager filter: {line_manager_ids}")
+            queryset = queryset.filter(line_manager__id__in=line_manager_ids)
+        
+        # FIXED: Tags (array)
+        tag_ids = self.get_int_filter_values('tags')
+        if tag_ids:
+            print(f"🏷️ Applying tags filter: {tag_ids}")
+            queryset = queryset.filter(tags__id__in=tag_ids).distinct()
+        
+        # FIXED: Gender (array)
+        genders = self.get_filter_values('gender')
+        if genders:
+            print(f"👤 Applying gender filter: {genders}")
+            queryset = queryset.filter(gender__in=genders)
+        
+        # ===========================================
+        # 3. DATE RANGE FILTERS
+        # ===========================================
+        
+        # Start Date Range
+        start_date_from = self.params.get('start_date_from')
+        start_date_to = self.params.get('start_date_to')
+        if start_date_from:
+            try:
+                start_date_from_parsed = parse_date(start_date_from)
+                if start_date_from_parsed:
+                    print(f"📅 Applying start date from: {start_date_from_parsed}")
+                    queryset = queryset.filter(start_date__gte=start_date_from_parsed)
+            except:
+                pass
+        if start_date_to:
+            try:
+                start_date_to_parsed = parse_date(start_date_to)
+                if start_date_to_parsed:
+                    print(f"📅 Applying start date to: {start_date_to_parsed}")
+                    queryset = queryset.filter(start_date__lte=start_date_to_parsed)
+            except:
+                pass
+        
+        # Contract End Date Range
+        contract_end_date_from = self.params.get('contract_end_date_from')
+        contract_end_date_to = self.params.get('contract_end_date_to')
+        if contract_end_date_from:
+            try:
+                contract_end_from_parsed = parse_date(contract_end_date_from)
+                if contract_end_from_parsed:
+                    print(f"📅 Applying contract end date from: {contract_end_from_parsed}")
+                    queryset = queryset.filter(contract_end_date__gte=contract_end_from_parsed)
+            except:
+                pass
+        if contract_end_date_to:
+            try:
+                contract_end_to_parsed = parse_date(contract_end_date_to)
+                if contract_end_to_parsed:
+                    print(f"📅 Applying contract end date to: {contract_end_to_parsed}")
+                    queryset = queryset.filter(contract_end_date__lte=contract_end_to_parsed)
+            except:
+                pass
+        
+        # ===========================================
+        # 4. NUMERIC/RANGE FILTERS
+        # ===========================================
+        
+        # Years of Service Range
+        years_of_service_min = self.params.get('years_of_service_min')
+        years_of_service_max = self.params.get('years_of_service_max')
+        
+        if years_of_service_min or years_of_service_max:
+            today = date.today()
+            
+            if years_of_service_min:
+                try:
+                    min_years = float(years_of_service_min)
+                    # Employee should have started at least min_years ago
+                    min_date = today - timedelta(days=int(min_years * 365.25))
+                    print(f"🕐 Applying years of service min: {min_years} years (start date <= {min_date})")
+                    queryset = queryset.filter(start_date__lte=min_date)
+                except:
+                    pass
+            
+            if years_of_service_max:
+                try:
+                    max_years = float(years_of_service_max)
+                    # Employee should have started at most max_years ago
+                    max_date = today - timedelta(days=int(max_years * 365.25))
+                    print(f"🕐 Applying years of service max: {max_years} years (start date >= {max_date})")
+                    queryset = queryset.filter(start_date__gte=max_date)
+                except:
+                    pass
+        
+        # ===========================================
+        # 5. BOOLEAN FILTERS
+        # ===========================================
+        
+        # Is Active
+        is_active = self.params.get('is_active')
+        if is_active:
+            if is_active.lower() == 'true':
+                print(f"✅ Applying is_active: True")
+                queryset = queryset.filter(status__affects_headcount=True)
+            elif is_active.lower() == 'false':
+                print(f"❌ Applying is_active: False")
+                queryset = queryset.filter(status__affects_headcount=False)
+        
+        # Org Chart Visible
+        is_visible_in_org_chart = self.params.get('is_visible_in_org_chart')
+        if is_visible_in_org_chart:
+            visible = is_visible_in_org_chart.lower() == 'true'
+            print(f"👁️ Applying org chart visible: {visible}")
+            queryset = queryset.filter(is_visible_in_org_chart=visible)
+        
+        # Is Deleted (for admin purposes)
+        is_deleted = self.params.get('is_deleted')
+        if is_deleted:
+            if is_deleted.lower() == 'true':
+                print(f"🗑️ Applying is_deleted: True")
+                from .models import Employee
+                queryset = Employee.all_objects.filter(
+                    pk__in=queryset.values_list('pk', flat=True),
+                    is_deleted=True
+                )
+            elif is_deleted.lower() == 'false':
+                print(f"🗑️ Applying is_deleted: False")
+                queryset = queryset.filter(is_deleted=False)
+            elif is_deleted.lower() == 'all':
+                print(f"🗑️ Applying is_deleted: All (including deleted)")
+                from .models import Employee
+                queryset = Employee.all_objects.filter(
+                    pk__in=queryset.values_list('pk', flat=True)
+                )
+        
+        # ===========================================
+        # 6. SPECIAL CALCULATED FILTERS
+        # ===========================================
+        
+        # Status needs update (handled in view after filtering)
+        status_needs_update = self.params.get('status_needs_update')
+        if status_needs_update and status_needs_update.lower() == 'true':
+            print(f"🔄 Status needs update filter will be applied in view")
+            pass
+        
+        # Contract expiring soon
+        contract_expiring_days = self.params.get('contract_expiring_days')
+        if contract_expiring_days:
+            try:
+                days = int(contract_expiring_days)
+                expiry_date = date.today() + timedelta(days=days)
+                print(f"⏰ Applying contract expiring in {days} days (before {expiry_date})")
+                queryset = queryset.filter(
+                    contract_end_date__lte=expiry_date,
+                    contract_end_date__gte=date.today()
+                )
+            except:
+                pass
+        
+        final_count = queryset.count()
+        print(f"✅ FILTER COMPLETE: {final_count} employees after filtering")
+        
         return queryset
-
 class AdvancedEmployeeSorter:
-    """Advanced sorting system with all required fields"""
+    """
+    MultipleSortingSystem.jsx component-inə uyğun sorting sistemi
+    Frontend-dən gələn sorting array-ini düzgün işləyir
+    """
     
+    # Frontend component-də istifadə olunan sortable fields
     SORTABLE_FIELDS = {
         # Basic Information
+        'name': 'full_name',
         'employee_name': 'full_name',
-        'name': 'full_name',  # Alias
         'full_name': 'full_name',
         'first_name': 'user__first_name',
         'last_name': 'user__last_name',
         'employee_id': 'employee_id',
-     
-        
-        # Contact Information  
         'email': 'user__email',
-     
         'phone': 'phone',
         'father_name': 'father_name',
         
         # Job Information
         'job_title': 'job_title',
-    
         
         # Organizational Structure
-        'business_function': 'business_function__name',
-       
-      
-        'department': 'department__name',
-        
-        'unit': 'unit__name',
-       
-        'job_function': 'job_function__name',
-     
+        'business_function_name': 'business_function__name',
+        'business_function_code': 'business_function__code',
+        'department_name': 'department__name',
+        'unit_name': 'unit__name',
+        'job_function_name': 'job_function__name',
         
         # Position & Grading
-       
         'position_group_name': 'position_group__name',
-       
-    
-        'grade': 'grading_level', 
+        'position_group_level': 'position_group__hierarchy_level',
+        'grading_level': 'grading_level',
+  
         
-        # Management Hierarchy
-        'line_manager': 'line_manager__full_name',
-     
+        # Management
+        'line_manager_name': 'line_manager__full_name',
+        'line_manager_hc_number': 'line_manager__employee_id',
         
         # Employment Dates
         'start_date': 'start_date',
@@ -646,73 +698,86 @@ class AdvancedEmployeeSorter:
         
         # Contract Information
         'contract_duration': 'contract_duration',
-     
+        'contract_duration_display': 'contract_duration',
         
         # Status
-        'status': 'status__name',
-  
+        'status_name': 'status__name',
+        'status_color': 'status__color',
+        'current_status_display': 'status__name',
         
         # Personal Information
         'date_of_birth': 'date_of_birth',
-   
         'gender': 'gender',
+        
+        # Calculated Fields (special handling)
+        'years_of_service': 'start_date',  # Sort by start_date, reverse order
+        'direct_reports_count': 'direct_reports_count',  # Need annotation
         
         # Metadata
         'created_at': 'created_at',
         'updated_at': 'updated_at',
-        'years_of_service': 'start_date',  # Calculated field - reverse order
-        
-        # Visibility & Status
         'is_visible_in_org_chart': 'is_visible_in_org_chart',
         'is_deleted': 'is_deleted',
     }
     
-    # Special handling for calculated fields
-    CALCULATED_FIELDS = {
-        'years_of_service': 'start_date',  # Sort by start_date but reverse
-        
-    }
-    
-    def __init__(self, queryset, sort_params):
+    def __init__(self, queryset, sorting_params):
         self.queryset = queryset
-        self.sort_params = sort_params or []
+        self.sorting_params = sorting_params or []
     
     def sort(self):
-        """Apply sorting based on parameters"""
-        if not self.sort_params:
+        """
+        Frontend MultipleSortingSystem component-indən gələn sorting parametrlərini işləyir
+        Format: [{'field': 'employee_name', 'direction': 'asc'}, ...]
+        """
+        if not self.sorting_params:
             # Default sorting
             return self.queryset.order_by('employee_id')
         
         order_fields = []
+        needs_annotation = False
         
-        for sort_param in self.sort_params:
-            if not sort_param.strip():
-                continue
-                
-            # Determine if descending
-            if sort_param.startswith('-'):
-                field_name = sort_param[1:]
-                descending = True
+        # Process each sorting parameter
+        for sort_param in self.sorting_params:
+            if isinstance(sort_param, dict):
+                field_name = sort_param.get('field', '')
+                direction = sort_param.get('direction', 'asc')
             else:
-                field_name = sort_param
-                descending = False
+                # Fallback for string format like "-employee_name"
+                if sort_param.startswith('-'):
+                    field_name = sort_param[1:]
+                    direction = 'desc'
+                else:
+                    field_name = sort_param
+                    direction = 'asc'
             
-            # Check if field is sortable
-            if field_name in self.SORTABLE_FIELDS:
-                db_field = self.SORTABLE_FIELDS[field_name]
-                
-                # Handle special calculated fields
-                if field_name in self.CALCULATED_FIELDS:
-                    # For years_of_service and age, we need to reverse the logic
-                    if field_name in ['years_of_service', 'age']:
-                        # Reverse the order for calculated fields
-                        descending = not descending
-                
-                # Apply descending prefix
-                if descending:
-                    db_field = f'-{db_field}'
-                
-                order_fields.append(db_field)
+            if not field_name or field_name not in self.SORTABLE_FIELDS:
+                continue
+            
+            db_field = self.SORTABLE_FIELDS[field_name]
+            
+            # Special handling for calculated fields
+            if field_name == 'years_of_service':
+                # For years of service, reverse the direction since we sort by start_date
+                direction = 'desc' if direction == 'asc' else 'asc'
+            elif field_name == 'direct_reports_count':
+                # Need to annotate with direct reports count
+                needs_annotation = True
+                db_field = 'direct_reports_count'
+            
+            # Apply direction
+            if direction == 'desc':
+                db_field = f'-{db_field}'
+            
+            order_fields.append(db_field)
+        
+        # Apply annotations if needed
+        if needs_annotation:
+            self.queryset = self.queryset.annotate(
+                direct_reports_count=Count(
+                    'direct_reports',
+                    filter=Q(direct_reports__status__affects_headcount=True, direct_reports__is_deleted=False)
+                )
+            )
         
         if order_fields:
             # Add secondary sort for consistency
@@ -927,12 +992,11 @@ class VacantPositionViewSet(viewsets.ModelViewSet):
 
 class EmployeeViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
-    permission_classes = [IsAuthenticated]
+
     pagination_class = ModernPagination  # Use modern pagination
     parser_classes = [JSONParser, MultiPartParser, FormParser]
     
     def get_queryset(self):
-        # Import here to avoid circular import
         from .models import Employee
         return Employee.objects.select_related(
             'user', 'business_function', 'department', 'unit', 'job_function',
@@ -942,7 +1006,6 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         ).all()
     
     def get_serializer_class(self):
-        # Import here to avoid circular import
         from .serializers import (
             EmployeeListSerializer, EmployeeDetailSerializer, EmployeeCreateUpdateSerializer
         )
@@ -954,9 +1017,16 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             return EmployeeDetailSerializer
     
     def list(self, request, *args, **kwargs):
-        """Enhanced list with comprehensive filtering, sorting, and modern pagination"""
+        """ENHANCED: Düzgün filter və sorting ilə"""
         
         try:
+            # Check pagination parameters
+            page_param = request.query_params.get('page')
+            page_size_param = request.query_params.get('page_size')
+            use_pagination = request.query_params.get('use_pagination', '').lower() == 'true'
+            
+            should_paginate = bool(page_param or page_size_param or use_pagination)
+            
             # Get base queryset
             queryset = self.get_queryset()
             
@@ -964,14 +1034,39 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             employee_filter = ComprehensiveEmployeeFilter(queryset, request.query_params)
             queryset = employee_filter.filter()
             
-            # Apply advanced sorting
-            ordering = request.query_params.get('ordering', '')
-            sort_params = [param.strip() for param in ordering.split(',') if param.strip()]
-            employee_sorter = AdvancedEmployeeSorter(queryset, sort_params)
+            # Apply advanced sorting - ENHANCED for MultipleSortingSystem
+            sorting_data = request.query_params.get('sorting')
+            if sorting_data:
+                try:
+                    import json
+                    # Parse JSON sorting data from frontend
+                    sorting_params = json.loads(sorting_data)
+                except:
+                    # Fallback to old ordering system
+                    ordering = request.query_params.get('ordering', '')
+                    sort_params = [param.strip() for param in ordering.split(',') if param.strip()]
+                    # Convert to new format
+                    sorting_params = []
+                    for param in sort_params:
+                        if param.startswith('-'):
+                            sorting_params.append({'field': param[1:], 'direction': 'desc'})
+                        else:
+                            sorting_params.append({'field': param, 'direction': 'asc'})
+            else:
+                # Try old ordering parameter
+                ordering = request.query_params.get('ordering', '')
+                sort_params = [param.strip() for param in ordering.split(',') if param.strip()]
+                sorting_params = []
+                for param in sort_params:
+                    if param.startswith('-'):
+                        sorting_params.append({'field': param[1:], 'direction': 'desc'})
+                    else:
+                        sorting_params.append({'field': param, 'direction': 'asc'})
+            
+            employee_sorter = AdvancedEmployeeSorter(queryset, sorting_params)
             queryset = employee_sorter.sort()
             
             # Handle special filter: status_needs_update
-            # This requires individual checking, so we do it after other filters
             status_needs_update = request.query_params.get('status_needs_update')
             if status_needs_update and status_needs_update.lower() == 'true':
                 employees_needing_update = []
@@ -986,30 +1081,79 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 
                 queryset = queryset.filter(id__in=employees_needing_update)
             
-            # Apply pagination
-            page = self.paginate_queryset(queryset)
-            if page is not None:
-                serializer = self.get_serializer(page, many=True)
-                paginated_response = self.get_paginated_response(serializer.data)
-                
-                # Add filter summary to response
-                paginated_response.data['filter_summary'] = {
-                    'total_before_filters': self.get_queryset().count(),
-                    'total_after_filters': queryset.count(),
-                    'active_filters': self._get_active_filters_summary(request.query_params),
-                    'sort_applied': bool(sort_params),
-                    'sort_fields': sort_params
-                }
-                
-                return paginated_response
+            total_count = queryset.count()
             
-            # Fallback (shouldn't happen with pagination)
-            serializer = self.get_serializer(queryset, many=True)
-            return Response({
-                'count': queryset.count(),
-                'results': serializer.data
-            })
+            # Return response based on pagination preference
+            if not should_paginate:
+                logger.info(f"Returning ALL {total_count} employees (no pagination requested)")
+                serializer = self.get_serializer(queryset, many=True)
+                return Response({
+                    'count': total_count,
+                    'total_pages': 1,
+                    'current_page': 1,
+                    'page_size': total_count,
+                    'page_size_options': [10, 20, 50, 100, 500, 1000, "All"],
+                    'has_next': False,
+                    'has_previous': False,
+                    'next': None,
+                    'previous': None,
+                    'page_numbers': [1],
+                    'start_page': 1,
+                    'end_page': 1,
+                    'show_first': False,
+                    'show_last': False,
+                    'range_display': f"Showing all {total_count} results",
+                    'pagination_used': False,
+                    'results': serializer.data,
+                    'filter_summary': {
+                        'total_before_filters': self.get_queryset().count(),
+                        'total_after_filters': total_count,
+                        'filters_applied': len([k for k, v in request.query_params.items() if v and k not in ['format', 'page', 'page_size']]),
+                        'sort_applied': bool(sorting_params),
+                        'sort_fields': [s.get('field') for s in sorting_params] if sorting_params else [],
+                        'pagination_disabled': True,
+                        'default_behavior': 'all_data'
+                    }
+                })
             
+            # Apply pagination when requested
+            else:
+                logger.info(f"Using pagination (explicitly requested)")
+                
+                try:
+                    if page_size_param and page_size_param.isdigit():
+                        custom_page_size = min(int(page_size_param), 1000)
+                        self.pagination_class.page_size = custom_page_size
+                except ValueError:
+                    logger.warning(f"Invalid page_size parameter: {page_size_param}")
+                
+                page = self.paginate_queryset(queryset)
+                if page is not None:
+                    serializer = self.get_serializer(page, many=True)
+                    paginated_response = self.get_paginated_response(serializer.data)
+                    
+                    paginated_response.data['pagination_used'] = True
+                    paginated_response.data['filter_summary'] = {
+                        'total_before_filters': self.get_queryset().count(),
+                        'total_after_filters': total_count,
+                        'filters_applied': len([k for k, v in request.query_params.items() if v and k not in ['format', 'page', 'page_size']]),
+                        'sort_applied': bool(sorting_params),
+                        'sort_fields': [s.get('field') for s in sorting_params] if sorting_params else [],
+                        'pagination_enabled': True,
+                        'requested_page_size': page_size_param,
+                        'default_behavior': 'pagination_requested'
+                    }
+                    
+                    return paginated_response
+                
+                # Fallback
+                serializer = self.get_serializer(queryset, many=True)
+                return Response({
+                    'count': total_count,
+                    'pagination_used': False,
+                    'results': serializer.data
+                })
+                
         except Exception as e:
             logger.error(f"Error in employee list view: {str(e)}")
             logger.error(f"Traceback: {traceback.format_exc()}")
@@ -1017,178 +1161,6 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 {'error': f'Failed to retrieve employees: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-    
-    def _get_active_filters_summary(self, params):
-        """Generate summary of active filters for debugging/UI"""
-        active_filters = {}
-        
-        # Define filter categories
-        filter_categories = {
-            'employee': ['specific_employee', 'employee_id', 'employee_name'],
-            'job': [ 'job_titles'],
-            'status': [ 'employment_statuses'],
-            'contract': [ 'contract_durations'],
-            'personal': [ 'genders', 'father_name', 'phone', 'email'],
-            'organization': [ 'business_functions',  'departments', 'units'],
-            'position': [ 'job_functions',  'position_groups', 'grading_level'],
-            'management': ['line_manager', 'line_managers', 'no_line_manager'],
-            'tags': ['tag'],
-            'dates': ['start_date_from', 'start_date_to', 'contract_end_from', 'contract_end_to'],
-            'visibility': ['is_deleted', 'is_visible_in_org_chart', 'active_only'],
-            'special': ['status_needs_update', 'contract_expiring_days']
-        }
-        
-        for category, fields in filter_categories.items():
-            category_filters = {}
-            for field in fields:
-                if field in params:
-                    value = params.get(field)
-                    if value:
-                        category_filters[field] = value
-            if category_filters:
-                active_filters[category] = category_filters
-        
-        # Add search if present
-        if params.get('search'):
-            active_filters['search'] = params.get('search')
-        
-        return active_filters
-    
-    @swagger_auto_schema(
-        method='get',
-        operation_description="Get available filter options for dropdowns",
-        responses={
-            200: openapi.Response(
-                description="Filter options retrieved successfully",
-                schema=openapi.Schema(
-                    type=openapi.TYPE_OBJECT,
-                    properties={
-                        'success': openapi.Schema(type=openapi.TYPE_BOOLEAN),
-                        'filter_options': openapi.Schema(type=openapi.TYPE_OBJECT),
-                        'total_employees': openapi.Schema(type=openapi.TYPE_INTEGER),
-                        'active_employees': openapi.Schema(type=openapi.TYPE_INTEGER)
-                    }
-                )
-            )
-        }
-    )
-    @action(detail=False, methods=['get'], url_path='filter-options')
-    def get_filter_options(self, request):
-        """Get available options for filters - helpful for frontend dropdowns"""
-        
-        try:
-            # Import models here to avoid circular import
-            from .models import (
-                EmployeeStatus, ContractTypeConfig, BusinessFunction, 
-                Department, Unit, JobFunction, PositionGroup, EmployeeTag, Employee
-            )
-            
-            # Get all active options for dropdowns
-            filter_options = {
-                'employment_statuses': [
-                    {'value': status.name, 'label': status.name, 'color': status.color}
-                    for status in EmployeeStatus.objects.filter(is_active=True).order_by('order', 'name')
-                ],
-                'contract_durations': [
-                    {'value': config.contract_type, 'label': config.display_name}
-                    for config in ContractTypeConfig.objects.filter(is_active=True).order_by('contract_type')
-                ],
-                'genders': [
-                    {'value': 'MALE', 'label': 'Male'},
-                    {'value': 'FEMALE', 'label': 'Female'}
-                ],
-                'business_functions': [
-                    {'value': bf.id, 'label': f"{bf.code} - {bf.name}", 'code': bf.code}
-                    for bf in BusinessFunction.objects.filter(is_active=True).order_by('code')
-                ],
-                'departments': [
-                    {'value': dept.id, 'label': dept.name, 'business_function_id': dept.business_function.id}
-                    for dept in Department.objects.select_related('business_function').filter(is_active=True).order_by('business_function__code', 'name')
-                ],
-                'units': [
-                    {'value': unit.id, 'label': unit.name, 'department_id': unit.department.id}
-                    for unit in Unit.objects.select_related('department').filter(is_active=True).order_by('department__name', 'name')
-                ],
-                'job_functions': [
-                    {'value': jf.id, 'label': jf.name}
-                    for jf in JobFunction.objects.filter(is_active=True).order_by('name')
-                ],
-                'position_groups': [
-                    {'value': pg.id, 'label': pg.get_name_display(), 'hierarchy_level': pg.hierarchy_level}
-                    for pg in PositionGroup.objects.filter(is_active=True).order_by('hierarchy_level')
-                ],
-                'line_managers': [
-                    {'value': emp.id, 'label': f"{emp.full_name} ({emp.employee_id})", 'job_title': emp.job_title}
-                    for emp in Employee.objects.filter(
-                        status__affects_headcount=True,
-                        position_group__hierarchy_level__lte=4,  # Only management positions
-                        is_deleted=False
-                    ).order_by('full_name')
-                ],
-                'tags': [
-                    {'value': tag.id, 'label': tag.name, 'type': tag.tag_type, 'color': tag.color}
-                    for tag in EmployeeTag.objects.filter(is_active=True).order_by('tag_type', 'name')
-                ],
-                'grading_levels': self._get_all_grading_levels(),
-                'job_titles': list(
-                    Employee.objects.filter(is_deleted=False)
-                    .values_list('job_title', flat=True)
-                    .distinct()
-                    .order_by('job_title')
-                ),
-                'page_size_options': [10, 20, 50, 100],
-                'sort_options': [
-                    {'value': 'employee_name', 'label': 'Employee Name'},
-                    {'value': 'email', 'label': 'Email Address'},
-                    {'value': 'business_function', 'label': 'Business Function'},
-                    {'value': 'department', 'label': 'Department'},
-                    {'value': 'unit', 'label': 'Unit'},
-                    {'value': 'job_function', 'label': 'Job Function'},
-                    {'value': 'position', 'label': 'Position'},
-                    {'value': 'job_title', 'label': 'Job Title'},
-                    {'value': 'line_manager', 'label': 'Line Manager'},
-                    {'value': 'start_date', 'label': 'Start Date'},
-                    {'value': 'end_date', 'label': 'End Date'},
-                    {'value': 'status', 'label': 'Status'},
-                    {'value': 'years_of_service', 'label': 'Years of Service'},
-                    {'value': 'created_at', 'label': 'Created Date'},
-                ]
-            }
-            
-            return Response({
-                'success': True,
-                'filter_options': filter_options,
-                'generated_at': timezone.now(),
-                'total_employees': Employee.objects.count(),
-                'active_employees': Employee.objects.filter(status__affects_headcount=True).count()
-            })
-            
-        except Exception as e:
-            logger.error(f"Error getting filter options: {str(e)}")
-            return Response(
-                {'error': f'Failed to get filter options: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-    
-    def _get_all_grading_levels(self):
-        """Get all available grading levels from position groups"""
-        from .models import PositionGroup
-        
-        grading_levels = []
-        
-        for pg in PositionGroup.objects.filter(is_active=True):
-            levels = pg.get_grading_levels()
-            for level in levels:
-                grading_levels.append({
-                    'value': level['code'],
-                    'label': f"{level['display']} - {level['full_name']}",
-                    'position_group_id': pg.id,
-                    'position_group_name': pg.get_name_display()
-                })
-        
-        return grading_levels
-    
-    
     
     @swagger_auto_schema(
         auto_schema=FileUploadAutoSchema,
@@ -1335,7 +1307,242 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         return super().update(request, *args, **kwargs)
     
     
+    @swagger_auto_schema(
+        method='post',
+        operation_description="Toggle org chart visibility for single employee",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['employee_id'],
+            properties={
+                'employee_id': openapi.Schema(type=openapi.TYPE_INTEGER, description='Employee ID')
+            }
+        ),
+        responses={
+            200: openapi.Response(
+                description="Org chart visibility toggled successfully",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'success': openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                        'message': openapi.Schema(type=openapi.TYPE_STRING),
+                        'employee_id': openapi.Schema(type=openapi.TYPE_INTEGER),
+                        'employee_name': openapi.Schema(type=openapi.TYPE_STRING),
+                        'is_visible_in_org_chart': openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                    }
+                )
+            ),
+            400: openapi.Response(description="Bad request"),
+            404: openapi.Response(description="Employee not found")
+        }
+    )
+    @action(detail=False, methods=['post'], url_path='toggle-org-chart-visibility')
+    def toggle_org_chart_visibility(self, request):
+        """Toggle org chart visibility for single employee"""
+        try:
+            employee_id = request.data.get('employee_id')
+            
+            if not employee_id:
+                return Response(
+                    {'error': 'employee_id is required'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            try:
+                employee = Employee.objects.get(id=employee_id)
+            except Employee.DoesNotExist:
+                return Response(
+                    {'error': 'Employee not found'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            
+            # Toggle the visibility
+            old_visibility = employee.is_visible_in_org_chart
+            employee.is_visible_in_org_chart = not old_visibility
+            employee.updated_by = request.user
+            employee.save()
+            
+            # Log activity
+            EmployeeActivity.objects.create(
+                employee=employee,
+                activity_type='UPDATED',
+                description=f"Org chart visibility changed from {old_visibility} to {employee.is_visible_in_org_chart}",
+                performed_by=request.user,
+                metadata={
+                    'field_changed': 'is_visible_in_org_chart',
+                    'old_value': old_visibility,
+                    'new_value': employee.is_visible_in_org_chart,
+                    'action': 'toggle_org_chart_visibility'
+                }
+            )
+            
+            visibility_text = "visible" if employee.is_visible_in_org_chart else "hidden"
+            
+            return Response({
+                'success': True,
+                'message': f'{employee.full_name} is now {visibility_text} in org chart',
+                'employee_id': employee.id,
+                'employee_name': employee.full_name,
+                'is_visible_in_org_chart': employee.is_visible_in_org_chart,
+                'previous_visibility': old_visibility
+            })
+            
+        except Exception as e:
+            logger.error(f"Toggle org chart visibility failed: {str(e)}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return Response(
+                {'error': f'Failed to toggle org chart visibility: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
     
+    @swagger_auto_schema(
+        method='post',
+        operation_description="Bulk toggle org chart visibility for multiple employees",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['employee_ids'],
+            properties={
+                'employee_ids': openapi.Schema(
+                    type=openapi.TYPE_ARRAY,
+                    items=openapi.Schema(type=openapi.TYPE_INTEGER),
+                    description='List of employee IDs to toggle'
+                ),
+                'set_visible': openapi.Schema(
+                    type=openapi.TYPE_BOOLEAN,
+                    description='Optional: Set specific visibility (true/false). If not provided, will toggle each employee individually.'
+                )
+            }
+        ),
+        responses={
+            200: openapi.Response(
+                description="Bulk org chart visibility update completed",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'success': openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                        'message': openapi.Schema(type=openapi.TYPE_STRING),
+                        'total_employees': openapi.Schema(type=openapi.TYPE_INTEGER),
+                        'updated_count': openapi.Schema(type=openapi.TYPE_INTEGER),
+                        'set_visible_count': openapi.Schema(type=openapi.TYPE_INTEGER),
+                        'set_hidden_count': openapi.Schema(type=openapi.TYPE_INTEGER),
+                        'results': openapi.Schema(
+                            type=openapi.TYPE_ARRAY,
+                            items=openapi.Schema(
+                                type=openapi.TYPE_OBJECT,
+                                properties={
+                                    'employee_id': openapi.Schema(type=openapi.TYPE_INTEGER),
+                                    'employee_name': openapi.Schema(type=openapi.TYPE_STRING),
+                                    'old_visibility': openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                                    'new_visibility': openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                                    'action': openapi.Schema(type=openapi.TYPE_STRING)
+                                }
+                            )
+                        )
+                    }
+                )
+            ),
+            400: openapi.Response(description="Bad request")
+        }
+    )
+    @action(detail=False, methods=['post'], url_path='bulk-toggle-org-chart-visibility')
+    def bulk_toggle_org_chart_visibility(self, request):
+        """Bulk toggle org chart visibility for multiple employees"""
+        try:
+            employee_ids = request.data.get('employee_ids', [])
+            set_visible = request.data.get('set_visible')  # Optional: force set to specific value
+            
+            if not employee_ids:
+                return Response(
+                    {'error': 'employee_ids list is required'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            if not isinstance(employee_ids, list):
+                return Response(
+                    {'error': 'employee_ids must be a list'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            employees = Employee.objects.filter(id__in=employee_ids)
+            
+            if employees.count() != len(employee_ids):
+                return Response(
+                    {'error': 'Some employee IDs were not found'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            updated_count = 0
+            set_visible_count = 0
+            set_hidden_count = 0
+            results = []
+            
+            with transaction.atomic():
+                for employee in employees:
+                    old_visibility = employee.is_visible_in_org_chart
+                    
+                    # Determine new visibility
+                    if set_visible is not None:
+                        # Force set to specific value
+                        new_visibility = bool(set_visible)
+                        action = 'set_visible' if new_visibility else 'set_hidden'
+                    else:
+                        # Toggle current value
+                        new_visibility = not old_visibility
+                        action = 'toggled'
+                    
+                    # Only update if visibility actually changes
+                    if old_visibility != new_visibility:
+                        employee.is_visible_in_org_chart = new_visibility
+                        employee.updated_by = request.user
+                        employee.save()
+                        
+                        # Log activity
+                        EmployeeActivity.objects.create(
+                            employee=employee,
+                            activity_type='UPDATED',
+                            description=f"Org chart visibility bulk changed from {old_visibility} to {new_visibility}",
+                            performed_by=request.user,
+                            metadata={
+                                'field_changed': 'is_visible_in_org_chart',
+                                'old_value': old_visibility,
+                                'new_value': new_visibility,
+                                'action': 'bulk_toggle_org_chart_visibility',
+                                'bulk_operation': True
+                            }
+                        )
+                        
+                        updated_count += 1
+                        
+                        if new_visibility:
+                            set_visible_count += 1
+                        else:
+                            set_hidden_count += 1
+                    
+                    results.append({
+                        'employee_id': employee.id,
+                        'employee_name': employee.full_name,
+                        'old_visibility': old_visibility,
+                        'new_visibility': new_visibility,
+                        'action': action,
+                        'changed': old_visibility != new_visibility
+                    })
+            
+            return Response({
+                'success': True,
+                'message': f'Org chart visibility update completed: {updated_count} employees updated',
+                'total_employees': len(employee_ids),
+                'updated_count': updated_count,
+                'set_visible_count': set_visible_count,
+                'set_hidden_count': set_hidden_count,
+                'results': results
+            })
+            
+        except Exception as e:
+            logger.error(f"Bulk toggle org chart visibility failed: {str(e)}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return Response(
+                {'error': f'Failed to toggle org chart visibility: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
     
     
     def destroy(self, request, *args, **kwargs):
