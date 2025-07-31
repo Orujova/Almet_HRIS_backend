@@ -284,9 +284,6 @@ def user_info(request):
             "error": f"Failed to get user info: {str(e)}",
             "success": False
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-# api/views.py - COMPLETELY FIXED ComprehensiveEmployeeFilter
-
 class ComprehensiveEmployeeFilter:
     """
     COMPLETELY FIXED: Frontend component-lərinə uyğun tam filter sistemi
