@@ -936,27 +936,30 @@ class EmployeeAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
 
 @admin.register(VacantPosition)
 class VacantPositionAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
+    """ENHANCED: Vacant Position admin with headcount integration"""
     list_display = (
-        'position_id', 'title', 'business_function_display', 'department_display',
+        'position_id', 'display_name_formatted', 'business_function_display', 'department_display',
         'vacancy_type', 'urgency_display', 'expected_start_date', 
-        'reporting_to_display', 'filled_status_display', 'days_open_display'
+        'reporting_to_display', 'headcount_status_display', 'filled_status_display', 
+        'days_open_display', 'is_deleted_display'
     )
     list_filter = (
         'business_function', 'department', 'vacancy_type', 'urgency', 
-        'is_filled', 'expected_start_date', 'created_at'
+        'is_filled', 'include_in_headcount', 'is_visible_in_org_chart',
+        'expected_start_date', 'created_at', 'is_deleted'
     )
-    search_fields = ('position_id', 'title', 'description')
-    autocomplete_fields = ['reporting_to', 'filled_by', 'created_by']
-    readonly_fields = ('filled_date', 'created_at', 'updated_at')
+    search_fields = ('position_id', 'title', 'description', 'display_name')
+    autocomplete_fields = ['reporting_to', 'filled_by_employee', 'created_by']  # FIXED: use filled_by_employee
+    readonly_fields = ('display_name', 'filled_date', 'created_at', 'updated_at', 'vacancy_status')
     
     fieldsets = (
         ('Basic Information', {
-            'fields': ('position_id', 'title', 'description')
+            'fields': ('position_id', 'title', 'description', 'display_name')
         }),
         ('Organizational Structure', {
             'fields': (
                 ('business_function', 'department', 'unit'),
-                ('job_function', 'position_group')
+                ('job_function', 'position_group', 'grading_level')
             )
         }),
         ('Vacancy Details', {
@@ -966,12 +969,20 @@ class VacantPositionAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
                 ('expected_salary_range_min', 'expected_salary_range_max')
             )
         }),
+        ('Headcount & Visibility', {
+            'fields': (
+                'include_in_headcount', 
+                'is_visible_in_org_chart',
+                'vacancy_status'
+            ),
+            'description': 'Controls how this vacancy appears in headcount and organizational charts'
+        }),
         ('Management', {
             'fields': ('reporting_to', 'created_by')
         }),
-        ('Status', {
+        ('Status Tracking', {
             'fields': (
-                ('is_filled', 'filled_by', 'filled_date')
+                ('is_filled', 'filled_by_employee', 'filled_date')  # FIXED: use filled_by_employee
             )
         }),
         ('Metadata', {
@@ -980,12 +991,34 @@ class VacantPositionAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
         })
     )
     
+    def display_name_formatted(self, obj):
+        """Formatted display name with vacancy indicator"""
+        style = 'color: #999; text-decoration: line-through;' if obj.is_deleted else 'color: #f57c00; font-weight: bold;'
+        filled_indicator = ' ✓ FILLED' if obj.is_filled else ' ◯ OPEN'
+        return format_html(
+            '<span style="{}">[VACANT] {} {}</span>',
+            style, obj.title, filled_indicator
+        )
+    display_name_formatted.short_description = 'Position Title'
+    display_name_formatted.admin_order_field = 'title'
+    
+    def is_deleted_display(self, obj):
+        if obj.is_deleted:
+            return format_html('<span style="color: red;">✗ Deleted</span>')
+        return format_html('<span style="color: green;">✓ Active</span>')
+    is_deleted_display.short_description = 'Status'
+    
     def business_function_display(self, obj):
-        return f"{obj.business_function.code} - {obj.business_function.name}"
+        style = 'color: #999;' if obj.is_deleted else ''
+        return format_html(
+            '<div style="{}"><strong>{}</strong></div>',
+            style, f"{obj.business_function.code} - {obj.business_function.name}"
+        )
     business_function_display.short_description = 'Business Function'
     
     def department_display(self, obj):
-        return obj.department.name
+        style = 'color: #999;' if obj.is_deleted else ''
+        return format_html('<div style="{}">{}</div>', style, obj.department.name)
     department_display.short_description = 'Department'
     
     def urgency_display(self, obj):
@@ -996,69 +1029,174 @@ class VacantPositionAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
             'CRITICAL': '#dc3545'
         }
         color = colors.get(obj.urgency, '#6c757d')
+        style = 'opacity: 0.5;' if obj.is_deleted else ''
         return format_html(
-            '<span style="background: {}; color: white; padding: 3px 8px; border-radius: 10px; font-size: 11px; font-weight: bold;">{}</span>',
-            color, obj.get_urgency_display()
+            '<span style="background: {}; color: white; padding: 3px 8px; border-radius: 10px; font-size: 11px; font-weight: bold; {}">{}🔥</span>',
+            color, style, obj.get_urgency_display()
         )
     urgency_display.short_description = 'Urgency'
     urgency_display.admin_order_field = 'urgency'
     
     def reporting_to_display(self, obj):
-        if obj.reporting_to:
+        if obj.reporting_to and not obj.reporting_to.is_deleted:
             url = reverse('admin:api_employee_change', args=[obj.reporting_to.id])
+            style = 'color: #999;' if obj.is_deleted else 'color: #417690;'
             return format_html(
-                '<a href="{}" style="color: #417690;">{}</a>',
-                url, obj.reporting_to.full_name
+                '<a href="{}" style="{}">{}</a><br><small style="color: #666;">{}</small>',
+                url, style, obj.reporting_to.full_name, obj.reporting_to.employee_id
             )
-        return format_html('<span style="color: #999;">Not specified</span>')
+        return format_html('<span style="color: #999;">No Manager</span>')
     reporting_to_display.short_description = 'Reports To'
+    
+    def headcount_status_display(self, obj):
+        """Show headcount inclusion status"""
+        if obj.is_deleted:
+            return format_html('<span style="color: #999;">N/A (Deleted)</span>')
+        
+        if obj.is_filled:
+            return format_html('<span style="color: #6c757d;">Not in headcount (Filled)</span>')
+        
+        if obj.include_in_headcount:
+            return format_html(
+                '<span style="background: #28a745; color: white; padding: 2px 6px; border-radius: 4px; font-size: 10px;">📊 IN HEADCOUNT</span>'
+            )
+        else:
+            return format_html(
+                '<span style="background: #6c757d; color: white; padding: 2px 6px; border-radius: 4px; font-size: 10px;">➖ EXCLUDED</span>'
+            )
+    headcount_status_display.short_description = 'Headcount Status'
     
     def filled_status_display(self, obj):
         if obj.is_filled:
-            return format_html(
-                '<span style="color: green;">✓ Filled by {}</span>',
-                obj.filled_by.full_name if obj.filled_by else 'Unknown'
-            )
-        return format_html('<span style="color: orange;">◯ Open</span>')
-    filled_status_display.short_description = 'Status'
+            if obj.filled_by_employee:  # FIXED: use filled_by_employee
+                url = reverse('admin:api_employee_change', args=[obj.filled_by_employee.id])
+                return format_html(
+                    '<span style="color: green;">✓ Filled</span><br><small><a href="{}" style="color: #417690;">{}</a></small>',
+                    url, obj.filled_by_employee.full_name
+                )
+            else:
+                return format_html('<span style="color: green;">✓ Filled</span>')
+        
+        # Show vacancy icon based on urgency
+        urgency_icons = {
+            'CRITICAL': '🚨',
+            'HIGH': '⚡',
+            'MEDIUM': '⏳',
+            'LOW': '💭'
+        }
+        icon = urgency_icons.get(obj.urgency, '○')
+        
+        return format_html('<span style="color: orange;">{} Open</span>', icon)
+    filled_status_display.short_description = 'Fill Status'
     
     def days_open_display(self, obj):
         if obj.is_filled and obj.filled_date:
             days = (obj.filled_date - obj.created_at.date()).days
             return format_html(
-                '<span style="color: green;">{} days (filled)</span>',
-                days
+                '<span style="color: green;">{} days</span><br><small style="color: #666;">Filled on {}</small>',
+                days, obj.filled_date.strftime('%d/%m/%Y')
             )
         else:
             days = (date.today() - obj.created_at.date()).days
-            color = '#dc3545' if days > 60 else '#ffc107' if days > 30 else '#28a745'
+            
+            # Color coding based on how long it's been open
+            if days > 90:
+                color = '#dc3545'  # Red - very long
+                icon = '🚨'
+            elif days > 60:
+                color = '#fd7e14'  # Orange - long
+                icon = '⚠️'
+            elif days > 30:
+                color = '#ffc107'  # Yellow - moderate
+                icon = '⏰'
+            else:
+                color = '#28a745'  # Green - recent
+                icon = '🆕'
+            
             return format_html(
-                '<span style="color: {};">{} days (open)</span>',
-                color, days
+                '<span style="color: {}; font-weight: bold;">{} {} days</span><br><small style="color: #666;">Since {}</small>',
+                color, icon, days, obj.created_at.strftime('%d/%m/%Y')
             )
     days_open_display.short_description = 'Days Open'
     
-    actions = ['mark_as_filled', 'generate_vacancy_report']
+    actions = [
+        'mark_as_filled', 'reopen_vacancies', 'include_in_headcount', 
+        'exclude_from_headcount', 'show_in_org_chart', 'hide_from_org_chart',
+        'generate_vacancy_report', 'convert_to_employees'
+    ]
     
     def mark_as_filled(self, request, queryset):
         """Mark selected vacancies as filled (without specifying employee)"""
         count = queryset.filter(is_filled=False).update(
             is_filled=True,
-            filled_date=date.today()
+            filled_date=date.today(),
+            include_in_headcount=False  # Remove from headcount when filled
         )
-        self.message_user(request, f'Marked {count} vacancies as filled.')
+        self.message_user(request, f'Marked {count} vacancies as filled and removed from headcount.')
     mark_as_filled.short_description = 'Mark as filled'
     
+    def reopen_vacancies(self, request, queryset):
+        """Reopen filled vacancies"""
+        count = 0
+        for vacancy in queryset.filter(is_filled=True):
+            vacancy.is_filled = False
+            vacancy.filled_by_employee = None
+            vacancy.filled_date = None
+            vacancy.include_in_headcount = True  # Add back to headcount
+            vacancy.save()
+            count += 1
+        
+        self.message_user(request, f'Reopened {count} vacancies and added back to headcount.')
+    reopen_vacancies.short_description = 'Reopen filled vacancies'
+    
+    def include_in_headcount(self, request, queryset):
+        """Include selected vacancies in headcount"""
+        count = queryset.filter(is_filled=False).update(include_in_headcount=True)
+        self.message_user(request, f'Included {count} open vacancies in headcount.')
+    include_in_headcount.short_description = 'Include in headcount'
+    
+    def exclude_from_headcount(self, request, queryset):
+        """Exclude selected vacancies from headcount"""
+        count = queryset.update(include_in_headcount=False)
+        self.message_user(request, f'Excluded {count} vacancies from headcount.')
+    exclude_from_headcount.short_description = 'Exclude from headcount'
+    
+    def show_in_org_chart(self, request, queryset):
+        """Show selected vacancies in org chart"""
+        count = queryset.update(is_visible_in_org_chart=True)
+        self.message_user(request, f'Made {count} vacancies visible in org chart.')
+    show_in_org_chart.short_description = 'Show in org chart'
+    
+    def hide_from_org_chart(self, request, queryset):
+        """Hide selected vacancies from org chart"""
+        count = queryset.update(is_visible_in_org_chart=False)
+        self.message_user(request, f'Hidden {count} vacancies from org chart.')
+    hide_from_org_chart.short_description = 'Hide from org chart'
+    
+    def convert_to_employees(self, request, queryset):
+        """Show instructions for converting vacancies to employees"""
+        open_vacancies = queryset.filter(is_filled=False).count()
+        filled_vacancies = queryset.filter(is_filled=True).count()
+        
+        message = f"Selected {queryset.count()} vacancies: {open_vacancies} open, {filled_vacancies} filled. "
+        message += "To convert open vacancies to employees, use the API endpoint or contact system administrator."
+        
+        self.message_user(request, message)
+    convert_to_employees.short_description = 'Convert to employees (instructions)'
+    
     def generate_vacancy_report(self, request, queryset):
-        """Generate CSV report for selected vacancies"""
+        """Generate enhanced CSV report for selected vacancies"""
         response = HttpResponse(content_type='text/csv')
-        response['Content-Disposition'] = f'attachment; filename="vacancies_{date.today()}.csv"'
+        response['Content-Disposition'] = f'attachment; filename="vacancies_report_{date.today()}.csv"'
         
         writer = csv.writer(response)
         writer.writerow([
-            'Position ID', 'Title', 'Business Function', 'Department', 
-            'Vacancy Type', 'Urgency', 'Expected Start Date', 'Reports To',
-            'Status', 'Days Open', 'Created Date'
+            'Position ID', 'Title', 'Display Name', 'Business Function', 'Department', 'Unit',
+            'Job Function', 'Position Group', 'Grading Level',
+            'Vacancy Type', 'Urgency', 'Expected Start Date', 
+            'Expected Salary Min', 'Expected Salary Max',
+            'Reports To', 'Status', 'In Headcount', 'Visible in Org Chart',
+            'Days Open', 'Filled By', 'Filled Date', 'Created Date', 'Created By'
         ])
         
         for vacancy in queryset:
@@ -1066,19 +1204,41 @@ class VacantPositionAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
             writer.writerow([
                 vacancy.position_id,
                 vacancy.title,
+                vacancy.display_name,
                 vacancy.business_function.name,
                 vacancy.department.name,
+                vacancy.unit.name if vacancy.unit else '',
+                vacancy.job_function.name,
+                vacancy.position_group.get_name_display(),
+                vacancy.grading_level,
                 vacancy.get_vacancy_type_display(),
                 vacancy.get_urgency_display(),
                 vacancy.expected_start_date,
+                vacancy.expected_salary_range_min or '',
+                vacancy.expected_salary_range_max or '',
                 vacancy.reporting_to.full_name if vacancy.reporting_to else '',
                 'Filled' if vacancy.is_filled else 'Open',
+                'Yes' if vacancy.include_in_headcount else 'No',
+                'Yes' if vacancy.is_visible_in_org_chart else 'No',
                 days_open,
-                vacancy.created_at.date()
+                vacancy.filled_by.full_name if vacancy.filled_by else '',
+                vacancy.filled_date or '',
+                vacancy.created_at.date(),
+                vacancy.created_by.username if vacancy.created_by else ''
             ])
         
         return response
-    generate_vacancy_report.short_description = 'Export vacancy report'
+    generate_vacancy_report.short_description = 'Export enhanced vacancy report'
+    
+    def get_queryset(self, request):
+        """Enhanced queryset with related objects"""
+        qs = super().get_queryset(request)
+        return qs.select_related(
+            'business_function', 'department', 'unit', 'job_function',
+            'position_group', 'reporting_to', 'filled_by_employee', 'created_by', 'vacancy_status'  # FIXED: use filled_by_employee
+        )
+
+
 
 @admin.register(EmployeeDocument)
 class EmployeeDocumentAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):

@@ -11,7 +11,13 @@ SECRET_KEY = 'django-insecure-3_8*j1!u72&6_0@iv3$cyr4gis_xm5x_1ob2o!$#mxl!u97gg5
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['localhost', '127.0.0.1', '0.0.0.0']
+ALLOWED_HOSTS = [
+    'localhost',
+    '127.0.0.1',
+    'myalmet.com',
+    'www.myalmet.com',
+    '161.97.101.41',  # Server IP
+]
 
 # Application definition
 INSTALLED_APPS = [

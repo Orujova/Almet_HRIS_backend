@@ -1,0 +1,917 @@
+INFO 2025-08-04 17:19:35,566 views 27504 2032 Using pagination (explicitly requested)
+INFO 2025-08-04 17:19:35,707 views 27504 25692 Using pagination (explicitly requested)
+INFO 2025-08-04 17:20:03,522 views 27504 25752 Using pagination (explicitly requested)
+INFO 2025-08-04 17:20:03,694 views 27504 12040 Using pagination (explicitly requested)
+INFO 2025-08-04 17:24:53,710 views 27504 22696 Using pagination (explicitly requested)
+INFO 2025-08-04 17:24:53,740 views 27504 2032 Returning ALL 59 employees (no pagination requested)
+INFO 2025-08-04 17:24:54,149 views 27504 22696 Returning ALL 59 employees (no pagination requested)
+INFO 2025-08-04 23:13:38,715 views 15464 524 === Microsoft authentication request received ===
+INFO 2025-08-04 23:13:38,716 views 15464 524 Request method: POST
+INFO 2025-08-04 23:13:38,716 views 15464 524 Request headers: {'Content-Length': '1289', 'Content-Type': 'application/json', 'Host': 'localhost:8000', 'Connection': 'keep-alive', 'Sec-Ch-Ua-Platform': '"Windows"', 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36', 'Accept': 'application/json, text/plain, */*', 'Sec-Ch-Ua': '"Not)A;Brand";v="8", "Chromium";v="138", "Google Chrome";v="138"', 'Sec-Ch-Ua-Mobile': '?0', 'Origin': 'http://localhost:3000', 'Sec-Fetch-Site': 'same-site', 'Sec-Fetch-Mode': 'cors', 'Sec-Fetch-Dest': 'empty', 'Referer': 'http://localhost:3000/', 'Accept-Encoding': 'gzip, deflate, br, zstd', 'Accept-Language': 'en-US,en;q=0.9'}
+INFO 2025-08-04 23:13:38,717 views 15464 524 Request data keys: ['id_token']
+INFO 2025-08-04 23:13:38,717 views 15464 524 Microsoft authentication attempt - validating token
+INFO 2025-08-04 23:13:38,718 views 15464 524 Token length: 1274
+INFO 2025-08-04 23:13:38,718 auth 15464 524 === Starting Microsoft token validation ===
+INFO 2025-08-04 23:13:38,719 auth 15464 524 Received token: eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiIsImtpZCI6IkpZaE...
+INFO 2025-08-04 23:13:38,719 auth 15464 524 === Token payload ===
+INFO 2025-08-04 23:13:38,720 auth 15464 524 {
+  "aud": "230458ff-ed69-4abb-8496-3888067116f6",
+  "iss": "https://login.microsoftonline.com/b3222ef7-242d-4724-a665-97b0a764f2d0/v2.0",
+  "iat": 1754333864,
+  "nbf": 1754333864,
+  "exp": 1754337764,
+  "email": "n.orujova@almettrading.com",
+  "name": "Narmin Orujova",
+  "nonce": "01987418-700a-78b9-aff2-00a6f8654f25",
+  "oid": "2c74167f-d69a-43a5-a1e6-910fd8560625",
+  "preferred_username": "n.orujova@almettrading.com",
+  "rh": "1.ATkA9y4isy0kJEemZZewp2Ty0P9YBCNp7btKhJY4iAZxFvaqARM5AA.",
+  "sid": "006f4479-3fce-68b3-3194-baf4d0a88168",
+  "sub": "i7rUkArSkR21ADRGNhKBNmJkwt25_DaBfDeIyBhUpf4",
+  "tid": "b3222ef7-242d-4724-a665-97b0a764f2d0",
+  "uti": "bRqS1CrUA0uZeIJQNapAAA",
+  "ver": "2.0"
+}
+INFO 2025-08-04 23:13:38,721 auth 15464 524 Audience from token: 230458ff-ed69-4abb-8496-3888067116f6
+INFO 2025-08-04 23:13:38,721 auth 15464 524 Expected audience: 230458ff-ed69-4abb-8496-3888067116f6
+INFO 2025-08-04 23:13:38,722 auth 15464 524 Microsoft ID (sub): i7rUkArSkR21ADRGNhKBNmJkwt25_DaBfDeIyBhUpf4
+INFO 2025-08-04 23:13:38,723 auth 15464 524 Full name from token: Narmin Orujova
+INFO 2025-08-04 23:13:38,723 auth 15464 524 Extracted user info: email=n.orujova@almettrading.com, first_name=Narmin, last_name=Orujova
+INFO 2025-08-04 23:13:38,774 auth 15464 524 Found existing Microsoft user: n.orujova
+INFO 2025-08-04 23:13:38,774 auth 15464 524 === Token validation successful for user: n.orujova ===
+INFO 2025-08-04 23:13:38,775 views 15464 524 Token validated successfully for user: n.orujova
+INFO 2025-08-04 23:13:38,775 views 15464 524 JWT tokens generated for user: n.orujova
+INFO 2025-08-04 23:13:38,776 views 15464 524 Returning successful response for user: n.orujova
+INFO 2025-08-04 23:29:23,936 views 16420 18608 Using pagination (explicitly requested)
+INFO 2025-08-04 23:29:24,544 views 16420 18608 Using pagination (explicitly requested)
+INFO 2025-08-04 23:42:55,935 views 14508 22584 Using pagination (explicitly requested)
+INFO 2025-08-04 23:42:56,160 views 14508 12440 Using pagination (explicitly requested)
+INFO 2025-08-04 23:43:06,752 views 14508 9608 Using pagination (explicitly requested)
+INFO 2025-08-04 23:43:07,085 views 14508 22584 Using pagination (explicitly requested)
+INFO 2025-08-04 23:43:08,414 views 14508 22584 Using pagination (explicitly requested)
+INFO 2025-08-04 23:43:08,592 views 14508 22584 Using pagination (explicitly requested)
+INFO 2025-08-04 23:43:16,331 views 14508 22584 Using pagination (explicitly requested)
+INFO 2025-08-05 09:02:25,320 views 14508 29276 === Microsoft authentication request received ===
+INFO 2025-08-05 09:02:25,322 views 14508 29276 Request method: POST
+INFO 2025-08-05 09:02:25,323 views 14508 29276 Request headers: {'Content-Length': '1289', 'Content-Type': 'application/json', 'Host': 'localhost:8000', 'Connection': 'keep-alive', 'Sec-Ch-Ua-Platform': '"Windows"', 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36', 'Accept': 'application/json, text/plain, */*', 'Sec-Ch-Ua': '"Not)A;Brand";v="8", "Chromium";v="138", "Google Chrome";v="138"', 'Sec-Ch-Ua-Mobile': '?0', 'Origin': 'http://localhost:3000', 'Sec-Fetch-Site': 'same-site', 'Sec-Fetch-Mode': 'cors', 'Sec-Fetch-Dest': 'empty', 'Referer': 'http://localhost:3000/', 'Accept-Encoding': 'gzip, deflate, br, zstd', 'Accept-Language': 'en-US,en;q=0.9'}
+INFO 2025-08-05 09:02:25,325 views 14508 29276 Request data keys: ['id_token']
+INFO 2025-08-05 09:02:25,327 views 14508 29276 Microsoft authentication attempt - validating token
+INFO 2025-08-05 09:02:25,328 views 14508 29276 Token length: 1274
+INFO 2025-08-05 09:02:25,329 auth 14508 29276 === Starting Microsoft token validation ===
+INFO 2025-08-05 09:02:25,331 auth 14508 29276 Received token: eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiIsImtpZCI6IkpZaE...
+INFO 2025-08-05 09:02:25,332 auth 14508 29276 === Token payload ===
+INFO 2025-08-05 09:02:25,334 auth 14508 29276 {
+  "aud": "230458ff-ed69-4abb-8496-3888067116f6",
+  "iss": "https://login.microsoftonline.com/b3222ef7-242d-4724-a665-97b0a764f2d0/v2.0",
+  "iat": 1754369662,
+  "nbf": 1754369662,
+  "exp": 1754373562,
+  "email": "n.orujova@almettrading.com",
+  "name": "Narmin Orujova",
+  "nonce": "01987418-700a-78b9-aff2-00a6f8654f25",
+  "oid": "2c74167f-d69a-43a5-a1e6-910fd8560625",
+  "preferred_username": "n.orujova@almettrading.com",
+  "rh": "1.ATkA9y4isy0kJEemZZewp2Ty0P9YBCNp7btKhJY4iAZxFvaqARM5AA.",
+  "sid": "006f4479-3fce-68b3-3194-baf4d0a88168",
+  "sub": "i7rUkArSkR21ADRGNhKBNmJkwt25_DaBfDeIyBhUpf4",
+  "tid": "b3222ef7-242d-4724-a665-97b0a764f2d0",
+  "uti": "gdPjUIdg0EK8Rr4RnStMAA",
+  "ver": "2.0"
+}
+INFO 2025-08-05 09:02:25,336 auth 14508 29276 Audience from token: 230458ff-ed69-4abb-8496-3888067116f6
+INFO 2025-08-05 09:02:25,337 auth 14508 29276 Expected audience: 230458ff-ed69-4abb-8496-3888067116f6
+INFO 2025-08-05 09:02:25,338 auth 14508 29276 Microsoft ID (sub): i7rUkArSkR21ADRGNhKBNmJkwt25_DaBfDeIyBhUpf4
+INFO 2025-08-05 09:02:25,340 auth 14508 29276 Full name from token: Narmin Orujova
+INFO 2025-08-05 09:02:25,341 auth 14508 29276 Extracted user info: email=n.orujova@almettrading.com, first_name=Narmin, last_name=Orujova
+INFO 2025-08-05 09:02:25,400 auth 14508 29276 Found existing Microsoft user: n.orujova
+INFO 2025-08-05 09:02:25,401 auth 14508 29276 === Token validation successful for user: n.orujova ===
+INFO 2025-08-05 09:02:25,402 views 14508 29276 Token validated successfully for user: n.orujova
+INFO 2025-08-05 09:02:25,404 views 14508 29276 JWT tokens generated for user: n.orujova
+INFO 2025-08-05 09:02:25,405 views 14508 29276 Returning successful response for user: n.orujova
+INFO 2025-08-05 09:04:07,475 views 14508 29276 Using pagination (explicitly requested)
+INFO 2025-08-05 09:04:08,017 views 14508 4392 Using pagination (explicitly requested)
+INFO 2025-08-05 09:56:03,875 views 26980 30240 User info request for user: n.orujova
+INFO 2025-08-05 09:56:03,923 views 26980 30240 [n.orujova] No employee profile found
+INFO 2025-08-05 09:56:03,925 views 26980 30240 [n.orujova] User info response prepared successfully
+INFO 2025-08-05 09:56:04,121 views 26980 30240 Using pagination (explicitly requested)
+INFO 2025-08-05 09:56:04,442 views 26980 30240 Using pagination (explicitly requested)
+INFO 2025-08-05 09:56:04,931 views 26980 1708 Using pagination (explicitly requested)
+INFO 2025-08-05 09:56:11,117 views 26980 31932 Using pagination (explicitly requested)
+INFO 2025-08-05 09:56:11,237 views 26980 31932 Using pagination (explicitly requested)
+INFO 2025-08-05 09:56:50,000 views 26980 30240 Using pagination (explicitly requested)
+INFO 2025-08-05 09:56:50,176 views 26980 11360 Using pagination (explicitly requested)
+INFO 2025-08-05 09:56:52,330 views 26980 11360 Using pagination (explicitly requested)
+INFO 2025-08-05 09:56:52,478 views 26980 11360 Using pagination (explicitly requested)
+INFO 2025-08-05 09:56:58,094 views 26980 11360 Using pagination (explicitly requested)
+INFO 2025-08-05 10:03:22,630 views 10984 7284 === Microsoft authentication request received ===
+INFO 2025-08-05 10:03:22,631 views 10984 7284 Request method: POST
+INFO 2025-08-05 10:03:22,632 views 10984 7284 Request headers: {'Content-Length': '1289', 'Content-Type': 'application/json', 'Host': 'localhost:8000', 'Connection': 'keep-alive', 'Sec-Ch-Ua-Platform': '"Windows"', 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36', 'Accept': 'application/json, text/plain, */*', 'Sec-Ch-Ua': '"Not)A;Brand";v="8", "Chromium";v="138", "Google Chrome";v="138"', 'Sec-Ch-Ua-Mobile': '?0', 'Origin': 'http://localhost:3000', 'Sec-Fetch-Site': 'same-site', 'Sec-Fetch-Mode': 'cors', 'Sec-Fetch-Dest': 'empty', 'Referer': 'http://localhost:3000/', 'Accept-Encoding': 'gzip, deflate, br, zstd', 'Accept-Language': 'en-US,en;q=0.9'}
+INFO 2025-08-05 10:03:22,633 views 10984 7284 Request data keys: ['id_token']
+INFO 2025-08-05 10:03:22,634 views 10984 7284 Microsoft authentication attempt - validating token
+INFO 2025-08-05 10:03:22,634 views 10984 7284 Token length: 1274
+INFO 2025-08-05 10:03:22,635 auth 10984 7284 === Starting Microsoft token validation ===
+INFO 2025-08-05 10:03:22,636 auth 10984 7284 Received token: eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiIsImtpZCI6IkpZaE...
+INFO 2025-08-05 10:03:22,637 auth 10984 7284 === Token payload ===
+INFO 2025-08-05 10:03:22,637 auth 10984 7284 {
+  "aud": "230458ff-ed69-4abb-8496-3888067116f6",
+  "iss": "https://login.microsoftonline.com/b3222ef7-242d-4724-a665-97b0a764f2d0/v2.0",
+  "iat": 1754373502,
+  "nbf": 1754373502,
+  "exp": 1754377402,
+  "email": "n.orujova@almettrading.com",
+  "name": "Narmin Orujova",
+  "nonce": "01987418-700a-78b9-aff2-00a6f8654f25",
+  "oid": "2c74167f-d69a-43a5-a1e6-910fd8560625",
+  "preferred_username": "n.orujova@almettrading.com",
+  "rh": "1.ATkA9y4isy0kJEemZZewp2Ty0P9YBCNp7btKhJY4iAZxFvaqARM5AA.",
+  "sid": "006f4479-3fce-68b3-3194-baf4d0a88168",
+  "sub": "i7rUkArSkR21ADRGNhKBNmJkwt25_DaBfDeIyBhUpf4",
+  "tid": "b3222ef7-242d-4724-a665-97b0a764f2d0",
+  "uti": "S_LV5smbvUefAQFqMX9SAA",
+  "ver": "2.0"
+}
+INFO 2025-08-05 10:03:22,639 auth 10984 7284 Audience from token: 230458ff-ed69-4abb-8496-3888067116f6
+INFO 2025-08-05 10:03:22,639 auth 10984 7284 Expected audience: 230458ff-ed69-4abb-8496-3888067116f6
+INFO 2025-08-05 10:03:22,639 auth 10984 7284 Microsoft ID (sub): i7rUkArSkR21ADRGNhKBNmJkwt25_DaBfDeIyBhUpf4
+INFO 2025-08-05 10:03:22,640 auth 10984 7284 Full name from token: Narmin Orujova
+INFO 2025-08-05 10:03:22,641 auth 10984 7284 Extracted user info: email=n.orujova@almettrading.com, first_name=Narmin, last_name=Orujova
+INFO 2025-08-05 10:03:22,694 auth 10984 7284 Found existing Microsoft user: n.orujova
+INFO 2025-08-05 10:03:22,695 auth 10984 7284 === Token validation successful for user: n.orujova ===
+INFO 2025-08-05 10:03:22,696 views 10984 7284 Token validated successfully for user: n.orujova
+INFO 2025-08-05 10:03:22,697 views 10984 7284 JWT tokens generated for user: n.orujova
+INFO 2025-08-05 10:03:22,697 views 10984 7284 Returning successful response for user: n.orujova
+INFO 2025-08-05 10:03:28,640 views 10984 7284 Using pagination (explicitly requested)
+INFO 2025-08-05 10:03:29,298 views 10984 31740 Using pagination (explicitly requested)
+INFO 2025-08-05 10:03:29,860 views 10984 32660 Using pagination (explicitly requested)
+INFO 2025-08-05 10:11:58,034 views 30236 32044 User info request for user: n.orujova
+INFO 2025-08-05 10:11:58,054 views 30236 32044 [n.orujova] No employee profile found
+INFO 2025-08-05 10:11:58,059 views 30236 32044 [n.orujova] User info response prepared successfully
+INFO 2025-08-05 10:11:58,068 views 30236 32044 User info request for user: n.orujova
+INFO 2025-08-05 10:11:58,081 views 30236 32044 [n.orujova] No employee profile found
+INFO 2025-08-05 10:11:58,084 views 30236 32044 [n.orujova] User info response prepared successfully
+INFO 2025-08-05 10:11:58,370 views 30236 31700 Using pagination (explicitly requested)
+INFO 2025-08-05 10:11:58,571 views 30236 21636 Using pagination (explicitly requested)
+INFO 2025-08-05 10:11:58,735 views 30236 31700 Using pagination (explicitly requested)
+INFO 2025-08-05 10:12:46,812 views 30236 22080 Using pagination (explicitly requested)
+INFO 2025-08-05 10:12:47,035 views 30236 11920 Using pagination (explicitly requested)
+INFO 2025-08-05 10:12:47,187 views 30236 22080 Using pagination (explicitly requested)
+INFO 2025-08-05 10:12:53,629 views 30236 22080 User info request for user: n.orujova
+INFO 2025-08-05 10:12:53,643 views 30236 22080 [n.orujova] No employee profile found
+INFO 2025-08-05 10:12:53,647 views 30236 22080 [n.orujova] User info response prepared successfully
+INFO 2025-08-05 10:12:53,938 views 30236 31700 Using pagination (explicitly requested)
+INFO 2025-08-05 10:12:54,613 views 30236 22080 Using pagination (explicitly requested)
+INFO 2025-08-05 10:12:55,058 views 30236 21636 Using pagination (explicitly requested)
+INFO 2025-08-05 10:33:29,165 views 30236 31372 Using pagination (explicitly requested)
+INFO 2025-08-05 10:33:29,287 views 30236 30828 Using pagination (explicitly requested)
+INFO 2025-08-05 10:35:51,365 views 30236 30828 User info request for user: n.orujova
+INFO 2025-08-05 10:35:51,388 views 30236 30828 [n.orujova] No employee profile found
+INFO 2025-08-05 10:35:51,389 views 30236 30828 [n.orujova] User info response prepared successfully
+INFO 2025-08-05 10:35:51,556 views 30236 30828 Using pagination (explicitly requested)
+INFO 2025-08-05 10:35:51,984 views 30236 21684 Using pagination (explicitly requested)
+INFO 2025-08-05 10:35:52,333 views 30236 30828 Using pagination (explicitly requested)
+INFO 2025-08-05 10:35:56,344 views 30236 31372 Using pagination (explicitly requested)
+INFO 2025-08-05 10:35:56,452 views 30236 31372 Using pagination (explicitly requested)
+INFO 2025-08-05 10:37:02,041 views 30236 16364 Using pagination (explicitly requested)
+INFO 2025-08-05 10:37:02,241 views 30236 3384 Using pagination (explicitly requested)
+INFO 2025-08-05 10:47:22,637 views 30236 20760 User info request for user: n.orujova
+INFO 2025-08-05 10:47:22,660 views 30236 20760 [n.orujova] No employee profile found
+INFO 2025-08-05 10:47:22,661 views 30236 20760 [n.orujova] User info response prepared successfully
+INFO 2025-08-05 10:47:23,840 views 30236 31628 User info request for user: n.orujova
+INFO 2025-08-05 10:47:23,862 views 30236 31628 [n.orujova] No employee profile found
+INFO 2025-08-05 10:47:23,864 views 30236 31628 [n.orujova] User info response prepared successfully
+INFO 2025-08-05 10:48:06,418 views 30236 21256 User info request for user: n.orujova
+INFO 2025-08-05 10:48:06,430 views 30236 21256 [n.orujova] No employee profile found
+INFO 2025-08-05 10:48:06,432 views 30236 21256 [n.orujova] User info response prepared successfully
+INFO 2025-08-05 10:54:10,153 views 30236 28200 User info request for user: n.orujova
+INFO 2025-08-05 10:54:10,172 views 30236 28200 [n.orujova] No employee profile found
+INFO 2025-08-05 10:54:10,173 views 30236 28200 [n.orujova] User info response prepared successfully
+INFO 2025-08-05 10:54:40,490 views 30236 20760 User info request for user: n.orujova
+INFO 2025-08-05 10:54:40,504 views 30236 20760 [n.orujova] No employee profile found
+INFO 2025-08-05 10:54:40,505 views 30236 20760 [n.orujova] User info response prepared successfully
+INFO 2025-08-05 10:55:53,276 views 30236 2624 User info request for user: n.orujova
+INFO 2025-08-05 10:55:53,300 views 30236 2624 [n.orujova] No employee profile found
+INFO 2025-08-05 10:55:53,301 views 30236 2624 [n.orujova] User info response prepared successfully
+INFO 2025-08-05 11:08:18,761 views 30236 29764 === Microsoft authentication request received ===
+INFO 2025-08-05 11:08:18,762 views 30236 29764 Request method: POST
+INFO 2025-08-05 11:08:18,763 views 30236 29764 Request headers: {'Content-Length': '1289', 'Content-Type': 'application/json', 'Host': 'localhost:8000', 'Connection': 'keep-alive', 'Sec-Ch-Ua-Platform': '"Windows"', 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36', 'Accept': 'application/json, text/plain, */*', 'Sec-Ch-Ua': '"Not)A;Brand";v="8", "Chromium";v="138", "Google Chrome";v="138"', 'Sec-Ch-Ua-Mobile': '?0', 'Origin': 'http://localhost:3000', 'Sec-Fetch-Site': 'same-site', 'Sec-Fetch-Mode': 'cors', 'Sec-Fetch-Dest': 'empty', 'Referer': 'http://localhost:3000/', 'Accept-Encoding': 'gzip, deflate, br, zstd', 'Accept-Language': 'en-US,en;q=0.9'}
+INFO 2025-08-05 11:08:18,763 views 30236 29764 Request data keys: ['id_token']
+INFO 2025-08-05 11:08:18,764 views 30236 29764 Microsoft authentication attempt - validating token
+INFO 2025-08-05 11:08:18,764 views 30236 29764 Token length: 1274
+INFO 2025-08-05 11:08:18,765 auth 30236 29764 === Starting Microsoft token validation ===
+INFO 2025-08-05 11:08:18,765 auth 30236 29764 Received token: eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiIsImtpZCI6IkpZaE...
+INFO 2025-08-05 11:08:18,765 auth 30236 29764 === Token payload ===
+INFO 2025-08-05 11:08:18,766 auth 30236 29764 {
+  "aud": "230458ff-ed69-4abb-8496-3888067116f6",
+  "iss": "https://login.microsoftonline.com/b3222ef7-242d-4724-a665-97b0a764f2d0/v2.0",
+  "iat": 1754373502,
+  "nbf": 1754373502,
+  "exp": 1754377402,
+  "email": "n.orujova@almettrading.com",
+  "name": "Narmin Orujova",
+  "nonce": "01987418-700a-78b9-aff2-00a6f8654f25",
+  "oid": "2c74167f-d69a-43a5-a1e6-910fd8560625",
+  "preferred_username": "n.orujova@almettrading.com",
+  "rh": "1.ATkA9y4isy0kJEemZZewp2Ty0P9YBCNp7btKhJY4iAZxFvaqARM5AA.",
+  "sid": "006f4479-3fce-68b3-3194-baf4d0a88168",
+  "sub": "i7rUkArSkR21ADRGNhKBNmJkwt25_DaBfDeIyBhUpf4",
+  "tid": "b3222ef7-242d-4724-a665-97b0a764f2d0",
+  "uti": "S_LV5smbvUefAQFqMX9SAA",
+  "ver": "2.0"
+}
+INFO 2025-08-05 11:08:18,766 auth 30236 29764 Audience from token: 230458ff-ed69-4abb-8496-3888067116f6
+INFO 2025-08-05 11:08:18,767 auth 30236 29764 Expected audience: 230458ff-ed69-4abb-8496-3888067116f6
+INFO 2025-08-05 11:08:18,767 auth 30236 29764 Microsoft ID (sub): i7rUkArSkR21ADRGNhKBNmJkwt25_DaBfDeIyBhUpf4
+INFO 2025-08-05 11:08:18,767 auth 30236 29764 Full name from token: Narmin Orujova
+INFO 2025-08-05 11:08:18,768 auth 30236 29764 Extracted user info: email=n.orujova@almettrading.com, first_name=Narmin, last_name=Orujova
+INFO 2025-08-05 11:08:18,772 auth 30236 29764 Found existing Microsoft user: n.orujova
+INFO 2025-08-05 11:08:18,772 auth 30236 29764 === Token validation successful for user: n.orujova ===
+INFO 2025-08-05 11:08:18,772 views 30236 29764 Token validated successfully for user: n.orujova
+INFO 2025-08-05 11:08:18,773 views 30236 29764 JWT tokens generated for user: n.orujova
+INFO 2025-08-05 11:08:18,773 views 30236 29764 Returning successful response for user: n.orujova
+INFO 2025-08-05 11:08:21,040 views 30236 27408 Using pagination (explicitly requested)
+INFO 2025-08-05 11:08:21,590 views 30236 27408 Using pagination (explicitly requested)
+INFO 2025-08-05 11:22:51,326 views 30236 25208 User info request for user: n.orujova
+INFO 2025-08-05 11:22:51,344 views 30236 25208 [n.orujova] No employee profile found
+INFO 2025-08-05 11:22:51,345 views 30236 25208 [n.orujova] User info response prepared successfully
+INFO 2025-08-05 11:28:44,749 views 30236 5896 User info request for user: n.orujova
+INFO 2025-08-05 11:28:44,776 views 30236 5896 [n.orujova] No employee profile found
+INFO 2025-08-05 11:28:44,777 views 30236 5896 [n.orujova] User info response prepared successfully
+INFO 2025-08-05 11:31:43,253 views 30236 15964 User info request for user: n.orujova
+INFO 2025-08-05 11:31:43,272 views 30236 15964 [n.orujova] No employee profile found
+INFO 2025-08-05 11:31:43,273 views 30236 15964 [n.orujova] User info response prepared successfully
+INFO 2025-08-05 11:42:02,077 views 30236 31968 User info request for user: n.orujova
+INFO 2025-08-05 11:42:02,095 views 30236 31968 [n.orujova] No employee profile found
+INFO 2025-08-05 11:42:02,096 views 30236 31968 [n.orujova] User info response prepared successfully
+INFO 2025-08-05 11:44:19,130 views 30236 21540 User info request for user: n.orujova
+INFO 2025-08-05 11:44:19,149 views 30236 21540 [n.orujova] No employee profile found
+INFO 2025-08-05 11:44:19,150 views 30236 21540 [n.orujova] User info response prepared successfully
+INFO 2025-08-05 11:44:19,380 views 30236 21540 Using pagination (explicitly requested)
+INFO 2025-08-05 11:44:19,779 views 30236 21540 Using pagination (explicitly requested)
+INFO 2025-08-05 11:52:36,779 views 30236 30024 Using pagination (explicitly requested)
+INFO 2025-08-05 11:52:36,975 views 30236 12872 Using pagination (explicitly requested)
+INFO 2025-08-05 11:52:37,160 views 30236 30024 Using pagination (explicitly requested)
+INFO 2025-08-05 11:53:31,306 views 30236 30024 User info request for user: n.orujova
+INFO 2025-08-05 11:53:31,315 views 30236 30024 [n.orujova] No employee profile found
+INFO 2025-08-05 11:53:31,316 views 30236 30024 [n.orujova] User info response prepared successfully
+INFO 2025-08-05 11:53:31,547 views 30236 30024 Using pagination (explicitly requested)
+INFO 2025-08-05 11:53:31,994 views 30236 30268 Using pagination (explicitly requested)
+INFO 2025-08-05 11:53:32,207 views 30236 12872 Using pagination (explicitly requested)
+INFO 2025-08-05 11:53:38,159 views 30236 7720 Using pagination (explicitly requested)
+INFO 2025-08-05 11:53:38,287 views 30236 7720 Using pagination (explicitly requested)
+INFO 2025-08-05 11:58:00,680 views 30236 8528 User info request for user: n.orujova
+INFO 2025-08-05 11:58:00,700 views 30236 8528 [n.orujova] No employee profile found
+INFO 2025-08-05 11:58:00,701 views 30236 8528 [n.orujova] User info response prepared successfully
+INFO 2025-08-05 11:58:00,881 views 30236 8528 Using pagination (explicitly requested)
+INFO 2025-08-05 11:58:01,116 views 30236 8528 Using pagination (explicitly requested)
+INFO 2025-08-05 11:58:01,613 views 30236 11940 Using pagination (explicitly requested)
+INFO 2025-08-05 11:58:05,503 views 30236 23812 Using pagination (explicitly requested)
+INFO 2025-08-05 11:58:05,618 views 30236 23812 Using pagination (explicitly requested)
+INFO 2025-08-05 11:59:31,429 views 30236 24956 Using pagination (explicitly requested)
+INFO 2025-08-05 11:59:31,707 views 30236 24956 Using pagination (explicitly requested)
+INFO 2025-08-05 12:04:53,182 views 30236 30696 Using pagination (explicitly requested)
+INFO 2025-08-05 12:04:53,394 views 30236 32684 Using pagination (explicitly requested)
+INFO 2025-08-05 12:04:53,580 views 30236 30696 Using pagination (explicitly requested)
+INFO 2025-08-05 12:05:02,072 views 30236 30696 User info request for user: n.orujova
+INFO 2025-08-05 12:05:02,080 views 30236 30696 [n.orujova] No employee profile found
+INFO 2025-08-05 12:05:02,082 views 30236 30696 [n.orujova] User info response prepared successfully
+INFO 2025-08-05 12:05:02,225 views 30236 28388 Using pagination (explicitly requested)
+INFO 2025-08-05 12:05:02,799 views 30236 27968 Using pagination (explicitly requested)
+INFO 2025-08-05 12:05:03,015 views 30236 28388 Using pagination (explicitly requested)
+INFO 2025-08-05 12:05:06,939 views 30236 30696 Using pagination (explicitly requested)
+INFO 2025-08-05 12:05:07,002 views 30236 30696 Using pagination (explicitly requested)
+INFO 2025-08-05 12:07:16,231 views 30236 26324 Using pagination (explicitly requested)
+INFO 2025-08-05 12:07:16,455 views 30236 7292 Using pagination (explicitly requested)
+INFO 2025-08-05 12:20:11,389 views 30236 29828 === Microsoft authentication request received ===
+INFO 2025-08-05 12:20:11,389 views 30236 29828 Request method: POST
+INFO 2025-08-05 12:20:11,390 views 30236 29828 Request headers: {'Content-Length': '1289', 'Content-Type': 'application/json', 'Host': 'localhost:8000', 'Connection': 'keep-alive', 'Sec-Ch-Ua-Platform': '"Windows"', 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36', 'Accept': 'application/json, text/plain, */*', 'Sec-Ch-Ua': '"Not)A;Brand";v="8", "Chromium";v="138", "Google Chrome";v="138"', 'Sec-Ch-Ua-Mobile': '?0', 'Origin': 'http://localhost:3000', 'Sec-Fetch-Site': 'same-site', 'Sec-Fetch-Mode': 'cors', 'Sec-Fetch-Dest': 'empty', 'Referer': 'http://localhost:3000/', 'Accept-Encoding': 'gzip, deflate, br, zstd', 'Accept-Language': 'en-US,en;q=0.9'}
+INFO 2025-08-05 12:20:11,390 views 30236 29828 Request data keys: ['id_token']
+INFO 2025-08-05 12:20:11,390 views 30236 29828 Microsoft authentication attempt - validating token
+INFO 2025-08-05 12:20:11,391 views 30236 29828 Token length: 1274
+INFO 2025-08-05 12:20:11,391 auth 30236 29828 === Starting Microsoft token validation ===
+INFO 2025-08-05 12:20:11,391 auth 30236 29828 Received token: eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiIsImtpZCI6IkpZaE...
+INFO 2025-08-05 12:20:11,392 auth 30236 29828 === Token payload ===
+INFO 2025-08-05 12:20:11,392 auth 30236 29828 {
+  "aud": "230458ff-ed69-4abb-8496-3888067116f6",
+  "iss": "https://login.microsoftonline.com/b3222ef7-242d-4724-a665-97b0a764f2d0/v2.0",
+  "iat": 1754381711,
+  "nbf": 1754381711,
+  "exp": 1754385611,
+  "email": "n.orujova@almettrading.com",
+  "name": "Narmin Orujova",
+  "nonce": "01987951-0992-7728-b847-02f417ec72d2",
+  "oid": "2c74167f-d69a-43a5-a1e6-910fd8560625",
+  "preferred_username": "n.orujova@almettrading.com",
+  "rh": "1.ATkA9y4isy0kJEemZZewp2Ty0P9YBCNp7btKhJY4iAZxFvaqARM5AA.",
+  "sid": "006f4479-3fce-68b3-3194-baf4d0a88168",
+  "sub": "i7rUkArSkR21ADRGNhKBNmJkwt25_DaBfDeIyBhUpf4",
+  "tid": "b3222ef7-242d-4724-a665-97b0a764f2d0",
+  "uti": "S_LV5smbvUefAQFqpkdYAA",
+  "ver": "2.0"
+}
+INFO 2025-08-05 12:20:11,392 auth 30236 29828 Audience from token: 230458ff-ed69-4abb-8496-3888067116f6
+INFO 2025-08-05 12:20:11,392 auth 30236 29828 Expected audience: 230458ff-ed69-4abb-8496-3888067116f6
+INFO 2025-08-05 12:20:11,393 auth 30236 29828 Microsoft ID (sub): i7rUkArSkR21ADRGNhKBNmJkwt25_DaBfDeIyBhUpf4
+INFO 2025-08-05 12:20:11,393 auth 30236 29828 Full name from token: Narmin Orujova
+INFO 2025-08-05 12:20:11,393 auth 30236 29828 Extracted user info: email=n.orujova@almettrading.com, first_name=Narmin, last_name=Orujova
+INFO 2025-08-05 12:20:11,424 auth 30236 29828 Found existing Microsoft user: n.orujova
+INFO 2025-08-05 12:20:11,424 auth 30236 29828 === Token validation successful for user: n.orujova ===
+INFO 2025-08-05 12:20:11,425 views 30236 29828 Token validated successfully for user: n.orujova
+INFO 2025-08-05 12:20:11,425 views 30236 29828 JWT tokens generated for user: n.orujova
+INFO 2025-08-05 12:20:11,425 views 30236 29828 Returning successful response for user: n.orujova
+INFO 2025-08-05 12:36:06,325 views 30236 11404 User info request for user: n.orujova
+INFO 2025-08-05 12:36:06,343 views 30236 11404 [n.orujova] No employee profile found
+INFO 2025-08-05 12:36:06,344 views 30236 11404 [n.orujova] User info response prepared successfully
+INFO 2025-08-05 12:43:52,344 views 30236 2012 User info request for user: n.orujova
+INFO 2025-08-05 12:43:52,365 views 30236 2012 [n.orujova] No employee profile found
+INFO 2025-08-05 12:43:52,367 views 30236 2012 [n.orujova] User info response prepared successfully
+INFO 2025-08-05 12:44:18,047 views 30236 17076 User info request for user: n.orujova
+INFO 2025-08-05 12:44:18,064 views 30236 17076 [n.orujova] No employee profile found
+INFO 2025-08-05 12:44:18,065 views 30236 17076 [n.orujova] User info response prepared successfully
+INFO 2025-08-05 12:53:05,686 views 30236 6688 User info request for user: n.orujova
+INFO 2025-08-05 12:53:05,701 views 30236 6688 [n.orujova] No employee profile found
+INFO 2025-08-05 12:53:05,702 views 30236 6688 [n.orujova] User info response prepared successfully
+INFO 2025-08-05 14:36:49,768 views 30236 29052 === Microsoft authentication request received ===
+INFO 2025-08-05 14:36:49,769 views 30236 29052 Request method: POST
+INFO 2025-08-05 14:36:49,770 views 30236 29052 Request headers: {'Content-Length': '1289', 'Content-Type': 'application/json', 'Host': 'localhost:8000', 'Connection': 'keep-alive', 'Sec-Ch-Ua-Platform': '"Windows"', 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36', 'Accept': 'application/json, text/plain, */*', 'Sec-Ch-Ua': '"Not)A;Brand";v="8", "Chromium";v="138", "Google Chrome";v="138"', 'Sec-Ch-Ua-Mobile': '?0', 'Origin': 'http://localhost:3000', 'Sec-Fetch-Site': 'same-site', 'Sec-Fetch-Mode': 'cors', 'Sec-Fetch-Dest': 'empty', 'Referer': 'http://localhost:3000/', 'Accept-Encoding': 'gzip, deflate, br, zstd', 'Accept-Language': 'en-US,en;q=0.9'}
+INFO 2025-08-05 14:36:49,771 views 30236 29052 Request data keys: ['id_token']
+INFO 2025-08-05 14:36:49,771 views 30236 29052 Microsoft authentication attempt - validating token
+INFO 2025-08-05 14:36:49,771 views 30236 29052 Token length: 1274
+INFO 2025-08-05 14:36:49,772 auth 30236 29052 === Starting Microsoft token validation ===
+INFO 2025-08-05 14:36:49,772 auth 30236 29052 Received token: eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiIsImtpZCI6IkpZaE...
+INFO 2025-08-05 14:36:49,773 auth 30236 29052 === Token payload ===
+INFO 2025-08-05 14:36:49,773 auth 30236 29052 {
+  "aud": "230458ff-ed69-4abb-8496-3888067116f6",
+  "iss": "https://login.microsoftonline.com/b3222ef7-242d-4724-a665-97b0a764f2d0/v2.0",
+  "iat": 1754387762,
+  "nbf": 1754387762,
+  "exp": 1754391662,
+  "email": "n.orujova@almettrading.com",
+  "name": "Narmin Orujova",
+  "nonce": "01987951-0992-7728-b847-02f417ec72d2",
+  "oid": "2c74167f-d69a-43a5-a1e6-910fd8560625",
+  "preferred_username": "n.orujova@almettrading.com",
+  "rh": "1.ATkA9y4isy0kJEemZZewp2Ty0P9YBCNp7btKhJY4iAZxFvaqARM5AA.",
+  "sid": "006f4479-3fce-68b3-3194-baf4d0a88168",
+  "sub": "i7rUkArSkR21ADRGNhKBNmJkwt25_DaBfDeIyBhUpf4",
+  "tid": "b3222ef7-242d-4724-a665-97b0a764f2d0",
+  "uti": "PGT7AQ5gaUuNclpgUqsUAA",
+  "ver": "2.0"
+}
+INFO 2025-08-05 14:36:49,773 auth 30236 29052 Audience from token: 230458ff-ed69-4abb-8496-3888067116f6
+INFO 2025-08-05 14:36:49,774 auth 30236 29052 Expected audience: 230458ff-ed69-4abb-8496-3888067116f6
+INFO 2025-08-05 14:36:49,774 auth 30236 29052 Microsoft ID (sub): i7rUkArSkR21ADRGNhKBNmJkwt25_DaBfDeIyBhUpf4
+INFO 2025-08-05 14:36:49,774 auth 30236 29052 Full name from token: Narmin Orujova
+INFO 2025-08-05 14:36:49,774 auth 30236 29052 Extracted user info: email=n.orujova@almettrading.com, first_name=Narmin, last_name=Orujova
+INFO 2025-08-05 14:36:49,779 auth 30236 29052 Found existing Microsoft user: n.orujova
+INFO 2025-08-05 14:36:49,779 auth 30236 29052 === Token validation successful for user: n.orujova ===
+INFO 2025-08-05 14:36:49,780 views 30236 29052 Token validated successfully for user: n.orujova
+INFO 2025-08-05 14:36:49,780 views 30236 29052 JWT tokens generated for user: n.orujova
+INFO 2025-08-05 14:36:49,780 views 30236 29052 Returning successful response for user: n.orujova
+INFO 2025-08-05 14:43:23,724 views 30236 27884 User info request for user: n.orujova
+INFO 2025-08-05 14:43:23,741 views 30236 27884 [n.orujova] No employee profile found
+INFO 2025-08-05 14:43:23,746 views 30236 27884 [n.orujova] User info response prepared successfully
+INFO 2025-08-05 14:46:58,088 views 30236 27884 User info request for user: n.orujova
+INFO 2025-08-05 14:46:58,104 views 30236 27884 [n.orujova] No employee profile found
+INFO 2025-08-05 14:46:58,105 views 30236 27884 [n.orujova] User info response prepared successfully
+INFO 2025-08-05 14:51:57,783 views 30236 27884 User info request for user: n.orujova
+INFO 2025-08-05 14:51:57,813 views 30236 27884 [n.orujova] No employee profile found
+INFO 2025-08-05 14:51:57,814 views 30236 27884 [n.orujova] User info response prepared successfully
+INFO 2025-08-05 14:52:11,961 views 30236 10852 Using pagination (explicitly requested)
+INFO 2025-08-05 14:52:12,278 views 30236 32540 Using pagination (explicitly requested)
+INFO 2025-08-05 14:52:17,232 views 30236 11972 Using pagination (explicitly requested)
+INFO 2025-08-05 14:52:17,400 views 30236 20608 Using pagination (explicitly requested)
+INFO 2025-08-05 14:53:26,696 views 30236 32540 Using pagination (explicitly requested)
+INFO 2025-08-05 14:53:26,963 views 30236 10852 Using pagination (explicitly requested)
+INFO 2025-08-05 14:54:10,620 views 30236 27884 User info request for user: n.orujova
+INFO 2025-08-05 14:54:10,634 views 30236 27884 [n.orujova] No employee profile found
+INFO 2025-08-05 14:54:10,635 views 30236 27884 [n.orujova] User info response prepared successfully
+INFO 2025-08-05 14:54:10,795 views 30236 27884 Using pagination (explicitly requested)
+INFO 2025-08-05 14:54:11,362 views 30236 10852 Using pagination (explicitly requested)
+INFO 2025-08-05 15:10:33,101 views 30236 3996 User info request for user: n.orujova
+INFO 2025-08-05 15:10:33,147 views 30236 3996 [n.orujova] No employee profile found
+INFO 2025-08-05 15:10:33,149 views 30236 3996 [n.orujova] User info response prepared successfully
+INFO 2025-08-05 15:18:24,530 views 30236 30060 User info request for user: n.orujova
+INFO 2025-08-05 15:18:24,546 views 30236 30060 [n.orujova] No employee profile found
+INFO 2025-08-05 15:18:24,547 views 30236 30060 [n.orujova] User info response prepared successfully
+INFO 2025-08-05 15:18:24,703 views 30236 30060 Using pagination (explicitly requested)
+INFO 2025-08-05 15:18:24,918 views 30236 30060 Using pagination (explicitly requested)
+INFO 2025-08-05 15:27:52,959 views 30236 29592 User info request for user: n.orujova
+INFO 2025-08-05 15:27:52,978 views 30236 29592 [n.orujova] No employee profile found
+INFO 2025-08-05 15:27:52,979 views 30236 29592 [n.orujova] User info response prepared successfully
+INFO 2025-08-05 15:28:02,402 views 30236 29592 User info request for user: n.orujova
+INFO 2025-08-05 15:28:02,410 views 30236 29592 [n.orujova] No employee profile found
+INFO 2025-08-05 15:28:02,412 views 30236 29592 [n.orujova] User info response prepared successfully
+INFO 2025-08-05 15:28:02,622 views 30236 29592 Using pagination (explicitly requested)
+INFO 2025-08-05 15:28:02,907 views 30236 29592 Using pagination (explicitly requested)
+INFO 2025-08-05 15:31:55,434 views 30236 10340 User info request for user: n.orujova
+INFO 2025-08-05 15:31:55,491 views 30236 10340 [n.orujova] No employee profile found
+INFO 2025-08-05 15:31:55,493 views 30236 10340 [n.orujova] User info response prepared successfully
+INFO 2025-08-05 15:31:55,734 views 30236 23056 Using pagination (explicitly requested)
+INFO 2025-08-05 15:31:56,079 views 30236 23056 Using pagination (explicitly requested)
+INFO 2025-08-05 15:33:16,247 views 30236 10340 User info request for user: n.orujova
+INFO 2025-08-05 15:33:16,271 views 30236 10340 [n.orujova] No employee profile found
+INFO 2025-08-05 15:33:16,272 views 30236 10340 [n.orujova] User info response prepared successfully
+INFO 2025-08-05 15:33:16,426 views 30236 10340 Using pagination (explicitly requested)
+INFO 2025-08-05 15:33:16,979 views 30236 10340 Using pagination (explicitly requested)
+INFO 2025-08-05 15:41:55,024 views 30236 4084 === Microsoft authentication request received ===
+INFO 2025-08-05 15:41:55,025 views 30236 4084 Request method: POST
+INFO 2025-08-05 15:41:55,025 views 30236 4084 Request headers: {'Content-Length': '1289', 'Content-Type': 'application/json', 'Host': 'localhost:8000', 'Connection': 'keep-alive', 'Sec-Ch-Ua-Platform': '"Windows"', 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36', 'Accept': 'application/json, text/plain, */*', 'Sec-Ch-Ua': '"Not)A;Brand";v="8", "Chromium";v="138", "Google Chrome";v="138"', 'Sec-Ch-Ua-Mobile': '?0', 'Origin': 'http://localhost:3000', 'Sec-Fetch-Site': 'same-site', 'Sec-Fetch-Mode': 'cors', 'Sec-Fetch-Dest': 'empty', 'Referer': 'http://localhost:3000/', 'Accept-Encoding': 'gzip, deflate, br, zstd', 'Accept-Language': 'en-US,en;q=0.9'}
+INFO 2025-08-05 15:41:55,026 views 30236 4084 Request data keys: ['id_token']
+INFO 2025-08-05 15:41:55,026 views 30236 4084 Microsoft authentication attempt - validating token
+INFO 2025-08-05 15:41:55,026 views 30236 4084 Token length: 1274
+INFO 2025-08-05 15:41:55,026 auth 30236 4084 === Starting Microsoft token validation ===
+INFO 2025-08-05 15:41:55,027 auth 30236 4084 Received token: eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiIsImtpZCI6IkpZaE...
+INFO 2025-08-05 15:41:55,027 auth 30236 4084 === Token payload ===
+INFO 2025-08-05 15:41:55,027 auth 30236 4084 {
+  "aud": "230458ff-ed69-4abb-8496-3888067116f6",
+  "iss": "https://login.microsoftonline.com/b3222ef7-242d-4724-a665-97b0a764f2d0/v2.0",
+  "iat": 1754393815,
+  "nbf": 1754393815,
+  "exp": 1754397715,
+  "email": "n.orujova@almettrading.com",
+  "name": "Narmin Orujova",
+  "nonce": "01987951-0992-7728-b847-02f417ec72d2",
+  "oid": "2c74167f-d69a-43a5-a1e6-910fd8560625",
+  "preferred_username": "n.orujova@almettrading.com",
+  "rh": "1.ATkA9y4isy0kJEemZZewp2Ty0P9YBCNp7btKhJY4iAZxFvaqARM5AA.",
+  "sid": "006f4479-3fce-68b3-3194-baf4d0a88168",
+  "sub": "i7rUkArSkR21ADRGNhKBNmJkwt25_DaBfDeIyBhUpf4",
+  "tid": "b3222ef7-242d-4724-a665-97b0a764f2d0",
+  "uti": "GAtPDeuzVkW_vsH0p5YWAA",
+  "ver": "2.0"
+}
+INFO 2025-08-05 15:41:55,027 auth 30236 4084 Audience from token: 230458ff-ed69-4abb-8496-3888067116f6
+INFO 2025-08-05 15:41:55,028 auth 30236 4084 Expected audience: 230458ff-ed69-4abb-8496-3888067116f6
+INFO 2025-08-05 15:41:55,028 auth 30236 4084 Microsoft ID (sub): i7rUkArSkR21ADRGNhKBNmJkwt25_DaBfDeIyBhUpf4
+INFO 2025-08-05 15:41:55,028 auth 30236 4084 Full name from token: Narmin Orujova
+INFO 2025-08-05 15:41:55,028 auth 30236 4084 Extracted user info: email=n.orujova@almettrading.com, first_name=Narmin, last_name=Orujova
+INFO 2025-08-05 15:41:55,063 auth 30236 4084 Found existing Microsoft user: n.orujova
+INFO 2025-08-05 15:41:55,063 auth 30236 4084 === Token validation successful for user: n.orujova ===
+INFO 2025-08-05 15:41:55,063 views 30236 4084 Token validated successfully for user: n.orujova
+INFO 2025-08-05 15:41:55,063 views 30236 4084 JWT tokens generated for user: n.orujova
+INFO 2025-08-05 15:41:55,064 views 30236 4084 Returning successful response for user: n.orujova
+INFO 2025-08-05 15:41:56,973 views 30236 4084 Using pagination (explicitly requested)
+INFO 2025-08-05 15:41:57,361 views 30236 29148 Using pagination (explicitly requested)
+INFO 2025-08-05 15:42:02,949 views 30236 4084 Using pagination (explicitly requested)
+INFO 2025-08-05 15:43:01,325 views 30236 22048 Using pagination (explicitly requested)
+INFO 2025-08-05 15:43:01,569 views 30236 24072 Using pagination (explicitly requested)
+INFO 2025-08-05 15:43:42,744 views 30236 4084 User info request for user: n.orujova
+INFO 2025-08-05 15:43:42,757 views 30236 4084 [n.orujova] No employee profile found
+INFO 2025-08-05 15:43:42,758 views 30236 4084 [n.orujova] User info response prepared successfully
+INFO 2025-08-05 15:49:57,418 views 30236 16112 User info request for user: n.orujova
+INFO 2025-08-05 15:49:57,436 views 30236 16112 [n.orujova] No employee profile found
+INFO 2025-08-05 15:49:57,437 views 30236 16112 [n.orujova] User info response prepared successfully
+INFO 2025-08-05 15:50:07,518 views 30236 16112 User info request for user: n.orujova
+INFO 2025-08-05 15:50:07,528 views 30236 16112 [n.orujova] No employee profile found
+INFO 2025-08-05 15:50:07,530 views 30236 16112 [n.orujova] User info response prepared successfully
+INFO 2025-08-05 15:50:07,838 views 30236 16112 Using pagination (explicitly requested)
+INFO 2025-08-05 15:50:08,174 views 30236 30188 Using pagination (explicitly requested)
+INFO 2025-08-05 16:10:25,179 views 30236 29796 User info request for user: n.orujova
+INFO 2025-08-05 16:10:25,199 views 30236 29796 [n.orujova] No employee profile found
+INFO 2025-08-05 16:10:25,201 views 30236 29796 [n.orujova] User info response prepared successfully
+INFO 2025-08-05 16:10:25,443 views 30236 8224 Using pagination (explicitly requested)
+INFO 2025-08-05 16:10:25,985 views 30236 8324 Using pagination (explicitly requested)
+ERROR 2025-08-05 16:10:28,235 views 30236 8324 Error in org chart list view: Cannot resolve keyword 'name' into field. Choices are: activities, address, business_function, business_function_id, contract_duration, contract_end_date, contract_extensions, contract_start_date, created_at, created_by, created_by_id, date_of_birth, deleted_at, deleted_by, deleted_by_id, department, department_id, departments_headed, direct_reports, documents, emergency_contact, employee_id, end_date, father_name, filled_vacancy_position, full_name, gender, grading_level, id, is_deleted, is_visible_in_org_chart, job_function, job_function_id, job_title, last_extension_date, line_manager, line_manager_id, managed_vacant_positions, notes, original_vacancy, original_vacancy_id, phone, position_group, position_group_id, profile_image, start_date, status, status_id, tags, unit, unit_id, units_headed, updated_at, updated_by, updated_by_id, user, user_id
+ERROR 2025-08-05 16:10:28,326 views 30236 8324 Traceback: Traceback (most recent call last):
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\almet_hris_backend\api\views.py", line 4098, in list
+    queryset = queryset.order_by(*sort_params)
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\query.py", line 1718, in order_by
+    obj.query.add_ordering(*field_names)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\sql\query.py", line 2288, in add_ordering
+    self.names_to_path(item.split(LOOKUP_SEP), self.model._meta)
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\sql\query.py", line 1802, in names_to_path
+    raise FieldError(
+    ...<2 lines>...
+    )
+django.core.exceptions.FieldError: Cannot resolve keyword 'name' into field. Choices are: activities, address, business_function, business_function_id, contract_duration, contract_end_date, contract_extensions, contract_start_date, created_at, created_by, created_by_id, date_of_birth, deleted_at, deleted_by, deleted_by_id, department, department_id, departments_headed, direct_reports, documents, emergency_contact, employee_id, end_date, father_name, filled_vacancy_position, full_name, gender, grading_level, id, is_deleted, is_visible_in_org_chart, job_function, job_function_id, job_title, last_extension_date, line_manager, line_manager_id, managed_vacant_positions, notes, original_vacancy, original_vacancy_id, phone, position_group, position_group_id, profile_image, start_date, status, status_id, tags, unit, unit_id, units_headed, updated_at, updated_by, updated_by_id, user, user_id
+
+ERROR 2025-08-05 16:10:28,331 views 30236 8324 Error in org chart list view: Cannot resolve keyword 'name' into field. Choices are: activities, address, business_function, business_function_id, contract_duration, contract_end_date, contract_extensions, contract_start_date, created_at, created_by, created_by_id, date_of_birth, deleted_at, deleted_by, deleted_by_id, department, department_id, departments_headed, direct_reports, documents, emergency_contact, employee_id, end_date, father_name, filled_vacancy_position, full_name, gender, grading_level, id, is_deleted, is_visible_in_org_chart, job_function, job_function_id, job_title, last_extension_date, line_manager, line_manager_id, managed_vacant_positions, notes, original_vacancy, original_vacancy_id, phone, position_group, position_group_id, profile_image, start_date, status, status_id, tags, unit, unit_id, units_headed, updated_at, updated_by, updated_by_id, user, user_id
+ERROR 2025-08-05 16:10:28,333 views 30236 8324 Traceback: Traceback (most recent call last):
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\almet_hris_backend\api\views.py", line 4098, in list
+    queryset = queryset.order_by(*sort_params)
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\query.py", line 1718, in order_by
+    obj.query.add_ordering(*field_names)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\sql\query.py", line 2288, in add_ordering
+    self.names_to_path(item.split(LOOKUP_SEP), self.model._meta)
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\sql\query.py", line 1802, in names_to_path
+    raise FieldError(
+    ...<2 lines>...
+    )
+django.core.exceptions.FieldError: Cannot resolve keyword 'name' into field. Choices are: activities, address, business_function, business_function_id, contract_duration, contract_end_date, contract_extensions, contract_start_date, created_at, created_by, created_by_id, date_of_birth, deleted_at, deleted_by, deleted_by_id, department, department_id, departments_headed, direct_reports, documents, emergency_contact, employee_id, end_date, father_name, filled_vacancy_position, full_name, gender, grading_level, id, is_deleted, is_visible_in_org_chart, job_function, job_function_id, job_title, last_extension_date, line_manager, line_manager_id, managed_vacant_positions, notes, original_vacancy, original_vacancy_id, phone, position_group, position_group_id, profile_image, start_date, status, status_id, tags, unit, unit_id, units_headed, updated_at, updated_by, updated_by_id, user, user_id
+
+ERROR 2025-08-05 16:15:55,350 views 30236 21364 Error in org chart list view: Cannot resolve keyword 'name' into field. Choices are: activities, address, business_function, business_function_id, contract_duration, contract_end_date, contract_extensions, contract_start_date, created_at, created_by, created_by_id, date_of_birth, deleted_at, deleted_by, deleted_by_id, department, department_id, departments_headed, direct_reports, documents, emergency_contact, employee_id, end_date, father_name, filled_vacancy_position, full_name, gender, grading_level, id, is_deleted, is_visible_in_org_chart, job_function, job_function_id, job_title, last_extension_date, line_manager, line_manager_id, managed_vacant_positions, notes, original_vacancy, original_vacancy_id, phone, position_group, position_group_id, profile_image, start_date, status, status_id, tags, unit, unit_id, units_headed, updated_at, updated_by, updated_by_id, user, user_id
+INFO 2025-08-05 16:15:55,360 views 30236 28592 User info request for user: n.orujova
+ERROR 2025-08-05 16:15:55,360 views 30236 21364 Traceback: Traceback (most recent call last):
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\almet_hris_backend\api\views.py", line 4098, in list
+    queryset = queryset.order_by(*sort_params)
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\query.py", line 1718, in order_by
+    obj.query.add_ordering(*field_names)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\sql\query.py", line 2288, in add_ordering
+    self.names_to_path(item.split(LOOKUP_SEP), self.model._meta)
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\sql\query.py", line 1802, in names_to_path
+    raise FieldError(
+    ...<2 lines>...
+    )
+django.core.exceptions.FieldError: Cannot resolve keyword 'name' into field. Choices are: activities, address, business_function, business_function_id, contract_duration, contract_end_date, contract_extensions, contract_start_date, created_at, created_by, created_by_id, date_of_birth, deleted_at, deleted_by, deleted_by_id, department, department_id, departments_headed, direct_reports, documents, emergency_contact, employee_id, end_date, father_name, filled_vacancy_position, full_name, gender, grading_level, id, is_deleted, is_visible_in_org_chart, job_function, job_function_id, job_title, last_extension_date, line_manager, line_manager_id, managed_vacant_positions, notes, original_vacancy, original_vacancy_id, phone, position_group, position_group_id, profile_image, start_date, status, status_id, tags, unit, unit_id, units_headed, updated_at, updated_by, updated_by_id, user, user_id
+
+INFO 2025-08-05 16:15:55,384 views 30236 28592 [n.orujova] No employee profile found
+INFO 2025-08-05 16:15:55,385 views 30236 28592 [n.orujova] User info response prepared successfully
+ERROR 2025-08-05 16:16:10,837 views 30236 7188 Error in org chart list view: Cannot resolve keyword 'name' into field. Choices are: activities, address, business_function, business_function_id, contract_duration, contract_end_date, contract_extensions, contract_start_date, created_at, created_by, created_by_id, date_of_birth, deleted_at, deleted_by, deleted_by_id, department, department_id, departments_headed, direct_reports, documents, emergency_contact, employee_id, end_date, father_name, filled_vacancy_position, full_name, gender, grading_level, id, is_deleted, is_visible_in_org_chart, job_function, job_function_id, job_title, last_extension_date, line_manager, line_manager_id, managed_vacant_positions, notes, original_vacancy, original_vacancy_id, phone, position_group, position_group_id, profile_image, start_date, status, status_id, tags, unit, unit_id, units_headed, updated_at, updated_by, updated_by_id, user, user_id
+ERROR 2025-08-05 16:16:10,839 views 30236 7188 Traceback: Traceback (most recent call last):
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\almet_hris_backend\api\views.py", line 4098, in list
+    queryset = queryset.order_by(*sort_params)
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\query.py", line 1718, in order_by
+    obj.query.add_ordering(*field_names)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\sql\query.py", line 2288, in add_ordering
+    self.names_to_path(item.split(LOOKUP_SEP), self.model._meta)
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\sql\query.py", line 1802, in names_to_path
+    raise FieldError(
+    ...<2 lines>...
+    )
+django.core.exceptions.FieldError: Cannot resolve keyword 'name' into field. Choices are: activities, address, business_function, business_function_id, contract_duration, contract_end_date, contract_extensions, contract_start_date, created_at, created_by, created_by_id, date_of_birth, deleted_at, deleted_by, deleted_by_id, department, department_id, departments_headed, direct_reports, documents, emergency_contact, employee_id, end_date, father_name, filled_vacancy_position, full_name, gender, grading_level, id, is_deleted, is_visible_in_org_chart, job_function, job_function_id, job_title, last_extension_date, line_manager, line_manager_id, managed_vacant_positions, notes, original_vacancy, original_vacancy_id, phone, position_group, position_group_id, profile_image, start_date, status, status_id, tags, unit, unit_id, units_headed, updated_at, updated_by, updated_by_id, user, user_id
+
+INFO 2025-08-05 16:16:10,876 views 30236 7188 User info request for user: n.orujova
+INFO 2025-08-05 16:16:10,893 views 30236 7188 [n.orujova] No employee profile found
+INFO 2025-08-05 16:16:10,894 views 30236 7188 [n.orujova] User info response prepared successfully
+ERROR 2025-08-05 16:28:07,609 views 30236 29996 Error in org chart list view: Cannot resolve keyword 'name' into field. Choices are: activities, address, business_function, business_function_id, contract_duration, contract_end_date, contract_extensions, contract_start_date, created_at, created_by, created_by_id, date_of_birth, deleted_at, deleted_by, deleted_by_id, department, department_id, departments_headed, direct_reports, documents, emergency_contact, employee_id, end_date, father_name, filled_vacancy_position, full_name, gender, grading_level, id, is_deleted, is_visible_in_org_chart, job_function, job_function_id, job_title, last_extension_date, line_manager, line_manager_id, managed_vacant_positions, notes, original_vacancy, original_vacancy_id, phone, position_group, position_group_id, profile_image, start_date, status, status_id, tags, unit, unit_id, units_headed, updated_at, updated_by, updated_by_id, user, user_id
+INFO 2025-08-05 16:28:07,614 views 30236 14832 User info request for user: n.orujova
+ERROR 2025-08-05 16:28:07,614 views 30236 29996 Traceback: Traceback (most recent call last):
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\almet_hris_backend\api\views.py", line 4098, in list
+    queryset = queryset.order_by(*sort_params)
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\query.py", line 1718, in order_by
+    obj.query.add_ordering(*field_names)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\sql\query.py", line 2288, in add_ordering
+    self.names_to_path(item.split(LOOKUP_SEP), self.model._meta)
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\sql\query.py", line 1802, in names_to_path
+    raise FieldError(
+    ...<2 lines>...
+    )
+django.core.exceptions.FieldError: Cannot resolve keyword 'name' into field. Choices are: activities, address, business_function, business_function_id, contract_duration, contract_end_date, contract_extensions, contract_start_date, created_at, created_by, created_by_id, date_of_birth, deleted_at, deleted_by, deleted_by_id, department, department_id, departments_headed, direct_reports, documents, emergency_contact, employee_id, end_date, father_name, filled_vacancy_position, full_name, gender, grading_level, id, is_deleted, is_visible_in_org_chart, job_function, job_function_id, job_title, last_extension_date, line_manager, line_manager_id, managed_vacant_positions, notes, original_vacancy, original_vacancy_id, phone, position_group, position_group_id, profile_image, start_date, status, status_id, tags, unit, unit_id, units_headed, updated_at, updated_by, updated_by_id, user, user_id
+
+INFO 2025-08-05 16:28:07,629 views 30236 14832 [n.orujova] No employee profile found
+INFO 2025-08-05 16:28:07,631 views 30236 14832 [n.orujova] User info response prepared successfully
+ERROR 2025-08-05 16:28:07,714 views 30236 3532 Error in org chart list view: Cannot resolve keyword 'name' into field. Choices are: activities, address, business_function, business_function_id, contract_duration, contract_end_date, contract_extensions, contract_start_date, created_at, created_by, created_by_id, date_of_birth, deleted_at, deleted_by, deleted_by_id, department, department_id, departments_headed, direct_reports, documents, emergency_contact, employee_id, end_date, father_name, filled_vacancy_position, full_name, gender, grading_level, id, is_deleted, is_visible_in_org_chart, job_function, job_function_id, job_title, last_extension_date, line_manager, line_manager_id, managed_vacant_positions, notes, original_vacancy, original_vacancy_id, phone, position_group, position_group_id, profile_image, start_date, status, status_id, tags, unit, unit_id, units_headed, updated_at, updated_by, updated_by_id, user, user_id
+ERROR 2025-08-05 16:28:07,715 views 30236 3532 Traceback: Traceback (most recent call last):
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\almet_hris_backend\api\views.py", line 4098, in list
+    queryset = queryset.order_by(*sort_params)
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\query.py", line 1718, in order_by
+    obj.query.add_ordering(*field_names)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\sql\query.py", line 2288, in add_ordering
+    self.names_to_path(item.split(LOOKUP_SEP), self.model._meta)
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\sql\query.py", line 1802, in names_to_path
+    raise FieldError(
+    ...<2 lines>...
+    )
+django.core.exceptions.FieldError: Cannot resolve keyword 'name' into field. Choices are: activities, address, business_function, business_function_id, contract_duration, contract_end_date, contract_extensions, contract_start_date, created_at, created_by, created_by_id, date_of_birth, deleted_at, deleted_by, deleted_by_id, department, department_id, departments_headed, direct_reports, documents, emergency_contact, employee_id, end_date, father_name, filled_vacancy_position, full_name, gender, grading_level, id, is_deleted, is_visible_in_org_chart, job_function, job_function_id, job_title, last_extension_date, line_manager, line_manager_id, managed_vacant_positions, notes, original_vacancy, original_vacancy_id, phone, position_group, position_group_id, profile_image, start_date, status, status_id, tags, unit, unit_id, units_headed, updated_at, updated_by, updated_by_id, user, user_id
+
+ERROR 2025-08-05 16:28:13,509 views 30236 3532 Error in org chart list view: Cannot resolve keyword 'name' into field. Choices are: activities, address, business_function, business_function_id, contract_duration, contract_end_date, contract_extensions, contract_start_date, created_at, created_by, created_by_id, date_of_birth, deleted_at, deleted_by, deleted_by_id, department, department_id, departments_headed, direct_reports, documents, emergency_contact, employee_id, end_date, father_name, filled_vacancy_position, full_name, gender, grading_level, id, is_deleted, is_visible_in_org_chart, job_function, job_function_id, job_title, last_extension_date, line_manager, line_manager_id, managed_vacant_positions, notes, original_vacancy, original_vacancy_id, phone, position_group, position_group_id, profile_image, start_date, status, status_id, tags, unit, unit_id, units_headed, updated_at, updated_by, updated_by_id, user, user_id
+ERROR 2025-08-05 16:28:13,510 views 30236 3532 Traceback: Traceback (most recent call last):
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\almet_hris_backend\api\views.py", line 4098, in list
+    queryset = queryset.order_by(*sort_params)
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\query.py", line 1718, in order_by
+    obj.query.add_ordering(*field_names)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\sql\query.py", line 2288, in add_ordering
+    self.names_to_path(item.split(LOOKUP_SEP), self.model._meta)
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\sql\query.py", line 1802, in names_to_path
+    raise FieldError(
+    ...<2 lines>...
+    )
+django.core.exceptions.FieldError: Cannot resolve keyword 'name' into field. Choices are: activities, address, business_function, business_function_id, contract_duration, contract_end_date, contract_extensions, contract_start_date, created_at, created_by, created_by_id, date_of_birth, deleted_at, deleted_by, deleted_by_id, department, department_id, departments_headed, direct_reports, documents, emergency_contact, employee_id, end_date, father_name, filled_vacancy_position, full_name, gender, grading_level, id, is_deleted, is_visible_in_org_chart, job_function, job_function_id, job_title, last_extension_date, line_manager, line_manager_id, managed_vacant_positions, notes, original_vacancy, original_vacancy_id, phone, position_group, position_group_id, profile_image, start_date, status, status_id, tags, unit, unit_id, units_headed, updated_at, updated_by, updated_by_id, user, user_id
+
+ERROR 2025-08-05 16:28:30,281 views 30236 25584 Error in org chart list view: Cannot resolve keyword 'name' into field. Choices are: activities, address, business_function, business_function_id, contract_duration, contract_end_date, contract_extensions, contract_start_date, created_at, created_by, created_by_id, date_of_birth, deleted_at, deleted_by, deleted_by_id, department, department_id, departments_headed, direct_reports, documents, emergency_contact, employee_id, end_date, father_name, filled_vacancy_position, full_name, gender, grading_level, id, is_deleted, is_visible_in_org_chart, job_function, job_function_id, job_title, last_extension_date, line_manager, line_manager_id, managed_vacant_positions, notes, original_vacancy, original_vacancy_id, phone, position_group, position_group_id, profile_image, start_date, status, status_id, tags, unit, unit_id, units_headed, updated_at, updated_by, updated_by_id, user, user_id
+INFO 2025-08-05 16:28:30,284 views 30236 14832 User info request for user: n.orujova
+ERROR 2025-08-05 16:28:30,304 views 30236 25584 Traceback: Traceback (most recent call last):
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\almet_hris_backend\api\views.py", line 4098, in list
+    queryset = queryset.order_by(*sort_params)
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\query.py", line 1718, in order_by
+    obj.query.add_ordering(*field_names)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\sql\query.py", line 2288, in add_ordering
+    self.names_to_path(item.split(LOOKUP_SEP), self.model._meta)
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\sql\query.py", line 1802, in names_to_path
+    raise FieldError(
+    ...<2 lines>...
+    )
+django.core.exceptions.FieldError: Cannot resolve keyword 'name' into field. Choices are: activities, address, business_function, business_function_id, contract_duration, contract_end_date, contract_extensions, contract_start_date, created_at, created_by, created_by_id, date_of_birth, deleted_at, deleted_by, deleted_by_id, department, department_id, departments_headed, direct_reports, documents, emergency_contact, employee_id, end_date, father_name, filled_vacancy_position, full_name, gender, grading_level, id, is_deleted, is_visible_in_org_chart, job_function, job_function_id, job_title, last_extension_date, line_manager, line_manager_id, managed_vacant_positions, notes, original_vacancy, original_vacancy_id, phone, position_group, position_group_id, profile_image, start_date, status, status_id, tags, unit, unit_id, units_headed, updated_at, updated_by, updated_by_id, user, user_id
+
+INFO 2025-08-05 16:28:30,307 views 30236 14832 [n.orujova] No employee profile found
+INFO 2025-08-05 16:28:30,309 views 30236 14832 [n.orujova] User info response prepared successfully
+ERROR 2025-08-05 16:28:30,597 views 30236 25412 Error in org chart list view: Cannot resolve keyword 'name' into field. Choices are: activities, address, business_function, business_function_id, contract_duration, contract_end_date, contract_extensions, contract_start_date, created_at, created_by, created_by_id, date_of_birth, deleted_at, deleted_by, deleted_by_id, department, department_id, departments_headed, direct_reports, documents, emergency_contact, employee_id, end_date, father_name, filled_vacancy_position, full_name, gender, grading_level, id, is_deleted, is_visible_in_org_chart, job_function, job_function_id, job_title, last_extension_date, line_manager, line_manager_id, managed_vacant_positions, notes, original_vacancy, original_vacancy_id, phone, position_group, position_group_id, profile_image, start_date, status, status_id, tags, unit, unit_id, units_headed, updated_at, updated_by, updated_by_id, user, user_id
+ERROR 2025-08-05 16:28:30,598 views 30236 25412 Traceback: Traceback (most recent call last):
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\almet_hris_backend\api\views.py", line 4098, in list
+    queryset = queryset.order_by(*sort_params)
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\query.py", line 1718, in order_by
+    obj.query.add_ordering(*field_names)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\sql\query.py", line 2288, in add_ordering
+    self.names_to_path(item.split(LOOKUP_SEP), self.model._meta)
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\sql\query.py", line 1802, in names_to_path
+    raise FieldError(
+    ...<2 lines>...
+    )
+django.core.exceptions.FieldError: Cannot resolve keyword 'name' into field. Choices are: activities, address, business_function, business_function_id, contract_duration, contract_end_date, contract_extensions, contract_start_date, created_at, created_by, created_by_id, date_of_birth, deleted_at, deleted_by, deleted_by_id, department, department_id, departments_headed, direct_reports, documents, emergency_contact, employee_id, end_date, father_name, filled_vacancy_position, full_name, gender, grading_level, id, is_deleted, is_visible_in_org_chart, job_function, job_function_id, job_title, last_extension_date, line_manager, line_manager_id, managed_vacant_positions, notes, original_vacancy, original_vacancy_id, phone, position_group, position_group_id, profile_image, start_date, status, status_id, tags, unit, unit_id, units_headed, updated_at, updated_by, updated_by_id, user, user_id
+
+ERROR 2025-08-05 16:31:50,909 views 30236 8048 Error in org chart list view: Cannot resolve keyword 'name' into field. Choices are: activities, address, business_function, business_function_id, contract_duration, contract_end_date, contract_extensions, contract_start_date, created_at, created_by, created_by_id, date_of_birth, deleted_at, deleted_by, deleted_by_id, department, department_id, departments_headed, direct_reports, documents, emergency_contact, employee_id, end_date, father_name, filled_vacancy_position, full_name, gender, grading_level, id, is_deleted, is_visible_in_org_chart, job_function, job_function_id, job_title, last_extension_date, line_manager, line_manager_id, managed_vacant_positions, notes, original_vacancy, original_vacancy_id, phone, position_group, position_group_id, profile_image, start_date, status, status_id, tags, unit, unit_id, units_headed, updated_at, updated_by, updated_by_id, user, user_id
+INFO 2025-08-05 16:31:50,912 views 30236 20460 User info request for user: n.orujova
+ERROR 2025-08-05 16:31:50,915 views 30236 8048 Traceback: Traceback (most recent call last):
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\almet_hris_backend\api\views.py", line 4098, in list
+    queryset = queryset.order_by(*sort_params)
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\query.py", line 1718, in order_by
+    obj.query.add_ordering(*field_names)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\sql\query.py", line 2288, in add_ordering
+    self.names_to_path(item.split(LOOKUP_SEP), self.model._meta)
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\sql\query.py", line 1802, in names_to_path
+    raise FieldError(
+    ...<2 lines>...
+    )
+django.core.exceptions.FieldError: Cannot resolve keyword 'name' into field. Choices are: activities, address, business_function, business_function_id, contract_duration, contract_end_date, contract_extensions, contract_start_date, created_at, created_by, created_by_id, date_of_birth, deleted_at, deleted_by, deleted_by_id, department, department_id, departments_headed, direct_reports, documents, emergency_contact, employee_id, end_date, father_name, filled_vacancy_position, full_name, gender, grading_level, id, is_deleted, is_visible_in_org_chart, job_function, job_function_id, job_title, last_extension_date, line_manager, line_manager_id, managed_vacant_positions, notes, original_vacancy, original_vacancy_id, phone, position_group, position_group_id, profile_image, start_date, status, status_id, tags, unit, unit_id, units_headed, updated_at, updated_by, updated_by_id, user, user_id
+
+INFO 2025-08-05 16:31:50,930 views 30236 20460 [n.orujova] No employee profile found
+INFO 2025-08-05 16:31:50,931 views 30236 20460 [n.orujova] User info response prepared successfully
+ERROR 2025-08-05 16:31:51,031 views 30236 24408 Error in org chart list view: Cannot resolve keyword 'name' into field. Choices are: activities, address, business_function, business_function_id, contract_duration, contract_end_date, contract_extensions, contract_start_date, created_at, created_by, created_by_id, date_of_birth, deleted_at, deleted_by, deleted_by_id, department, department_id, departments_headed, direct_reports, documents, emergency_contact, employee_id, end_date, father_name, filled_vacancy_position, full_name, gender, grading_level, id, is_deleted, is_visible_in_org_chart, job_function, job_function_id, job_title, last_extension_date, line_manager, line_manager_id, managed_vacant_positions, notes, original_vacancy, original_vacancy_id, phone, position_group, position_group_id, profile_image, start_date, status, status_id, tags, unit, unit_id, units_headed, updated_at, updated_by, updated_by_id, user, user_id
+ERROR 2025-08-05 16:31:51,033 views 30236 24408 Traceback: Traceback (most recent call last):
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\almet_hris_backend\api\views.py", line 4098, in list
+    queryset = queryset.order_by(*sort_params)
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\query.py", line 1718, in order_by
+    obj.query.add_ordering(*field_names)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\sql\query.py", line 2288, in add_ordering
+    self.names_to_path(item.split(LOOKUP_SEP), self.model._meta)
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\sql\query.py", line 1802, in names_to_path
+    raise FieldError(
+    ...<2 lines>...
+    )
+django.core.exceptions.FieldError: Cannot resolve keyword 'name' into field. Choices are: activities, address, business_function, business_function_id, contract_duration, contract_end_date, contract_extensions, contract_start_date, created_at, created_by, created_by_id, date_of_birth, deleted_at, deleted_by, deleted_by_id, department, department_id, departments_headed, direct_reports, documents, emergency_contact, employee_id, end_date, father_name, filled_vacancy_position, full_name, gender, grading_level, id, is_deleted, is_visible_in_org_chart, job_function, job_function_id, job_title, last_extension_date, line_manager, line_manager_id, managed_vacant_positions, notes, original_vacancy, original_vacancy_id, phone, position_group, position_group_id, profile_image, start_date, status, status_id, tags, unit, unit_id, units_headed, updated_at, updated_by, updated_by_id, user, user_id
+
+INFO 2025-08-05 16:48:09,103 views 30236 30480 === Microsoft authentication request received ===
+INFO 2025-08-05 16:48:09,104 views 30236 30480 Request method: POST
+INFO 2025-08-05 16:48:09,105 views 30236 30480 Request headers: {'Content-Length': '1289', 'Content-Type': 'application/json', 'Host': 'localhost:8000', 'Connection': 'keep-alive', 'Sec-Ch-Ua-Platform': '"Windows"', 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36', 'Accept': 'application/json, text/plain, */*', 'Sec-Ch-Ua': '"Not)A;Brand";v="8", "Chromium";v="138", "Google Chrome";v="138"', 'Sec-Ch-Ua-Mobile': '?0', 'Origin': 'http://localhost:3000', 'Sec-Fetch-Site': 'same-site', 'Sec-Fetch-Mode': 'cors', 'Sec-Fetch-Dest': 'empty', 'Referer': 'http://localhost:3000/', 'Accept-Encoding': 'gzip, deflate, br, zstd', 'Accept-Language': 'en-US,en;q=0.9'}
+INFO 2025-08-05 16:48:09,105 views 30236 30480 Request data keys: ['id_token']
+INFO 2025-08-05 16:48:09,105 views 30236 30480 Microsoft authentication attempt - validating token
+INFO 2025-08-05 16:48:09,106 views 30236 30480 Token length: 1274
+INFO 2025-08-05 16:48:09,106 auth 30236 30480 === Starting Microsoft token validation ===
+INFO 2025-08-05 16:48:09,106 auth 30236 30480 Received token: eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiIsImtpZCI6IkpZaE...
+INFO 2025-08-05 16:48:09,107 auth 30236 30480 === Token payload ===
+INFO 2025-08-05 16:48:09,107 auth 30236 30480 {
+  "aud": "230458ff-ed69-4abb-8496-3888067116f6",
+  "iss": "https://login.microsoftonline.com/b3222ef7-242d-4724-a665-97b0a764f2d0/v2.0",
+  "iat": 1754393815,
+  "nbf": 1754393815,
+  "exp": 1754397715,
+  "email": "n.orujova@almettrading.com",
+  "name": "Narmin Orujova",
+  "nonce": "01987951-0992-7728-b847-02f417ec72d2",
+  "oid": "2c74167f-d69a-43a5-a1e6-910fd8560625",
+  "preferred_username": "n.orujova@almettrading.com",
+  "rh": "1.ATkA9y4isy0kJEemZZewp2Ty0P9YBCNp7btKhJY4iAZxFvaqARM5AA.",
+  "sid": "006f4479-3fce-68b3-3194-baf4d0a88168",
+  "sub": "i7rUkArSkR21ADRGNhKBNmJkwt25_DaBfDeIyBhUpf4",
+  "tid": "b3222ef7-242d-4724-a665-97b0a764f2d0",
+  "uti": "GAtPDeuzVkW_vsH0p5YWAA",
+  "ver": "2.0"
+}
+INFO 2025-08-05 16:48:09,107 auth 30236 30480 Audience from token: 230458ff-ed69-4abb-8496-3888067116f6
+INFO 2025-08-05 16:48:09,108 auth 30236 30480 Expected audience: 230458ff-ed69-4abb-8496-3888067116f6
+INFO 2025-08-05 16:48:09,108 auth 30236 30480 Microsoft ID (sub): i7rUkArSkR21ADRGNhKBNmJkwt25_DaBfDeIyBhUpf4
+INFO 2025-08-05 16:48:09,108 auth 30236 30480 Full name from token: Narmin Orujova
+INFO 2025-08-05 16:48:09,109 auth 30236 30480 Extracted user info: email=n.orujova@almettrading.com, first_name=Narmin, last_name=Orujova
+INFO 2025-08-05 16:48:09,113 auth 30236 30480 Found existing Microsoft user: n.orujova
+INFO 2025-08-05 16:48:09,114 auth 30236 30480 === Token validation successful for user: n.orujova ===
+INFO 2025-08-05 16:48:09,114 views 30236 30480 Token validated successfully for user: n.orujova
+INFO 2025-08-05 16:48:09,115 views 30236 30480 JWT tokens generated for user: n.orujova
+INFO 2025-08-05 16:48:09,115 views 30236 30480 Returning successful response for user: n.orujova
+ERROR 2025-08-05 16:48:11,473 views 30236 28388 Error in org chart list view: Cannot resolve keyword 'name' into field. Choices are: activities, address, business_function, business_function_id, contract_duration, contract_end_date, contract_extensions, contract_start_date, created_at, created_by, created_by_id, date_of_birth, deleted_at, deleted_by, deleted_by_id, department, department_id, departments_headed, direct_reports, documents, emergency_contact, employee_id, end_date, father_name, filled_vacancy_position, full_name, gender, grading_level, id, is_deleted, is_visible_in_org_chart, job_function, job_function_id, job_title, last_extension_date, line_manager, line_manager_id, managed_vacant_positions, notes, original_vacancy, original_vacancy_id, phone, position_group, position_group_id, profile_image, start_date, status, status_id, tags, unit, unit_id, units_headed, updated_at, updated_by, updated_by_id, user, user_id
+ERROR 2025-08-05 16:48:11,486 views 30236 28388 Traceback: Traceback (most recent call last):
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\almet_hris_backend\api\views.py", line 4098, in list
+    queryset = queryset.order_by(*sort_params)
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\query.py", line 1718, in order_by
+    obj.query.add_ordering(*field_names)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\sql\query.py", line 2288, in add_ordering
+    self.names_to_path(item.split(LOOKUP_SEP), self.model._meta)
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\sql\query.py", line 1802, in names_to_path
+    raise FieldError(
+    ...<2 lines>...
+    )
+django.core.exceptions.FieldError: Cannot resolve keyword 'name' into field. Choices are: activities, address, business_function, business_function_id, contract_duration, contract_end_date, contract_extensions, contract_start_date, created_at, created_by, created_by_id, date_of_birth, deleted_at, deleted_by, deleted_by_id, department, department_id, departments_headed, direct_reports, documents, emergency_contact, employee_id, end_date, father_name, filled_vacancy_position, full_name, gender, grading_level, id, is_deleted, is_visible_in_org_chart, job_function, job_function_id, job_title, last_extension_date, line_manager, line_manager_id, managed_vacant_positions, notes, original_vacancy, original_vacancy_id, phone, position_group, position_group_id, profile_image, start_date, status, status_id, tags, unit, unit_id, units_headed, updated_at, updated_by, updated_by_id, user, user_id
+
+ERROR 2025-08-05 16:48:11,519 views 30236 31288 Error in org chart list view: Cannot resolve keyword 'name' into field. Choices are: activities, address, business_function, business_function_id, contract_duration, contract_end_date, contract_extensions, contract_start_date, created_at, created_by, created_by_id, date_of_birth, deleted_at, deleted_by, deleted_by_id, department, department_id, departments_headed, direct_reports, documents, emergency_contact, employee_id, end_date, father_name, filled_vacancy_position, full_name, gender, grading_level, id, is_deleted, is_visible_in_org_chart, job_function, job_function_id, job_title, last_extension_date, line_manager, line_manager_id, managed_vacant_positions, notes, original_vacancy, original_vacancy_id, phone, position_group, position_group_id, profile_image, start_date, status, status_id, tags, unit, unit_id, units_headed, updated_at, updated_by, updated_by_id, user, user_id
+ERROR 2025-08-05 16:48:11,531 views 30236 31288 Traceback: Traceback (most recent call last):
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\almet_hris_backend\api\views.py", line 4098, in list
+    queryset = queryset.order_by(*sort_params)
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\query.py", line 1718, in order_by
+    obj.query.add_ordering(*field_names)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\sql\query.py", line 2288, in add_ordering
+    self.names_to_path(item.split(LOOKUP_SEP), self.model._meta)
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\sql\query.py", line 1802, in names_to_path
+    raise FieldError(
+    ...<2 lines>...
+    )
+django.core.exceptions.FieldError: Cannot resolve keyword 'name' into field. Choices are: activities, address, business_function, business_function_id, contract_duration, contract_end_date, contract_extensions, contract_start_date, created_at, created_by, created_by_id, date_of_birth, deleted_at, deleted_by, deleted_by_id, department, department_id, departments_headed, direct_reports, documents, emergency_contact, employee_id, end_date, father_name, filled_vacancy_position, full_name, gender, grading_level, id, is_deleted, is_visible_in_org_chart, job_function, job_function_id, job_title, last_extension_date, line_manager, line_manager_id, managed_vacant_positions, notes, original_vacancy, original_vacancy_id, phone, position_group, position_group_id, profile_image, start_date, status, status_id, tags, unit, unit_id, units_headed, updated_at, updated_by, updated_by_id, user, user_id
+
+ERROR 2025-08-05 16:48:11,912 views 30236 28388 Error in org chart list view: Cannot resolve keyword 'name' into field. Choices are: activities, address, business_function, business_function_id, contract_duration, contract_end_date, contract_extensions, contract_start_date, created_at, created_by, created_by_id, date_of_birth, deleted_at, deleted_by, deleted_by_id, department, department_id, departments_headed, direct_reports, documents, emergency_contact, employee_id, end_date, father_name, filled_vacancy_position, full_name, gender, grading_level, id, is_deleted, is_visible_in_org_chart, job_function, job_function_id, job_title, last_extension_date, line_manager, line_manager_id, managed_vacant_positions, notes, original_vacancy, original_vacancy_id, phone, position_group, position_group_id, profile_image, start_date, status, status_id, tags, unit, unit_id, units_headed, updated_at, updated_by, updated_by_id, user, user_id
+ERROR 2025-08-05 16:48:11,913 views 30236 28388 Traceback: Traceback (most recent call last):
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\almet_hris_backend\api\views.py", line 4098, in list
+    queryset = queryset.order_by(*sort_params)
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\query.py", line 1718, in order_by
+    obj.query.add_ordering(*field_names)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\sql\query.py", line 2288, in add_ordering
+    self.names_to_path(item.split(LOOKUP_SEP), self.model._meta)
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\sql\query.py", line 1802, in names_to_path
+    raise FieldError(
+    ...<2 lines>...
+    )
+django.core.exceptions.FieldError: Cannot resolve keyword 'name' into field. Choices are: activities, address, business_function, business_function_id, contract_duration, contract_end_date, contract_extensions, contract_start_date, created_at, created_by, created_by_id, date_of_birth, deleted_at, deleted_by, deleted_by_id, department, department_id, departments_headed, direct_reports, documents, emergency_contact, employee_id, end_date, father_name, filled_vacancy_position, full_name, gender, grading_level, id, is_deleted, is_visible_in_org_chart, job_function, job_function_id, job_title, last_extension_date, line_manager, line_manager_id, managed_vacant_positions, notes, original_vacancy, original_vacancy_id, phone, position_group, position_group_id, profile_image, start_date, status, status_id, tags, unit, unit_id, units_headed, updated_at, updated_by, updated_by_id, user, user_id
+
+ERROR 2025-08-05 16:50:15,195 views 30236 28388 Error in org chart list view: Cannot resolve keyword 'name' into field. Choices are: activities, address, business_function, business_function_id, contract_duration, contract_end_date, contract_extensions, contract_start_date, created_at, created_by, created_by_id, date_of_birth, deleted_at, deleted_by, deleted_by_id, department, department_id, departments_headed, direct_reports, documents, emergency_contact, employee_id, end_date, father_name, filled_vacancy_position, full_name, gender, grading_level, id, is_deleted, is_visible_in_org_chart, job_function, job_function_id, job_title, last_extension_date, line_manager, line_manager_id, managed_vacant_positions, notes, original_vacancy, original_vacancy_id, phone, position_group, position_group_id, profile_image, start_date, status, status_id, tags, unit, unit_id, units_headed, updated_at, updated_by, updated_by_id, user, user_id
+ERROR 2025-08-05 16:50:15,197 views 30236 28388 Traceback: Traceback (most recent call last):
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\almet_hris_backend\api\views.py", line 4098, in list
+    queryset = queryset.order_by(*sort_params)
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\query.py", line 1718, in order_by
+    obj.query.add_ordering(*field_names)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\sql\query.py", line 2288, in add_ordering
+    self.names_to_path(item.split(LOOKUP_SEP), self.model._meta)
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\sql\query.py", line 1802, in names_to_path
+    raise FieldError(
+    ...<2 lines>...
+    )
+django.core.exceptions.FieldError: Cannot resolve keyword 'name' into field. Choices are: activities, address, business_function, business_function_id, contract_duration, contract_end_date, contract_extensions, contract_start_date, created_at, created_by, created_by_id, date_of_birth, deleted_at, deleted_by, deleted_by_id, department, department_id, departments_headed, direct_reports, documents, emergency_contact, employee_id, end_date, father_name, filled_vacancy_position, full_name, gender, grading_level, id, is_deleted, is_visible_in_org_chart, job_function, job_function_id, job_title, last_extension_date, line_manager, line_manager_id, managed_vacant_positions, notes, original_vacancy, original_vacancy_id, phone, position_group, position_group_id, profile_image, start_date, status, status_id, tags, unit, unit_id, units_headed, updated_at, updated_by, updated_by_id, user, user_id
+
+ERROR 2025-08-05 16:50:15,516 views 30236 28388 Error in org chart list view: Cannot resolve keyword 'name' into field. Choices are: activities, address, business_function, business_function_id, contract_duration, contract_end_date, contract_extensions, contract_start_date, created_at, created_by, created_by_id, date_of_birth, deleted_at, deleted_by, deleted_by_id, department, department_id, departments_headed, direct_reports, documents, emergency_contact, employee_id, end_date, father_name, filled_vacancy_position, full_name, gender, grading_level, id, is_deleted, is_visible_in_org_chart, job_function, job_function_id, job_title, last_extension_date, line_manager, line_manager_id, managed_vacant_positions, notes, original_vacancy, original_vacancy_id, phone, position_group, position_group_id, profile_image, start_date, status, status_id, tags, unit, unit_id, units_headed, updated_at, updated_by, updated_by_id, user, user_id
+ERROR 2025-08-05 16:50:15,517 views 30236 28388 Traceback: Traceback (most recent call last):
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\almet_hris_backend\api\views.py", line 4098, in list
+    queryset = queryset.order_by(*sort_params)
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\query.py", line 1718, in order_by
+    obj.query.add_ordering(*field_names)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\sql\query.py", line 2288, in add_ordering
+    self.names_to_path(item.split(LOOKUP_SEP), self.model._meta)
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\sql\query.py", line 1802, in names_to_path
+    raise FieldError(
+    ...<2 lines>...
+    )
+django.core.exceptions.FieldError: Cannot resolve keyword 'name' into field. Choices are: activities, address, business_function, business_function_id, contract_duration, contract_end_date, contract_extensions, contract_start_date, created_at, created_by, created_by_id, date_of_birth, deleted_at, deleted_by, deleted_by_id, department, department_id, departments_headed, direct_reports, documents, emergency_contact, employee_id, end_date, father_name, filled_vacancy_position, full_name, gender, grading_level, id, is_deleted, is_visible_in_org_chart, job_function, job_function_id, job_title, last_extension_date, line_manager, line_manager_id, managed_vacant_positions, notes, original_vacancy, original_vacancy_id, phone, position_group, position_group_id, profile_image, start_date, status, status_id, tags, unit, unit_id, units_headed, updated_at, updated_by, updated_by_id, user, user_id
+
+INFO 2025-08-05 16:50:20,322 views 30236 28388 User info request for user: n.orujova
+INFO 2025-08-05 16:50:20,339 views 30236 28388 [n.orujova] No employee profile found
+INFO 2025-08-05 16:50:20,340 views 30236 28388 [n.orujova] User info response prepared successfully
+ERROR 2025-08-05 16:50:23,404 views 30236 28388 Error in org chart list view: Cannot resolve keyword 'name' into field. Choices are: activities, address, business_function, business_function_id, contract_duration, contract_end_date, contract_extensions, contract_start_date, created_at, created_by, created_by_id, date_of_birth, deleted_at, deleted_by, deleted_by_id, department, department_id, departments_headed, direct_reports, documents, emergency_contact, employee_id, end_date, father_name, filled_vacancy_position, full_name, gender, grading_level, id, is_deleted, is_visible_in_org_chart, job_function, job_function_id, job_title, last_extension_date, line_manager, line_manager_id, managed_vacant_positions, notes, original_vacancy, original_vacancy_id, phone, position_group, position_group_id, profile_image, start_date, status, status_id, tags, unit, unit_id, units_headed, updated_at, updated_by, updated_by_id, user, user_id
+ERROR 2025-08-05 16:50:23,405 views 30236 28388 Traceback: Traceback (most recent call last):
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\almet_hris_backend\api\views.py", line 4098, in list
+    queryset = queryset.order_by(*sort_params)
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\query.py", line 1718, in order_by
+    obj.query.add_ordering(*field_names)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\sql\query.py", line 2288, in add_ordering
+    self.names_to_path(item.split(LOOKUP_SEP), self.model._meta)
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\sql\query.py", line 1802, in names_to_path
+    raise FieldError(
+    ...<2 lines>...
+    )
+django.core.exceptions.FieldError: Cannot resolve keyword 'name' into field. Choices are: activities, address, business_function, business_function_id, contract_duration, contract_end_date, contract_extensions, contract_start_date, created_at, created_by, created_by_id, date_of_birth, deleted_at, deleted_by, deleted_by_id, department, department_id, departments_headed, direct_reports, documents, emergency_contact, employee_id, end_date, father_name, filled_vacancy_position, full_name, gender, grading_level, id, is_deleted, is_visible_in_org_chart, job_function, job_function_id, job_title, last_extension_date, line_manager, line_manager_id, managed_vacant_positions, notes, original_vacancy, original_vacancy_id, phone, position_group, position_group_id, profile_image, start_date, status, status_id, tags, unit, unit_id, units_headed, updated_at, updated_by, updated_by_id, user, user_id
+
+ERROR 2025-08-05 16:50:23,444 views 30236 31288 Error in org chart list view: Cannot resolve keyword 'name' into field. Choices are: activities, address, business_function, business_function_id, contract_duration, contract_end_date, contract_extensions, contract_start_date, created_at, created_by, created_by_id, date_of_birth, deleted_at, deleted_by, deleted_by_id, department, department_id, departments_headed, direct_reports, documents, emergency_contact, employee_id, end_date, father_name, filled_vacancy_position, full_name, gender, grading_level, id, is_deleted, is_visible_in_org_chart, job_function, job_function_id, job_title, last_extension_date, line_manager, line_manager_id, managed_vacant_positions, notes, original_vacancy, original_vacancy_id, phone, position_group, position_group_id, profile_image, start_date, status, status_id, tags, unit, unit_id, units_headed, updated_at, updated_by, updated_by_id, user, user_id
+ERROR 2025-08-05 16:50:23,453 views 30236 31288 Traceback: Traceback (most recent call last):
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\almet_hris_backend\api\views.py", line 4098, in list
+    queryset = queryset.order_by(*sort_params)
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\query.py", line 1718, in order_by
+    obj.query.add_ordering(*field_names)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\sql\query.py", line 2288, in add_ordering
+    self.names_to_path(item.split(LOOKUP_SEP), self.model._meta)
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\sql\query.py", line 1802, in names_to_path
+    raise FieldError(
+    ...<2 lines>...
+    )
+django.core.exceptions.FieldError: Cannot resolve keyword 'name' into field. Choices are: activities, address, business_function, business_function_id, contract_duration, contract_end_date, contract_extensions, contract_start_date, created_at, created_by, created_by_id, date_of_birth, deleted_at, deleted_by, deleted_by_id, department, department_id, departments_headed, direct_reports, documents, emergency_contact, employee_id, end_date, father_name, filled_vacancy_position, full_name, gender, grading_level, id, is_deleted, is_visible_in_org_chart, job_function, job_function_id, job_title, last_extension_date, line_manager, line_manager_id, managed_vacant_positions, notes, original_vacancy, original_vacancy_id, phone, position_group, position_group_id, profile_image, start_date, status, status_id, tags, unit, unit_id, units_headed, updated_at, updated_by, updated_by_id, user, user_id
+
+ERROR 2025-08-05 16:50:23,838 views 30236 28704 Error in org chart list view: Cannot resolve keyword 'name' into field. Choices are: activities, address, business_function, business_function_id, contract_duration, contract_end_date, contract_extensions, contract_start_date, created_at, created_by, created_by_id, date_of_birth, deleted_at, deleted_by, deleted_by_id, department, department_id, departments_headed, direct_reports, documents, emergency_contact, employee_id, end_date, father_name, filled_vacancy_position, full_name, gender, grading_level, id, is_deleted, is_visible_in_org_chart, job_function, job_function_id, job_title, last_extension_date, line_manager, line_manager_id, managed_vacant_positions, notes, original_vacancy, original_vacancy_id, phone, position_group, position_group_id, profile_image, start_date, status, status_id, tags, unit, unit_id, units_headed, updated_at, updated_by, updated_by_id, user, user_id
+ERROR 2025-08-05 16:50:23,839 views 30236 28704 Traceback: Traceback (most recent call last):
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\almet_hris_backend\api\views.py", line 4098, in list
+    queryset = queryset.order_by(*sort_params)
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\query.py", line 1718, in order_by
+    obj.query.add_ordering(*field_names)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\sql\query.py", line 2288, in add_ordering
+    self.names_to_path(item.split(LOOKUP_SEP), self.model._meta)
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\sql\query.py", line 1802, in names_to_path
+    raise FieldError(
+    ...<2 lines>...
+    )
+django.core.exceptions.FieldError: Cannot resolve keyword 'name' into field. Choices are: activities, address, business_function, business_function_id, contract_duration, contract_end_date, contract_extensions, contract_start_date, created_at, created_by, created_by_id, date_of_birth, deleted_at, deleted_by, deleted_by_id, department, department_id, departments_headed, direct_reports, documents, emergency_contact, employee_id, end_date, father_name, filled_vacancy_position, full_name, gender, grading_level, id, is_deleted, is_visible_in_org_chart, job_function, job_function_id, job_title, last_extension_date, line_manager, line_manager_id, managed_vacant_positions, notes, original_vacancy, original_vacancy_id, phone, position_group, position_group_id, profile_image, start_date, status, status_id, tags, unit, unit_id, units_headed, updated_at, updated_by, updated_by_id, user, user_id
+
+INFO 2025-08-05 16:51:09,591 views 30236 20584 User info request for user: n.orujova
+INFO 2025-08-05 16:51:09,614 views 30236 20584 [n.orujova] No employee profile found
+INFO 2025-08-05 16:51:09,615 views 30236 20584 [n.orujova] User info response prepared successfully
+ERROR 2025-08-05 16:51:09,619 views 30236 31288 Error in org chart list view: Cannot resolve keyword 'name' into field. Choices are: activities, address, business_function, business_function_id, contract_duration, contract_end_date, contract_extensions, contract_start_date, created_at, created_by, created_by_id, date_of_birth, deleted_at, deleted_by, deleted_by_id, department, department_id, departments_headed, direct_reports, documents, emergency_contact, employee_id, end_date, father_name, filled_vacancy_position, full_name, gender, grading_level, id, is_deleted, is_visible_in_org_chart, job_function, job_function_id, job_title, last_extension_date, line_manager, line_manager_id, managed_vacant_positions, notes, original_vacancy, original_vacancy_id, phone, position_group, position_group_id, profile_image, start_date, status, status_id, tags, unit, unit_id, units_headed, updated_at, updated_by, updated_by_id, user, user_id
+ERROR 2025-08-05 16:51:09,620 views 30236 31288 Traceback: Traceback (most recent call last):
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\almet_hris_backend\api\views.py", line 4098, in list
+    queryset = queryset.order_by(*sort_params)
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\query.py", line 1718, in order_by
+    obj.query.add_ordering(*field_names)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\sql\query.py", line 2288, in add_ordering
+    self.names_to_path(item.split(LOOKUP_SEP), self.model._meta)
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\sql\query.py", line 1802, in names_to_path
+    raise FieldError(
+    ...<2 lines>...
+    )
+django.core.exceptions.FieldError: Cannot resolve keyword 'name' into field. Choices are: activities, address, business_function, business_function_id, contract_duration, contract_end_date, contract_extensions, contract_start_date, created_at, created_by, created_by_id, date_of_birth, deleted_at, deleted_by, deleted_by_id, department, department_id, departments_headed, direct_reports, documents, emergency_contact, employee_id, end_date, father_name, filled_vacancy_position, full_name, gender, grading_level, id, is_deleted, is_visible_in_org_chart, job_function, job_function_id, job_title, last_extension_date, line_manager, line_manager_id, managed_vacant_positions, notes, original_vacancy, original_vacancy_id, phone, position_group, position_group_id, profile_image, start_date, status, status_id, tags, unit, unit_id, units_headed, updated_at, updated_by, updated_by_id, user, user_id
+
+ERROR 2025-08-05 16:51:10,012 views 30236 31288 Error in org chart list view: Cannot resolve keyword 'name' into field. Choices are: activities, address, business_function, business_function_id, contract_duration, contract_end_date, contract_extensions, contract_start_date, created_at, created_by, created_by_id, date_of_birth, deleted_at, deleted_by, deleted_by_id, department, department_id, departments_headed, direct_reports, documents, emergency_contact, employee_id, end_date, father_name, filled_vacancy_position, full_name, gender, grading_level, id, is_deleted, is_visible_in_org_chart, job_function, job_function_id, job_title, last_extension_date, line_manager, line_manager_id, managed_vacant_positions, notes, original_vacancy, original_vacancy_id, phone, position_group, position_group_id, profile_image, start_date, status, status_id, tags, unit, unit_id, units_headed, updated_at, updated_by, updated_by_id, user, user_id
+ERROR 2025-08-05 16:51:10,013 views 30236 31288 Traceback: Traceback (most recent call last):
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\almet_hris_backend\api\views.py", line 4098, in list
+    queryset = queryset.order_by(*sort_params)
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\query.py", line 1718, in order_by
+    obj.query.add_ordering(*field_names)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\sql\query.py", line 2288, in add_ordering
+    self.names_to_path(item.split(LOOKUP_SEP), self.model._meta)
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\sql\query.py", line 1802, in names_to_path
+    raise FieldError(
+    ...<2 lines>...
+    )
+django.core.exceptions.FieldError: Cannot resolve keyword 'name' into field. Choices are: activities, address, business_function, business_function_id, contract_duration, contract_end_date, contract_extensions, contract_start_date, created_at, created_by, created_by_id, date_of_birth, deleted_at, deleted_by, deleted_by_id, department, department_id, departments_headed, direct_reports, documents, emergency_contact, employee_id, end_date, father_name, filled_vacancy_position, full_name, gender, grading_level, id, is_deleted, is_visible_in_org_chart, job_function, job_function_id, job_title, last_extension_date, line_manager, line_manager_id, managed_vacant_positions, notes, original_vacancy, original_vacancy_id, phone, position_group, position_group_id, profile_image, start_date, status, status_id, tags, unit, unit_id, units_headed, updated_at, updated_by, updated_by_id, user, user_id
+
+INFO 2025-08-05 17:20:35,058 views 27272 13856 User info request for user: n.orujova
+INFO 2025-08-05 17:20:35,079 views 27272 13856 [n.orujova] No employee profile found
+INFO 2025-08-05 17:20:35,080 views 27272 13856 [n.orujova] User info response prepared successfully
+INFO 2025-08-05 17:20:39,031 views 27272 13856 Using pagination (explicitly requested)
+INFO 2025-08-05 17:20:39,279 views 27272 21232 Using pagination (explicitly requested)
+INFO 2025-08-05 17:25:48,166 views 27272 20692 User info request for user: n.orujova
+INFO 2025-08-05 17:25:48,186 views 27272 20692 [n.orujova] No employee profile found
+INFO 2025-08-05 17:25:48,188 views 27272 20692 [n.orujova] User info response prepared successfully
+INFO 2025-08-05 17:25:48,472 views 27272 19020 Using pagination (explicitly requested)
+INFO 2025-08-05 17:25:48,816 views 27272 9348 Using pagination (explicitly requested)
+INFO 2025-08-05 17:26:35,114 views 27272 20692 User info request for user: n.orujova
+INFO 2025-08-05 17:26:35,121 views 27272 20692 [n.orujova] No employee profile found
+INFO 2025-08-05 17:26:35,123 views 27272 20692 [n.orujova] User info response prepared successfully
+INFO 2025-08-05 17:26:35,360 views 27272 9348 Using pagination (explicitly requested)
+INFO 2025-08-05 17:26:35,702 views 27272 9348 Using pagination (explicitly requested)
+INFO 2025-08-05 17:30:42,088 views 27272 29460 User info request for user: n.orujova
+INFO 2025-08-05 17:30:42,111 views 27272 29460 [n.orujova] No employee profile found
+INFO 2025-08-05 17:30:42,112 views 27272 29460 [n.orujova] User info response prepared successfully
+INFO 2025-08-05 17:30:42,306 views 27272 29460 Using pagination (explicitly requested)
+INFO 2025-08-05 17:30:42,736 views 27272 29528 Using pagination (explicitly requested)
+INFO 2025-08-05 17:31:45,191 views 27272 32100 User info request for user: n.orujova
+INFO 2025-08-05 17:31:45,202 views 27272 32100 [n.orujova] No employee profile found
+INFO 2025-08-05 17:31:45,203 views 27272 32100 [n.orujova] User info response prepared successfully
+INFO 2025-08-05 17:31:45,389 views 27272 8404 Using pagination (explicitly requested)
+INFO 2025-08-05 17:31:45,726 views 27272 10896 Using pagination (explicitly requested)
+INFO 2025-08-05 17:31:49,832 views 27272 32100 User info request for user: n.orujova
+INFO 2025-08-05 17:31:49,840 views 27272 32100 [n.orujova] No employee profile found
+INFO 2025-08-05 17:31:49,841 views 27272 32100 [n.orujova] User info response prepared successfully
+INFO 2025-08-05 17:31:50,023 views 27272 28044 Using pagination (explicitly requested)
+INFO 2025-08-05 17:31:50,406 views 27272 32100 Using pagination (explicitly requested)
+INFO 2025-08-05 17:32:21,045 views 27272 8404 User info request for user: n.orujova
+INFO 2025-08-05 17:32:21,053 views 27272 8404 [n.orujova] No employee profile found
+INFO 2025-08-05 17:32:21,054 views 27272 8404 [n.orujova] User info response prepared successfully
+INFO 2025-08-05 17:32:21,330 views 27272 8404 Using pagination (explicitly requested)
+INFO 2025-08-05 17:32:21,673 views 27272 26632 Using pagination (explicitly requested)
+INFO 2025-08-05 17:32:28,400 views 27272 25560 User info request for user: n.orujova
+INFO 2025-08-05 17:32:28,407 views 27272 25560 [n.orujova] No employee profile found
+INFO 2025-08-05 17:32:28,408 views 27272 25560 [n.orujova] User info response prepared successfully
+INFO 2025-08-05 17:32:28,770 views 27272 26632 Using pagination (explicitly requested)
+INFO 2025-08-05 17:32:29,082 views 27272 26632 Using pagination (explicitly requested)
+INFO 2025-08-05 17:32:47,682 views 27272 32100 User info request for user: n.orujova
+INFO 2025-08-05 17:32:47,700 views 27272 32100 [n.orujova] No employee profile found
+INFO 2025-08-05 17:32:47,701 views 27272 32100 [n.orujova] User info response prepared successfully
+INFO 2025-08-05 17:32:47,863 views 27272 32100 Using pagination (explicitly requested)
+INFO 2025-08-05 17:32:48,374 views 27272 32100 Using pagination (explicitly requested)
+INFO 2025-08-05 17:32:50,488 views 27272 26632 User info request for user: n.orujova
+INFO 2025-08-05 17:32:50,498 views 27272 26632 [n.orujova] No employee profile found
+INFO 2025-08-05 17:32:50,499 views 27272 26632 [n.orujova] User info response prepared successfully
+INFO 2025-08-05 17:32:50,674 views 27272 26632 Using pagination (explicitly requested)
+INFO 2025-08-05 17:32:51,030 views 27272 26632 Using pagination (explicitly requested)

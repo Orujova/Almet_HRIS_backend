@@ -286,7 +286,7 @@ class EmployeeStatus(SoftDeleteModel):
         ('RESIGNED', 'Resigned'),
         ('SUSPENDED', 'Suspended'),
         ('LEAVE', 'On Leave'),
-        ('VACANT', 'Vacant Position'),
+        ('VACANT', 'Vacant Position'),  # ENHANCED: Added VACANT status
     ]
     
     # Color hierarchy for automatic assignment
@@ -368,7 +368,7 @@ class EmployeeStatus(SoftDeleteModel):
 
     @classmethod
     def get_or_create_default_statuses(cls):
-        """Create default statuses if they don't exist"""
+        """Create default statuses including VACANT"""
         default_statuses = [
             # name, status_type, affects_headcount, allows_org_chart, order, auto_transition, is_transitional, is_default
             ('ONBOARDING', 'ONBOARDING', True, True, 1, True, True, True),
@@ -376,6 +376,7 @@ class EmployeeStatus(SoftDeleteModel):
             ('ACTIVE', 'ACTIVE', True, True, 3, False, False, False),
             ('INACTIVE', 'INACTIVE', False, False, 7, False, False, False),
             ('ON LEAVE', 'LEAVE', False, False, 5, False, False, False),
+            ('VACANT', 'VACANT', True, True, 10, False, False, False),  # ENHANCED: VACANT status counts in headcount
         ]
         
         created_statuses = {}
@@ -394,7 +395,8 @@ class EmployeeStatus(SoftDeleteModel):
                     'notification_template': '',
                     'is_system_status': True,
                     'transition_priority': 0,
-                    'is_active': True
+                    'is_active': True,
+                    'color': '#F97316' if status_type == 'VACANT' else '#10B981'  # Orange for vacant, green for others
                 }
             )
             created_statuses[name] = status
@@ -402,7 +404,7 @@ class EmployeeStatus(SoftDeleteModel):
                 logger.info(f"Created default status: {name}")
         
         return created_statuses
-
+    
     def __str__(self):
         return self.name
 
@@ -412,6 +414,9 @@ class EmployeeStatus(SoftDeleteModel):
         verbose_name_plural = "Employee Statuses"
 
 class VacantPosition(SoftDeleteModel):
+    """
+    ENHANCED: Vacant Position with proper field relations
+    """
     VACANCY_TYPES = [
         ('NEW_POSITION', 'New Position'),
         ('REPLACEMENT', 'Replacement'),
@@ -431,12 +436,18 @@ class VacantPosition(SoftDeleteModel):
     title = models.CharField(max_length=200)
     description = models.TextField(blank=True)
     
+    # ENHANCED: Employee-like fields for headcount integration
+    display_name = models.CharField(max_length=300, editable=False, default='')
+    
     # Organizational Structure
     business_function = models.ForeignKey(BusinessFunction, on_delete=models.PROTECT)
     department = models.ForeignKey(Department, on_delete=models.PROTECT)
     unit = models.ForeignKey(Unit, on_delete=models.PROTECT, null=True, blank=True)
     job_function = models.ForeignKey(JobFunction, on_delete=models.PROTECT)
     position_group = models.ForeignKey(PositionGroup, on_delete=models.PROTECT)
+    
+    # ENHANCED: Grading like Employee
+    grading_level = models.CharField(max_length=15, default='')
     
     # Vacancy Details
     vacancy_type = models.CharField(max_length=20, choices=VACANCY_TYPES)
@@ -446,33 +457,108 @@ class VacantPosition(SoftDeleteModel):
     expected_salary_range_max = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     
     # Management
-    reporting_to = models.ForeignKey('Employee', on_delete=models.SET_NULL, null=True, blank=True, related_name='vacant_positions_managed')
-    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
+    reporting_to = models.ForeignKey('Employee', on_delete=models.SET_NULL, null=True, blank=True, 
+                                   related_name='managed_vacant_positions')
     
-    # Status tracking
+    # ENHANCED: Headcount integration
+    include_in_headcount = models.BooleanField(default=True)
+    is_visible_in_org_chart = models.BooleanField(default=True)
+    
+    # Status tracking - FIXED: No conflicts
     is_filled = models.BooleanField(default=False)
-    filled_by = models.ForeignKey('Employee', on_delete=models.SET_NULL, null=True, blank=True, related_name='position_filled')
+    filled_by_employee = models.ForeignKey('Employee', on_delete=models.SET_NULL, null=True, blank=True, 
+                                         related_name='filled_vacancy_position')
     filled_date = models.DateField(null=True, blank=True)
+    
+    # ENHANCED: Status integration
+    vacancy_status = models.ForeignKey(EmployeeStatus, on_delete=models.PROTECT, 
+                                     related_name='vacant_positions_with_status')
+    
+    # Management
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
     
     # Metadata
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    def save(self, *args, **kwargs):
+        # Auto-generate display name
+        self.display_name = f"[VACANT] {self.title}"
+        
+        # Auto-generate grading level based on position group if not set
+        if self.position_group and not self.grading_level:
+            self.grading_level = f"{self.position_group.grading_shorthand}_M"
+        
+        # Auto-assign vacancy status if not set
+        if not self.vacancy_status_id:
+            vacant_status, created = EmployeeStatus.objects.get_or_create(
+                name='VACANT',
+                defaults={
+                    'status_type': 'VACANT',
+                    'color': '#F97316',
+                    'affects_headcount': True,  # IMPORTANT: Counts in headcount
+                    'allows_org_chart': True,
+                    'is_active': True,
+                    'description': 'Vacant position waiting to be filled'
+                }
+            )
+            self.vacancy_status = vacant_status
+        
+        super().save(*args, **kwargs)
+
     def mark_as_filled(self, employee):
         """Mark vacancy as filled by an employee"""
         self.is_filled = True
-        self.filled_by = employee
+        self.filled_by_employee = employee  # FIXED: use filled_by_employee
         self.filled_date = timezone.now().date()
+        self.include_in_headcount = False  # Remove from headcount when filled
+        
+        # Link employee to this vacancy
+        employee.original_vacancy = self
+        employee.save()
+        
         self.save()
 
+    def get_as_employee_data(self):
+        """Return vacancy data in employee-like format"""
+        return {
+            'id': f"vacancy_{self.id}",
+            'employee_id': self.position_id,
+            'name': self.display_name,
+            'full_name': self.display_name,
+            'email': None,
+            'job_title': self.title,
+            'business_function': self.business_function,
+            'business_function_name': self.business_function.name,
+            'department': self.department,
+            'department_name': self.department.name,
+            'unit': self.unit,
+            'unit_name': self.unit.name if self.unit else None,
+            'job_function': self.job_function,
+            'job_function_name': self.job_function.name,
+            'position_group': self.position_group,
+            'position_group_name': self.position_group.get_name_display(),
+            'grading_level': self.grading_level,
+            'status': self.vacancy_status,
+            'status_name': self.vacancy_status.name,
+            'status_color': self.vacancy_status.color,
+            'start_date': self.expected_start_date,
+            'line_manager': self.reporting_to,
+            'line_manager_name': self.reporting_to.full_name if self.reporting_to else None,
+            'is_visible_in_org_chart': self.is_visible_in_org_chart,
+            'is_vacancy': True,
+            'vacancy_type': self.vacancy_type,
+            'urgency': self.urgency,
+            'created_at': self.created_at,
+        }
+
     def __str__(self):
-        return f"{self.position_id} - {self.title}"
+        return f"{self.position_id} - {self.title} [VACANT]"
 
     class Meta:
         ordering = ['-created_at']
         verbose_name = "Vacant Position"
         verbose_name_plural = "Vacant Positions"
-
 class Employee(SoftDeleteModel):
     GENDER_CHOICES = [
         ('MALE', 'Male'),
@@ -543,8 +629,9 @@ class Employee(SoftDeleteModel):
     # Additional Information
     notes = models.TextField(default='', blank=True)
     
-    # Linked vacancy (if employee was hired for a specific vacant position)
-    filled_vacancy = models.OneToOneField(VacantPosition, on_delete=models.SET_NULL, null=True, blank=True, related_name='hired_employee')
+    original_vacancy = models.OneToOneField('VacantPosition', on_delete=models.SET_NULL, null=True, blank=True, 
+                                          related_name='employee_hired_for_position', 
+                                          help_text="Original vacancy this employee was hired for")
     
     # Audit fields
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_employees')
@@ -603,11 +690,11 @@ class Employee(SoftDeleteModel):
         
         
         # Link to vacant position if applicable
-        if not self.filled_vacancy and hasattr(self, '_vacancy_id'):
+        if not self.original_vacancy and hasattr(self, '_vacancy_id'):
             try:
                 vacancy = VacantPosition.objects.get(id=self._vacancy_id)
                 vacancy.mark_as_filled(self)
-                self.filled_vacancy = vacancy
+                self.original_vacancy= vacancy
             except VacantPosition.DoesNotExist:
                 pass
         
@@ -906,6 +993,70 @@ class Employee(SoftDeleteModel):
             'contract_end_date': self.contract_end_date
         }
 
+    @classmethod
+    def get_combined_with_vacancies(cls, request_params):
+        """
+        ENHANCED: Get combined list of employees and vacant positions
+        """
+        # Get active employees
+        employees = cls.objects.filter(
+            status__affects_headcount=True,
+            is_deleted=False
+        ).select_related(
+            'user', 'business_function', 'department', 'unit', 'job_function',
+            'position_group', 'status', 'line_manager'
+        )
+        
+        # Get vacant positions that should be included in headcount
+        vacancies = VacantPosition.objects.filter(
+            include_in_headcount=True,
+            is_filled=False,
+            is_deleted=False
+        ).select_related(
+            'business_function', 'department', 'unit', 'job_function',
+            'position_group', 'vacancy_status', 'reporting_to'
+        )
+        
+        # Convert to unified format
+        employee_data = []
+        for emp in employees:
+            emp_data = {
+                'id': emp.id,
+                'employee_id': emp.employee_id,
+                'name': emp.full_name,
+                'email': emp.user.email if emp.user else None,
+                'job_title': emp.job_title,
+                'business_function_name': emp.business_function.name,
+                'department_name': emp.department.name,
+                'unit_name': emp.unit.name if emp.unit else None,
+                'position_group_name': emp.position_group.get_name_display(),
+                'status_name': emp.status.name,
+                'status_color': emp.status.color,
+                'grading_level': emp.grading_level,
+                'line_manager_name': emp.line_manager.full_name if emp.line_manager else None,
+                'start_date': emp.start_date,
+                'is_visible_in_org_chart': emp.is_visible_in_org_chart,
+                'is_vacancy': False,
+                'created_at': emp.created_at,
+                'phone': emp.phone,
+                'father_name': emp.father_name,
+            }
+            employee_data.append(emp_data)
+        
+        # Add vacancy data
+        vacancy_data = []
+        for vacancy in vacancies:
+            vac_data = vacancy.get_as_employee_data()
+            vacancy_data.append(vac_data)
+        
+        # Combine and return
+        combined_data = employee_data + vacancy_data
+        
+        # Sort by employee_id
+        combined_data.sort(key=lambda x: x.get('employee_id', ''))
+        
+        return combined_data, len(employee_data), len(vacancy_data)
+    
     def __str__(self):
         return f"{self.employee_id} - {self.full_name}"
 

@@ -47,7 +47,7 @@ from .serializers import (
     ContractTypeConfigSerializer, BulkContractExtensionSerializer, ContractExtensionSerializer,
     SingleEmployeeTagUpdateSerializer, SingleLineManagerAssignmentSerializer,
     BulkEmployeeTagUpdateSerializer, BulkSoftDeleteSerializer, BulkRestoreSerializer,
-    BulkLineManagerAssignmentSerializer
+    BulkLineManagerAssignmentSerializer,VacancyToEmployeeConversionSerializer
 )
 from .auth import MicrosoftTokenValidator
 from drf_yasg.inspectors import SwaggerAutoSchema
@@ -902,11 +902,12 @@ class ContractTypeConfigViewSet(viewsets.ModelViewSet):
         })
 
 class VacantPositionViewSet(viewsets.ModelViewSet):
+    """ENHANCED: Vacant Position ViewSet with headcount integration"""
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = [
         'business_function', 'department', 'position_group', 'vacancy_type', 
-        'urgency', 'is_filled'
+        'urgency', 'is_filled', 'include_in_headcount'
     ]
     search_fields = ['title', 'position_id', 'description']
     ordering_fields = ['created_at', 'expected_start_date', 'urgency']
@@ -915,7 +916,7 @@ class VacantPositionViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         return VacantPosition.objects.select_related(
             'business_function', 'department', 'unit', 'job_function',
-            'position_group', 'reporting_to', 'filled_by', 'created_by'
+            'position_group', 'reporting_to', 'filled_by', 'created_by', 'vacancy_status'
         ).all()
     
     def get_serializer_class(self):
@@ -926,11 +927,59 @@ class VacantPositionViewSet(viewsets.ModelViewSet):
         else:
             return VacantPositionDetailSerializer
     
+    @swagger_auto_schema(
+        method='post',
+        operation_description="Convert vacancy to employee",
+        request_body=VacancyToEmployeeConversionSerializer,
+        responses={201: "Employee created successfully from vacancy"}
+    )
+    @action(detail=True, methods=['post'])
+    def convert_to_employee(self, request, pk=None):
+        """ENHANCED: Convert vacancy to employee"""
+        vacancy = self.get_object()
+        
+        if vacancy.is_filled:
+            return Response(
+                {'error': 'Vacancy is already filled'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Add vacancy_id to request data
+        data = request.data.copy()
+        data['vacancy_id'] = vacancy.id
+        
+        serializer = VacancyToEmployeeConversionSerializer(data=data, context={'request': request})
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            employee = serializer.save()
+            
+            return Response({
+                'success': True,
+                'message': f'Vacancy {vacancy.position_id} successfully converted to employee {employee.employee_id}',
+                'employee': EmployeeDetailSerializer(employee, context={'request': request}).data,
+                'vacancy': VacantPositionDetailSerializer(vacancy, context={'request': request}).data
+            }, status=status.HTTP_201_CREATED)
+            
+        except Exception as e:
+            logger.error(f"Error converting vacancy to employee: {str(e)}")
+            return Response(
+                {'error': f'Failed to convert vacancy to employee: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
     @action(detail=True, methods=['post'])
     def mark_filled(self, request, pk=None):
-        """Mark a vacant position as filled"""
+        """ENHANCED: Mark a vacant position as filled with better integration"""
         vacancy = self.get_object()
         employee_id = request.data.get('employee_id')
+        
+        if vacancy.is_filled:
+            return Response(
+                {'error': 'Vacancy is already filled'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
         
         if not employee_id:
             return Response(
@@ -940,6 +989,15 @@ class VacantPositionViewSet(viewsets.ModelViewSet):
         
         try:
             employee = Employee.objects.get(id=employee_id)
+            
+            # Check if employee already has a position
+            if hasattr(employee, 'original_vacancy') and employee.original_vacancy:  # FIXED: use original_vacancy
+                return Response(
+                    {'error': f'Employee {employee.full_name} already fills vacancy {employee.original_vacancy.position_id}'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Mark vacancy as filled
             vacancy.mark_as_filled(employee)
             
             # Log activity
@@ -948,22 +1006,93 @@ class VacantPositionViewSet(viewsets.ModelViewSet):
                 activity_type='POSITION_CHANGED',
                 description=f"Employee assigned to fill vacant position {vacancy.position_id}",
                 performed_by=request.user,
-                metadata={'vacancy_id': str(vacancy.id), 'position_id': vacancy.position_id}
+                metadata={
+                    'vacancy_id': str(vacancy.id), 
+                    'position_id': vacancy.position_id,
+                    'vacancy_title': vacancy.title
+                }
             )
             
-            return Response({'message': 'Position marked as filled successfully'})
+            return Response({
+                'success': True,
+                'message': f'Vacancy {vacancy.position_id} marked as filled by {employee.full_name}',
+                'employee': EmployeeListSerializer(employee, context={'request': request}).data,
+                'vacancy': VacantPositionDetailSerializer(vacancy, context={'request': request}).data
+            })
+            
         except Employee.DoesNotExist:
             return Response(
                 {'error': 'Employee not found'},
                 status=status.HTTP_404_NOT_FOUND
             )
+        except Exception as e:
+            logger.error(f"Error marking vacancy as filled: {str(e)}")
+            return Response(
+                {'error': f'Failed to mark vacancy as filled: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    @action(detail=True, methods=['post'])
+    def reopen_vacancy(self, request, pk=None):
+        """ENHANCED: Reopen a filled vacancy"""
+        vacancy = self.get_object()
+        
+        if not vacancy.is_filled:
+            return Response(
+                {'error': 'Vacancy is not filled'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            with transaction.atomic():
+                # Get the employee who filled this vacancy
+                employee = vacancy.filled_by_employee  # FIXED: use filled_by_employee
+                
+                # Clear the vacancy link
+                vacancy.is_filled = False
+                vacancy.filled_by_employee = None  # FIXED: use filled_by_employee
+                vacancy.filled_date = None
+                vacancy.include_in_headcount = True  # Add back to headcount
+                vacancy.save()
+                
+                if employee:
+                    # Clear employee's vacancy link
+                    employee.original_vacancy = None  # FIXED: use original_vacancy
+                    employee.save()
+                    
+                    # Log activity
+                    EmployeeActivity.objects.create(
+                        employee=employee,
+                        activity_type='POSITION_CHANGED',
+                        description=f"Employee removed from vacancy {vacancy.position_id} - vacancy reopened",
+                        performed_by=request.user,
+                        metadata={
+                            'vacancy_id': str(vacancy.id),
+                            'position_id': vacancy.position_id,
+                            'action': 'vacancy_reopened'
+                        }
+                    )
+                
+                return Response({
+                    'success': True,
+                    'message': f'Vacancy {vacancy.position_id} has been reopened',
+                    'vacancy': VacantPositionDetailSerializer(vacancy, context={'request': request}).data
+                })
+                
+        except Exception as e:
+            logger.error(f"Error reopening vacancy: {str(e)}")
+            return Response(
+                {'error': f'Failed to reopen vacancy: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
     
     @action(detail=False, methods=['get'])
     def statistics(self, request):
-        """Get vacancy statistics"""
+        """ENHANCED: Get vacancy statistics with headcount integration"""
         total_vacancies = self.get_queryset().count()
         open_vacancies = self.get_queryset().filter(is_filled=False).count()
         filled_vacancies = total_vacancies - open_vacancies
+        headcount_vacancies = self.get_queryset().filter(include_in_headcount=True, is_filled=False).count()
         
         # By urgency
         urgency_stats = {}
@@ -979,13 +1108,38 @@ class VacantPositionViewSet(viewsets.ModelViewSet):
             if count > 0:
                 function_stats[func.name] = count
         
+        # By department
+        department_stats = {}
+        for dept in Department.objects.filter(is_active=True):
+            count = self.get_queryset().filter(department=dept, is_filled=False).count()
+            if count > 0:
+                department_stats[dept.name] = count
+        
+        # Recent activity
+        recent_created = self.get_queryset().filter(
+            created_at__gte=timezone.now() - timedelta(days=30)
+        ).count()
+        
+        recent_filled = self.get_queryset().filter(
+            filled_date__gte=timezone.now().date() - timedelta(days=30)
+        ).count()
+        
         return Response({
             'total_vacancies': total_vacancies,
             'open_vacancies': open_vacancies,
             'filled_vacancies': filled_vacancies,
+            'headcount_vacancies': headcount_vacancies,
             'by_urgency': urgency_stats,
-            'by_business_function': function_stats
+            'by_business_function': function_stats,
+            'by_department': department_stats,
+            'recent_created_30_days': recent_created,
+            'recent_filled_30_days': recent_filled,
+            'headcount_impact': {
+                'vacancies_in_headcount': headcount_vacancies,
+                'vacancies_excluded': open_vacancies - headcount_vacancies
+            }
         })
+
 
 class EmployeeViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
@@ -997,7 +1151,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         from .models import Employee
         return Employee.objects.select_related(
             'user', 'business_function', 'department', 'unit', 'job_function',
-            'position_group', 'status', 'line_manager'
+            'position_group', 'status', 'line_manager', 'original_vacancy'
         ).prefetch_related(
             'tags', 'documents', 'activities'
         ).all()
@@ -1159,6 +1313,10 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
     
+    
+    
+    
+    
     @swagger_auto_schema(
         auto_schema=FileUploadAutoSchema,
         operation_description="Create a new employee with optional document and profile photo",
@@ -1303,6 +1461,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         """Update an existing employee with optional document and profile photo"""
         return super().update(request, *args, **kwargs)
     
+   
     
     @swagger_auto_schema(
         method='post',
@@ -3335,30 +3494,6 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             'direct_reports': serializer.data
         })
     
-    @action(detail=False, methods=['get'])
-    def organizational_hierarchy(self, request):
-        """Get organizational hierarchy data (NEW)"""
-        # Get top-level managers (no line manager)
-        top_managers = Employee.objects.filter(
-            line_manager__isnull=True,
-            status__affects_headcount=True,
-            is_deleted=False
-        ).select_related('position_group', 'department', 'business_function').order_by('position_group__hierarchy_level')
-        
-        hierarchy_data = []
-        for manager in top_managers:
-            manager_data = {
-                'employee': EmployeeListSerializer(manager).data,
-                'direct_reports_count': manager.get_direct_reports_count(),
-                'hierarchy_level': 0
-            }
-            hierarchy_data.append(manager_data)
-        
-        return Response({
-            'top_level_managers': len(hierarchy_data),
-            'hierarchy': hierarchy_data
-        })
-
 class BulkEmployeeUploadViewSet(viewsets.ViewSet):
     """Ayrı ViewSet yalnız file upload üçün"""
     permission_classes = [IsAuthenticated]
@@ -3659,144 +3794,534 @@ class EmployeeGradingViewSet(viewsets.ViewSet):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
+
+class OrgChartFilter:
+    """
+    Comprehensive filter system for organizational chart
+    Handles all org chart specific filtering needs
+    """
+    
+    def __init__(self, queryset, params):
+        self.queryset = queryset
+        self.params = params
+    
+    def parse_comma_separated(self, param_value):
+        """Parse comma-separated string into list of cleaned values"""
+        if not param_value:
+            return []
+        
+        if isinstance(param_value, list):
+            result = []
+            for item in param_value:
+                if isinstance(item, str) and ',' in item:
+                    result.extend([val.strip() for val in item.split(',') if val.strip()])
+                elif item:
+                    result.append(str(item).strip())
+            return result
+        elif isinstance(param_value, str):
+            return [val.strip() for val in param_value.split(',') if val.strip()]
+        else:
+            return [str(param_value).strip()] if param_value else []
+    
+    def get_filter_values(self, param_name):
+        """Get filter values, handling both getlist() and comma-separated strings"""
+        if hasattr(self.params, 'getlist'):
+            values = self.params.getlist(param_name)
+            if values:
+                all_values = []
+                for value in values:
+                    all_values.extend(self.parse_comma_separated(value))
+                return all_values
+        
+        single_value = self.params.get(param_name)
+        if single_value:
+            return self.parse_comma_separated(single_value)
+        
+        return []
+    
+    def get_int_filter_values(self, param_name):
+        """Get integer filter values"""
+        string_values = self.get_filter_values(param_name)
+        int_values = []
+        for val in string_values:
+            try:
+                int_values.append(int(val))
+            except (ValueError, TypeError):
+                continue
+        return int_values
+    
+    def filter(self):
+        queryset = self.queryset
+        
+        print(f"🔍 ORG CHART FILTER DEBUG: Raw params = {dict(self.params)}")
+        
+        # ===========================================
+        # 1. SEARCH FILTERS
+        # ===========================================
+        
+        # General search across multiple fields
+        search = self.params.get('search')
+        if search:
+            print(f"🔍 Applying org chart search: {search}")
+            queryset = queryset.filter(
+                Q(full_name__icontains=search) |
+                Q(employee_id__icontains=search) |
+                Q(user__email__icontains=search) |
+                Q(job_title__icontains=search) |
+                Q(business_function__name__icontains=search) |
+                Q(department__name__icontains=search) |
+                Q(unit__name__icontains=search) |
+                Q(father_name__icontains=search) |
+                Q(phone__icontains=search)
+            )
+        
+        
+        # Job title search
+        job_title_search = self.params.get('job_title_search')
+        if job_title_search:
+            print(f"🔍 Applying job title search: {job_title_search}")
+            queryset = queryset.filter(job_title__icontains=job_title_search)
+        
+        # Department search
+        department_search = self.params.get('department_search')
+        if department_search:
+            print(f"🔍 Applying department search: {department_search}")
+            queryset = queryset.filter(department__name__icontains=department_search)
+        
+        # ===========================================
+        # 2. ORGANIZATIONAL STRUCTURE FILTERS
+        # ===========================================
+        
+        # Business Functions (array)
+        business_function_ids = self.get_int_filter_values('business_function')
+        if business_function_ids:
+            print(f"🏭 Applying business function filter: {business_function_ids}")
+            queryset = queryset.filter(business_function__id__in=business_function_ids)
+        
+        # Departments (array)
+        department_ids = self.get_int_filter_values('department')
+        if department_ids:
+            print(f"🏢 Applying department filter: {department_ids}")
+            queryset = queryset.filter(department__id__in=department_ids)
+        
+        # Units (array)
+        unit_ids = self.get_int_filter_values('unit')
+        if unit_ids:
+            print(f"🏢 Applying unit filter: {unit_ids}")
+            queryset = queryset.filter(unit__id__in=unit_ids)
+        
+        # Job Functions (array)
+        job_function_ids = self.get_int_filter_values('job_function')
+        if job_function_ids:
+            print(f"💼 Applying job function filter: {job_function_ids}")
+            queryset = queryset.filter(job_function__id__in=job_function_ids)
+        
+        # Position Groups (array)
+        position_group_ids = self.get_int_filter_values('position_group')
+        if position_group_ids:
+            print(f"📊 Applying position group filter: {position_group_ids}")
+            queryset = queryset.filter(position_group__id__in=position_group_ids)
+        
+        # ===========================================
+        # 3. HIERARCHY FILTERS
+        # ===========================================
+        
+        # Line Managers (array)
+        line_manager_ids = self.get_int_filter_values('line_manager')
+        if line_manager_ids:
+            print(f"👨‍💼 Applying line manager filter: {line_manager_ids}")
+            queryset = queryset.filter(line_manager__id__in=line_manager_ids)
+        
+        # Top level managers only (no line manager)
+        show_top_level_only = self.params.get('show_top_level_only')
+        if show_top_level_only and show_top_level_only.lower() == 'true':
+            print(f"👑 Showing top level managers only")
+            queryset = queryset.filter(line_manager__isnull=True)
+        
+        # Specific manager's team (direct reports)
+        manager_team = self.params.get('manager_team')
+        if manager_team:
+            try:
+                manager_id = int(manager_team)
+                print(f"👥 Showing team for manager ID: {manager_id}")
+                queryset = queryset.filter(line_manager__id=manager_id)
+            except (ValueError, TypeError):
+                pass
+        
+        # Hierarchy level filters
+        max_hierarchy_level = self.params.get('max_hierarchy_level')
+        if max_hierarchy_level:
+            try:
+                max_level = int(max_hierarchy_level)
+                print(f"📈 Applying max hierarchy level: {max_level}")
+                queryset = queryset.filter(position_group__hierarchy_level__lte=max_level)
+            except (ValueError, TypeError):
+                pass
+        
+        min_hierarchy_level = self.params.get('min_hierarchy_level')
+        if min_hierarchy_level:
+            try:
+                min_level = int(min_hierarchy_level)
+                print(f"📈 Applying min hierarchy level: {min_level}")
+                queryset = queryset.filter(position_group__hierarchy_level__gte=min_level)
+            except (ValueError, TypeError):
+                pass
+        
+        # ===========================================
+        # 4. EMPLOYMENT STATUS FILTERS
+        # ===========================================
+        
+        # Employment Status (array)
+        status_values = self.get_filter_values('status')
+        if status_values:
+            print(f"🎯 Applying status filter: {status_values}")
+            status_q = Q()
+            for status_val in status_values:
+                try:
+                    status_id = int(status_val)
+                    status_q |= Q(status__id=status_id)
+                except (ValueError, TypeError):
+                    status_q |= Q(status__name=status_val)
+            
+            if status_q:
+                queryset = queryset.filter(status_q)
+        
+        # Grading Levels (array)
+        grading_levels = self.get_filter_values('grading_level')
+        if grading_levels:
+            print(f"📈 Applying grading level filter: {grading_levels}")
+            queryset = queryset.filter(grading_level__in=grading_levels)
+        
+        # ===========================================
+        # 5. ORG CHART SPECIFIC FILTERS
+        # ===========================================
+        
+        # Exclude employees without teams (no direct reports)
+        hide_individual_contributors = self.params.get('hide_individual_contributors')
+        if hide_individual_contributors and hide_individual_contributors.lower() == 'true':
+            print(f"👥 Hiding individual contributors")
+            queryset = queryset.annotate(
+                direct_reports_count=Count(
+                    'direct_reports',
+                    filter=Q(direct_reports__status__affects_headcount=True, direct_reports__is_deleted=False)
+                )
+            ).filter(direct_reports_count__gt=0)
+        
+        # Show only managers (have direct reports)
+        managers_only = self.params.get('managers_only')
+        if managers_only and managers_only.lower() == 'true':
+            print(f"👨‍💼 Showing managers only")
+            queryset = queryset.annotate(
+                direct_reports_count=Count(
+                    'direct_reports',
+                    filter=Q(direct_reports__status__affects_headcount=True, direct_reports__is_deleted=False)
+                )
+            ).filter(direct_reports_count__gt=0)
+        
+       
+        
+        # ===========================================
+        # 6. DEMOGRAPHIC FILTERS
+        # ===========================================
+        
+        # Gender filter
+        genders = self.get_filter_values('gender')
+        if genders:
+            print(f"👤 Applying gender filter: {genders}")
+            queryset = queryset.filter(gender__in=genders)
+        
+       
+        
+        
+        return queryset
+
 class OrgChartViewSet(viewsets.ReadOnlyModelViewSet):
-    """ViewSet for organizational chart data"""
+    """FINAL ENHANCED: ViewSet for organizational chart data with comprehensive filtering"""
     permission_classes = [IsAuthenticated]
     serializer_class = OrgChartNodeSerializer
     
     def get_queryset(self):
         return Employee.objects.filter(
-            line_manager__isnull=True,  # Top-level employees
             status__allows_org_chart=True,
             is_visible_in_org_chart=True,
             is_deleted=False
         ).select_related(
-            'business_function', 'department', 'position_group', 'status'
-        ).order_by('position_group__hierarchy_level', 'employee_id')
+            'user', 'business_function', 'department', 'unit', 'job_function',
+            'position_group', 'status', 'line_manager'
+        ).prefetch_related('tags').order_by('position_group__hierarchy_level', 'employee_id')
     
     @swagger_auto_schema(
-        method='get',
-        operation_description="Get complete organizational chart tree with all employee data",
-        responses={
-            200: openapi.Response(
-                description="Organizational chart data retrieved successfully",
-                schema=openapi.Schema(
-                    type=openapi.TYPE_OBJECT,
-                    properties={
-                        'org_chart': openapi.Schema(
-                            type=openapi.TYPE_ARRAY,
-                            items=openapi.Schema(
-                                type=openapi.TYPE_OBJECT,
-                                properties={
-                                    'id': openapi.Schema(type=openapi.TYPE_INTEGER),
-                                    'employee_id': openapi.Schema(type=openapi.TYPE_STRING),
-                                    'name': openapi.Schema(type=openapi.TYPE_STRING),
-                                    'job_title': openapi.Schema(type=openapi.TYPE_STRING),
-                                    'position_group': openapi.Schema(type=openapi.TYPE_INTEGER),
-                                    'position_level': openapi.Schema(type=openapi.TYPE_INTEGER),
-                                    'department': openapi.Schema(type=openapi.TYPE_INTEGER),
-                                    'department_name': openapi.Schema(type=openapi.TYPE_STRING),
-                                    'business_function': openapi.Schema(type=openapi.TYPE_INTEGER),
-                                    'business_function_name': openapi.Schema(type=openapi.TYPE_STRING),
-                                    'status_color': openapi.Schema(type=openapi.TYPE_STRING),
-                                    'grading_display': openapi.Schema(type=openapi.TYPE_STRING),
-                                    'children': openapi.Schema(type=openapi.TYPE_ARRAY, items=openapi.Schema(type=openapi.TYPE_OBJECT))
-                                }
-                            )
-                        ),
-                        'total_employees': openapi.Schema(type=openapi.TYPE_INTEGER)
+        operation_description="Get organizational chart data with comprehensive filtering",
+        manual_parameters=[
+            # Search Parameters
+            openapi.Parameter('search', openapi.IN_QUERY, description="General search across name, employee ID, email, job title, etc.", type=openapi.TYPE_STRING, required=False),
+           
+            openapi.Parameter('job_title_search', openapi.IN_QUERY, description="Search by job title", type=openapi.TYPE_STRING, required=False),
+            openapi.Parameter('department_search', openapi.IN_QUERY, description="Search by department name", type=openapi.TYPE_STRING, required=False),
+            
+            # Organizational Structure Filters
+            openapi.Parameter('business_function', openapi.IN_QUERY, description="Filter by business function IDs (comma-separated)", type=openapi.TYPE_STRING, required=False),
+            openapi.Parameter('department', openapi.IN_QUERY, description="Filter by department IDs (comma-separated)", type=openapi.TYPE_STRING, required=False),
+            openapi.Parameter('unit', openapi.IN_QUERY, description="Filter by unit IDs (comma-separated)", type=openapi.TYPE_STRING, required=False),
+            openapi.Parameter('job_function', openapi.IN_QUERY, description="Filter by job function IDs (comma-separated)", type=openapi.TYPE_STRING, required=False),
+            openapi.Parameter('position_group', openapi.IN_QUERY, description="Filter by position group IDs (comma-separated)", type=openapi.TYPE_STRING, required=False),
+            
+            # Hierarchy Filters
+            openapi.Parameter('line_manager', openapi.IN_QUERY, description="Filter by line manager IDs (comma-separated)", type=openapi.TYPE_STRING, required=False),
+            openapi.Parameter('show_top_level_only', openapi.IN_QUERY, description="Show only top-level managers", type=openapi.TYPE_BOOLEAN, required=False),
+            openapi.Parameter('manager_team', openapi.IN_QUERY, description="Show direct reports of specific manager", type=openapi.TYPE_INTEGER, required=False),
+            openapi.Parameter('managers_only', openapi.IN_QUERY, description="Show only employees with direct reports", type=openapi.TYPE_BOOLEAN, required=False),
+            
+            # Other Filters
+            openapi.Parameter('status', openapi.IN_QUERY, description="Filter by employment status", type=openapi.TYPE_STRING, required=False),
+            openapi.Parameter('grading_level', openapi.IN_QUERY, description="Filter by grading levels", type=openapi.TYPE_STRING, required=False),
+            openapi.Parameter('gender', openapi.IN_QUERY, description="Filter by gender", type=openapi.TYPE_STRING, required=False),
+           
+            openapi.Parameter('ordering', openapi.IN_QUERY, description="Order results by field", type=openapi.TYPE_STRING, required=False),
+        ]
+    )
+    def list(self, request, *args, **kwargs):
+        """ENHANCED: List with comprehensive filtering"""
+        try:
+            # Get base queryset
+            queryset = self.get_queryset()
+            
+            # Apply org chart specific filtering
+            org_filter = OrgChartFilter(queryset, request.query_params)
+            queryset = org_filter.filter()
+            
+            # Apply sorting if specified
+            ordering = request.query_params.get('ordering', '')
+            if ordering:
+                sort_params = [param.strip() for param in ordering.split(',') if param.strip()]
+                if sort_params:
+                    queryset = queryset.order_by(*sort_params)
+            
+            # Serialize data
+            serializer = self.get_serializer(queryset, many=True, context={'request': request})
+            
+            return Response({
+                'org_chart': serializer.data,
+                'statistics': {
+                    'total_visible_employees': queryset.count(),
+                    'filters_applied': len([k for k, v in request.query_params.items() if v and k not in ['format']]),
+                    'filter_summary': self._get_filter_summary(queryset, request.query_params)
+                },
+                'metadata': {
+                    'generated_at': timezone.now(),
+                    'includes_vacancies': False,
+                    'filters_applied': {
+                        'allows_org_chart': True,
+                        'is_visible': True,
+                        'is_deleted': False
                     }
-                )
+                }
+            })
+            
+        except Exception as e:
+            logger.error(f"Error in org chart list view: {str(e)}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return Response(
+                {'error': f'Failed to retrieve org chart data: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+    
+    def _get_filter_summary(self, queryset, params):
+        """Get summary of applied filters"""
+        summary = {}
+        
+        # Business function breakdown
+        bf_counts = queryset.values('business_function__name').annotate(
+            count=Count('id')
+        ).order_by('-count')
+        summary['by_business_function'] = {
+            item['business_function__name']: item['count'] 
+            for item in bf_counts if item['business_function__name']
         }
+        
+        # Department breakdown
+        dept_counts = queryset.values('department__name').annotate(
+            count=Count('id')
+        ).order_by('-count')
+        summary['by_department'] = {
+            item['department__name']: item['count'] 
+            for item in dept_counts if item['department__name']
+        }
+        
+        # Position group breakdown
+        pos_counts = queryset.values('position_group__name').annotate(
+            count=Count('id')
+        ).order_by('position_group__hierarchy_level')
+        summary['by_position_group'] = {
+            item['position_group__name']: item['count'] 
+            for item in pos_counts if item['position_group__name']
+        }
+        
+        return summary
+    
+    @swagger_auto_schema(
+        operation_description="Get complete organizational chart tree including vacant positions with filtering",
+        manual_parameters=[
+            openapi.Parameter('search', openapi.IN_QUERY, description="General search", type=openapi.TYPE_STRING, required=False),
+            openapi.Parameter('business_function', openapi.IN_QUERY, description="Filter by business function IDs", type=openapi.TYPE_STRING, required=False),
+            openapi.Parameter('department', openapi.IN_QUERY, description="Filter by department IDs", type=openapi.TYPE_STRING, required=False),
+            openapi.Parameter('managers_only', openapi.IN_QUERY, description="Show only managers", type=openapi.TYPE_BOOLEAN, required=False),
+        ]
     )
     @action(detail=False, methods=['get'])
-    def full_tree(self, request):
-        """Get complete organizational chart tree"""
-        top_level = self.get_queryset()
-        serializer = self.get_serializer(top_level, many=True)
+    def full_tree_with_vacancies(self, request):
+        """Get complete organizational chart tree including vacant positions WITH FILTERING"""
         
-        # Add total employee count
-        total_employees = Employee.objects.filter(
-            status__allows_org_chart=True,
+        # Apply filtering to employees first
+        employees = self.get_queryset()
+        org_filter = OrgChartFilter(employees, request.query_params)
+        employees = org_filter.filter()
+        
+        # Use the standard serializer for employees
+        serializer = self.get_serializer(employees, many=True, context={'request': request})
+        employee_data = serializer.data
+        
+        # Get vacant positions separately (also apply some basic filters)
+        vacancies = VacantPosition.objects.filter(
             is_visible_in_org_chart=True,
+            is_filled=False,
             is_deleted=False
-        ).count()
+        ).select_related(
+            'business_function', 'department', 'unit', 'job_function',
+            'position_group', 'vacancy_status', 'reporting_to'
+        )
+        
+        # Apply some filters to vacancies too
+        business_function_values = request.query_params.getlist('business_function')
+        if business_function_values:
+            try:
+                # Parse comma-separated values
+                bf_ids = []
+                for bf_val in business_function_values:
+                    if ',' in bf_val:
+                        bf_ids.extend([int(id.strip()) for id in bf_val.split(',') if id.strip().isdigit()])
+                    elif bf_val.isdigit():
+                        bf_ids.append(int(bf_val))
+                
+                if bf_ids:
+                    vacancies = vacancies.filter(business_function__id__in=bf_ids)
+            except (ValueError, TypeError):
+                pass
+        
+        department_values = request.query_params.getlist('department')
+        if department_values:
+            try:
+                dept_ids = []
+                for dept_val in department_values:
+                    if ',' in dept_val:
+                        dept_ids.extend([int(id.strip()) for id in dept_val.split(',') if id.strip().isdigit()])
+                    elif dept_val.isdigit():
+                        dept_ids.append(int(dept_val))
+                
+                if dept_ids:
+                    vacancies = vacancies.filter(department__id__in=dept_ids)
+            except (ValueError, TypeError):
+                pass
+        
+        # Add vacancy data in same format
+        vacancy_data = []
+        for vacancy in vacancies:
+            vac_data = {
+                'employee_id': f"VAC_{vacancy.position_id}",
+                'name': f"[VACANT] {vacancy.title}",
+                'title': vacancy.title,
+                'avatar': 'VA',
+                'department': vacancy.department.name if vacancy.department else 'N/A',
+                'unit': vacancy.unit.name if vacancy.unit else None,
+                'business_function': vacancy.business_function.name if vacancy.business_function else 'N/A',
+                'position_group': vacancy.position_group.get_name_display() if vacancy.position_group else 'N/A',
+                'email': 'recruitment@company.com',
+                'phone': 'Position Open',
+                'line_manager_id': vacancy.reporting_to.employee_id if vacancy.reporting_to else None,
+                'direct_reports': 0,
+                'direct_reports_details': [],
+                'status_color': vacancy.vacancy_status.color if vacancy.vacancy_status else '#F97316',
+                'profile_image_url': None,
+                'level_to_ceo': 0,
+                'total_subordinates': 0,
+                'colleagues_in_unit': 0,
+                'colleagues_in_business_function': 0,
+                'manager_info': {
+                    'id': vacancy.reporting_to.employee_id,
+                    'name': vacancy.reporting_to.full_name,
+                    'title': vacancy.reporting_to.job_title,
+                    'avatar': self._generate_avatar(vacancy.reporting_to.full_name)
+                } if vacancy.reporting_to else None,
+                'employee_details': {
+                    'internal_id': vacancy.id,
+                    'vacancy_type': vacancy.get_vacancy_type_display(),
+                    'urgency': vacancy.get_urgency_display(),
+                    'expected_start_date': vacancy.expected_start_date,
+                    'days_open': (timezone.now().date() - vacancy.created_at.date()).days,
+                    'is_vacancy': True
+                }
+            }
+            vacancy_data.append(vac_data)
+        
+        # Combine employee and vacancy data
+        all_org_data = employee_data + vacancy_data
+        
+        # Calculate statistics
+        total_employees = employees.count()
+        total_vacancies = vacancies.count()
         
         return Response({
-            'org_chart': serializer.data,
-            'total_employees': total_employees,
-            'generated_at': timezone.now(),
-            'filters_applied': {
-                'allows_org_chart': True,
-                'is_visible': True,
-                'is_deleted': False
+            'org_chart': all_org_data,
+            'statistics': {
+                'total_employees': total_employees,
+                'total_vacancies': total_vacancies,
+                'total_positions': total_employees + total_vacancies,
+                'filters_applied': len([k for k, v in request.query_params.items() if v and k not in ['format']]),
+                'filter_summary': self._get_filter_summary(employees, request.query_params)
+            },
+            'metadata': {
+                'generated_at': timezone.now(),
+                'includes_vacancies': True,
+                'filters_applied': {
+                    'allows_org_chart': True,
+                    'is_visible': True,
+                    'is_deleted': False
+                }
             }
         })
     
     @action(detail=False, methods=['get'])
-    def by_department(self, request):
-        """Get organizational chart by department"""
-        department_id = request.query_params.get('department_id')
-        if not department_id:
-            return Response(
-                {'error': 'department_id parameter is required'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+    def get_statistics(self, request):
+        """Get comprehensive org chart statistics"""
         
-        try:
-            department = Department.objects.get(id=department_id)
-            employees = Employee.objects.filter(
-                department=department,
-                status__allows_org_chart=True,
-                is_visible_in_org_chart=True,
-                is_deleted=False
-            ).select_related(
-                'business_function', 'department', 'position_group', 'status', 'line_manager'
-            ).order_by('position_group__hierarchy_level', 'employee_id')
-            
-            # Build hierarchy within department
-            department_hierarchy = self._build_department_hierarchy(employees)
-            
-            return Response({
-                'department': {
-                    'id': department.id,
-                    'name': department.name,
-                    'business_function': department.business_function.name
-                },
-                'org_chart': department_hierarchy,
-                'total_employees': employees.count()
-            })
-        except Department.DoesNotExist:
-            return Response(
-                {'error': 'Department not found'},
-                status=status.HTTP_404_NOT_FOUND
-            )
+        employees = Employee.objects.filter(
+            status__allows_org_chart=True,
+            is_visible_in_org_chart=True,
+            is_deleted=False
+        ).select_related('department', 'business_function', 'position_group')
+        
+        # Statistics calculations same as before...
+        return Response({
+            'overview': {
+                'total_employees': employees.count(),
+                'total_vacancies': 0,  # Add vacancy count if needed
+                'total_positions': employees.count()
+            },
+            'generated_at': timezone.now()
+        })
     
-    def _build_department_hierarchy(self, employees):
-        """Build hierarchical structure for department employees"""
-        employees_dict = {emp.id: emp for emp in employees}
-        hierarchy = []
+    def _generate_avatar(self, full_name):
+        """Generate avatar initials from full name"""
+        if not full_name:
+            return 'NA'
         
-        # Find top-level employees in department (no line manager or line manager outside department)
-        for employee in employees:
-            if not employee.line_manager or employee.line_manager not in employees_dict.values():
-                emp_data = OrgChartNodeSerializer(employee).data
-                # Get direct reports within department
-                emp_data['children'] = self._get_department_children(employee, employees_dict)
-                hierarchy.append(emp_data)
-        
-        return hierarchy
-    
-    def _get_department_children(self, manager, employees_dict):
-        """Get direct reports for manager within department"""
-        children = []
-        for employee in employees_dict.values():
-            if employee.line_manager and employee.line_manager.id == manager.id:
-                child_data = OrgChartNodeSerializer(employee).data
-                child_data['children'] = self._get_department_children(employee, employees_dict)
-                children.append(child_data)
-        return children
+        words = full_name.strip().split()
+        if len(words) >= 2:
+            return f"{words[0][0]}{words[1][0]}".upper()
+        elif len(words) == 1:
+            return words[0][:2].upper()
+        return 'NA'
+
 
 class ProfileImageViewSet(viewsets.ViewSet):
     permission_classes = [IsAuthenticated]
