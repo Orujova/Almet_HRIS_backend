@@ -72,18 +72,27 @@ TEMPLATES = [
 WSGI_APPLICATION = 'almet_hris_backend.wsgi.application'
 
 # Database - PostgreSQL Configuration
+# DATABASES = {
+#     'default': {
+#         'ENGINE': 'django.db.backends.postgresql',
+#         'NAME': 'almet_hris',
+#         'USER': 'postgres',
+#         'PASSWORD': 'almet2025',  # Sizin qoyduğunuz parol
+#         'HOST': 'localhost',
+#         'PORT': '5432',
+#         'CONN_MAX_AGE': 60,  # Connection pooling
+#     }
+# }
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'almet_hris',
-        'USER': 'postgres',
-        'PASSWORD': 'almet2025',  # Sizin qoyduğunuz parol
+        'NAME': 'myalmet_db',           # Bu adı dəyişin
+        'USER': 'myalmet_user',         # Bu adı dəyişin
+        'PASSWORD': 'almet2025',
         'HOST': 'localhost',
         'PORT': '5432',
-        'CONN_MAX_AGE': 60,  # Connection pooling
     }
 }
-
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
     {
