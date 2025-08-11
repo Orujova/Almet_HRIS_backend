@@ -14,7 +14,7 @@ class SkillInline(admin.TabularInline):
 @admin.register(SkillGroup)
 class SkillGroupAdmin(admin.ModelAdmin):
     list_display = ['name', 'skills_count', 'created_at', 'created_by']
-    search_fields = ['name', 'description']
+    search_fields = ['name', ]
     list_filter = ['created_at']
     inlines = [SkillInline]
     readonly_fields = ['created_at', 'updated_at']
@@ -23,18 +23,18 @@ class SkillGroupAdmin(admin.ModelAdmin):
 class SkillAdmin(admin.ModelAdmin):
     list_display = ['name', 'group', 'created_at', 'created_by']
     list_filter = ['group', 'created_at']
-    search_fields = ['name', 'description', 'group__name']
+    search_fields = ['name',  'group__name']
     readonly_fields = ['created_at', 'updated_at']
 
 class BehavioralCompetencyInline(admin.TabularInline):
     model = BehavioralCompetency
     extra = 0
-    fields = ['name', 'description']
+    fields = ['name', ]
 
 @admin.register(BehavioralCompetencyGroup)
 class BehavioralCompetencyGroupAdmin(admin.ModelAdmin):
     list_display = ['name', 'competencies_count', 'created_at', 'created_by']
-    search_fields = ['name', 'description']
+    search_fields = ['name',]
     list_filter = ['created_at']
     inlines = [BehavioralCompetencyInline]
     readonly_fields = ['created_at', 'updated_at']
@@ -43,6 +43,6 @@ class BehavioralCompetencyGroupAdmin(admin.ModelAdmin):
 class BehavioralCompetencyAdmin(admin.ModelAdmin):
     list_display = ['name', 'group', 'created_at', 'created_by']
     list_filter = ['group', 'created_at']
-    search_fields = ['name', 'description', 'group__name']
+    search_fields = ['name',  'group__name']
     readonly_fields = ['created_at', 'updated_at']
 

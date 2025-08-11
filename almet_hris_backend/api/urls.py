@@ -1,15 +1,24 @@
-# api/urls.py - Competency URL-ni düzgun əlavə edin
+# api/urls.py - Updated to include Job Description URLs
 
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenRefreshView
 from . import views
 
-# Competency Views Import əlavə edin
+# Competency Views Import
 from .competency_views import (
     SkillGroupViewSet, SkillViewSet,
     BehavioralCompetencyGroupViewSet, BehavioralCompetencyViewSet,
     CompetencyStatsView
+)
+
+# Job Description Views Import
+from .job_description_views import (
+    JobDescriptionViewSet,
+    JobBusinessResourceViewSet,
+    AccessMatrixViewSet,
+    CompanyBenefitViewSet,
+    JobDescriptionStatsViewSet
 )
 
 # Create router for viewsets
@@ -45,11 +54,18 @@ router.register(r'employee-grading', views.EmployeeGradingViewSet, basename='emp
 # Bulk Upload URLs
 router.register(r'bulk-upload', views.BulkEmployeeUploadViewSet, basename='bulkupload')
 
-# Competency Management URLs - ƏLAVƏ OLUNDU
+# Competency Management URLs
 router.register(r'competency/skill-groups', SkillGroupViewSet, basename='competency-skillgroup')
 router.register(r'competency/skills', SkillViewSet, basename='competency-skill')
 router.register(r'competency/behavioral-groups', BehavioralCompetencyGroupViewSet, basename='competency-behavioralgroup')
 router.register(r'competency/behavioral-competencies', BehavioralCompetencyViewSet, basename='competency-behavioral')
+
+# Job Description Management URLs - NEW
+router.register(r'job-descriptions', JobDescriptionViewSet, basename='jobdescription')
+router.register(r'job-description/business-resources', JobBusinessResourceViewSet, basename='jobbusinessresource')
+router.register(r'job-description/access-matrix', AccessMatrixViewSet, basename='accessmatrix')
+router.register(r'job-description/company-benefits', CompanyBenefitViewSet, basename='companybenefit')
+router.register(r'job-description/stats', JobDescriptionStatsViewSet, basename='jobdescriptionstats')
 
 
 urlpatterns = [
@@ -80,6 +96,43 @@ urlpatterns = [
     
     # Competency Stats endpoint
     path('competency/stats/', CompetencyStatsView.as_view(), name='competency-stats'),
+    
+    # Job Description specific endpoints - NEW
+    path('job-descriptions/<uuid:pk>/submit-for-approval/', 
+         JobDescriptionViewSet.as_view({'post': 'submit_for_approval'}), 
+         name='job-description-submit'),
+    
+    path('job-descriptions/<uuid:pk>/approve-as-line-manager/', 
+         JobDescriptionViewSet.as_view({'post': 'approve_as_line_manager'}), 
+         name='job-description-approve-manager'),
+    
+    path('job-descriptions/<uuid:pk>/approve-as-employee/', 
+         JobDescriptionViewSet.as_view({'post': 'approve_as_employee'}), 
+         name='job-description-approve-employee'),
+    
+    path('job-descriptions/<uuid:pk>/reject/', 
+         JobDescriptionViewSet.as_view({'post': 'reject'}), 
+         name='job-description-reject'),
+    
+    path('job-descriptions/<uuid:pk>/request-revision/', 
+         JobDescriptionViewSet.as_view({'post': 'request_revision'}), 
+         name='job-description-revision'),
+    
+    path('job-descriptions/<uuid:pk>/activities/', 
+         JobDescriptionViewSet.as_view({'get': 'activities'}), 
+         name='job-description-activities'),
+    
+    path('job-descriptions/pending-approvals/', 
+         JobDescriptionViewSet.as_view({'get': 'pending_approvals'}), 
+         name='job-description-pending'),
+    
+    path('job-descriptions/statistics/', 
+         JobDescriptionViewSet.as_view({'get': 'statistics'}), 
+         name='job-description-statistics'),
+    
+    path('job-descriptions/export/', 
+         JobDescriptionViewSet.as_view({'post': 'export'}), 
+         name='job-description-export'),
     
     # Statistics and filters
     path('org-chart/statistics/', 

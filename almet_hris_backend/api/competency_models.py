@@ -6,7 +6,7 @@ from django.core.exceptions import ValidationError
 
 class SkillGroup(models.Model):
     name = models.CharField(max_length=200, unique=True)
-    description = models.TextField(blank=True, null=True)
+  
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
@@ -25,7 +25,7 @@ class SkillGroup(models.Model):
 class Skill(models.Model):
     group = models.ForeignKey(SkillGroup, on_delete=models.CASCADE, related_name='skills')
     name = models.CharField(max_length=200)
-    description = models.TextField(blank=True, null=True)
+   
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
@@ -40,7 +40,7 @@ class Skill(models.Model):
 
 class BehavioralCompetencyGroup(models.Model):
     name = models.CharField(max_length=200, unique=True)
-    description = models.TextField(blank=True, null=True)
+   
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
@@ -59,7 +59,7 @@ class BehavioralCompetencyGroup(models.Model):
 class BehavioralCompetency(models.Model):
     group = models.ForeignKey(BehavioralCompetencyGroup, on_delete=models.CASCADE, related_name='competencies')
     name = models.CharField(max_length=200)
-    description = models.TextField(blank=True, null=True)
+ 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)

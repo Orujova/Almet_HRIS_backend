@@ -11,13 +11,13 @@ from .competency_models import (
 class SkillSerializer(serializers.ModelSerializer):
     class Meta:
         model = Skill
-        fields = ['id', 'name', 'description', 'created_at', 'updated_at']
+        fields = ['id', 'name',  'created_at', 'updated_at']
         read_only_fields = ['created_at', 'updated_at']
 
 class SkillCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Skill
-        fields = ['group', 'name', 'description']
+        fields = ['group', 'name', ]
 
 class SkillGroupSerializer(serializers.ModelSerializer):
     skills = SkillSerializer(many=True, read_only=True)
@@ -25,7 +25,7 @@ class SkillGroupSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = SkillGroup
-        fields = ['id', 'name', 'description', 'skills', 'skills_count', 'created_at', 'updated_at']
+        fields = ['id', 'name',  'skills', 'skills_count', 'created_at', 'updated_at']
         read_only_fields = ['created_at', 'updated_at']
 
 class SkillGroupListSerializer(serializers.ModelSerializer):
@@ -33,18 +33,18 @@ class SkillGroupListSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = SkillGroup
-        fields = ['id', 'name', 'description', 'skills_count', 'created_at', 'updated_at']
+        fields = ['id', 'name', 'skills_count', 'created_at', 'updated_at']
 
 class BehavioralCompetencySerializer(serializers.ModelSerializer):
     class Meta:
         model = BehavioralCompetency
-        fields = ['id', 'name', 'description', 'created_at', 'updated_at']
+        fields = ['id', 'name',  'created_at', 'updated_at']
         read_only_fields = ['created_at', 'updated_at']
 
 class BehavioralCompetencyCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = BehavioralCompetency
-        fields = ['group', 'name', 'description']
+        fields = ['group', 'name',]
 
 class BehavioralCompetencyGroupSerializer(serializers.ModelSerializer):
     competencies = BehavioralCompetencySerializer(many=True, read_only=True)
@@ -52,7 +52,7 @@ class BehavioralCompetencyGroupSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = BehavioralCompetencyGroup
-        fields = ['id', 'name', 'description', 'competencies', 'competencies_count', 'created_at', 'updated_at']
+        fields = ['id', 'name',  'competencies', 'competencies_count', 'created_at', 'updated_at']
         read_only_fields = ['created_at', 'updated_at']
 
 class BehavioralCompetencyGroupListSerializer(serializers.ModelSerializer):
@@ -60,7 +60,7 @@ class BehavioralCompetencyGroupListSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = BehavioralCompetencyGroup
-        fields = ['id', 'name', 'description', 'competencies_count', 'created_at', 'updated_at']
+        fields = ['id', 'name',  'competencies_count', 'created_at', 'updated_at']
 
 
 # Bulk operations üçün serializers

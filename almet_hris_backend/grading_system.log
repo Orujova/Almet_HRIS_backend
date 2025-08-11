@@ -1,0 +1,292 @@
+INFO 2025-08-11 15:54:51,284 views 2380 31228 Using pagination (explicitly requested)
+INFO 2025-08-11 15:54:51,820 views 2380 21196 Using pagination (explicitly requested)
+INFO 2025-08-11 15:54:54,317 views 2380 31228 Using pagination (explicitly requested)
+INFO 2025-08-11 15:54:54,539 views 2380 27884 Using pagination (explicitly requested)
+INFO 2025-08-11 15:57:23,501 views 2380 21608 Using pagination (explicitly requested)
+INFO 2025-08-11 15:57:23,699 views 2380 19152 Using pagination (explicitly requested)
+INFO 2025-08-11 15:57:33,427 views 2380 31132 Using pagination (explicitly requested)
+INFO 2025-08-11 15:57:33,648 views 2380 31132 Using pagination (explicitly requested)
+INFO 2025-08-11 16:03:44,397 views 2380 28256 User info request for user: n.orujova
+INFO 2025-08-11 16:03:44,406 views 2380 28256 [n.orujova] No employee profile found
+INFO 2025-08-11 16:03:44,408 views 2380 28256 [n.orujova] User info response prepared successfully
+INFO 2025-08-11 16:03:44,636 views 2380 3320 Using pagination (explicitly requested)
+INFO 2025-08-11 16:03:45,236 views 2380 484 Using pagination (explicitly requested)
+INFO 2025-08-11 16:03:48,233 views 2380 5308 Using pagination (explicitly requested)
+INFO 2025-08-11 16:03:48,463 views 2380 5308 Using pagination (explicitly requested)
+INFO 2025-08-11 16:48:25,432 views 2380 11792 User info request for user: n.orujova
+INFO 2025-08-11 16:48:25,456 views 2380 11792 [n.orujova] No employee profile found
+INFO 2025-08-11 16:48:25,459 views 2380 11792 [n.orujova] User info response prepared successfully
+INFO 2025-08-11 17:08:54,681 managers 2380 35652 Creating current structure from DB...
+INFO 2025-08-11 17:08:54,681 managers 2380 31432 Position groups order (ASC): [('VC', 1), ('Director', 2), ('HOD', 3), ('Manager', 4), ('Senior Specialist', 5), ('Specialist', 6), ('Junior Specialist', 7), ('Blue Colar ', 8), ('Blue Colar (GEO)', 9)]
+INFO 2025-08-11 17:08:54,690 managers 2380 31432 Total position groups found: 9
+INFO 2025-08-11 17:08:54,691 serializers 2380 12652 === DETAIL SERIALIZER for My Draft Scenario ===
+INFO 2025-08-11 17:08:54,691 managers 2380 35652 Position groups order (ASC): [('VC', 1), ('Director', 2), ('HOD', 3), ('Manager', 4), ('Senior Specialist', 5), ('Specialist', 6), ('Junior Specialist', 7), ('Blue Colar ', 8), ('Blue Colar (GEO)', 9)]
+INFO 2025-08-11 17:08:54,693 serializers 2380 12652 DETAIL: Extracted vertical inputs: {'Vice Chairman': 59.0, 'Director': 50.0, 'HOD': 85.0, 'Manager': 9.0, 'Senior Specialist': 9.0, 'Specialist': 75.0, 'Junior Specialist': 8.0, 'Blue Colar ': 75.0, 'Blue Colar (GEO)': None}
+INFO 2025-08-11 17:08:54,695 managers 2380 35652 Total position groups found: 9
+INFO 2025-08-11 17:08:54,696 serializers 2380 12652 DETAIL: Global horizontal intervals: {'LD_to_LQ': 57.0, 'LQ_to_M': 53.0, 'M_to_UQ': 55.0, 'UQ_to_UD': 6.0}
+INFO 2025-08-11 17:08:54,700 managers 2380 31432 Position groups order (ASC): [('VC', 1), ('Director', 2), ('HOD', 3), ('Manager', 4), ('Senior Specialist', 5), ('Specialist', 6), ('Junior Specialist', 7), ('Blue Colar ', 8), ('Blue Colar (GEO)', 9)]
+INFO 2025-08-11 17:08:54,700 serializers 2380 12652 DETAIL: Final result input data:
+INFO 2025-08-11 17:08:54,702 serializers 2380 12652   positionVerticalInputs: {'Vice Chairman': 59.0, 'Director': 50.0, 'HOD': 85.0, 'Manager': 9.0, 'Senior Specialist': 9.0, 'Specialist': 75.0, 'Junior Specialist': 8.0, 'Blue Colar ': 75.0, 'Blue Colar (GEO)': None}
+INFO 2025-08-11 17:08:54,702 managers 2380 31432 Total position groups found: 9
+INFO 2025-08-11 17:08:54,703 serializers 2380 12652   inputRates preserved: True
+INFO 2025-08-11 17:08:54,704 managers 2380 35652 Found current scenario: My Draft Scenario
+INFO 2025-08-11 17:08:54,704 serializers 2380 12652 === DETAIL SERIALIZER END ===
+INFO 2025-08-11 17:08:54,708 managers 2380 35652 Current structure grade order: ['Vice Chairman', 'Director', 'HOD', 'Manager', 'Senior Specialist', 'Specialist', 'Junior Specialist', 'Blue Colar ', 'Blue Colar (GEO)']
+INFO 2025-08-11 17:08:54,712 managers 2380 35652 Base value position: Blue Colar (GEO) (last = lowest hierarchy)
+INFO 2025-08-11 17:08:54,721 managers 2380 35652 Creating current structure from DB...
+INFO 2025-08-11 17:08:54,724 serializers 2380 12652 === DETAIL SERIALIZER for My Draft Scenario ===
+INFO 2025-08-11 17:08:54,725 managers 2380 35652 Position groups order (ASC): [('VC', 1), ('Director', 2), ('HOD', 3), ('Manager', 4), ('Senior Specialist', 5), ('Specialist', 6), ('Junior Specialist', 7), ('Blue Colar ', 8), ('Blue Colar (GEO)', 9)]
+INFO 2025-08-11 17:08:54,725 serializers 2380 12652 DETAIL: Extracted vertical inputs: {'Vice Chairman': 59.0, 'Director': 50.0, 'HOD': 85.0, 'Manager': 9.0, 'Senior Specialist': 9.0, 'Specialist': 75.0, 'Junior Specialist': 8.0, 'Blue Colar ': 75.0, 'Blue Colar (GEO)': None}
+INFO 2025-08-11 17:08:54,727 serializers 2380 12652 DETAIL: Global horizontal intervals: {'LD_to_LQ': 57.0, 'LQ_to_M': 53.0, 'M_to_UQ': 55.0, 'UQ_to_UD': 6.0}
+INFO 2025-08-11 17:08:54,727 managers 2380 35652 Total position groups found: 9
+INFO 2025-08-11 17:08:54,728 serializers 2380 12652 DETAIL: Final result input data:
+INFO 2025-08-11 17:08:54,729 serializers 2380 12652   positionVerticalInputs: {'Vice Chairman': 59.0, 'Director': 50.0, 'HOD': 85.0, 'Manager': 9.0, 'Senior Specialist': 9.0, 'Specialist': 75.0, 'Junior Specialist': 8.0, 'Blue Colar ': 75.0, 'Blue Colar (GEO)': None}
+INFO 2025-08-11 17:08:54,730 managers 2380 35652 Found current scenario: My Draft Scenario
+INFO 2025-08-11 17:08:54,731 serializers 2380 12652   inputRates preserved: True
+INFO 2025-08-11 17:08:54,733 managers 2380 35652 Current structure grade order: ['Vice Chairman', 'Director', 'HOD', 'Manager', 'Senior Specialist', 'Specialist', 'Junior Specialist', 'Blue Colar ', 'Blue Colar (GEO)']
+INFO 2025-08-11 17:08:54,734 serializers 2380 12652 === DETAIL SERIALIZER END ===
+INFO 2025-08-11 17:08:54,734 managers 2380 35652 Base value position: Blue Colar (GEO) (last = lowest hierarchy)
+INFO 2025-08-11 17:08:54,768 serializers 2380 31432 === LIST SERIALIZER for Test Scenario - July 2025 ===
+INFO 2025-08-11 17:08:54,770 serializers 2380 31432 LIST: Extracted vertical inputs: {'Vice Chairman': 59, 'Director': 50, 'HOD': 85, 'Manager': 9, 'Senior Specialist': 9, 'Specialist': 75, 'Junior Specialist': 8, 'Blue Colar ': 75, 'Blue Colar (GEO)': None}
+INFO 2025-08-11 17:08:54,781 serializers 2380 31432 LIST: Global horizontal intervals: {'LD_to_LQ': 57.0, 'LQ_to_M': 53.0, 'M_to_UQ': 55.0, 'UQ_to_UD': 6.0}
+INFO 2025-08-11 17:08:54,791 serializers 2380 31432 === LIST SERIALIZER for Test Scenario - July 2025 ===
+INFO 2025-08-11 17:08:54,792 serializers 2380 31432 LIST: Extracted vertical inputs: {'Vice Chairman': 59, 'Director': 50, 'HOD': 85, 'Manager': 9, 'Senior Specialist': 9, 'Specialist': 75, 'Junior Specialist': 8, 'Blue Colar ': 75, 'Blue Colar (GEO)': None}
+INFO 2025-08-11 17:08:54,792 serializers 2380 31432 LIST: Global horizontal intervals: {'LD_to_LQ': 57.0, 'LQ_to_M': 53.0, 'M_to_UQ': 55.0, 'UQ_to_UD': 6.0}
+INFO 2025-08-11 18:06:04,923 managers 27544 34760 Creating current structure from DB...
+INFO 2025-08-11 18:06:04,926 managers 27544 16708 Position groups order (ASC): [('VC', 1), ('Director', 2), ('HOD', 3), ('Manager', 4), ('Senior Specialist', 5), ('Specialist', 6), ('Junior Specialist', 7), ('Blue Colar ', 8), ('Blue Colar (GEO)', 9)]
+INFO 2025-08-11 18:06:04,928 managers 27544 16708 Total position groups found: 9
+INFO 2025-08-11 18:06:04,929 managers 27544 34760 Position groups order (ASC): [('VC', 1), ('Director', 2), ('HOD', 3), ('Manager', 4), ('Senior Specialist', 5), ('Specialist', 6), ('Junior Specialist', 7), ('Blue Colar ', 8), ('Blue Colar (GEO)', 9)]
+INFO 2025-08-11 18:06:04,938 serializers 27544 31648 === DETAIL SERIALIZER for My Draft Scenario ===
+INFO 2025-08-11 18:06:04,939 serializers 27544 31648 DETAIL: Extracted vertical inputs: {'Vice Chairman': 59.0, 'Director': 50.0, 'HOD': 85.0, 'Manager': 9.0, 'Senior Specialist': 9.0, 'Specialist': 75.0, 'Junior Specialist': 8.0, 'Blue Colar ': 75.0, 'Blue Colar (GEO)': None}
+INFO 2025-08-11 18:06:04,939 managers 27544 34760 Total position groups found: 9
+INFO 2025-08-11 18:06:04,940 views 27544 27884 User info request for user: n.orujova
+INFO 2025-08-11 18:06:04,941 serializers 27544 31648 DETAIL: Global horizontal intervals: {'LD_to_LQ': 57.0, 'LQ_to_M': 53.0, 'M_to_UQ': 55.0, 'UQ_to_UD': 6.0}
+INFO 2025-08-11 18:06:04,953 serializers 27544 31648 DETAIL: Final result input data:
+INFO 2025-08-11 18:06:04,953 serializers 27544 31648   positionVerticalInputs: {'Vice Chairman': 59.0, 'Director': 50.0, 'HOD': 85.0, 'Manager': 9.0, 'Senior Specialist': 9.0, 'Specialist': 75.0, 'Junior Specialist': 8.0, 'Blue Colar ': 75.0, 'Blue Colar (GEO)': None}
+INFO 2025-08-11 18:06:04,954 serializers 27544 31648   inputRates preserved: True
+INFO 2025-08-11 18:06:04,954 serializers 27544 31648 === DETAIL SERIALIZER END ===
+INFO 2025-08-11 18:06:04,957 managers 27544 34760 Found current scenario: My Draft Scenario
+INFO 2025-08-11 18:06:04,961 managers 27544 34760 Current structure grade order: ['Vice Chairman', 'Director', 'HOD', 'Manager', 'Senior Specialist', 'Specialist', 'Junior Specialist', 'Blue Colar ', 'Blue Colar (GEO)']
+INFO 2025-08-11 18:06:04,961 managers 27544 34760 Base value position: Blue Colar (GEO) (last = lowest hierarchy)
+INFO 2025-08-11 18:06:04,976 views 27544 27884 [n.orujova] No employee profile found
+INFO 2025-08-11 18:06:04,978 views 27544 27884 [n.orujova] User info response prepared successfully
+INFO 2025-08-11 18:06:05,053 serializers 27544 31648 === LIST SERIALIZER for Test Scenario - July 2025 ===
+INFO 2025-08-11 18:06:05,057 serializers 27544 31648 LIST: Extracted vertical inputs: {'Vice Chairman': 59, 'Director': 50, 'HOD': 85, 'Manager': 9, 'Senior Specialist': 9, 'Specialist': 75, 'Junior Specialist': 8, 'Blue Colar ': 75, 'Blue Colar (GEO)': None}
+INFO 2025-08-11 18:06:05,057 serializers 27544 31648 LIST: Global horizontal intervals: {'LD_to_LQ': 57.0, 'LQ_to_M': 53.0, 'M_to_UQ': 55.0, 'UQ_to_UD': 6.0}
+INFO 2025-08-11 18:06:07,036 views 27544 31648 Using pagination (explicitly requested)
+INFO 2025-08-11 18:06:07,703 views 27544 31648 Using pagination (explicitly requested)
+INFO 2025-08-11 21:55:22,983 views 20356 11956 === Microsoft authentication request received ===
+INFO 2025-08-11 21:55:22,986 views 20356 11956 Request method: POST
+INFO 2025-08-11 21:55:22,990 views 20356 11956 Request headers: {'Content-Length': '1289', 'Content-Type': 'application/json', 'Host': 'localhost:8000', 'Connection': 'keep-alive', 'Sec-Ch-Ua-Platform': '"Windows"', 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36', 'Accept': 'application/json, text/plain, */*', 'Sec-Ch-Ua': '"Not)A;Brand";v="8", "Chromium";v="138", "Google Chrome";v="138"', 'Sec-Ch-Ua-Mobile': '?0', 'Origin': 'http://localhost:3000', 'Sec-Fetch-Site': 'same-site', 'Sec-Fetch-Mode': 'cors', 'Sec-Fetch-Dest': 'empty', 'Referer': 'http://localhost:3000/', 'Accept-Encoding': 'gzip, deflate, br, zstd', 'Accept-Language': 'en-US,en;q=0.9'}
+INFO 2025-08-11 21:55:22,992 views 20356 11956 Request data keys: ['id_token']
+INFO 2025-08-11 21:55:22,994 views 20356 11956 Microsoft authentication attempt - validating token
+INFO 2025-08-11 21:55:22,996 views 20356 11956 Token length: 1274
+INFO 2025-08-11 21:55:22,998 auth 20356 11956 === Starting Microsoft token validation ===
+INFO 2025-08-11 21:55:23,000 auth 20356 11956 Received token: eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiIsImtpZCI6IkpZaE...
+INFO 2025-08-11 21:55:23,001 auth 20356 11956 === Token payload ===
+INFO 2025-08-11 21:55:23,003 auth 20356 11956 {
+  "aud": "230458ff-ed69-4abb-8496-3888067116f6",
+  "iss": "https://login.microsoftonline.com/b3222ef7-242d-4724-a665-97b0a764f2d0/v2.0",
+  "iat": 1754933018,
+  "nbf": 1754933018,
+  "exp": 1754936918,
+  "email": "n.orujova@almettrading.com",
+  "name": "Narmin Orujova",
+  "nonce": "019898b3-36aa-7549-af0c-21b8569fc3b7",
+  "oid": "2c74167f-d69a-43a5-a1e6-910fd8560625",
+  "preferred_username": "n.orujova@almettrading.com",
+  "rh": "1.ATkA9y4isy0kJEemZZewp2Ty0P9YBCNp7btKhJY4iAZxFvaqARM5AA.",
+  "sid": "006f4479-3fce-68b3-3194-baf4d0a88168",
+  "sub": "i7rUkArSkR21ADRGNhKBNmJkwt25_DaBfDeIyBhUpf4",
+  "tid": "b3222ef7-242d-4724-a665-97b0a764f2d0",
+  "uti": "8QMhJE4Ke0iP1Lz2OeANAA",
+  "ver": "2.0"
+}
+INFO 2025-08-11 21:55:23,005 auth 20356 11956 Audience from token: 230458ff-ed69-4abb-8496-3888067116f6
+INFO 2025-08-11 21:55:23,007 auth 20356 11956 Expected audience: 230458ff-ed69-4abb-8496-3888067116f6
+INFO 2025-08-11 21:55:23,007 auth 20356 11956 Microsoft ID (sub): i7rUkArSkR21ADRGNhKBNmJkwt25_DaBfDeIyBhUpf4
+INFO 2025-08-11 21:55:23,008 auth 20356 11956 Full name from token: Narmin Orujova
+INFO 2025-08-11 21:55:23,009 auth 20356 11956 Extracted user info: email=n.orujova@almettrading.com, first_name=Narmin, last_name=Orujova
+INFO 2025-08-11 21:55:23,089 auth 20356 11956 Found existing Microsoft user: n.orujova
+INFO 2025-08-11 21:55:23,090 auth 20356 11956 === Token validation successful for user: n.orujova ===
+INFO 2025-08-11 21:55:23,091 views 20356 11956 Token validated successfully for user: n.orujova
+INFO 2025-08-11 21:55:23,093 views 20356 11956 JWT tokens generated for user: n.orujova
+INFO 2025-08-11 21:55:23,094 views 20356 11956 Returning successful response for user: n.orujova
+INFO 2025-08-11 21:56:33,640 views 20356 1920 User info request for user: n.orujova
+INFO 2025-08-11 21:56:33,666 views 20356 1920 [n.orujova] No employee profile found
+INFO 2025-08-11 21:56:33,713 views 20356 1920 [n.orujova] User info response prepared successfully
+INFO 2025-08-11 22:22:05,898 views 20356 11228 User info request for user: n.orujova
+INFO 2025-08-11 22:22:05,936 views 20356 11228 [n.orujova] No employee profile found
+INFO 2025-08-11 22:22:05,942 views 20356 11228 [n.orujova] User info response prepared successfully
+INFO 2025-08-11 22:29:08,536 views 20356 30668 User info request for user: n.orujova
+INFO 2025-08-11 22:29:08,564 views 20356 30668 [n.orujova] No employee profile found
+INFO 2025-08-11 22:29:08,569 views 20356 30668 [n.orujova] User info response prepared successfully
+INFO 2025-08-11 22:29:13,493 views 20356 11092 User info request for user: n.orujova
+INFO 2025-08-11 22:29:13,508 views 20356 11092 [n.orujova] No employee profile found
+INFO 2025-08-11 22:29:13,511 views 20356 11092 [n.orujova] User info response prepared successfully
+INFO 2025-08-11 22:37:38,812 views 20356 2276 User info request for user: n.orujova
+INFO 2025-08-11 22:37:38,839 views 20356 2276 [n.orujova] No employee profile found
+INFO 2025-08-11 22:37:38,842 views 20356 2276 [n.orujova] User info response prepared successfully
+INFO 2025-08-11 22:42:42,031 views 20356 4256 Using pagination (explicitly requested)
+INFO 2025-08-11 22:42:43,188 views 20356 4256 Using pagination (explicitly requested)
+INFO 2025-08-11 22:42:47,915 views 20356 22008 Using pagination (explicitly requested)
+INFO 2025-08-11 22:42:48,372 views 20356 26192 Using pagination (explicitly requested)
+INFO 2025-08-11 22:43:45,714 views 20356 26192 User info request for user: n.orujova
+INFO 2025-08-11 22:43:45,770 views 20356 26192 [n.orujova] No employee profile found
+INFO 2025-08-11 22:43:45,774 views 20356 26192 [n.orujova] User info response prepared successfully
+INFO 2025-08-11 22:43:46,110 views 20356 26192 Using pagination (explicitly requested)
+INFO 2025-08-11 22:43:47,370 views 20356 33620 Using pagination (explicitly requested)
+INFO 2025-08-11 22:43:51,651 views 20356 26192 Using pagination (explicitly requested)
+INFO 2025-08-11 22:43:52,128 views 20356 26192 Using pagination (explicitly requested)
+INFO 2025-08-11 22:47:48,536 views 20356 26192 User info request for user: n.orujova
+INFO 2025-08-11 22:47:48,559 views 20356 26192 [n.orujova] No employee profile found
+INFO 2025-08-11 22:47:48,563 views 20356 26192 [n.orujova] User info response prepared successfully
+INFO 2025-08-11 22:47:48,902 views 20356 33620 Using pagination (explicitly requested)
+INFO 2025-08-11 22:47:49,973 views 20356 26192 Using pagination (explicitly requested)
+INFO 2025-08-11 22:47:52,850 views 20356 4256 Using pagination (explicitly requested)
+INFO 2025-08-11 22:47:53,343 views 20356 33620 Using pagination (explicitly requested)
+INFO 2025-08-11 23:01:39,160 views 20356 35216 === Microsoft authentication request received ===
+INFO 2025-08-11 23:01:39,187 views 20356 35216 Request method: POST
+INFO 2025-08-11 23:01:39,190 views 20356 35216 Request headers: {'Content-Length': '1289', 'Content-Type': 'application/json', 'Host': 'localhost:8000', 'Connection': 'keep-alive', 'Sec-Ch-Ua-Platform': '"Windows"', 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36', 'Accept': 'application/json, text/plain, */*', 'Sec-Ch-Ua': '"Not)A;Brand";v="8", "Chromium";v="138", "Google Chrome";v="138"', 'Sec-Ch-Ua-Mobile': '?0', 'Origin': 'http://localhost:3000', 'Sec-Fetch-Site': 'same-site', 'Sec-Fetch-Mode': 'cors', 'Sec-Fetch-Dest': 'empty', 'Referer': 'http://localhost:3000/', 'Accept-Encoding': 'gzip, deflate, br, zstd', 'Accept-Language': 'en-US,en;q=0.9'}
+INFO 2025-08-11 23:01:39,196 views 20356 35216 Request data keys: ['id_token']
+INFO 2025-08-11 23:01:39,198 views 20356 35216 Microsoft authentication attempt - validating token
+INFO 2025-08-11 23:01:39,200 views 20356 35216 Token length: 1274
+INFO 2025-08-11 23:01:39,205 auth 20356 35216 === Starting Microsoft token validation ===
+INFO 2025-08-11 23:01:39,206 auth 20356 35216 Received token: eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiIsImtpZCI6IkpZaE...
+INFO 2025-08-11 23:01:39,208 auth 20356 35216 === Token payload ===
+INFO 2025-08-11 23:01:39,209 auth 20356 35216 {
+  "aud": "230458ff-ed69-4abb-8496-3888067116f6",
+  "iss": "https://login.microsoftonline.com/b3222ef7-242d-4724-a665-97b0a764f2d0/v2.0",
+  "iat": 1754938599,
+  "nbf": 1754938599,
+  "exp": 1754942499,
+  "email": "n.orujova@almettrading.com",
+  "name": "Narmin Orujova",
+  "nonce": "019898b3-36aa-7549-af0c-21b8569fc3b7",
+  "oid": "2c74167f-d69a-43a5-a1e6-910fd8560625",
+  "preferred_username": "n.orujova@almettrading.com",
+  "rh": "1.ATkA9y4isy0kJEemZZewp2Ty0P9YBCNp7btKhJY4iAZxFvaqARM5AA.",
+  "sid": "006f4479-3fce-68b3-3194-baf4d0a88168",
+  "sub": "i7rUkArSkR21ADRGNhKBNmJkwt25_DaBfDeIyBhUpf4",
+  "tid": "b3222ef7-242d-4724-a665-97b0a764f2d0",
+  "uti": "V4tMh17000OATDBBel8TAA",
+  "ver": "2.0"
+}
+INFO 2025-08-11 23:01:39,214 auth 20356 35216 Audience from token: 230458ff-ed69-4abb-8496-3888067116f6
+INFO 2025-08-11 23:01:39,215 auth 20356 35216 Expected audience: 230458ff-ed69-4abb-8496-3888067116f6
+INFO 2025-08-11 23:01:39,217 auth 20356 35216 Microsoft ID (sub): i7rUkArSkR21ADRGNhKBNmJkwt25_DaBfDeIyBhUpf4
+INFO 2025-08-11 23:01:39,223 auth 20356 35216 Full name from token: Narmin Orujova
+INFO 2025-08-11 23:01:39,228 auth 20356 35216 Extracted user info: email=n.orujova@almettrading.com, first_name=Narmin, last_name=Orujova
+INFO 2025-08-11 23:01:39,328 auth 20356 35216 Found existing Microsoft user: n.orujova
+INFO 2025-08-11 23:01:39,330 auth 20356 35216 === Token validation successful for user: n.orujova ===
+INFO 2025-08-11 23:01:39,331 views 20356 35216 Token validated successfully for user: n.orujova
+INFO 2025-08-11 23:01:39,333 views 20356 35216 JWT tokens generated for user: n.orujova
+INFO 2025-08-11 23:01:39,336 views 20356 35216 Returning successful response for user: n.orujova
+INFO 2025-08-11 23:02:02,725 views 20356 35216 User info request for user: n.orujova
+INFO 2025-08-11 23:02:02,803 views 20356 35216 [n.orujova] No employee profile found
+INFO 2025-08-11 23:02:02,806 views 20356 35216 [n.orujova] User info response prepared successfully
+INFO 2025-08-11 23:02:44,236 views 20356 35216 User info request for user: n.orujova
+INFO 2025-08-11 23:02:44,276 views 20356 35216 [n.orujova] No employee profile found
+INFO 2025-08-11 23:02:44,278 views 20356 35216 [n.orujova] User info response prepared successfully
+INFO 2025-08-11 23:02:44,556 views 20356 35216 Using pagination (explicitly requested)
+INFO 2025-08-11 23:02:45,472 views 20356 35216 Using pagination (explicitly requested)
+INFO 2025-08-11 23:04:38,334 views 20356 30452 Using pagination (explicitly requested)
+INFO 2025-08-11 23:08:12,380 views 20356 35216 Using pagination (explicitly requested)
+INFO 2025-08-11 23:08:12,975 views 20356 10584 Using pagination (explicitly requested)
+INFO 2025-08-11 23:09:32,063 views 20356 30452 Using pagination (explicitly requested)
+INFO 2025-08-11 23:09:38,046 views 20356 30452 Using pagination (explicitly requested)
+INFO 2025-08-11 23:09:46,786 views 20356 30452 Using pagination (explicitly requested)
+INFO 2025-08-11 23:09:49,844 views 20356 30452 Using pagination (explicitly requested)
+INFO 2025-08-11 23:09:52,590 views 20356 30452 Using pagination (explicitly requested)
+INFO 2025-08-11 23:09:54,624 views 20356 30452 Using pagination (explicitly requested)
+INFO 2025-08-11 23:09:56,359 views 20356 30452 Using pagination (explicitly requested)
+INFO 2025-08-11 23:09:57,862 views 20356 30452 Using pagination (explicitly requested)
+INFO 2025-08-11 23:09:59,587 views 20356 30452 Using pagination (explicitly requested)
+INFO 2025-08-11 23:10:01,503 views 20356 30452 Using pagination (explicitly requested)
+INFO 2025-08-11 23:10:03,983 views 20356 30452 Using pagination (explicitly requested)
+INFO 2025-08-11 23:10:06,055 views 20356 30452 Using pagination (explicitly requested)
+INFO 2025-08-11 23:10:51,075 views 20356 10584 User info request for user: n.orujova
+INFO 2025-08-11 23:10:51,117 views 20356 10584 [n.orujova] No employee profile found
+INFO 2025-08-11 23:10:51,131 views 20356 10584 [n.orujova] User info response prepared successfully
+INFO 2025-08-11 23:14:09,705 views 20356 18092 User info request for user: n.orujova
+INFO 2025-08-11 23:14:09,778 views 20356 18092 [n.orujova] No employee profile found
+INFO 2025-08-11 23:14:09,793 views 20356 18092 [n.orujova] User info response prepared successfully
+INFO 2025-08-11 23:15:41,711 views 20356 28088 User info request for user: n.orujova
+INFO 2025-08-11 23:15:41,740 views 20356 28088 [n.orujova] No employee profile found
+INFO 2025-08-11 23:15:41,742 views 20356 28088 [n.orujova] User info response prepared successfully
+INFO 2025-08-11 23:18:24,579 views 20356 6764 Using pagination (explicitly requested)
+INFO 2025-08-11 23:18:25,177 views 20356 6764 Using pagination (explicitly requested)
+INFO 2025-08-11 23:18:44,191 views 20356 10584 Using pagination (explicitly requested)
+INFO 2025-08-11 23:18:55,524 views 20356 28088 Using pagination (explicitly requested)
+INFO 2025-08-11 23:18:56,068 views 20356 18092 Using pagination (explicitly requested)
+INFO 2025-08-11 23:19:05,706 views 20356 18092 Using pagination (explicitly requested)
+INFO 2025-08-11 23:19:06,155 views 20356 6764 Using pagination (explicitly requested)
+INFO 2025-08-11 23:20:53,112 views 20356 18092 Using pagination (explicitly requested)
+INFO 2025-08-11 23:21:11,124 views 20356 35216 Using pagination (explicitly requested)
+INFO 2025-08-11 23:21:11,604 views 20356 6764 Using pagination (explicitly requested)
+INFO 2025-08-11 23:21:13,136 views 20356 6764 Using pagination (explicitly requested)
+INFO 2025-08-11 23:21:13,505 views 20356 28088 Using pagination (explicitly requested)
+INFO 2025-08-11 23:21:22,035 views 20356 28088 Using pagination (explicitly requested)
+INFO 2025-08-11 23:21:56,507 views 20356 6764 User info request for user: n.orujova
+INFO 2025-08-11 23:21:56,534 views 20356 6764 [n.orujova] No employee profile found
+INFO 2025-08-11 23:21:56,540 views 20356 6764 [n.orujova] User info response prepared successfully
+INFO 2025-08-11 23:21:57,034 views 20356 6764 Using pagination (explicitly requested)
+INFO 2025-08-11 23:21:58,346 views 20356 6764 Using pagination (explicitly requested)
+INFO 2025-08-11 23:33:43,107 views 20356 15216 User info request for user: n.orujova
+INFO 2025-08-11 23:33:43,185 views 20356 15216 [n.orujova] No employee profile found
+INFO 2025-08-11 23:33:43,188 views 20356 15216 [n.orujova] User info response prepared successfully
+INFO 2025-08-11 23:44:25,560 views 20356 32752 User info request for user: n.orujova
+INFO 2025-08-11 23:44:25,585 views 20356 32752 [n.orujova] No employee profile found
+INFO 2025-08-11 23:44:25,594 views 20356 32752 [n.orujova] User info response prepared successfully
+INFO 2025-08-11 23:54:42,544 views 20356 34768 User info request for user: n.orujova
+INFO 2025-08-11 23:54:42,571 views 20356 34768 [n.orujova] No employee profile found
+INFO 2025-08-11 23:54:42,574 views 20356 34768 [n.orujova] User info response prepared successfully
+INFO 2025-08-12 00:19:29,153 views 20356 29932 Using pagination (explicitly requested)
+INFO 2025-08-12 00:19:29,479 views 20356 18688 Using pagination (explicitly requested)
+INFO 2025-08-12 00:19:32,205 views 20356 27344 Using pagination (explicitly requested)
+INFO 2025-08-12 00:19:39,945 views 20356 27344 User info request for user: n.orujova
+INFO 2025-08-12 00:19:39,954 views 20356 27344 [n.orujova] No employee profile found
+INFO 2025-08-12 00:19:39,957 views 20356 27344 [n.orujova] User info response prepared successfully
+INFO 2025-08-12 00:19:40,047 views 20356 21732 Using pagination (explicitly requested)
+INFO 2025-08-12 00:20:10,894 views 20356 32012 Using pagination (explicitly requested)
+INFO 2025-08-12 00:23:52,427 views 20356 32012 User info request for user: n.orujova
+INFO 2025-08-12 00:23:52,480 views 20356 32012 [n.orujova] No employee profile found
+INFO 2025-08-12 00:23:52,482 views 20356 32012 [n.orujova] User info response prepared successfully
+INFO 2025-08-12 00:23:52,651 views 20356 18688 Using pagination (explicitly requested)
+INFO 2025-08-12 00:23:55,370 views 20356 32012 Using pagination (explicitly requested)
+INFO 2025-08-12 00:25:07,195 models 20356 32012 Created default status: ONBOARDING
+INFO 2025-08-12 00:25:07,197 models 20356 32012 Created default status: PROBATION
+INFO 2025-08-12 00:25:07,200 models 20356 32012 Created default status: ACTIVE
+INFO 2025-08-12 00:25:07,202 models 20356 32012 Created default status: INACTIVE
+INFO 2025-08-12 00:25:07,204 models 20356 32012 Created default status: ON LEAVE
+INFO 2025-08-12 00:25:07,679 views 20356 32012 Using pagination (explicitly requested)
+INFO 2025-08-12 00:25:08,045 views 20356 18688 Using pagination (explicitly requested)
+INFO 2025-08-12 00:25:24,238 views 20356 29932 Using pagination (explicitly requested)
+INFO 2025-08-12 00:25:33,628 views 20356 21732 Using pagination (explicitly requested)
+INFO 2025-08-12 00:25:33,846 views 20356 4496 Using pagination (explicitly requested)
+INFO 2025-08-12 00:25:35,805 views 20356 29932 Using pagination (explicitly requested)
+INFO 2025-08-12 00:25:52,508 views 20356 4496 Using pagination (explicitly requested)
+INFO 2025-08-12 00:25:52,717 views 20356 21732 Using pagination (explicitly requested)
+INFO 2025-08-12 00:41:54,025 views 20356 32760 Using pagination (explicitly requested)
+INFO 2025-08-12 00:41:54,056 views 20356 29776 Using pagination (explicitly requested)
+INFO 2025-08-12 00:41:54,529 views 20356 32760 Using pagination (explicitly requested)
+INFO 2025-08-12 00:41:59,069 views 20356 32760 Using pagination (explicitly requested)
+INFO 2025-08-12 00:42:45,365 views 20356 32760 Using pagination (explicitly requested)
+INFO 2025-08-12 00:42:45,420 views 20356 32760 Using pagination (explicitly requested)
+INFO 2025-08-12 00:42:45,563 views 20356 32760 Using pagination (explicitly requested)
+INFO 2025-08-12 00:42:45,614 views 20356 32760 Using pagination (explicitly requested)
+INFO 2025-08-12 00:42:55,021 views 20356 32760 User info request for user: n.orujova
+INFO 2025-08-12 00:42:55,061 views 20356 32760 [n.orujova] No employee profile found
+INFO 2025-08-12 00:42:55,063 views 20356 32760 [n.orujova] User info response prepared successfully
+INFO 2025-08-12 00:42:55,205 views 20356 29776 Using pagination (explicitly requested)
+INFO 2025-08-12 00:42:55,227 views 20356 9864 Using pagination (explicitly requested)
+INFO 2025-08-12 00:42:55,985 views 20356 9864 Using pagination (explicitly requested)
+INFO 2025-08-12 00:43:08,047 views 20356 29776 User info request for user: n.orujova
+INFO 2025-08-12 00:43:08,059 views 20356 29776 [n.orujova] No employee profile found
+INFO 2025-08-12 00:43:08,060 views 20356 29776 [n.orujova] User info response prepared successfully
+INFO 2025-08-12 00:43:08,227 views 20356 25540 Using pagination (explicitly requested)
+INFO 2025-08-12 00:43:08,277 views 20356 32760 Using pagination (explicitly requested)
+INFO 2025-08-12 00:43:08,908 views 20356 25540 Using pagination (explicitly requested)
+INFO 2025-08-12 00:43:18,484 views 20356 29776 Using pagination (explicitly requested)
+INFO 2025-08-12 00:43:50,149 views 20356 29776 Using pagination (explicitly requested)
+INFO 2025-08-12 00:43:51,313 views 20356 29776 Using pagination (explicitly requested)
