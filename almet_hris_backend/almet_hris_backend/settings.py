@@ -72,27 +72,27 @@ TEMPLATES = [
 WSGI_APPLICATION = 'almet_hris_backend.wsgi.application'
 
 # Database - PostgreSQL Configuration
-# DATABASES = {
-#     'default': {
-#         'ENGINE': 'django.db.backends.postgresql',
-#         'NAME': 'almet_hris',
-#         'USER': 'postgres',
-#         'PASSWORD': 'almet2025',  # Sizin qoyduğunuz parol
-#         'HOST': 'localhost',
-#         'PORT': '5432',
-#         'CONN_MAX_AGE': 60,  # Connection pooling
-#     }
-# }
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'myalmet_db',           # Bu adı dəyişin
-        'USER': 'myalmet_user',         # Bu adı dəyişin
-        'PASSWORD': 'almet2025',
+        'NAME': 'almet_hris',
+        'USER': 'postgres',
+        'PASSWORD': 'almet2025',  # Sizin qoyduğunuz parol
         'HOST': 'localhost',
         'PORT': '5432',
+        'CONN_MAX_AGE': 60,  # Connection pooling
     }
 }
+# DATABASES = {
+#     'default': {
+#         'ENGINE': 'django.db.backends.postgresql',
+#         'NAME': 'myalmet_db',           # Bu adı dəyişin
+#         'USER': 'myalmet_user',         # Bu adı dəyişin
+#         'PASSWORD': 'almet2025',
+#         'HOST': 'localhost',
+#         'PORT': '5432',
+#     }
+# }
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
     {
@@ -287,3 +287,6 @@ CORS_ALLOW_HEADERS = [
     'dnt', 'origin', 'user-agent', 'x-csrftoken', 'x-requested-with',
     'x-file-name', 'x-file-size', 'x-file-type',
 ]
+
+
+#celery

@@ -1,9 +1,16 @@
-# urls.py - FIXED: URL Configuration
+# api/urls.py - Competency URL-ni düzgun əlavə edin
 
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenRefreshView
 from . import views
+
+# Competency Views Import əlavə edin
+from .competency_views import (
+    SkillGroupViewSet, SkillViewSet,
+    BehavioralCompetencyGroupViewSet, BehavioralCompetencyViewSet,
+    CompetencyStatsView
+)
 
 # Create router for viewsets
 router = DefaultRouter()
@@ -29,7 +36,7 @@ router.register(r'contract-configs', views.ContractTypeConfigViewSet, basename='
 # Vacancy Management URLs
 router.register(r'vacant-positions', views.VacantPositionViewSet, basename='vacantposition')
 
-# FIXED: Organizational Chart URLs
+# Organizational Chart URLs
 router.register(r'org-chart', views.OrgChartViewSet, basename='orgchart')
 
 # Employee Grading Integration URLs
@@ -37,6 +44,13 @@ router.register(r'employee-grading', views.EmployeeGradingViewSet, basename='emp
 
 # Bulk Upload URLs
 router.register(r'bulk-upload', views.BulkEmployeeUploadViewSet, basename='bulkupload')
+
+# Competency Management URLs - ƏLAVƏ OLUNDU
+router.register(r'competency/skill-groups', SkillGroupViewSet, basename='competency-skillgroup')
+router.register(r'competency/skills', SkillViewSet, basename='competency-skill')
+router.register(r'competency/behavioral-groups', BehavioralCompetencyGroupViewSet, basename='competency-behavioralgroup')
+router.register(r'competency/behavioral-competencies', BehavioralCompetencyViewSet, basename='competency-behavioral')
+
 
 urlpatterns = [
     # Authentication endpoints
@@ -64,14 +78,13 @@ urlpatterns = [
          views.EmployeeViewSet.as_view({'get': 'headcount_with_vacancies'}), 
          name='headcount_with_vacancies'),
     
-   
+    # Competency Stats endpoint
+    path('competency/stats/', CompetencyStatsView.as_view(), name='competency-stats'),
     
     # Statistics and filters
     path('org-chart/statistics/', 
          views.OrgChartViewSet.as_view({'get': 'get_statistics'}), 
          name='org_chart_statistics'),
-         
-    
     
     # Include all router URLs
     path('', include(router.urls)),

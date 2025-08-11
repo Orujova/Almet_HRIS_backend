@@ -1385,3 +1385,6 @@ def employee_post_save_handler(sender, instance, created, **kwargs):
                 'initial_status': instance.status.name if instance.status else None
             }
         )
+        
+# api/models.py sonuna
+from .competency_models import *            
