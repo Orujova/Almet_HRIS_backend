@@ -1,9 +1,4 @@
-SECTION_TYPES = [
-        ('CRITICAL_DUTIES', 'Critical Duties'),
-        ('POSITION_MAIN_KPIS', 'Position Main KPIs'),
-        ('JOB_DUTIES', 'Job Duties'),
-        ('REQUIREMENTS', 'Requirements'),
-        ('CUSTOM', 'Custom Section'),# api/job_description_models.py
+# api/job_description_models.py
 
 from django.db import models
 from django.contrib.auth.models import User
@@ -72,10 +67,7 @@ class JobDescription(models.Model):
         blank=True,
         verbose_name="Employee Name (Manual)"
     )
-    manual_employee_email = models.EmailField(
-        blank=True,
-        verbose_name="Employee Email (Manual)"
-    )
+
     manual_employee_phone = models.CharField(
         max_length=50,
         blank=True,
@@ -216,7 +208,7 @@ class JobDescription(models.Model):
                 'type': 'existing',
                 'id': self.assigned_employee.id,
                 'name': self.assigned_employee.full_name,
-                'email': self.assigned_employee.user.email,
+             
                 'phone': self.assigned_employee.phone,
                 'employee_id': self.assigned_employee.employee_id
             }
@@ -224,7 +216,7 @@ class JobDescription(models.Model):
             return {
                 'type': 'manual',
                 'name': self.manual_employee_name,
-                'email': self.manual_employee_email,
+               
                 'phone': self.manual_employee_phone
             }
         return None
@@ -235,7 +227,7 @@ class JobDescription(models.Model):
             return {
                 'id': self.reports_to.id,
                 'name': self.reports_to.full_name,
-                'email': self.reports_to.user.email,
+             
                 'job_title': self.reports_to.job_title,
                 'employee_id': self.reports_to.employee_id
             }
@@ -525,3 +517,8 @@ class JobDescriptionActivity(models.Model):
     
     def __str__(self):
         return f"{self.job_description.job_title} - {self.get_activity_type_display()}"
+    
+    
+    
+    
+    
