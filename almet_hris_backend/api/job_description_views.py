@@ -40,6 +40,20 @@ class JobDescriptionFilter:
         self.queryset = queryset
         self.params = params
     
+    def get_list_values(self, param_name):
+        """Safely get list values from query params"""
+        if hasattr(self.params, 'getlist'):
+            return self.params.getlist(param_name)
+        else:
+            # Handle regular dict
+            value = self.params.get(param_name)
+            if value:
+                if isinstance(value, list):
+                    return value
+                else:
+                    return [value]
+            return []
+    
     def filter(self):
         queryset = self.queryset
         
@@ -56,27 +70,27 @@ class JobDescriptionFilter:
             )
         
         # Business function filter
-        business_functions = self.params.getlist('business_function')
+        business_functions = self.get_list_values('business_function')
         if business_functions:
             queryset = queryset.filter(business_function__id__in=business_functions)
         
         # Department filter
-        departments = self.params.getlist('department')
+        departments = self.get_list_values('department')
         if departments:
             queryset = queryset.filter(department__id__in=departments)
         
         # Unit filter
-        units = self.params.getlist('unit')
+        units = self.get_list_values('unit')
         if units:
             queryset = queryset.filter(unit__id__in=units)
         
         # Status filter
-        statuses = self.params.getlist('status')
+        statuses = self.get_list_values('status')
         if statuses:
             queryset = queryset.filter(status__in=statuses)
         
         # Position group filter
-        position_groups = self.params.getlist('position_group')
+        position_groups = self.get_list_values('position_group')
         if position_groups:
             queryset = queryset.filter(position_group__id__in=position_groups)
         
@@ -84,9 +98,21 @@ class JobDescriptionFilter:
         created_from = self.params.get('created_date_from')
         created_to = self.params.get('created_date_to')
         if created_from:
-            queryset = queryset.filter(created_at__date__gte=created_from)
+            try:
+                from django.utils.dateparse import parse_date
+                date_from = parse_date(created_from)
+                if date_from:
+                    queryset = queryset.filter(created_at__date__gte=date_from)
+            except:
+                pass
         if created_to:
-            queryset = queryset.filter(created_at__date__lte=created_to)
+            try:
+                from django.utils.dateparse import parse_date
+                date_to = parse_date(created_to)
+                if date_to:
+                    queryset = queryset.filter(created_at__date__lte=date_to)
+            except:
+                pass
         
         # Pending approval for current user
         pending_for_user = self.params.get('pending_approval_for_user')
@@ -95,8 +121,8 @@ class JobDescriptionFilter:
             if user:
                 # Get job descriptions where user can approve
                 queryset = queryset.filter(
-                    Q(status='PENDING_LINE_MANAGER', reports_to__line_manager__user=user) |
-                    Q(status='PENDING_EMPLOYEE', reports_to__user=user)
+                    Q(status='PENDING_LINE_MANAGER', reports_to__user=user) |
+                    Q(status='PENDING_EMPLOYEE', assigned_employee__user=user)
                 )
         
         # Version filter
