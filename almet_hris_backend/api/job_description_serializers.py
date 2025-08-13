@@ -316,12 +316,18 @@ class JobDescriptionDetailSerializer(serializers.ModelSerializer):
         
         return obj.can_be_approved_by_line_manager(request.user)
     
+    def get_can_approve_as_employee(self, obj):
+        request = self.context.get('request')
+        if not request or not request.user.is_authenticated:
+            return False
+        
+        return obj.can_be_approved_by_employee(request.user)
+    
     def get_employee_info(self, obj):
         return obj.get_employee_info()
     
     def get_manager_info(self, obj):
         return obj.get_manager_info()
-
 
 class JobDescriptionCreateUpdateSerializer(serializers.ModelSerializer):
     """Serializer for creating and updating job descriptions"""
@@ -688,11 +694,13 @@ class JobDescriptionFilterSerializer(serializers.Serializer):
 
 # Export serializers
 class JobDescriptionExportSerializer(serializers.Serializer):
-    """Serializer for export functionality"""
+    """FIXED: Serializer for export functionality with proper UUID handling"""
     
     job_description_ids = serializers.ListField(
         child=serializers.UUIDField(),
-        required=False
+        required=False,
+        allow_empty=True,
+        help_text="List of job description UUIDs to export. If empty, exports all filtered results."
     )
     export_format = serializers.ChoiceField(
         choices=[('pdf', 'PDF'), ('excel', 'Excel'), ('word', 'Word')],
@@ -700,3 +708,55 @@ class JobDescriptionExportSerializer(serializers.Serializer):
     )
     include_signatures = serializers.BooleanField(default=True)
     include_activities = serializers.BooleanField(default=False)
+    
+    def validate_job_description_ids(self, value):
+        """Validate that job description IDs exist"""
+        if value:
+            # Check if all provided UUIDs exist
+            existing_count = JobDescription.objects.filter(id__in=value).count()
+            if existing_count != len(value):
+                raise serializers.ValidationError("Some job description IDs do not exist")
+        return value
+    
+    
+    # job_description_serializers.py - ADD THESE SERIALIZERS
+
+class JobDescriptionSubmissionSerializer(serializers.Serializer):
+    """Serializer for submitting job description for approval"""
+    
+    submit_to_line_manager = serializers.BooleanField(default=True)
+    comments = serializers.CharField(required=False, allow_blank=True)
+
+
+class JobDescriptionApprovalSerializer(serializers.Serializer):
+    """Serializer for approval actions"""
+    
+    comments = serializers.CharField(required=False, allow_blank=True)
+    signature = serializers.FileField(required=False, allow_null=True)
+    
+    def validate_signature(self, value):
+        """Validate signature file"""
+        if value:
+            # Check file size (max 5MB)
+            if value.size > 5 * 1024 * 1024:
+                raise serializers.ValidationError("Signature file must be less than 5MB")
+            
+            # Check file type
+            allowed_types = ['image/png', 'image/jpeg', 'image/jpg', 'application/pdf']
+            if value.content_type not in allowed_types:
+                raise serializers.ValidationError(
+                    "Invalid file type. Allowed types: PNG, JPEG, PDF"
+                )
+        
+        return value
+
+
+class JobDescriptionRejectionSerializer(serializers.Serializer):
+    """Serializer for rejection actions"""
+    
+    reason = serializers.CharField(required=True, min_length=10)
+    
+    def validate_reason(self, value):
+        if len(value.strip()) < 10:
+            raise serializers.ValidationError("Rejection reason must be at least 10 characters long")
+        return value.strip()

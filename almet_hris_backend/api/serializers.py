@@ -14,7 +14,7 @@ import logging
 import os
 from django.db import models 
 logger = logging.getLogger(__name__)
-
+from .job_description_models import JobDescription
 class UserSerializer(serializers.ModelSerializer):
     full_name = serializers.SerializerMethodField()
     
@@ -515,7 +515,7 @@ class EmployeeListSerializer(serializers.ModelSerializer):
             return False
 
 class EmployeeDetailSerializer(serializers.ModelSerializer):
-    """Detailed employee serializer for individual views"""
+    """ENHANCED: Detailed employee serializer with Job Description integration"""
      
     name = serializers.CharField(source='full_name', read_only=True)
     email = serializers.CharField(source='user.email', read_only=True)
@@ -530,7 +530,6 @@ class EmployeeDetailSerializer(serializers.ModelSerializer):
     position_group_detail = PositionGroupSerializer(source='position_group', read_only=True)
     status_detail = EmployeeStatusSerializer(source='status', read_only=True)
     line_manager_detail = serializers.SerializerMethodField()
-   
     
     # Enhanced fields
     documents = EmployeeDocumentSerializer(many=True, read_only=True)
@@ -549,8 +548,17 @@ class EmployeeDetailSerializer(serializers.ModelSerializer):
     original_vacancy_detail = VacantPositionListSerializer(source='original_vacancy', read_only=True)
     
     profile_image_url = serializers.SerializerMethodField()
-    documents = EmployeeDocumentSerializer(many=True, read_only=True)
     documents_count = serializers.SerializerMethodField()
+    
+    # JOB DESCRIPTION INTEGRATION - NEW FIELDS
+    job_descriptions = serializers.SerializerMethodField()
+    job_descriptions_count = serializers.SerializerMethodField()
+    pending_job_description_approvals = serializers.SerializerMethodField()
+    
+    # For managers - team member job descriptions
+    team_job_descriptions = serializers.SerializerMethodField()
+    team_pending_approvals = serializers.SerializerMethodField()
+    
     class Meta:
         model = Employee
         fields = '__all__'
@@ -565,7 +573,6 @@ class EmployeeDetailSerializer(serializers.ModelSerializer):
                         return request.build_absolute_uri(obj.profile_image.url)
                     return obj.profile_image.url
             except Exception as e:
-                # Log error but don't fail serialization
                 logger.warning(f"Could not get profile image URL for employee {obj.employee_id}: {e}")
         return None
     
@@ -601,7 +608,234 @@ class EmployeeDetailSerializer(serializers.ModelSerializer):
             return obj.get_status_preview()
         except:
             return None
+    
+    # JOB DESCRIPTION METHODS - FIXED AND COMPLETE
+    def get_job_descriptions(self, obj):
+        """Get job descriptions assigned to this employee"""
+        try:
+            job_descriptions = JobDescription.objects.filter(
+                assigned_employee=obj
+            ).select_related(
+                'business_function', 'department', 'position_group', 'reports_to', 'created_by'
+            ).order_by('-created_at')[:10]  # Last 10 job descriptions
+            
+            return [
+                {
+                    'id': str(jd.id),
+                    'job_title': jd.job_title,
+                    'status': jd.status,
+                    'status_display': jd.get_status_display(),
+                    'status_color': jd.get_status_display_with_color()['color'],
+                    'created_at': jd.created_at,
+                    'version': jd.version,
+                    'can_approve': jd.can_be_approved_by_employee(self.context.get('request').user) if self.context.get('request') else False,
+                    'business_function': jd.business_function.name if jd.business_function else None,
+                    'department': jd.department.name if jd.department else None,
+                    'reports_to_name': jd.reports_to.full_name if jd.reports_to else None,
+                    'urgency': 'high' if (timezone.now() - jd.created_at).days > 7 else 'normal'
+                }
+                for jd in job_descriptions
+            ]
+        except Exception as e:
+            logger.error(f"Error getting job descriptions for employee {obj.employee_id}: {e}")
+            return []
+    
+    def get_job_descriptions_count(self, obj):
+        """Get total count of job descriptions for this employee"""
+        try:
+            return JobDescription.objects.filter(assigned_employee=obj).count()
+        except:
+            return 0
+    
+    def get_pending_job_description_approvals(self, obj):
+        """Get job descriptions pending employee approval"""
+        try:
+            if not self.context.get('request') or not self.context.get('request').user:
+                return []
+            
+            request_user = self.context.get('request').user
+            pending_jds = JobDescription.objects.filter(
+                assigned_employee=obj,
+                status='PENDING_EMPLOYEE'
+            ).select_related('business_function', 'department', 'reports_to')
+            
+            return [
+                {
+                    'id': str(jd.id),
+                    'job_title': jd.job_title,
+                    'status': jd.status,
+                    'status_display': jd.get_status_display(),
+                    'status_color': jd.get_status_display_with_color()['color'],
+                    'created_at': jd.created_at,
+                    'version': jd.version,
+                    'can_approve': jd.can_be_approved_by_employee(request_user),
+                    'business_function': jd.business_function.name if jd.business_function else None,
+                    'department': jd.department.name if jd.department else None,
+                    'reports_to_name': jd.reports_to.full_name if jd.reports_to else None,
+                    'urgency': 'high' if (timezone.now() - jd.created_at).days > 7 else 'normal',
+                    'days_pending': (timezone.now() - jd.created_at).days
+                }
+                for jd in pending_jds
+            ]
+        except Exception as e:
+            logger.error(f"Error getting pending job descriptions for employee {obj.employee_id}: {e}")
+            return []
+    
+    def get_team_job_descriptions(self, obj):
+        """Get job descriptions for direct reports (for managers)"""
+        try:
+            if not self.context.get('request') or not self.context.get('request').user:
+                return []
+            
+            # Get job descriptions where this employee is the reports_to manager
+            team_jds = JobDescription.objects.filter(
+                reports_to=obj
+            ).select_related(
+                'assigned_employee', 'business_function', 'department', 'created_by'
+            ).order_by('-created_at')[:10]  # Last 10 team job descriptions
+            
+            return [
+                {
+                    'id': str(jd.id),
+                    'job_title': jd.job_title,
+                    'status': jd.status,
+                    'status_display': jd.get_status_display(),
+                    'status_color': jd.get_status_display_with_color()['color'],
+                    'created_at': jd.created_at,
+                    'version': jd.version,
+                    'employee_name': jd.get_employee_info()['name'] if jd.get_employee_info() else 'Unknown',
+                    'employee_id': jd.assigned_employee.employee_id if jd.assigned_employee else None,
+                    'can_approve': jd.can_be_approved_by_line_manager(self.context.get('request').user),
+                    'business_function': jd.business_function.name if jd.business_function else None,
+                    'department': jd.department.name if jd.department else None,
+                    'days_since_created': (timezone.now() - jd.created_at).days
+                }
+                for jd in team_jds
+            ]
+        except Exception as e:
+            logger.error(f"Error getting team job descriptions for manager {obj.employee_id}: {e}")
+            return []
+    
+    def get_team_pending_approvals(self, obj):
+        """Get job descriptions pending line manager approval for this manager"""
+        try:
+            if not self.context.get('request') or not self.context.get('request').user:
+                return []
+            
+            request_user = self.context.get('request').user
+            pending_team_jds = JobDescription.objects.filter(
+                reports_to=obj,
+                status='PENDING_LINE_MANAGER'
+            ).select_related('assigned_employee', 'business_function', 'department')
+            
+            return [
+                {
+                    'id': str(jd.id),
+                    'job_title': jd.job_title,
+                    'status': jd.status,
+                    'status_display': jd.get_status_display(),
+                    'status_color': jd.get_status_display_with_color()['color'],
+                    'created_at': jd.created_at,
+                    'version': jd.version,
+                    'employee_name': jd.get_employee_info()['name'] if jd.get_employee_info() else 'Unknown',
+                    'employee_id': jd.assigned_employee.employee_id if jd.assigned_employee else None,
+                    'can_approve': jd.can_be_approved_by_line_manager(request_user),
+                    'business_function': jd.business_function.name if jd.business_function else None,
+                    'department': jd.department.name if jd.department else None,
+                    'urgency': 'critical' if (timezone.now() - jd.created_at).days > 14 else ('high' if (timezone.now() - jd.created_at).days > 7 else 'normal'),
+                    'days_pending': (timezone.now() - jd.created_at).days
+                }
+                for jd in pending_team_jds
+            ]
+        except Exception as e:
+            logger.error(f"Error getting pending team job descriptions for manager {obj.employee_id}: {e}")
+            return []
 
+
+# Job Description Serializers for Employee Integration
+class EmployeeJobDescriptionSerializer(serializers.ModelSerializer):
+    """Simple job description serializer for employee views"""
+    
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    status_color = serializers.SerializerMethodField()
+    business_function_name = serializers.CharField(source='business_function.name', read_only=True)
+    department_name = serializers.CharField(source='department.name', read_only=True)
+    reports_to_name = serializers.CharField(source='reports_to.full_name', read_only=True)
+    can_approve = serializers.SerializerMethodField()
+    employee_info = serializers.SerializerMethodField()
+    days_since_created = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = JobDescription
+        fields = [
+            'id', 'job_title', 'job_purpose', 'status', 'status_display', 'status_color',
+            'version', 'created_at', 'updated_at', 'business_function_name', 'department_name',
+            'reports_to_name', 'can_approve', 'employee_info', 'days_since_created',
+            'line_manager_approved_at', 'employee_approved_at'
+        ]
+    
+    def get_status_color(self, obj):
+        return obj.get_status_display_with_color()['color']
+    
+    def get_can_approve(self, obj):
+        request = self.context.get('request')
+        if not request or not request.user.is_authenticated:
+            return False
+        return obj.can_be_approved_by_employee(request.user)
+    
+    def get_employee_info(self, obj):
+        return obj.get_employee_info()
+    
+    def get_days_since_created(self, obj):
+        return (timezone.now() - obj.created_at).days
+
+
+class ManagerJobDescriptionSerializer(serializers.ModelSerializer):
+    """Job description serializer for manager views (team members)"""
+    
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    status_color = serializers.SerializerMethodField()
+    business_function_name = serializers.CharField(source='business_function.name', read_only=True)
+    department_name = serializers.CharField(source='department.name', read_only=True)
+    employee_info = serializers.SerializerMethodField()
+    can_approve = serializers.SerializerMethodField()
+    days_since_created = serializers.SerializerMethodField()
+    urgency_level = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = JobDescription
+        fields = [
+            'id', 'job_title', 'job_purpose', 'status', 'status_display', 'status_color',
+            'version', 'created_at', 'updated_at', 'business_function_name', 'department_name',
+            'employee_info', 'can_approve', 'days_since_created', 'urgency_level',
+            'line_manager_approved_at', 'employee_approved_at'
+        ]
+    
+    def get_status_color(self, obj):
+        return obj.get_status_display_with_color()['color']
+    
+    def get_can_approve(self, obj):
+        request = self.context.get('request')
+        if not request or not request.user.is_authenticated:
+            return False
+        return obj.can_be_approved_by_line_manager(request.user)
+    
+    def get_employee_info(self, obj):
+        return obj.get_employee_info()
+    
+    def get_days_since_created(self, obj):
+        return (timezone.now() - obj.created_at).days
+    
+    def get_urgency_level(self, obj):
+        days = (timezone.now() - obj.created_at).days
+        if days > 14:
+            return 'critical'
+        elif days > 7:
+            return 'high'
+        else:
+            return 'normal'
+                
+                
 class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
     """Serializer for creating and updating employees with enhanced validation"""
     first_name = serializers.CharField(write_only=True)

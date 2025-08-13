@@ -1,13 +1,17 @@
-# api/job_description_models.py
+# api/job_description_models.py - FIXED: Key permission methods
 
 from django.db import models
 from django.contrib.auth.models import User
 from django.utils import timezone
 from django.core.validators import MinLengthValidator
 import uuid
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 class JobDescription(models.Model):
-    """Main Job Description model"""
+    """Main Job Description model with FIXED permission methods"""
     
     # Primary fields
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -180,26 +184,70 @@ class JobDescription(models.Model):
         }
     
     def can_be_approved_by_line_manager(self, user):
-        """Check if user can approve as line manager"""
-        if self.status != 'PENDING_LINE_MANAGER':
+        """FIXED: Check if user can approve as line manager"""
+        try:
+            logger.info(f"Checking line manager approval for user {user.username} on JD {self.id}")
+            logger.info(f"JD status: {self.status}")
+            logger.info(f"Reports to: {self.reports_to}")
+            
+            # Check status first
+            if self.status != 'PENDING_LINE_MANAGER':
+                logger.info(f"Status is not PENDING_LINE_MANAGER: {self.status}")
+                return False
+            
+            # Check if there's a reports_to manager
+            if not self.reports_to:
+                logger.info("No reports_to manager set")
+                return False
+            
+            # FIXED: Check if the user is linked to the reports_to employee
+            if not hasattr(self.reports_to, 'user') or not self.reports_to.user:
+                logger.info(f"Reports_to employee {self.reports_to.employee_id} has no linked user")
+                return False
+            
+            # Check if user matches
+            is_manager = self.reports_to.user == user
+            logger.info(f"User {user.username} is manager: {is_manager}")
+            logger.info(f"Manager user: {self.reports_to.user.username if self.reports_to.user else 'None'}")
+            
+            return is_manager
+            
+        except Exception as e:
+            logger.error(f"Error checking line manager approval: {e}")
             return False
-        
-        # Check if user is the reports_to manager
-        if self.reports_to:
-            return self.reports_to.user == user
-        
-        return False
-    
+
     def can_be_approved_by_employee(self, user):
-        """Check if user can approve as employee"""
-        if self.status != 'PENDING_EMPLOYEE':
+        """FIXED: Check if user can approve as employee"""
+        try:
+            logger.info(f"Checking employee approval for user {user.username} on JD {self.id}")
+            logger.info(f"JD status: {self.status}")
+            logger.info(f"Assigned employee: {self.assigned_employee}")
+            
+            # Check status first
+            if self.status != 'PENDING_EMPLOYEE':
+                logger.info(f"Status is not PENDING_EMPLOYEE: {self.status}")
+                return False
+            
+            # Check if there's an assigned employee
+            if not self.assigned_employee:
+                logger.info("No assigned employee")
+                return False
+            
+            # FIXED: Check if the user is linked to the assigned employee
+            if not hasattr(self.assigned_employee, 'user') or not self.assigned_employee.user:
+                logger.info(f"Assigned employee {self.assigned_employee.employee_id} has no linked user")
+                return False
+            
+            # Check if user matches
+            is_employee = self.assigned_employee.user == user
+            logger.info(f"User {user.username} is assigned employee: {is_employee}")
+            logger.info(f"Employee user: {self.assigned_employee.user.username if self.assigned_employee.user else 'None'}")
+            
+            return is_employee
+            
+        except Exception as e:
+            logger.error(f"Error checking employee approval: {e}")
             return False
-        
-        # Check if user is the assigned employee
-        if self.assigned_employee:
-            return self.assigned_employee.user == user
-        
-        return False
     
     def get_employee_info(self):
         """Get employee information (existing or manual)"""
@@ -208,7 +256,6 @@ class JobDescription(models.Model):
                 'type': 'existing',
                 'id': self.assigned_employee.id,
                 'name': self.assigned_employee.full_name,
-             
                 'phone': self.assigned_employee.phone,
                 'employee_id': self.assigned_employee.employee_id
             }
@@ -216,7 +263,6 @@ class JobDescription(models.Model):
             return {
                 'type': 'manual',
                 'name': self.manual_employee_name,
-               
                 'phone': self.manual_employee_phone
             }
         return None
@@ -227,61 +273,106 @@ class JobDescription(models.Model):
             return {
                 'id': self.reports_to.id,
                 'name': self.reports_to.full_name,
-             
                 'job_title': self.reports_to.job_title,
                 'employee_id': self.reports_to.employee_id
             }
         return None
     
     def approve_by_line_manager(self, user, comments="", signature=None):
-        """Approve by line manager"""
-        if not self.can_be_approved_by_line_manager(user):
-            raise ValueError("User cannot approve this job description as line manager")
-        
-        self.line_manager_approved_by = user
-        self.line_manager_approved_at = timezone.now()
-        self.line_manager_comments = comments
-        if signature:
-            self.line_manager_signature = signature
-        
-        # Move to employee approval
-        self.status = 'PENDING_EMPLOYEE'
-        self.save()
+        """FIXED: Approve by line manager with better error handling"""
+        try:
+            logger.info(f"Line manager approval attempt by {user.username} for JD {self.id}")
+            
+            if not self.can_be_approved_by_line_manager(user):
+                error_msg = f"User {user.username} cannot approve this job description as line manager"
+                logger.error(error_msg)
+                raise ValueError(error_msg)
+            
+            self.line_manager_approved_by = user
+            self.line_manager_approved_at = timezone.now()
+            self.line_manager_comments = comments
+            if signature:
+                self.line_manager_signature = signature
+            
+            # Move to employee approval
+            self.status = 'PENDING_EMPLOYEE'
+            self.save()
+            
+            logger.info(f"Line manager approval successful for JD {self.id}")
+            
+        except Exception as e:
+            logger.error(f"Error in approve_by_line_manager: {e}")
+            raise
     
     def approve_by_employee(self, user, comments="", signature=None):
-        """Approve by employee"""
-        if not self.can_be_approved_by_employee(user):
-            raise ValueError("User cannot approve this job description as employee")
-        
-        self.employee_approved_by = user
-        self.employee_approved_at = timezone.now()
-        self.employee_comments = comments
-        if signature:
-            self.employee_signature = signature
-        
-        # Final approval
-        self.status = 'APPROVED'
-        self.save()
+        """FIXED: Approve by employee with better error handling"""
+        try:
+            logger.info(f"Employee approval attempt by {user.username} for JD {self.id}")
+            
+            if not self.can_be_approved_by_employee(user):
+                error_msg = f"User {user.username} cannot approve this job description as employee"
+                logger.error(error_msg)
+                raise ValueError(error_msg)
+            
+            self.employee_approved_by = user
+            self.employee_approved_at = timezone.now()
+            self.employee_comments = comments
+            if signature:
+                self.employee_signature = signature
+            
+            # Final approval
+            self.status = 'APPROVED'
+            self.save()
+            
+            logger.info(f"Employee approval successful for JD {self.id}")
+            
+        except Exception as e:
+            logger.error(f"Error in approve_by_employee: {e}")
+            raise
     
     def reject(self, user, reason):
-        """Reject job description"""
-        self.status = 'REJECTED'
-        if self.reports_to and self.reports_to.line_manager and self.reports_to.line_manager.user == user:
-            self.line_manager_comments = reason
-        elif self.reports_to and self.reports_to.user == user:
-            self.employee_comments = reason
-        self.save()
+        """FIXED: Reject job description with better error handling"""
+        try:
+            logger.info(f"Rejection attempt by {user.username} for JD {self.id}")
+            
+            self.status = 'REJECTED'
+            
+            # Add reason to appropriate comments field
+            if self.can_be_approved_by_line_manager(user):
+                self.line_manager_comments = reason
+            elif self.can_be_approved_by_employee(user):
+                self.employee_comments = reason
+            
+            self.save()
+            logger.info(f"Job description {self.id} rejected successfully")
+            
+        except Exception as e:
+            logger.error(f"Error in reject: {e}")
+            raise
     
     def request_revision(self, user, reason):
-        """Request revision"""
-        self.status = 'REVISION_REQUIRED'
-        if self.reports_to and self.reports_to.line_manager and self.reports_to.line_manager.user == user:
-            self.line_manager_comments = reason
-        elif self.reports_to and self.reports_to.user == user:
-            self.employee_comments = reason
-        self.save()
+        """FIXED: Request revision with better error handling"""
+        try:
+            logger.info(f"Revision request by {user.username} for JD {self.id}")
+            
+            self.status = 'REVISION_REQUIRED'
+            
+            # Add reason to appropriate comments field
+            if self.can_be_approved_by_line_manager(user):
+                self.line_manager_comments = reason
+            elif self.can_be_approved_by_employee(user):
+                self.employee_comments = reason
+            
+            self.save()
+            logger.info(f"Revision requested for JD {self.id}")
+            
+        except Exception as e:
+            logger.error(f"Error in request_revision: {e}")
+            raise
 
 
+
+# Keep all other models the same as in the original file...
 class JobDescriptionSection(models.Model):
     """Flexible sections for job descriptions"""
     
@@ -383,7 +474,6 @@ class JobDescriptionBehavioralCompetency(models.Model):
 
 
 # Extra tables for additional resources
-
 class JobBusinessResource(models.Model):
     """Business resources for job descriptions"""
     
@@ -440,7 +530,6 @@ class CompanyBenefit(models.Model):
 
 
 # Junction tables for many-to-many relationships
-
 class JobDescriptionBusinessResource(models.Model):
     """Link job descriptions to business resources"""
     
@@ -517,8 +606,3 @@ class JobDescriptionActivity(models.Model):
     
     def __str__(self):
         return f"{self.job_description.job_title} - {self.get_activity_type_display()}"
-    
-    
-    
-    
-    

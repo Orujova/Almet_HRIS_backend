@@ -14,6 +14,7 @@ from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 from django.db import models 
 import logging
+from .job_description_models import JobDescription
 import traceback
 from rest_framework.parsers import JSONParser, MultiPartParser, FormParser
 from datetime import datetime, timedelta, date
@@ -1313,10 +1314,6 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
     
-    
-    
-    
-    
     @swagger_auto_schema(
         auto_schema=FileUploadAutoSchema,
         operation_description="Create a new employee with optional document and profile photo",
@@ -1460,8 +1457,6 @@ class EmployeeViewSet(viewsets.ModelViewSet):
     def update(self, request, *args, **kwargs):
         """Update an existing employee with optional document and profile photo"""
         return super().update(request, *args, **kwargs)
-    
-   
     
     @swagger_auto_schema(
         method='post',
@@ -1700,7 +1695,6 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
     
-    
     def destroy(self, request, *args, **kwargs):
         """Override destroy to use soft delete"""
         instance = self.get_object()
@@ -1716,7 +1710,6 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         
         return Response(status=status.HTTP_204_NO_CONTENT)
     
-   
     def _generate_bulk_template(self):
         """Generate Excel template with dropdowns and validation"""
         from openpyxl import Workbook
@@ -2772,7 +2765,6 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             results['failed'] = results['total_rows']
             return results
     
-    
     @action(detail=True, methods=['get'])
     def job_descriptions(self, request, pk=None):
         """Get job descriptions for employee"""
@@ -2781,9 +2773,11 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         # Job descriptions assigned to this employee
         assigned_job_descriptions = JobDescription.objects.filter(
             assigned_employee=employee
+        ).select_related(
+            'business_function', 'department', 'position_group', 'reports_to', 'created_by'
         ).order_by('-created_at')
         
-        from .job_description_serializers import EmployeeJobDescriptionSerializer
+        from .serializers import EmployeeJobDescriptionSerializer
         serializer = EmployeeJobDescriptionSerializer(
             assigned_job_descriptions, 
             many=True, 
@@ -2800,7 +2794,8 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             'job_descriptions': serializer.data,
             'pending_approval_count': assigned_job_descriptions.filter(
                 status='PENDING_EMPLOYEE'
-            ).count()
+            ).count(),
+            'total_count': assigned_job_descriptions.count()
         })
     
     @action(detail=True, methods=['get'])
@@ -2811,9 +2806,11 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         # Job descriptions where this employee is the reports_to manager
         team_job_descriptions = JobDescription.objects.filter(
             reports_to=manager
-        ).select_related('assigned_employee').order_by('-created_at')
+        ).select_related(
+            'assigned_employee', 'business_function', 'department', 'created_by'
+        ).order_by('-created_at')
         
-        from .job_description_serializers import ManagerJobDescriptionSerializer
+        from .serializers import ManagerJobDescriptionSerializer
         serializer = ManagerJobDescriptionSerializer(
             team_job_descriptions, 
             many=True, 
@@ -2831,6 +2828,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             'pending_approval_count': team_job_descriptions.filter(
                 status='PENDING_LINE_MANAGER'
             ).count(),
+            'total_count': team_job_descriptions.count(),
             'total_team_members': Employee.objects.filter(
                 line_manager=manager, 
                 status__affects_headcount=True,
@@ -2865,7 +2863,6 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             )
         
         try:
-            from .job_description_models import JobDescription, JobDescriptionActivity
             job_description = JobDescription.objects.get(
                 id=job_description_id,
                 reports_to=manager
@@ -2948,7 +2945,6 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             )
         
         try:
-            from .job_description_models import JobDescription, JobDescriptionActivity
             job_description = JobDescription.objects.get(
                 id=job_description_id,
                 assigned_employee=employee
@@ -3004,7 +3000,96 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
     
+    @swagger_auto_schema(
+        method='post',
+        operation_description="Reject job description from employee detail",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['job_description_id', 'reason'],
+            properties={
+                'job_description_id': openapi.Schema(type=openapi.TYPE_STRING, format='uuid'),
+                'reason': openapi.Schema(type=openapi.TYPE_STRING, min_length=10)
+            }
+        ),
+        responses={200: "Job description rejected successfully"}
+    )
+    @action(detail=True, methods=['post'])
+    def reject_job_description(self, request, pk=None):
+        """Reject job description from employee detail page"""
+        employee = self.get_object()
+        job_description_id = request.data.get('job_description_id')
+        reason = request.data.get('reason')
+        
+        if not job_description_id:
+            return Response(
+                {'error': 'job_description_id is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if not reason or len(reason.strip()) < 10:
+            return Response(
+                {'error': 'Rejection reason must be at least 10 characters'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            # Check if it's employee's own job description or team member's
+            job_description = JobDescription.objects.filter(
+                id=job_description_id
+            ).filter(
+                Q(assigned_employee=employee) | Q(reports_to=employee)
+            ).first()
             
+            if not job_description:
+                return Response(
+                    {'error': 'Job description not found or not authorized'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            
+            # Check permissions
+            can_reject = (
+                job_description.can_be_approved_by_line_manager(request.user) or
+                job_description.can_be_approved_by_employee(request.user)
+            )
+            
+            if not can_reject:
+                return Response(
+                    {'error': 'You are not authorized to reject this job description'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            
+            with transaction.atomic():
+                job_description.reject(user=request.user, reason=reason)
+                
+                # Log activity
+                JobDescriptionActivity.objects.create(
+                    job_description=job_description,
+                    activity_type='REJECTED',
+                    description=f"Rejected from employee detail by {request.user.get_full_name()}: {reason}",
+                    performed_by=request.user,
+                    metadata={
+                        'rejected_from': 'employee_detail_page',
+                        'rejection_reason': reason,
+                        'employee_id': employee.employee_id
+                    }
+                )
+            
+            return Response({
+                'success': True,
+                'message': 'Job description rejected successfully',
+                'job_description_id': str(job_description.id),
+                'status': job_description.get_status_display(),
+                'reason': reason
+            })
+            
+        except Exception as e:
+            logger.error(f"Error rejecting job description: {str(e)}")
+            return Response(
+                {'error': f'Failed to reject job description: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    
     @swagger_auto_schema(
         method='post',
         operation_description="Add tag to single employee",
