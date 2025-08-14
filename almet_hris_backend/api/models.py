@@ -71,7 +71,7 @@ class SoftDeleteModel(models.Model):
 class BusinessFunction(SoftDeleteModel):
     name = models.CharField(max_length=100, unique=True)
     code = models.CharField(max_length=10, unique=True)
-    description = models.TextField(blank=True)
+   
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -114,7 +114,7 @@ class Unit(SoftDeleteModel):
 
 class JobFunction(SoftDeleteModel):
     name = models.CharField(max_length=100, unique=True)
-    description = models.TextField(blank=True)
+    
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -178,17 +178,10 @@ class PositionGroup(SoftDeleteModel):
         ordering = ['hierarchy_level']
 
 class EmployeeTag(SoftDeleteModel):
-    TAG_TYPES = [
-        ('LEAVE', 'Leave Related'),
-        ('STATUS', 'Status Related'),
-        ('SKILL', 'Skill Related'),
-        ('PROJECT', 'Project Related'),
-        ('PERFORMANCE', 'Performance Related'),
-        ('OTHER', 'Other'),
-    ]
+  
     
     name = models.CharField(max_length=50, unique=True)
-    tag_type = models.CharField(max_length=20, choices=TAG_TYPES, default='OTHER')
+
     color = models.CharField(max_length=7, default='#6B7280')
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -198,7 +191,7 @@ class EmployeeTag(SoftDeleteModel):
         return self.name
 
     class Meta:
-        ordering = ['tag_type', 'name']
+        ordering = [ 'name']
 
 class ContractTypeConfig(SoftDeleteModel):
     """Configuration for different contract types and their status transitions"""
@@ -282,10 +275,8 @@ class EmployeeStatus(SoftDeleteModel):
         ('ONBOARDING', 'Onboarding'),
         ('PROBATION', 'Probation'),
         ('NOTICE_PERIOD', 'Notice Period'),
-        ('TERMINATED', 'Terminated'),
-        ('RESIGNED', 'Resigned'),
-        ('SUSPENDED', 'Suspended'),
-        ('LEAVE', 'On Leave'),
+      
+      
         ('VACANT', 'Vacant Position'),  # ENHANCED: Added VACANT status
     ]
     
@@ -295,9 +286,7 @@ class EmployeeStatus(SoftDeleteModel):
         'ONBOARDING': '#3B82F6',  # Blue
         'PROBATION': '#F59E0B',   # Yellow
         'NOTICE_PERIOD': '#EF4444', # Red
-        'TERMINATED': '#6B7280',  # Gray
-        'RESIGNED': '#6B7280',    # Gray
-        'SUSPENDED': '#DC2626',   # Dark Red
+    
         'LEAVE': '#8B5CF6',       # Purple
         'VACANT': '#F97316',      # Orange
         'INACTIVE': '#9CA3AF',    # Light Gray
@@ -352,11 +341,10 @@ class EmployeeStatus(SoftDeleteModel):
                 'ACTIVE': 3,
                 'NOTICE_PERIOD': 4,
                 'LEAVE': 5,
-                'SUSPENDED': 6,
-                'INACTIVE': 7,
-                'RESIGNED': 8,
-                'TERMINATED': 9,
-                'VACANT': 10,
+           
+                'INACTIVE': 6,
+                
+                'VACANT': 7,
             }
             self.order = status_order_mapping.get(self.status_type, 99)
         
@@ -375,7 +363,7 @@ class EmployeeStatus(SoftDeleteModel):
             ('PROBATION', 'PROBATION', True, True, 2, True, True, False),
             ('ACTIVE', 'ACTIVE', True, True, 3, False, False, False),
             ('INACTIVE', 'INACTIVE', False, False, 7, False, False, False),
-            ('ON LEAVE', 'LEAVE', False, False, 5, False, False, False),
+          
             ('VACANT', 'VACANT', True, True, 10, False, False, False),  # ENHANCED: VACANT status counts in headcount
         ]
         

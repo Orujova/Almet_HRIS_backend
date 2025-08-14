@@ -31,7 +31,7 @@ class BusinessFunctionSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = BusinessFunction
-        fields = ['id', 'name', 'code', 'description', 'is_active', 'employee_count', 'created_at']
+        fields = ['id', 'name', 'code',  'is_active', 'employee_count', 'created_at']
     
     def get_employee_count(self, obj):
         return obj.employees.filter(status__affects_headcount=True).count()
@@ -79,7 +79,7 @@ class JobFunctionSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = JobFunction
-        fields = ['id', 'name', 'description', 'is_active', 'employee_count', 'created_at']
+        fields = ['id', 'name',  'is_active', 'employee_count', 'created_at']
     
     def get_employee_count(self, obj):
         return obj.employees.filter(status__affects_headcount=True).count()
@@ -109,7 +109,7 @@ class EmployeeTagSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = EmployeeTag
-        fields = ['id', 'name', 'tag_type', 'color', 'is_active', 'employee_count', 'created_at']
+        fields = ['id', 'name',  'color', 'is_active', 'employee_count', 'created_at']
     
     def get_employee_count(self, obj):
         return obj.employees.filter(status__affects_headcount=True).count()
@@ -498,7 +498,7 @@ class EmployeeListSerializer(serializers.ModelSerializer):
                 'id': tag.id,
                 'name': tag.name,
                 'color': tag.color,
-                'type': tag.tag_type
+                
             }
             for tag in obj.tags.filter(is_active=True)
         ]
@@ -1711,7 +1711,7 @@ class OrgChartNodeSerializer(serializers.ModelSerializer):
                 'years_of_service': obj.years_of_service,
                 'grading_display': grading_display,  # ONLY grading info here
                 'tags': [
-                    {'name': tag.name, 'color': tag.color, 'type': tag.tag_type} 
+                    {'name': tag.name, 'color': tag.color, } 
                     for tag in obj.tags.filter(is_active=True)
                 ],
                 'is_visible_in_org_chart': obj.is_visible_in_org_chart,

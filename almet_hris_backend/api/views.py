@@ -847,9 +847,9 @@ class EmployeeTagViewSet(viewsets.ModelViewSet):
     serializer_class = EmployeeTagSerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
-    filterset_fields = ['tag_type', 'is_active']
+    filterset_fields = [ 'is_active']
     search_fields = ['name']
-    ordering = ['tag_type', 'name']
+    ordering = [ 'name']
 
 class EmployeeStatusViewSet(viewsets.ModelViewSet):
     queryset = EmployeeStatus.objects.all()
@@ -2161,15 +2161,15 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             for tag_spec in str(tag_names).split(','):
                 tag_spec = tag_spec.strip()
                 if ':' in tag_spec:
-                    tag_type, tag_name = tag_spec.split(':', 1)
-                    tag_type = tag_type.strip().upper()
+                    tag_name = tag_spec.split(':', 1)
+                 
                     tag_name = tag_name.strip()
                     
                     # Get or create tag
                     tag, created = EmployeeTag.objects.get_or_create(
                         name=tag_name,
                         defaults={
-                            'tag_type': tag_type if tag_type in ['LEAVE', 'STATUS', 'SKILL', 'PROJECT', 'PERFORMANCE'] else 'OTHER',
+                          
                             'is_active': True
                         }
                     )
@@ -2178,7 +2178,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                     # Simple tag name without type
                     tag, created = EmployeeTag.objects.get_or_create(
                         name=tag_spec,
-                        defaults={'tag_type': 'OTHER', 'is_active': True}
+                        defaults={ 'is_active': True}
                     )
                     tags.append(tag)
             data['tags'] = tags
@@ -2707,14 +2707,14 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                             for tag_spec in tags_str.split(','):
                                 tag_spec = tag_spec.strip()
                                 if ':' in tag_spec:
-                                    tag_type, tag_name = tag_spec.split(':', 1)
-                                    tag_type = tag_type.strip().upper()
+                                    tag_name = tag_spec.split(':', 1)
+                                 
                                     tag_name = tag_name.strip()
                                     
                                     tag, created = EmployeeTag.objects.get_or_create(
                                         name=tag_name,
                                         defaults={
-                                            'tag_type': tag_type if tag_type in ['LEAVE', 'STATUS', 'SKILL', 'PROJECT', 'PERFORMANCE'] else 'OTHER',
+                                          
                                             'is_active': True
                                         }
                                     )
@@ -2722,7 +2722,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                                 else:
                                     tag, created = EmployeeTag.objects.get_or_create(
                                         name=tag_spec,
-                                        defaults={'tag_type': 'OTHER', 'is_active': True}
+                                        defaults={ 'is_active': True}
                                     )
                                     tags.append(tag)
                             

@@ -211,7 +211,7 @@ class ContractTypeConfigAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
 class BusinessFunctionAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
     list_display = ('code', 'name', 'employee_count', 'department_count', 'is_active', 'is_deleted_display', 'created_at')
     list_filter = ('is_active', 'is_deleted', 'created_at')
-    search_fields = ('name', 'code', 'description')
+    search_fields = ('name', 'code')
     ordering = ('code', 'name')
     readonly_fields = ('created_at', 'updated_at')
     
@@ -333,7 +333,7 @@ class UnitAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
 class JobFunctionAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
     list_display = ('name', 'employee_count', 'is_active', 'is_deleted_display', 'created_at')
     list_filter = ('is_active', 'is_deleted', 'created_at')
-    search_fields = ('name', 'description')
+    search_fields = ('name','employee__full_name')
     ordering = ('name',)
     readonly_fields = ('created_at', 'updated_at')
     
@@ -407,10 +407,10 @@ class PositionGroupAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
 
 @admin.register(EmployeeTag)
 class EmployeeTagAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
-    list_display = ('name', 'tag_type', 'color_display', 'employee_count', 'is_active', 'is_deleted_display', 'created_at')
-    list_filter = ('tag_type', 'is_active', 'is_deleted', 'created_at')
+    list_display = ('name',  'color_display', 'employee_count', 'is_active', 'is_deleted_display', 'created_at')
+    list_filter = ( 'is_active', 'is_deleted', 'created_at')
     search_fields = ('name',)
-    ordering = ('tag_type', 'name')
+
     
     def is_deleted_display(self, obj):
         if obj.is_deleted:

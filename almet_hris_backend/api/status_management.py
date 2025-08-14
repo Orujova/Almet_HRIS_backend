@@ -28,7 +28,7 @@ class EmployeeStatusManager:
             
             # Contract bitib bitməyibini yoxla
             if employee.contract_end_date and employee.contract_end_date <= current_date:
-                inactive_status = EmployeeStatus.objects.filter(status_type='INACTIVE').first()
+                inactive_status = EmployeeStatus.objects.filter(status_type__iexact='INACTIVE').first()
                 return inactive_status, f"Contract ended on {employee.contract_end_date}"
             
             # Contract configuration al
@@ -54,18 +54,18 @@ class EmployeeStatusManager:
             # Contract configuration əsasında status təyin et
             if days_since_start <= contract_config.onboarding_days:
                 # Hələ onboarding dövrü
-                onboarding_status = EmployeeStatus.objects.filter(status_type='ONBOARDING').first()
+                onboarding_status = EmployeeStatus.objects.filter(status_type__iexact='ONBOARDING').first()
                 return onboarding_status, f"Onboarding period ({days_since_start}/{contract_config.onboarding_days} days)"
             
             elif days_since_start <= (contract_config.onboarding_days + contract_config.probation_days):
                 # Probation dövrü
-                probation_status = EmployeeStatus.objects.filter(status_type='PROBATION').first()
+                probation_status = EmployeeStatus.objects.filter(status_type__iexact='PROBATION').first()
                 remaining_days = (contract_config.onboarding_days + contract_config.probation_days) - days_since_start
                 return probation_status, f"Probation period ({remaining_days} days remaining)"
             
             else:
                 # Active olmalıdır
-                active_status = EmployeeStatus.objects.filter(status_type='ACTIVE').first()
+                active_status = EmployeeStatus.objects.filter(status_type__iexact='ACTIVE').first()
                 return active_status, "Onboarding and probation completed"
                 
         except Exception as e:
@@ -451,7 +451,7 @@ class StatusAutomationRules:
         """Apply onboarding to probation rule"""
         count = 0
         onboarding_employees = Employee.objects.filter(
-            status__status_type='ONBOARDING',
+            status__status_type__iexact='ONBOARDING',
             is_deleted=False
         )
         
@@ -468,7 +468,7 @@ class StatusAutomationRules:
         """Apply probation to active rule"""
         count = 0
         probation_employees = Employee.objects.filter(
-            status__status_type='PROBATION',
+            status__status_type__iexact='PROBATION',
             is_deleted=False
         )
         
@@ -492,7 +492,7 @@ class StatusAutomationRules:
             is_deleted=False
         )
         
-        inactive_status = EmployeeStatus.objects.filter(status_type='INACTIVE').first()
+        inactive_status = EmployeeStatus.objects.filter(status_type__iexact='INACTIVE').first()
         
         if inactive_status:
             for employee in expired_contracts:
