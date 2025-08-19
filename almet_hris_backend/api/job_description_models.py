@@ -1,4 +1,4 @@
-# api/job_description_models.py - FIXED: Key permission methods
+# api/job_description_models.py - UPDATED: Automatic manager assignment and optional employee
 
 from django.db import models
 from django.contrib.auth.models import User
@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 class JobDescription(models.Model):
-    """Main Job Description model with FIXED permission methods"""
+    """UPDATED: Job Description model with automatic manager assignment"""
     
     # Primary fields
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -35,6 +35,14 @@ class JobDescription(models.Model):
         blank=True,
         verbose_name="Unit"
     )
+    
+    # ADDED: Job Function field
+    job_function = models.ForeignKey(
+        'JobFunction',
+        on_delete=models.CASCADE,
+        verbose_name="Job Function"
+    )
+    
     position_group = models.ForeignKey(
         'PositionGroup', 
         on_delete=models.CASCADE,
@@ -45,37 +53,38 @@ class JobDescription(models.Model):
         help_text="Grading level from position group"
     )
     
-    # Reports to (Manager/Supervisor - Employee from existing system)
+    # UPDATED: Employee this job description is for (NOW OPTIONAL)
+    assigned_employee = models.ForeignKey(
+        'Employee',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,  # Made optional
+        related_name='assigned_job_descriptions',
+        verbose_name="Assigned Employee"
+    )
+    
+    # UPDATED: Manual employee info (when no existing employee)
+    manual_employee_name = models.CharField(
+        max_length=200,
+        blank=True,
+        verbose_name="Employee Name (for vacant positions)"
+    )
+
+    manual_employee_phone = models.CharField(
+        max_length=50,
+        blank=True,
+        verbose_name="Employee Phone (for vacant positions)"
+    )
+    
+    # UPDATED: Reports to (Manager/Supervisor - AUTOMATICALLY ASSIGNED)
     reports_to = models.ForeignKey(
         'Employee', 
         on_delete=models.SET_NULL, 
         null=True, 
         blank=True,
         related_name='subordinate_job_descriptions',
-        verbose_name="Reports To (Manager)"
-    )
-    
-    # Employee this job description is for (can be existing employee or manual entry)
-    assigned_employee = models.ForeignKey(
-        'Employee',
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='assigned_job_descriptions',
-        verbose_name="Assigned Employee"
-    )
-    
-    # Manual employee info (when no existing employee)
-    manual_employee_name = models.CharField(
-        max_length=200,
-        blank=True,
-        verbose_name="Employee Name (Manual)"
-    )
-
-    manual_employee_phone = models.CharField(
-        max_length=50,
-        blank=True,
-        verbose_name="Employee Phone (Manual)"
+        verbose_name="Reports To (Auto-assigned from Employee's Manager)",
+        help_text="Automatically assigned based on selected employee's line manager"
     )
     
     # Job details
@@ -166,7 +175,20 @@ class JobDescription(models.Model):
         ]
     
     def __str__(self):
-        return f"{self.job_title} - {self.department.name} ({self.status})"
+        employee_info = self.get_employee_info()
+        employee_name = employee_info['name'] if employee_info else 'Vacant Position'
+        return f"{self.job_title} - {employee_name} ({self.status})"
+    
+    def save(self, *args, **kwargs):
+        """UPDATED: Auto-assign reports_to from employee's line_manager"""
+        if self.assigned_employee and self.assigned_employee.line_manager:
+            self.reports_to = self.assigned_employee.line_manager
+            logger.info(f"Auto-assigned reports_to: {self.reports_to.full_name} for JD {self.job_title}")
+        elif not self.assigned_employee:
+            # For vacant positions, reports_to can be manually set or left empty
+            logger.info(f"No employee assigned for JD {self.job_title}, reports_to not auto-assigned")
+        
+        super().save(*args, **kwargs)
     
     def get_status_display_with_color(self):
         """Get status with color coding"""
@@ -184,7 +206,7 @@ class JobDescription(models.Model):
         }
     
     def can_be_approved_by_line_manager(self, user):
-        """FIXED: Check if user can approve as line manager"""
+        """UPDATED: Check if user can approve as line manager - NO ROLE RESTRICTION"""
         try:
             logger.info(f"Checking line manager approval for user {user.username} on JD {self.id}")
             logger.info(f"JD status: {self.status}")
@@ -200,7 +222,7 @@ class JobDescription(models.Model):
                 logger.info("No reports_to manager set")
                 return False
             
-            # FIXED: Check if the user is linked to the reports_to employee
+            # Check if the user is linked to the reports_to employee
             if not hasattr(self.reports_to, 'user') or not self.reports_to.user:
                 logger.info(f"Reports_to employee {self.reports_to.employee_id} has no linked user")
                 return False
@@ -208,7 +230,6 @@ class JobDescription(models.Model):
             # Check if user matches
             is_manager = self.reports_to.user == user
             logger.info(f"User {user.username} is manager: {is_manager}")
-            logger.info(f"Manager user: {self.reports_to.user.username if self.reports_to.user else 'None'}")
             
             return is_manager
             
@@ -217,7 +238,7 @@ class JobDescription(models.Model):
             return False
 
     def can_be_approved_by_employee(self, user):
-        """FIXED: Check if user can approve as employee"""
+        """UPDATED: Check if user can approve as employee - NO ROLE RESTRICTION"""
         try:
             logger.info(f"Checking employee approval for user {user.username} on JD {self.id}")
             logger.info(f"JD status: {self.status}")
@@ -230,10 +251,10 @@ class JobDescription(models.Model):
             
             # Check if there's an assigned employee
             if not self.assigned_employee:
-                logger.info("No assigned employee")
+                logger.info("No assigned employee - cannot approve")
                 return False
             
-            # FIXED: Check if the user is linked to the assigned employee
+            # Check if the user is linked to the assigned employee
             if not hasattr(self.assigned_employee, 'user') or not self.assigned_employee.user:
                 logger.info(f"Assigned employee {self.assigned_employee.employee_id} has no linked user")
                 return False
@@ -241,7 +262,6 @@ class JobDescription(models.Model):
             # Check if user matches
             is_employee = self.assigned_employee.user == user
             logger.info(f"User {user.username} is assigned employee: {is_employee}")
-            logger.info(f"Employee user: {self.assigned_employee.user.username if self.assigned_employee.user else 'None'}")
             
             return is_employee
             
@@ -250,7 +270,7 @@ class JobDescription(models.Model):
             return False
     
     def get_employee_info(self):
-        """Get employee information (existing or manual)"""
+        """UPDATED: Get employee information (existing or manual)"""
         if self.assigned_employee:
             return {
                 'type': 'existing',
@@ -265,7 +285,12 @@ class JobDescription(models.Model):
                 'name': self.manual_employee_name,
                 'phone': self.manual_employee_phone
             }
-        return None
+        else:
+            return {
+                'type': 'vacant',
+                'name': 'Vacant Position',
+                'phone': 'N/A'
+            }
     
     def get_manager_info(self):
         """Get manager information"""
@@ -279,7 +304,7 @@ class JobDescription(models.Model):
         return None
     
     def approve_by_line_manager(self, user, comments="", signature=None):
-        """FIXED: Approve by line manager with better error handling"""
+        """Approve by line manager with better error handling"""
         try:
             logger.info(f"Line manager approval attempt by {user.username} for JD {self.id}")
             
@@ -294,8 +319,14 @@ class JobDescription(models.Model):
             if signature:
                 self.line_manager_signature = signature
             
-            # Move to employee approval
-            self.status = 'PENDING_EMPLOYEE'
+            # UPDATED: Move to appropriate next status
+            if self.assigned_employee:
+                # If there's an assigned employee, move to employee approval
+                self.status = 'PENDING_EMPLOYEE'
+            else:
+                # If it's a vacant position, directly approve
+                self.status = 'APPROVED'
+            
             self.save()
             
             logger.info(f"Line manager approval successful for JD {self.id}")
@@ -305,7 +336,7 @@ class JobDescription(models.Model):
             raise
     
     def approve_by_employee(self, user, comments="", signature=None):
-        """FIXED: Approve by employee with better error handling"""
+        """Approve by employee with better error handling"""
         try:
             logger.info(f"Employee approval attempt by {user.username} for JD {self.id}")
             
@@ -331,7 +362,7 @@ class JobDescription(models.Model):
             raise
     
     def reject(self, user, reason):
-        """FIXED: Reject job description with better error handling"""
+        """Reject job description with better error handling"""
         try:
             logger.info(f"Rejection attempt by {user.username} for JD {self.id}")
             
@@ -351,7 +382,7 @@ class JobDescription(models.Model):
             raise
     
     def request_revision(self, user, reason):
-        """FIXED: Request revision with better error handling"""
+        """Request revision with better error handling"""
         try:
             logger.info(f"Revision request by {user.username} for JD {self.id}")
             
@@ -369,7 +400,6 @@ class JobDescription(models.Model):
         except Exception as e:
             logger.error(f"Error in request_revision: {e}")
             raise
-
 
 
 # Keep all other models the same as in the original file...
@@ -479,14 +509,14 @@ class JobBusinessResource(models.Model):
     
     name = models.CharField(max_length=200, unique=True)
     description = models.TextField(blank=True)
-    category = models.CharField(max_length=100, blank=True)
+
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
     
     class Meta:
         db_table = 'job_business_resources'
-        ordering = ['category', 'name']
+        ordering = ['description', 'name']
     
     def __str__(self):
         return self.name
@@ -497,7 +527,7 @@ class AccessMatrix(models.Model):
     
     name = models.CharField(max_length=200, unique=True)
     description = models.TextField(blank=True)
-    access_level = models.CharField(max_length=50)
+
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
@@ -505,10 +535,10 @@ class AccessMatrix(models.Model):
     class Meta:
         db_table = 'access_matrix'
         verbose_name_plural = 'Access Matrix'
-        ordering = ['access_level', 'name']
+        ordering = [ 'name','description']
     
     def __str__(self):
-        return f"{self.name} ({self.access_level})"
+        return f"{self.name} "
 
 
 class CompanyBenefit(models.Model):
@@ -516,14 +546,14 @@ class CompanyBenefit(models.Model):
     
     name = models.CharField(max_length=200, unique=True)
     description = models.TextField(blank=True)
-    benefit_type = models.CharField(max_length=100)
+   
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
     
     class Meta:
         db_table = 'company_benefits'
-        ordering = ['benefit_type', 'name']
+        ordering = ['description', 'name']
     
     def __str__(self):
         return self.name

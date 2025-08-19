@@ -1,4 +1,4 @@
-# api/job_description_serializers.py
+# api/job_description_serializers.py - UPDATED: Auto manager assignment and optional employee
 
 from rest_framework import serializers
 from .job_description_models import (
@@ -7,12 +7,12 @@ from .job_description_models import (
     CompanyBenefit, JobDescriptionBusinessResource, JobDescriptionAccessMatrix,
     JobDescriptionCompanyBenefit, JobDescriptionActivity
 )
-from .models import BusinessFunction, Department, Unit, PositionGroup, Employee
+from .models import BusinessFunction, Department, Unit, PositionGroup, Employee, JobFunction
 from .competency_models import Skill, BehavioralCompetency
 from django.contrib.auth.models import User
 
 
-# Base serializers for related models
+# Base serializers for related models (keep same as before)
 class BusinessFunctionBasicSerializer(serializers.ModelSerializer):
     class Meta:
         model = BusinessFunction
@@ -44,16 +44,23 @@ class PositionGroupBasicSerializer(serializers.ModelSerializer):
 class EmployeeBasicSerializer(serializers.ModelSerializer):
     class Meta:
         model = Employee
-        fields = ['id', 'employee_id', 'full_name', 'job_title', ]
+        fields = ['id', 'employee_id', 'full_name', 'job_title']
+
+
+# ADDED: Job Function serializer
+class JobFunctionBasicSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = JobFunction
+        fields = ['id', 'name']
 
 
 class UserBasicSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ['id', 'username', 'first_name', 'last_name',]
+        fields = ['id', 'username', 'first_name', 'last_name']
 
 
-# Competency serializers
+# Competency serializers (keep same as before)
 class SkillBasicSerializer(serializers.ModelSerializer):
     group_name = serializers.CharField(source='group.name', read_only=True)
     
@@ -70,14 +77,14 @@ class BehavioralCompetencyBasicSerializer(serializers.ModelSerializer):
         fields = ['id', 'name', 'group_name']
 
 
-# Extra table serializers
+# Extra table serializers (keep same as before)
 class JobBusinessResourceSerializer(serializers.ModelSerializer):
     created_by_name = serializers.CharField(source='created_by.get_full_name', read_only=True)
     
     class Meta:
         model = JobBusinessResource
         fields = [
-            'id', 'name', 'description', 'category', 'is_active',
+            'id', 'name', 'description',  'is_active',
             'created_at', 'created_by', 'created_by_name'
         ]
         read_only_fields = ['created_at', 'created_by']
@@ -89,7 +96,7 @@ class AccessMatrixSerializer(serializers.ModelSerializer):
     class Meta:
         model = AccessMatrix
         fields = [
-            'id', 'name', 'description', 'access_level', 'is_active',
+            'id', 'name', 'description', 'is_active',
             'created_at', 'created_by', 'created_by_name'
         ]
         read_only_fields = ['created_at', 'created_by']
@@ -101,13 +108,13 @@ class CompanyBenefitSerializer(serializers.ModelSerializer):
     class Meta:
         model = CompanyBenefit
         fields = [
-            'id', 'name', 'description', 'benefit_type', 'is_active',
+            'id', 'name', 'description',  'is_active',
             'created_at', 'created_by', 'created_by_name'
         ]
         read_only_fields = ['created_at', 'created_by']
 
 
-# Job Description component serializers
+# Job Description component serializers (keep same as before)
 class JobDescriptionSectionSerializer(serializers.ModelSerializer):
     class Meta:
         model = JobDescriptionSection
@@ -165,13 +172,14 @@ class JobDescriptionActivitySerializer(serializers.ModelSerializer):
         ]
 
 
-# Main Job Description serializers
+# UPDATED: Main Job Description serializers
 class JobDescriptionListSerializer(serializers.ModelSerializer):
-    """Serializer for job description list view"""
+    """UPDATED: Serializer for job description list view"""
     
     business_function_name = serializers.CharField(source='business_function.name', read_only=True)
     department_name = serializers.CharField(source='department.name', read_only=True)
     unit_name = serializers.CharField(source='unit.name', read_only=True)
+    job_function_name = serializers.CharField(source='job_function.name', read_only=True)  # ADDED
     position_group_name = serializers.CharField(source='position_group.get_name_display', read_only=True)
     reports_to_name = serializers.CharField(source='reports_to.full_name', read_only=True)
     employee_info = serializers.SerializerMethodField()
@@ -183,7 +191,7 @@ class JobDescriptionListSerializer(serializers.ModelSerializer):
         model = JobDescription
         fields = [
             'id', 'job_title', 'business_function_name', 'department_name',
-            'unit_name', 'position_group_name', 'grading_level', 'reports_to_name',
+            'unit_name', 'job_function_name', 'position_group_name', 'grading_level', 'reports_to_name',
             'employee_info', 'manager_info', 'status', 'status_display', 'version', 'is_active',
             'created_at', 'created_by_name'
         ]
@@ -194,27 +202,18 @@ class JobDescriptionListSerializer(serializers.ModelSerializer):
     def get_employee_info(self, obj):
         return obj.get_employee_info()
     
-    def get_can_approve_as_employee(self, obj):
-        request = self.context.get('request')
-        if not request or not request.user.is_authenticated:
-            return False
-        
-        return obj.can_be_approved_by_employee(request.user)
-    
-    def get_employee_info(self, obj):
-        return obj.get_employee_info()
-    
     def get_manager_info(self, obj):
         return obj.get_manager_info()
 
 
 class JobDescriptionDetailSerializer(serializers.ModelSerializer):
-    """Serializer for job description detail view"""
+    """UPDATED: Serializer for job description detail view"""
     
     # Related object details
     business_function = BusinessFunctionBasicSerializer(read_only=True)
     department = DepartmentBasicSerializer(read_only=True)
     unit = UnitBasicSerializer(read_only=True)
+    job_function = JobFunctionBasicSerializer(read_only=True)  # ADDED
     position_group = PositionGroupBasicSerializer(read_only=True)
     reports_to = EmployeeBasicSerializer(read_only=True)
     assigned_employee = EmployeeBasicSerializer(read_only=True)
@@ -256,7 +255,7 @@ class JobDescriptionDetailSerializer(serializers.ModelSerializer):
             'id', 'job_title', 'job_purpose', 'grading_level', 'version', 'is_active',
             
             # Organizational structure
-            'business_function', 'department', 'unit', 'position_group', 'reports_to',
+            'business_function', 'department', 'unit', 'job_function', 'position_group', 'reports_to',
             
             # Employee assignment (existing or manual)
             'assigned_employee', 'manual_employee_name', 'manual_employee_phone',
@@ -329,8 +328,9 @@ class JobDescriptionDetailSerializer(serializers.ModelSerializer):
     def get_manager_info(self, obj):
         return obj.get_manager_info()
 
+
 class JobDescriptionCreateUpdateSerializer(serializers.ModelSerializer):
-    """Serializer for creating and updating job descriptions"""
+    """UPDATED: Serializer for creating and updating job descriptions"""
     
     # Nested data for creation
     sections = JobDescriptionSectionSerializer(many=True, required=False)
@@ -366,12 +366,12 @@ class JobDescriptionCreateUpdateSerializer(serializers.ModelSerializer):
         model = JobDescription
         fields = [
             'id', 'job_title', 'job_purpose', 'business_function', 'department',
-            'unit', 'position_group', 'grading_level', 'reports_to',
-            'assigned_employee', 'manual_employee_name',  'manual_employee_phone',
+            'unit', 'job_function', 'position_group', 'grading_level', 'reports_to',
+            'assigned_employee', 'manual_employee_name', 'manual_employee_phone',
             'sections', 'required_skills_data', 'behavioral_competencies_data',
             'business_resources_ids', 'access_rights_ids', 'company_benefits_ids'
         ]
-        read_only_fields = ['id']
+        read_only_fields = ['id', 'reports_to']  # reports_to is auto-assigned
     
     def validate_grading_level(self, value):
         """Validate grading level against position group"""
@@ -399,29 +399,6 @@ class JobDescriptionCreateUpdateSerializer(serializers.ModelSerializer):
                 )
         return value
     
-    def validate(self, attrs):
-        """Validate employee assignment - either existing employee or manual entry"""
-        assigned_employee = attrs.get('assigned_employee')
-        manual_employee_name = attrs.get('manual_employee_name')
-        
-        if not assigned_employee and not manual_employee_name:
-            raise serializers.ValidationError(
-                "Either assign an existing employee or provide manual employee information"
-            )
-        
-        if assigned_employee and manual_employee_name:
-            raise serializers.ValidationError(
-                "Cannot assign both existing employee and manual employee information"
-            )
-        
-        # If manual employee, name is required
-        if manual_employee_name and not manual_employee_name.strip():
-            raise serializers.ValidationError(
-                "Manual employee name is required when not assigning existing employee"
-            )
-        
-        return attrs
-    
     def validate_unit(self, value):
         """Validate unit belongs to department"""
         department_id = self.initial_data.get('department')
@@ -432,8 +409,21 @@ class JobDescriptionCreateUpdateSerializer(serializers.ModelSerializer):
                 )
         return value
     
+    def validate(self, attrs):
+        """UPDATED: Validate employee assignment - now completely optional"""
+        assigned_employee = attrs.get('assigned_employee')
+        manual_employee_name = attrs.get('manual_employee_name')
+        
+        # Both can be empty for vacant positions
+        if assigned_employee and manual_employee_name:
+            raise serializers.ValidationError(
+                "Cannot assign both existing employee and manual employee information"
+            )
+        
+        return attrs
+    
     def create(self, validated_data):
-        """Create job description with all related components"""
+        """UPDATED: Create job description with automatic manager assignment"""
         from django.db import transaction
         
         # Extract nested data
@@ -445,7 +435,7 @@ class JobDescriptionCreateUpdateSerializer(serializers.ModelSerializer):
         company_benefits_ids = validated_data.pop('company_benefits_ids', [])
         
         with transaction.atomic():
-            # Create main job description
+            # Create main job description (reports_to will be auto-assigned in save method)
             job_description = JobDescription.objects.create(**validated_data)
             
             # Create sections
@@ -495,22 +485,33 @@ class JobDescriptionCreateUpdateSerializer(serializers.ModelSerializer):
                 )
             
             # Log creation activity
+            employee_info = job_description.get_employee_info()
+            description = f"Job description created for {job_description.job_title}"
+            if employee_info['type'] == 'existing':
+                description += f" - {employee_info['name']}"
+            elif employee_info['type'] == 'manual':
+                description += f" - {employee_info['name']}"
+            else:
+                description += " - Vacant Position"
+            
             JobDescriptionActivity.objects.create(
                 job_description=job_description,
                 activity_type='CREATED',
-                description=f"Job description created for {job_description.job_title}",
+                description=description,
                 performed_by=self.context['request'].user,
                 metadata={
                     'sections_count': len(sections_data),
                     'skills_count': len(skills_data),
-                    'competencies_count': len(competencies_data)
+                    'competencies_count': len(competencies_data),
+                    'employee_type': employee_info['type'],
+                    'auto_assigned_manager': job_description.reports_to.full_name if job_description.reports_to else None
                 }
             )
             
             return job_description
     
     def update(self, instance, validated_data):
-        """Update job description with all related components"""
+        """UPDATED: Update job description with automatic manager reassignment"""
         from django.db import transaction
         
         # Extract nested data
@@ -522,12 +523,20 @@ class JobDescriptionCreateUpdateSerializer(serializers.ModelSerializer):
         company_benefits_ids = validated_data.pop('company_benefits_ids', None)
         
         with transaction.atomic():
+            # Track if employee assignment changed
+            old_employee = instance.assigned_employee
+            old_manager = instance.reports_to
+            
             # Update main fields
             for attr, value in validated_data.items():
                 setattr(instance, attr, value)
             
             instance.updated_by = self.context['request'].user
-            instance.save()
+            instance.save()  # This will trigger auto-assignment of reports_to
+            
+            # Check if manager was auto-reassigned
+            new_manager = instance.reports_to
+            manager_changed = old_manager != new_manager
             
             # Update sections if provided
             if sections_data is not None:
@@ -587,19 +596,31 @@ class JobDescriptionCreateUpdateSerializer(serializers.ModelSerializer):
                         benefit_id=benefit_id
                     )
             
-            # Log update activity
+            # Log update activity with manager change info
+            updated_fields = list(validated_data.keys())
+            description = f"Job description updated for {instance.job_title}"
+            
+            metadata = {'updated_fields': updated_fields}
+            if manager_changed:
+                old_manager_name = old_manager.full_name if old_manager else 'None'
+                new_manager_name = new_manager.full_name if new_manager else 'None'
+                description += f" - Manager auto-reassigned from {old_manager_name} to {new_manager_name}"
+                metadata['manager_auto_reassigned'] = True
+                metadata['old_manager'] = old_manager_name
+                metadata['new_manager'] = new_manager_name
+            
             JobDescriptionActivity.objects.create(
                 job_description=instance,
                 activity_type='UPDATED',
-                description=f"Job description updated for {instance.job_title}",
+                description=description,
                 performed_by=self.context['request'].user,
-                metadata={'updated_fields': list(validated_data.keys())}
+                metadata=metadata
             )
             
             return instance
 
 
-# Approval serializers
+# Approval serializers (keep same as before)
 class JobDescriptionApprovalSerializer(serializers.Serializer):
     """Serializer for approval actions"""
     
@@ -636,65 +657,9 @@ class JobDescriptionSubmissionSerializer(serializers.Serializer):
     comments = serializers.CharField(required=False, allow_blank=True)
 
 
-# Bulk operation serializers
-class BulkJobDescriptionStatusUpdateSerializer(serializers.Serializer):
-    """Serializer for bulk status updates"""
-    
-    job_description_ids = serializers.ListField(
-        child=serializers.UUIDField(),
-        min_length=1
-    )
-    action = serializers.ChoiceField(choices=[
-        ('submit_for_approval', 'Submit for Approval'),
-        ('withdraw', 'Withdraw from Approval'),
-        ('archive', 'Archive'),
-        ('activate', 'Activate')
-    ])
-    comments = serializers.CharField(required=False, allow_blank=True)
-
-
-# Statistics serializers
-class JobDescriptionStatsSerializer(serializers.Serializer):
-    """Serializer for job description statistics"""
-    
-    total_job_descriptions = serializers.IntegerField()
-    by_status = serializers.DictField()
-    by_department = serializers.DictField()
-    by_position_group = serializers.DictField()
-    pending_approvals = serializers.IntegerField()
-    recent_activities = serializers.ListField()
-    approval_workflow_stats = serializers.DictField()
-
-
-# Filter serializers
-class JobDescriptionFilterSerializer(serializers.Serializer):
-    """Serializer for advanced filtering"""
-    
-    search = serializers.CharField(required=False)
-    business_function = serializers.ListField(
-        child=serializers.IntegerField(),
-        required=False
-    )
-    department = serializers.ListField(
-        child=serializers.IntegerField(),
-        required=False
-    )
-    status = serializers.ListField(
-        child=serializers.CharField(),
-        required=False
-    )
-    position_group = serializers.ListField(
-        child=serializers.IntegerField(),
-        required=False
-    )
-    created_date_from = serializers.DateField(required=False)
-    created_date_to = serializers.DateField(required=False)
-    pending_approval_for_user = serializers.BooleanField(required=False)
-
-
-# Export serializers
+# Export serializers (keep same as before)
 class JobDescriptionExportSerializer(serializers.Serializer):
-    """FIXED: Serializer for export functionality with proper UUID handling"""
+    """Serializer for export functionality with proper UUID handling"""
     
     job_description_ids = serializers.ListField(
         child=serializers.UUIDField(),
@@ -717,46 +682,3 @@ class JobDescriptionExportSerializer(serializers.Serializer):
             if existing_count != len(value):
                 raise serializers.ValidationError("Some job description IDs do not exist")
         return value
-    
-    
-    # job_description_serializers.py - ADD THESE SERIALIZERS
-
-class JobDescriptionSubmissionSerializer(serializers.Serializer):
-    """Serializer for submitting job description for approval"""
-    
-    submit_to_line_manager = serializers.BooleanField(default=True)
-    comments = serializers.CharField(required=False, allow_blank=True)
-
-
-class JobDescriptionApprovalSerializer(serializers.Serializer):
-    """Serializer for approval actions"""
-    
-    comments = serializers.CharField(required=False, allow_blank=True)
-    signature = serializers.FileField(required=False, allow_null=True)
-    
-    def validate_signature(self, value):
-        """Validate signature file"""
-        if value:
-            # Check file size (max 5MB)
-            if value.size > 5 * 1024 * 1024:
-                raise serializers.ValidationError("Signature file must be less than 5MB")
-            
-            # Check file type
-            allowed_types = ['image/png', 'image/jpeg', 'image/jpg', 'application/pdf']
-            if value.content_type not in allowed_types:
-                raise serializers.ValidationError(
-                    "Invalid file type. Allowed types: PNG, JPEG, PDF"
-                )
-        
-        return value
-
-
-class JobDescriptionRejectionSerializer(serializers.Serializer):
-    """Serializer for rejection actions"""
-    
-    reason = serializers.CharField(required=True, min_length=10)
-    
-    def validate_reason(self, value):
-        if len(value.strip()) < 10:
-            raise serializers.ValidationError("Rejection reason must be at least 10 characters long")
-        return value.strip()

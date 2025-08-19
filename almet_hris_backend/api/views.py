@@ -35,6 +35,8 @@ from .models import (
     EmployeeActivity, VacantPosition, ContractTypeConfig,
     ContractStatusManager
 )
+
+
 from .serializers import (
     EmployeeListSerializer, EmployeeDetailSerializer, EmployeeCreateUpdateSerializer,
     BusinessFunctionSerializer, DepartmentSerializer, UnitSerializer,
@@ -48,7 +50,7 @@ from .serializers import (
     ContractTypeConfigSerializer, BulkContractExtensionSerializer, ContractExtensionSerializer,
     SingleEmployeeTagUpdateSerializer, SingleLineManagerAssignmentSerializer,
     BulkEmployeeTagUpdateSerializer, BulkSoftDeleteSerializer, BulkRestoreSerializer,
-    BulkLineManagerAssignmentSerializer,VacancyToEmployeeConversionSerializer
+    BulkLineManagerAssignmentSerializer,VacancyToEmployeeConversionSerializer,EmployeeJobDescriptionSerializer,ManagerJobDescriptionSerializer
 )
 from .auth import MicrosoftTokenValidator
 from drf_yasg.inspectors import SwaggerAutoSchema
@@ -378,6 +380,7 @@ class ComprehensiveEmployeeFilter:
                 Q(business_function__name__icontains=search) |
                 Q(department__name__icontains=search) |
                 Q(father_name__icontains=search) |
+                Q(job_function__name__icontains=search) | 
                 Q(phone__icontains=search)
             )
         
@@ -814,6 +817,7 @@ class UnitViewSet(viewsets.ModelViewSet):
     ordering = ['department__business_function__code']
 
 class JobFunctionViewSet(viewsets.ModelViewSet):
+    """UPDATED: Employee count əlavə olundu"""
     queryset = JobFunction.objects.all()
     serializer_class = JobFunctionSerializer
     permission_classes = [IsAuthenticated]
@@ -821,6 +825,7 @@ class JobFunctionViewSet(viewsets.ModelViewSet):
     filterset_fields = ['is_active']
     search_fields = ['name']
     ordering = ['name']
+
 
 class PositionGroupViewSet(viewsets.ModelViewSet):
     queryset = PositionGroup.objects.all()
@@ -2767,17 +2772,16 @@ class EmployeeViewSet(viewsets.ModelViewSet):
     
     @action(detail=True, methods=['get'])
     def job_descriptions(self, request, pk=None):
-        """Get job descriptions for employee"""
+        """UPDATED: Get job descriptions for employee"""
         employee = self.get_object()
         
         # Job descriptions assigned to this employee
         assigned_job_descriptions = JobDescription.objects.filter(
             assigned_employee=employee
         ).select_related(
-            'business_function', 'department', 'position_group', 'reports_to', 'created_by'
+            'business_function', 'department', 'job_function', 'position_group', 'reports_to', 'created_by'
         ).order_by('-created_at')
         
-        from .serializers import EmployeeJobDescriptionSerializer
         serializer = EmployeeJobDescriptionSerializer(
             assigned_job_descriptions, 
             many=True, 
@@ -2800,17 +2804,16 @@ class EmployeeViewSet(viewsets.ModelViewSet):
     
     @action(detail=True, methods=['get'])
     def team_job_descriptions(self, request, pk=None):
-        """Get job descriptions for manager's direct reports"""
+        """UPDATED: Get job descriptions for manager's direct reports"""
         manager = self.get_object()
         
         # Job descriptions where this employee is the reports_to manager
         team_job_descriptions = JobDescription.objects.filter(
             reports_to=manager
         ).select_related(
-            'assigned_employee', 'business_function', 'department', 'created_by'
+            'assigned_employee', 'business_function', 'department', 'job_function', 'created_by'
         ).order_by('-created_at')
         
-        from .serializers import ManagerJobDescriptionSerializer
         serializer = ManagerJobDescriptionSerializer(
             team_job_descriptions, 
             many=True, 
@@ -2836,260 +2839,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             ).count()
         })
     
-    @swagger_auto_schema(
-        method='post',
-        operation_description="Approve job description as line manager from employee detail",
-        request_body=openapi.Schema(
-            type=openapi.TYPE_OBJECT,
-            required=['job_description_id'],
-            properties={
-                'job_description_id': openapi.Schema(type=openapi.TYPE_STRING, format='uuid'),
-                'comments': openapi.Schema(type=openapi.TYPE_STRING),
-                'signature': openapi.Schema(type=openapi.TYPE_FILE)
-            }
-        ),
-        responses={200: "Job description approved successfully"}
-    )
-    @action(detail=True, methods=['post'])
-    def approve_team_job_description(self, request, pk=None):
-        """Approve team member's job description as line manager"""
-        manager = self.get_object()
-        job_description_id = request.data.get('job_description_id')
-        
-        if not job_description_id:
-            return Response(
-                {'error': 'job_description_id is required'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        try:
-            job_description = JobDescription.objects.get(
-                id=job_description_id,
-                reports_to=manager
-            )
-            
-            if not job_description.can_be_approved_by_line_manager(request.user):
-                return Response(
-                    {'error': 'You cannot approve this job description'},
-                    status=status.HTTP_403_FORBIDDEN
-                )
-            
-            # Approve the job description
-            comments = request.data.get('comments', '')
-            signature = request.FILES.get('signature')
-            
-            with transaction.atomic():
-                job_description.approve_by_line_manager(
-                    user=request.user,
-                    comments=comments,
-                    signature=signature
-                )
-                
-                # Log activity
-                JobDescriptionActivity.objects.create(
-                    job_description=job_description,
-                    activity_type='APPROVED_BY_LINE_MANAGER',
-                    description=f"Approved by line manager from employee detail: {request.user.get_full_name()}",
-                    performed_by=request.user,
-                    metadata={
-                        'approved_from': 'employee_detail_page',
-                        'manager_employee_id': manager.employee_id,
-                        'comments': comments
-                    }
-                )
-            
-            return Response({
-                'success': True,
-                'message': f'Job description approved for {job_description.get_employee_info()["name"]}',
-                'job_description_id': str(job_description.id),
-                'status': job_description.get_status_display(),
-                'next_step': 'Waiting for employee approval'
-            })
-            
-        except JobDescription.DoesNotExist:
-            return Response(
-                {'error': 'Job description not found'},
-                status=status.HTTP_404_NOT_FOUND
-            )
-        except Exception as e:
-            logger.error(f"Error approving job description: {str(e)}")
-            return Response(
-                {'error': f'Failed to approve job description: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-    
-    @swagger_auto_schema(
-        method='post',
-        operation_description="Approve own job description as employee",
-        request_body=openapi.Schema(
-            type=openapi.TYPE_OBJECT,
-            required=['job_description_id'],
-            properties={
-                'job_description_id': openapi.Schema(type=openapi.TYPE_STRING, format='uuid'),
-                'comments': openapi.Schema(type=openapi.TYPE_STRING),
-                'signature': openapi.Schema(type=openapi.TYPE_FILE)
-            }
-        ),
-        responses={200: "Job description approved successfully"}
-    )
-    @action(detail=True, methods=['post'])
-    def approve_my_job_description(self, request, pk=None):
-        """Approve own job description as employee"""
-        employee = self.get_object()
-        job_description_id = request.data.get('job_description_id')
-        
-        if not job_description_id:
-            return Response(
-                {'error': 'job_description_id is required'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        try:
-            job_description = JobDescription.objects.get(
-                id=job_description_id,
-                assigned_employee=employee
-            )
-            
-            if not job_description.can_be_approved_by_employee(request.user):
-                return Response(
-                    {'error': 'You cannot approve this job description'},
-                    status=status.HTTP_403_FORBIDDEN
-                )
-            
-            # Approve the job description
-            comments = request.data.get('comments', '')
-            signature = request.FILES.get('signature')
-            
-            with transaction.atomic():
-                job_description.approve_by_employee(
-                    user=request.user,
-                    comments=comments,
-                    signature=signature
-                )
-                
-                # Log activity
-                JobDescriptionActivity.objects.create(
-                    job_description=job_description,
-                    activity_type='APPROVED_BY_EMPLOYEE',
-                    description=f"Approved by employee from employee detail: {request.user.get_full_name()}",
-                    performed_by=request.user,
-                    metadata={
-                        'approved_from': 'employee_detail_page',
-                        'employee_employee_id': employee.employee_id,
-                        'comments': comments
-                    }
-                )
-            
-            return Response({
-                'success': True,
-                'message': 'Job description approved successfully',
-                'job_description_id': str(job_description.id),
-                'status': job_description.get_status_display(),
-                'completion': 'Job description approval process completed'
-            })
-            
-        except JobDescription.DoesNotExist:
-            return Response(
-                {'error': 'Job description not found'},
-                status=status.HTTP_404_NOT_FOUND
-            )
-        except Exception as e:
-            logger.error(f"Error approving job description: {str(e)}")
-            return Response(
-                {'error': f'Failed to approve job description: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-    
-    @swagger_auto_schema(
-        method='post',
-        operation_description="Reject job description from employee detail",
-        request_body=openapi.Schema(
-            type=openapi.TYPE_OBJECT,
-            required=['job_description_id', 'reason'],
-            properties={
-                'job_description_id': openapi.Schema(type=openapi.TYPE_STRING, format='uuid'),
-                'reason': openapi.Schema(type=openapi.TYPE_STRING, min_length=10)
-            }
-        ),
-        responses={200: "Job description rejected successfully"}
-    )
-    @action(detail=True, methods=['post'])
-    def reject_job_description(self, request, pk=None):
-        """Reject job description from employee detail page"""
-        employee = self.get_object()
-        job_description_id = request.data.get('job_description_id')
-        reason = request.data.get('reason')
-        
-        if not job_description_id:
-            return Response(
-                {'error': 'job_description_id is required'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        if not reason or len(reason.strip()) < 10:
-            return Response(
-                {'error': 'Rejection reason must be at least 10 characters'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        try:
-            # Check if it's employee's own job description or team member's
-            job_description = JobDescription.objects.filter(
-                id=job_description_id
-            ).filter(
-                Q(assigned_employee=employee) | Q(reports_to=employee)
-            ).first()
-            
-            if not job_description:
-                return Response(
-                    {'error': 'Job description not found or not authorized'},
-                    status=status.HTTP_404_NOT_FOUND
-                )
-            
-            # Check permissions
-            can_reject = (
-                job_description.can_be_approved_by_line_manager(request.user) or
-                job_description.can_be_approved_by_employee(request.user)
-            )
-            
-            if not can_reject:
-                return Response(
-                    {'error': 'You are not authorized to reject this job description'},
-                    status=status.HTTP_403_FORBIDDEN
-                )
-            
-            with transaction.atomic():
-                job_description.reject(user=request.user, reason=reason)
-                
-                # Log activity
-                JobDescriptionActivity.objects.create(
-                    job_description=job_description,
-                    activity_type='REJECTED',
-                    description=f"Rejected from employee detail by {request.user.get_full_name()}: {reason}",
-                    performed_by=request.user,
-                    metadata={
-                        'rejected_from': 'employee_detail_page',
-                        'rejection_reason': reason,
-                        'employee_id': employee.employee_id
-                    }
-                )
-            
-            return Response({
-                'success': True,
-                'message': 'Job description rejected successfully',
-                'job_description_id': str(job_description.id),
-                'status': job_description.get_status_display(),
-                'reason': reason
-            })
-            
-        except Exception as e:
-            logger.error(f"Error rejecting job description: {str(e)}")
-            return Response(
-                {'error': f'Failed to reject job description: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-    
-    
+   
     @swagger_auto_schema(
         method='post',
         operation_description="Add tag to single employee",

@@ -220,15 +220,15 @@ class JobDescriptionActivityAdmin(admin.ModelAdmin):
 
 @admin.register(JobBusinessResource)
 class JobBusinessResourceAdmin(admin.ModelAdmin):
-    list_display = ['name', 'category', 'is_active', 'created_at', 'created_by']
-    list_filter = ['category', 'is_active', 'created_at']
-    search_fields = ['name', 'description', 'category']
+    list_display = ['name',  'is_active', 'created_at', 'created_by']
+    list_filter = [ 'is_active', 'created_at']
+    search_fields = ['name', 'description', ]
     autocomplete_fields = ['created_by']
     readonly_fields = ['created_at']
     
     fieldsets = (
         (None, {
-            'fields': ('name', 'description', 'access_level', 'is_active')
+            'fields': ('name', 'description',  'is_active')
         }),
         ('Metadata', {
             'fields': ('created_by', 'created_at'),
@@ -239,15 +239,15 @@ class JobBusinessResourceAdmin(admin.ModelAdmin):
 
 @admin.register(CompanyBenefit)
 class CompanyBenefitAdmin(admin.ModelAdmin):
-    list_display = ['name', 'benefit_type', 'is_active', 'created_at', 'created_by']
-    list_filter = ['benefit_type', 'is_active', 'created_at']
-    search_fields = ['name', 'description', 'benefit_type']
+    list_display = ['name',  'is_active', 'created_at', 'created_by']
+    list_filter = [ 'is_active', 'created_at']
+    search_fields = ['name', 'description', ]
     autocomplete_fields = ['created_by']
     readonly_fields = ['created_at']
     
     fieldsets = (
         (None, {
-            'fields': ('name', 'description', 'benefit_type', 'is_active')
+            'fields': ('name', 'description',  'is_active')
         }),
         ('Metadata', {
             'fields': ('created_by', 'created_at'),
@@ -277,21 +277,21 @@ class JobDescriptionBehavioralCompetencyAdmin(admin.ModelAdmin):
 admin.site.site_header = "ALMET HRIS - Job Description Management"
 admin.site.site_title = "Job Description Admin"
 admin.site.index_title = "Job Description Administration", {
-            'fields': ('name', 'description', 'category', 'is_active')
+            'fields': ('name', 'description',  'is_active')
 }
 
 
 @admin.register(AccessMatrix)
 class AccessMatrixAdmin(admin.ModelAdmin):
-    list_display = ['name', 'access_level', 'is_active', 'created_at', 'created_by']
-    list_filter = ['access_level', 'is_active', 'created_at']
-    search_fields = ['name', 'description', 'access_level']
+    list_display = ['name',  'is_active', 'created_at', 'created_by']
+    list_filter = [ 'is_active', 'created_at']
+    search_fields = ['name', 'description', ]
     autocomplete_fields = ['created_by']
     readonly_fields = ['created_at']
     
     fieldsets = (
         (None, {
-            'fields': ('name', 'description', 'access_level', 'is_active')
+            'fields': ('name', 'description',  'is_active')
         }),
         ('Metadata', {
             'fields': ('created_by', 'created_at'),
