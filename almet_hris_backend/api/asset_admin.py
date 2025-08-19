@@ -54,7 +54,7 @@ class AssetCategoryAdmin(admin.ModelAdmin):
 class AssetAdmin(admin.ModelAdmin):
     list_display = [
         'asset_name', 'category', 'serial_number', 'status_badge', 
-        'assigned_to', 'purchase_price', 'purchase_date', 'current_value_display', 'created_at'
+        'assigned_to', 'purchase_price', 'purchase_date',  'created_at'
     ]
     list_filter = [
         'status', 'category', 'purchase_date', 'created_at', 
@@ -127,32 +127,6 @@ class AssetAdmin(admin.ModelAdmin):
         )
     status_badge.short_description = 'Status'
     
-    def current_value_display(self, obj):
-        depreciation = obj.calculate_depreciation()
-        if depreciation:
-            current_value = depreciation['current_value']
-            percentage = depreciation['depreciation_percentage']
-            return format_html(
-                '{} AZN<br><small>({:.1f}% depreciated)</small>',
-                current_value, percentage
-            )
-        return 'N/A'
-    current_value_display.short_description = 'Current Value'
-    
-    def depreciation_display(self, obj):
-        depreciation = obj.calculate_depreciation()
-        if not depreciation:
-            return 'Cannot calculate depreciation'
-        
-        html = '<div style="line-height: 1.5;">'
-        html += f'<div><strong>Purchase Price:</strong> {depreciation["purchase_price"]} AZN</div>'
-        html += f'<div><strong>Annual Depreciation:</strong> {depreciation["annual_depreciation"]:.2f} AZN</div>'
-        html += f'<div><strong>Years Passed:</strong> {depreciation["years_passed"]}</div>'
-        html += f'<div><strong>Total Depreciation:</strong> {depreciation["total_depreciation"]} AZN ({depreciation["depreciation_percentage"]:.1f}%)</div>'
-        html += f'<div><strong>Current Value:</strong> {depreciation["current_value"]} AZN</div>'
-        html += '</div>'
-        return mark_safe(html)
-    depreciation_display.short_description = 'Depreciation Details'
     
     def assignment_status_display(self, obj):
         current_assignment = obj.get_current_assignment()

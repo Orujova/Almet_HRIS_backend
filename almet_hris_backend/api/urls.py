@@ -25,9 +25,8 @@ from .job_description_views import (
 from .asset_views import (
     AssetCategoryViewSet,
     AssetViewSet,
-    AssetAssignmentViewSet,
-\
-    AssetStatsViewSet
+
+ 
 )
 
 # Create router for viewsets
@@ -79,9 +78,8 @@ router.register(r'job-description/stats', JobDescriptionStatsViewSet, basename='
 # ADDED: Asset Management URLs
 router.register(r'assets/categories', AssetCategoryViewSet, basename='assetcategory')
 router.register(r'assets/assets', AssetViewSet, basename='asset')
-router.register(r'assets/assignments', AssetAssignmentViewSet, basename='assetassignment')
 
-router.register(r'assets/stats', AssetStatsViewSet, basename='assetstats')
+
 
 
 urlpatterns = [
@@ -131,21 +129,11 @@ urlpatterns = [
          AssetViewSet.as_view({'post': 'export_assets'}), 
          name='asset-export'),
     
-    # Asset Assignment specific endpoints
-    path('assets/assignments/active/', 
-         AssetAssignmentViewSet.as_view({'get': 'active_assignments'}), 
-         name='asset-assignments-active'),
+
     
 
     
-    # Asset Statistics endpoints
-    path('assets/stats/depreciation-report/', 
-         AssetStatsViewSet.as_view({'get': 'depreciation_report'}), 
-         name='asset-depreciation-report'),
-    
-    path('assets/stats/assignment-report/', 
-         AssetStatsViewSet.as_view({'get': 'assignment_report'}), 
-         name='asset-assignment-report'),
+   
     
     # Statistics and filters
     path('org-chart/statistics/', 

@@ -86,38 +86,18 @@ class AssetListSerializer(serializers.ModelSerializer):
     assigned_to_employee_id = serializers.CharField(source='assigned_to.employee_id', read_only=True)
     created_by_name = serializers.CharField(source='created_by.get_full_name', read_only=True)
     status_display = serializers.CharField(source='get_status_display', read_only=True)
-    current_value = serializers.SerializerMethodField()
-    depreciation_percentage = serializers.SerializerMethodField()
-    days_since_purchase = serializers.SerializerMethodField()
+   
     
     class Meta:
         model = Asset
         fields = [
             'id', 'asset_name', 'category_name', 'serial_number',
             'status', 'status_display', 'assigned_to_name', 'assigned_to_employee_id',
-            'purchase_price', 'purchase_date', 'current_value', 'depreciation_percentage',
-            'days_since_purchase', 'useful_life_years', 'created_at', 'created_by_name'
+            'purchase_price', 'purchase_date',  'useful_life_years', 'created_at', 'created_by_name'
         ]
         ref_name = 'AssetList'
     
-    def get_current_value(self, obj):
-        """Get current value with proper Decimal handling"""
-        depreciation = obj.calculate_depreciation()
-        if depreciation:
-            return depreciation['current_value']
-        return float(obj.purchase_price)
-    
-    def get_depreciation_percentage(self, obj):
-        """Get depreciation percentage with proper Decimal handling"""
-        depreciation = obj.calculate_depreciation()
-        if depreciation:
-            return depreciation['depreciation_percentage']
-        return 0.0
-    
-    def get_days_since_purchase(self, obj):
-        if obj.purchase_date:
-            return (timezone.now().date() - obj.purchase_date).days
-        return None
+   
 
 class AssetDetailSerializer(serializers.ModelSerializer):
     """Serializer for asset detail view - MINIMAL"""
@@ -133,7 +113,7 @@ class AssetDetailSerializer(serializers.ModelSerializer):
     
     # Calculated fields
     status_display = serializers.CharField(source='get_status_display', read_only=True)
-    depreciation_info = serializers.SerializerMethodField()
+   
     current_assignment = serializers.SerializerMethodField()
     
     # Related components
@@ -151,7 +131,7 @@ class AssetDetailSerializer(serializers.ModelSerializer):
             'id', 'asset_name', 'category', 'serial_number',
             
             # Financial info
-            'purchase_price', 'purchase_date', 'useful_life_years', 'depreciation_info',
+            'purchase_price', 'purchase_date', 'useful_life_years', 
             
             # Status and assignment
             'status', 'status_display', 'assigned_to', 'current_assignment',
@@ -171,8 +151,7 @@ class AssetDetailSerializer(serializers.ModelSerializer):
         ]
         ref_name = 'AssetDetail'
     
-    def get_depreciation_info(self, obj):
-        return obj.calculate_depreciation()
+    
     
     def get_current_assignment(self, obj):
         return obj.get_current_assignment()

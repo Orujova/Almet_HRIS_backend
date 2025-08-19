@@ -192,29 +192,7 @@ class Asset(models.Model):
             }
         return None
     
-    def calculate_depreciation(self):
-        """Calculate asset depreciation - FIXED for Decimal types"""
-        if not self.purchase_date or not self.useful_life_years:
-            return None
-        
-        from decimal import Decimal
-        
-        # Convert everything to Decimal for proper calculation
-        years_passed = Decimal(str((timezone.now().date() - self.purchase_date).days)) / Decimal('365.25')
-        annual_depreciation = self.purchase_price / Decimal(str(self.useful_life_years))
-        total_depreciation = min(annual_depreciation * years_passed, self.purchase_price)
-        current_value = self.purchase_price - total_depreciation
-        
-        # Convert to float for JSON serialization
-        return {
-            'purchase_price': float(self.purchase_price),
-            'annual_depreciation': float(annual_depreciation),
-            'years_passed': float(years_passed.quantize(Decimal('0.01'))),
-            'total_depreciation': float(total_depreciation.quantize(Decimal('0.01'))),
-            'current_value': max(float(current_value.quantize(Decimal('0.01'))), 0),
-            'depreciation_percentage': float((total_depreciation / self.purchase_price * Decimal('100')).quantize(Decimal('0.01'))) if self.purchase_price > 0 else 0
-        }
-    
+   
     def can_be_assigned(self):
         """Check if asset can be assigned to an employee"""
         return self.status in ['IN_STOCK'] and not self.assigned_to
