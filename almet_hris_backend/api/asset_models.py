@@ -33,11 +33,13 @@ class Asset(models.Model):
     """Main asset model - FIXED with proper method definitions"""
     
     STATUS_CHOICES = [
-        ('IN_STOCK', 'In Stock'),
-        ('IN_USE', 'In Use'),
-        ('IN_REPAIR', 'In Repair'),
-        ('ARCHIVED', 'Archived'),
-    ]
+    ('IN_STOCK', 'In Stock'),
+    ('ASSIGNED', 'Assigned (Pending Approval)'),  # YENİ
+    ('IN_USE', 'In Use'),
+    ('NEED_CLARIFICATION', 'Need Clarification'),  # YENİ
+    ('IN_REPAIR', 'In Repair'),
+    ('ARCHIVED', 'Archived'),
+]
     
     # Primary fields
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -70,7 +72,7 @@ class Asset(models.Model):
     
     # Status and location
     status = models.CharField(
-        max_length=15, 
+        max_length=25, 
         choices=STATUS_CHOICES, 
         default='IN_STOCK'
     )
@@ -152,12 +154,14 @@ class Asset(models.Model):
         super().save(*args, **kwargs)
     
     def get_status_display_with_color(self):
-        """Get status with color coding - FIXED METHOD"""
+        """Get status with color coding - UPDATED"""
         status_colors = {
-            'IN_STOCK': '#17a2b8',    # Info blue
-            'IN_USE': '#28a745',      # Success green
-            'IN_REPAIR': '#ffc107',   # Warning yellow
-            'ARCHIVED': '#6c757d',    # Secondary gray
+            'IN_STOCK': '#17a2b8',        # Info blue
+            'ASSIGNED': '#F59E0B',        # Orange - pending approval
+            'IN_USE': '#28a745',          # Success green  
+            'NEED_CLARIFICATION': '#8B5CF6',  # Purple - needs attention
+            'IN_REPAIR': '#ffc107',       # Warning yellow
+            'ARCHIVED': '#6c757d',        # Secondary gray
         }
         return {
             'status': self.get_status_display(),
@@ -192,7 +196,14 @@ class Asset(models.Model):
             }
         return None
     
-   
+    def can_be_approved(self):
+        """Check if asset can be approved by employee"""
+        return self.status == 'ASSIGNED' and self.assigned_to is not None
+
+    def can_request_clarification(self):
+        """Check if clarification can be requested"""
+        return self.status in ['ASSIGNED', 'NEED_CLARIFICATION'] and self.assigned_to is not None
+    
     def can_be_assigned(self):
         """Check if asset can be assigned to an employee"""
         return self.status in ['IN_STOCK'] and not self.assigned_to
@@ -236,7 +247,7 @@ class AssetAssignment(models.Model):
     
     # Asset condition
     condition_on_checkout = models.CharField(
-        max_length=20,
+        max_length=30,
         choices=[
             ('EXCELLENT', 'Excellent'),
             ('GOOD', 'Good'),
@@ -246,7 +257,7 @@ class AssetAssignment(models.Model):
         default='GOOD'
     )
     condition_on_checkin = models.CharField(
-        max_length=20,
+        max_length=35,
         choices=[
             ('EXCELLENT', 'Excellent'),
             ('GOOD', 'Good'),
@@ -306,14 +317,16 @@ class AssetActivity(models.Model):
     """Activity log for assets"""
     
     ACTIVITY_TYPES = [
-        ('CREATED', 'Created'),
-        ('UPDATED', 'Updated'),
-        ('ASSIGNED', 'Assigned to Employee'),
-        ('CHECKED_IN', 'Checked In'),
-        ('STATUS_CHANGED', 'Status Changed'),
-        ('ARCHIVED', 'Archived'),
-        ('RESTORED', 'Restored from Archive'),
-    ]
+    ('CREATED', 'Created'),
+    ('UPDATED', 'Updated'),
+    ('ASSIGNED', 'Assigned to Employee'),
+    ('ACCEPTED', 'Accepted by Employee'),           # YENİ
+    ('CLARIFICATION_REQUESTED', 'Clarification Requested'),  # YENİ
+    ('CHECKED_IN', 'Checked In'),
+    ('STATUS_CHANGED', 'Status Changed'),
+    ('ARCHIVED', 'Archived'),
+    ('RESTORED', 'Restored from Archive'),
+]
     
     asset = models.ForeignKey(
         Asset, 

@@ -56,10 +56,7 @@ class AssetAdmin(admin.ModelAdmin):
         'asset_name', 'category', 'serial_number', 'status_badge', 
         'assigned_to', 'purchase_price', 'purchase_date',  'created_at'
     ]
-    list_filter = [
-        'status', 'category', 'purchase_date', 'created_at', 
-        'assigned_to__department', 'brand'
-    ]
+ 
     search_fields = [
         'asset_name', 'serial_number', 'brand', 'model',
         'assigned_to__full_name', 'assigned_to__employee_id'
@@ -108,15 +105,63 @@ class AssetAdmin(admin.ModelAdmin):
     
     inlines = [AssetAssignmentInline]
     
-    actions = [
-        'mark_as_in_stock', 'mark_as_in_repair', 'mark_as_archived',
-        'export_selected_assets'
+ 
+    list_filter = [
+        'status', 'category', 'purchase_date', 'created_at', 
+        'assigned_to__department'
     ]
     
+    actions = [
+        'mark_as_in_stock', 'mark_as_in_repair', 'mark_as_archived',
+        'provide_clarification_and_reassign',  # YENİ
+        'cancel_assignments'  # YENİ
+    ]
+    
+    def provide_clarification_and_reassign(self, request, queryset):
+        """Provide clarification for assets needing clarification"""
+        count = 0
+        for asset in queryset.filter(status='NEED_CLARIFICATION'):
+            asset.status = 'ASSIGNED'
+            asset.save()
+            
+            AssetActivity.objects.create(
+                asset=asset,
+                activity_type='CLARIFICATION_PROVIDED',
+                description=f'Clarification provided via admin action by {request.user.get_full_name()}',
+                performed_by=request.user,
+                metadata={'admin_action': True}
+            )
+            count += 1
+        
+        self.message_user(request, f'{count} asset(s) returned for employee approval after clarification.')
+    provide_clarification_and_reassign.short_description = 'Provide clarification and return for approval'
+    
+    def cancel_assignments(self, request, queryset):
+        """Cancel assignments for selected assets"""
+        count = 0
+        for asset in queryset.filter(assigned_to__isnull=False):
+            old_employee = asset.assigned_to
+            asset.status = 'IN_STOCK'
+            asset.assigned_to = None
+            asset.save()
+            
+            AssetActivity.objects.create(
+                asset=asset,
+                activity_type='ASSIGNMENT_CANCELLED',
+                description=f'Assignment cancelled via admin action. Was assigned to {old_employee.full_name}',
+                performed_by=request.user,
+                metadata={'admin_action': True, 'previous_employee': old_employee.full_name}
+            )
+            count += 1
+        
+        self.message_user(request, f'{count} assignment(s) cancelled.')
+    cancel_assignments.short_description = 'Cancel selected assignments'
     def status_badge(self, obj):
         status_colors = {
             'IN_STOCK': '#17a2b8',
+            'ASSIGNED': '#F59E0B',        # YENİ
             'IN_USE': '#28a745',
+            'NEED_CLARIFICATION': '#8B5CF6',  # YENİ
             'IN_REPAIR': '#ffc107',
             'ARCHIVED': '#6c757d',
         }

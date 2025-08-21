@@ -561,9 +561,118 @@ class EmployeeDetailSerializer(serializers.ModelSerializer):
     team_job_descriptions = serializers.SerializerMethodField()
     team_pending_approvals = serializers.SerializerMethodField()
     
+    assigned_assets = serializers.SerializerMethodField()
+    pending_asset_approvals = serializers.SerializerMethodField()
+    assets_summary = serializers.SerializerMethodField()
+    
     class Meta:
         model = Employee
         fields = '__all__'
+    
+    
+    
+    
+    
+    def get_assigned_assets(self, obj):
+        """Get all assets assigned to this employee"""
+        try:
+            from .asset_models import Asset
+            assets = Asset.objects.filter(
+                assigned_to=obj
+            ).select_related('category').order_by('-created_at')
+            
+            assets_data = []
+            for asset in assets:
+                asset_info = {
+                    'id': str(asset.id),
+                    'asset_name': asset.asset_name,
+                    'category': asset.category.name if asset.category else None,
+                    'serial_number': asset.serial_number,
+                    'status': asset.status,
+                    'status_display': asset.get_status_display(),
+                    'status_color': asset.get_status_display_with_color()['color'],
+                    'purchase_date': asset.purchase_date,
+                    'created_at': asset.created_at,
+                    
+                    # Action permissions
+                    'can_accept': asset.status == 'ASSIGNED',
+                    'can_request_clarification': asset.status in ['ASSIGNED', 'NEED_CLARIFICATION'],
+                    
+                    # Assignment details
+                    'assignment_date': None,
+                    'days_assigned': 0
+                }
+                
+                # Get assignment details
+                current_assignment = asset.assignments.filter(check_in_date__isnull=True).first()
+                if current_assignment:
+                    asset_info['assignment_date'] = current_assignment.check_out_date
+                    asset_info['days_assigned'] = current_assignment.get_duration_days()
+                
+                assets_data.append(asset_info)
+            
+            return assets_data
+        except Exception as e:
+            logger.error(f"Error getting assigned assets for employee {obj.employee_id}: {e}")
+            return []
+    
+    def get_pending_asset_approvals(self, obj):
+        """Get assets pending employee approval"""
+        try:
+            from .asset_models import Asset
+            pending_assets = Asset.objects.filter(
+                assigned_to=obj,
+                status='ASSIGNED'
+            ).select_related('category')
+            
+            return [
+                {
+                    'id': str(asset.id),
+                    'asset_name': asset.asset_name,
+                    'category': asset.category.name if asset.category else None,
+                    'serial_number': asset.serial_number,
+                    'status': asset.status,
+                    'status_display': asset.get_status_display(),
+                    'status_color': asset.get_status_display_with_color()['color'],
+                    'assignment_date': asset.assignments.filter(
+                        check_in_date__isnull=True
+                    ).first().check_out_date if asset.assignments.filter(
+                        check_in_date__isnull=True
+                    ).exists() else None,
+                    'urgency': 'high' if (timezone.now().date() - (
+                        asset.assignments.filter(check_in_date__isnull=True).first().check_out_date 
+                        if asset.assignments.filter(check_in_date__isnull=True).exists() else timezone.now().date()
+                    )).days > 3 else 'normal'
+                }
+                for asset in pending_assets
+            ]
+        except Exception as e:
+            logger.error(f"Error getting pending asset approvals for employee {obj.employee_id}: {e}")
+            return []
+    
+    def get_assets_summary(self, obj):
+        """Get asset assignment summary for employee"""
+        try:
+            from .asset_models import Asset
+            all_assets = Asset.objects.filter(assigned_to=obj)
+            
+            return {
+                'total_assigned': all_assets.count(),
+                'pending_approval': all_assets.filter(status='ASSIGNED').count(),
+                'in_use': all_assets.filter(status='IN_USE').count(),
+                'need_clarification': all_assets.filter(status='NEED_CLARIFICATION').count(),
+                'has_pending_approvals': all_assets.filter(status='ASSIGNED').exists()
+            }
+        except Exception as e:
+            logger.error(f"Error getting assets summary for employee {obj.employee_id}: {e}")
+            return {
+                'total_assigned': 0,
+                'pending_approval': 0,
+                'in_use': 0,
+                'need_clarification': 0,
+                'has_pending_approvals': False
+            }
+    
     
     def get_profile_image_url(self, obj):
         """Get profile image URL safely"""
@@ -611,7 +720,6 @@ class EmployeeDetailSerializer(serializers.ModelSerializer):
         except:
             return None
     
-    # JOB DESCRIPTION METHODS - FIXED AND COMPLETE
     def get_job_descriptions(self, obj):
         """Get job descriptions assigned to this employee"""
         try:
@@ -734,7 +842,6 @@ class EmployeeDetailSerializer(serializers.ModelSerializer):
             return []
     
     
-    # 2. get_team_pending_approvals metodunda dəyişiklik (təxminən 560-600 sətir arası)
     
     def get_team_pending_approvals(self, obj):
         """Get job descriptions pending line manager approval for this manager"""

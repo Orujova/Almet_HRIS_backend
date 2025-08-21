@@ -35,6 +35,10 @@ from .models import (
     EmployeeActivity, VacantPosition, ContractTypeConfig,
     ContractStatusManager
 )
+from .asset_serializers import (
+    AssetAcceptanceSerializer, AssetClarificationRequestSerializer,
+    AssetCancellationSerializer, AssetClarificationProvisionSerializer
+)
 
 
 from .serializers import (
@@ -2971,6 +2975,436 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         except EmployeeTag.DoesNotExist:
             return Response({'error': 'Tag not found'}, status=status.HTTP_404_NOT_FOUND)
     
+    
+    @swagger_auto_schema(
+        method='post',
+        operation_description="Accept assigned asset (Employee approval)",
+        request_body=AssetAcceptanceSerializer,
+        responses={
+            200: openapi.Response(
+                description="Asset accepted successfully",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'success': openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                        'message': openapi.Schema(type=openapi.TYPE_STRING),
+                        'asset': openapi.Schema(
+                            type=openapi.TYPE_OBJECT,
+                            properties={
+                                'id': openapi.Schema(type=openapi.TYPE_STRING),
+                                'name': openapi.Schema(type=openapi.TYPE_STRING),
+                                'serial_number': openapi.Schema(type=openapi.TYPE_STRING),
+                                'status': openapi.Schema(type=openapi.TYPE_STRING),
+                                'status_display': openapi.Schema(type=openapi.TYPE_STRING)
+                            }
+                        )
+                    }
+                )
+            ),
+            400: "Bad request", 
+            404: "Asset not found"
+        }
+    )
+    @action(detail=True, methods=['post'], url_path='accept-asset')
+    def accept_assigned_asset(self, request, pk=None):
+        """Employee accepts an assigned asset - UPDATED"""
+        try:
+            employee = self.get_object()
+            asset_id = request.data.get('asset_id')
+            comments = request.data.get('comments', '')
+            
+            if not asset_id:
+                return Response(
+                    {'error': 'asset_id is required'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            from .asset_models import Asset, AssetActivity
+            
+            try:
+                asset = Asset.objects.get(id=asset_id, assigned_to=employee)
+            except Asset.DoesNotExist:
+                return Response(
+                    {'error': 'Asset not found or not assigned to this employee'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            
+            # Check if asset is in correct status for approval
+            if asset.status != 'ASSIGNED':
+                return Response(
+                    {'error': f'Asset cannot be accepted. Current status: {asset.get_status_display()}'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+          
+            with transaction.atomic():
+                # Update asset status from ASSIGNED to IN_USE
+                asset.status = 'IN_USE'
+                asset.save()
+                
+                # Log asset activity
+                AssetActivity.objects.create(
+                    asset=asset,
+                    activity_type='ACCEPTED',
+                    description=f"Asset accepted by {employee.full_name}",
+                    performed_by=request.user,
+                    metadata={
+                        'comments': comments,
+                        'employee_id': employee.employee_id,
+                        'employee_name': employee.full_name,
+                        'acceptance_date': timezone.now().isoformat(),
+                        'previous_status': 'ASSIGNED',
+                        'new_status': 'IN_USE'
+                    }
+                )
+                
+                # Log employee activity
+                EmployeeActivity.objects.create(
+                    employee=employee,
+                    activity_type='ASSET_ACCEPTED',
+                    description=f"Accepted asset {asset.asset_name} - {asset.serial_number}",
+                    performed_by=request.user,
+                    metadata={
+                        'asset_id': str(asset.id),
+                        'asset_name': asset.asset_name,
+                        'serial_number': asset.serial_number,
+                        'comments': comments
+                    }
+                )
+            
+            return Response({
+                'success': True,
+                'message': f'Asset {asset.asset_name} accepted successfully',
+                'asset': {
+                    'id': str(asset.id),
+                    'name': asset.asset_name,
+                    'serial_number': asset.serial_number,
+                    'status': asset.status,
+                    'status_display': asset.get_status_display()
+                }
+            })
+            
+        except Exception as e:
+            logger.error(f"Error accepting asset: {str(e)}")
+            return Response(
+                {'error': f'Failed to accept asset: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    @swagger_auto_schema(
+    method='post',
+    operation_description="Request clarification for assigned asset",
+    request_body=AssetClarificationRequestSerializer,
+    responses={
+        200: openapi.Response(
+            description="Clarification requested successfully",
+            schema=openapi.Schema(
+                type=openapi.TYPE_OBJECT,
+                properties={
+                    'success': openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                    'message': openapi.Schema(type=openapi.TYPE_STRING),
+                    'asset': openapi.Schema(
+                        type=openapi.TYPE_OBJECT,
+                        properties={
+                            'id': openapi.Schema(type=openapi.TYPE_STRING),
+                            'name': openapi.Schema(type=openapi.TYPE_STRING),
+                            'clarification_reason': openapi.Schema(type=openapi.TYPE_STRING)
+                        }
+                    )
+                }
+            )
+        ),
+        400: "Bad request", 
+        404: "Asset not found"
+    }
+)
+    @action(detail=True, methods=['post'], url_path='request-asset-clarification')
+    def request_asset_clarification(self, request, pk=None):
+        """Employee requests clarification about an assigned asset - UPDATED"""
+        try:
+            employee = self.get_object()
+            asset_id = request.data.get('asset_id')
+            clarification_reason = request.data.get('clarification_reason')
+            
+            if not asset_id or not clarification_reason:
+                return Response(
+                    {'error': 'asset_id and clarification_reason are required'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            from .asset_models import Asset, AssetActivity
+            
+            try:
+                asset = Asset.objects.get(id=asset_id, assigned_to=employee)
+            except Asset.DoesNotExist:
+                return Response(
+                    {'error': 'Asset not found or not assigned to this employee'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            
+            # Check if asset is in correct status for clarification
+            if asset.status not in ['ASSIGNED', 'NEED_CLARIFICATION']:
+                return Response(
+                    {'error': f'Cannot request clarification for asset with status: {asset.get_status_display()}'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            
+            
+            with transaction.atomic():
+                # Update asset status to NEED_CLARIFICATION
+                old_status = asset.status
+                asset.status = 'NEED_CLARIFICATION'
+                asset.save()
+                
+                # Log asset activity
+                AssetActivity.objects.create(
+                    asset=asset,
+                    activity_type='CLARIFICATION_REQUESTED',
+                    description=f"Clarification requested by {employee.full_name}: {clarification_reason}",
+                    performed_by=request.user,
+                    metadata={
+                        'clarification_reason': clarification_reason,
+                        'employee_id': employee.employee_id,
+                        'employee_name': employee.full_name,
+                        'request_date': timezone.now().isoformat(),
+                        'previous_status': old_status,
+                        'new_status': 'NEED_CLARIFICATION'
+                    }
+                )
+                
+                # Log employee activity
+                EmployeeActivity.objects.create(
+                    employee=employee,
+                    activity_type='ASSET_CLARIFICATION_REQUESTED',
+                    description=f"Requested clarification for asset {asset.asset_name} - {asset.serial_number}",
+                    performed_by=request.user,
+                    metadata={
+                        'asset_id': str(asset.id),
+                        'asset_name': asset.asset_name,
+                        'serial_number': asset.serial_number,
+                        'clarification_reason': clarification_reason
+                    }
+                )
+            
+            return Response({
+                'success': True,
+                'message': f'Clarification requested for asset {asset.asset_name}',
+                'asset': {
+                    'id': str(asset.id),
+                    'name': asset.asset_name,
+                    'serial_number': asset.serial_number,
+                    'status': asset.status,
+                    'status_display': asset.get_status_display(),
+                    'clarification_reason': clarification_reason
+                }
+            })
+            
+        except Exception as e:
+            import traceback
+            logger.error(f"Full error trace: {traceback.format_exc()}")
+            return Response(
+                {'error': f'Failed to request clarification: {str(e)}', 'trace': traceback.format_exc()},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    def _get_asset_status_color(self, status):
+        """Get color for asset status - UPDATED"""
+        colors = {
+            'ASSIGNED': '#F59E0B',            # Orange - pending approval
+            'IN_USE': '#10B981',              # Green - approved/active
+            'NEED_CLARIFICATION': '#8B5CF6',  # Purple - needs attention
+            'IN_STOCK': '#6B7280',            # Gray - available
+            'IN_REPAIR': '#EF4444',           # Red - issue
+            'ARCHIVED': '#7F1D1D',            # Dark red - archived
+        }
+        return colors.get(status, '#6B7280')
+    
+    
+    @swagger_auto_schema(
+    method='post',
+    operation_description="Cancel asset assignment and return to stock",
+    request_body=AssetCancellationSerializer,
+    responses={
+        200: openapi.Response(
+            description="Assignment cancelled successfully",
+            schema=openapi.Schema(
+                type=openapi.TYPE_OBJECT,
+                properties={
+                    'success': openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                    'message': openapi.Schema(type=openapi.TYPE_STRING),
+                    'asset_id': openapi.Schema(type=openapi.TYPE_STRING),
+                    'previous_employee': openapi.Schema(type=openapi.TYPE_STRING),
+                    'cancellation_reason': openapi.Schema(type=openapi.TYPE_STRING),
+                    'new_status': openapi.Schema(type=openapi.TYPE_STRING)
+                }
+            )
+        ),
+        400: "Bad request",
+        404: "Asset not found"
+    }
+)
+    @action(detail=True, methods=['post'], url_path='cancel-assignment')
+    def cancel_assignment(self, request, pk=None):
+        """Cancel asset assignment and return to stock"""
+        try:
+            employee = self.get_object()
+            
+            # Validate request data
+            serializer = AssetCancellationSerializer(data=request.data)
+            if not serializer.is_valid():
+                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            
+            asset_id = serializer.validated_data['asset_id']
+            cancellation_reason = serializer.validated_data.get('cancellation_reason', '')
+            
+            from .asset_models import Asset, AssetActivity
+            
+            try:
+                # Asset bu employee-ə assign olunmalıdır
+                asset = Asset.objects.get(id=asset_id, assigned_to=employee)
+            except Asset.DoesNotExist:
+                return Response(
+                    {'error': 'Asset not found or not assigned to this employee'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            
+            with transaction.atomic():
+                # Store assignment info before clearing
+                old_employee = asset.assigned_to
+                
+                # Cancel active assignment
+                active_assignment = asset.assignments.filter(check_in_date__isnull=True).first()
+                if active_assignment:
+                    active_assignment.check_in_date = timezone.now().date()
+                    active_assignment.check_in_notes = f"Assignment cancelled: {cancellation_reason}"
+                    active_assignment.checked_in_by = request.user
+                    active_assignment.save()
+                
+                # Return asset to stock
+                asset.status = 'IN_STOCK'
+                asset.assigned_to = None
+                asset.save()
+                
+                # Log activity
+                AssetActivity.objects.create(
+                    asset=asset,
+                    activity_type='ASSIGNMENT_CANCELLED',
+                    description=f"Assignment cancelled by {request.user.get_full_name()}. Employee: {old_employee.full_name}",
+                    performed_by=request.user,
+                    metadata={
+                        'cancellation_reason': cancellation_reason,
+                        'previous_employee_id': old_employee.employee_id,
+                        'previous_employee_name': old_employee.full_name,
+                        'cancelled_by_employee': True
+                    }
+                )
+            
+            return Response({
+                'success': True,
+                'message': f'Assignment cancelled, asset returned to stock',
+                'asset_id': str(asset.id),
+                'previous_employee': old_employee.full_name,
+                'cancellation_reason': cancellation_reason,
+                'new_status': asset.get_status_display()
+            })
+            
+        except Exception as e:
+            logger.error(f"Error cancelling assignment for employee {pk}: {str(e)}")
+            return Response(
+                {'error': f'Failed to cancel assignment: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    @swagger_auto_schema(
+        method='post',
+        operation_description="Provide clarification and return asset to ASSIGNED status",
+        request_body=AssetClarificationProvisionSerializer,
+        responses={
+            200: openapi.Response(
+                description="Clarification provided successfully",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'success': openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                        'message': openapi.Schema(type=openapi.TYPE_STRING),
+                        'asset_id': openapi.Schema(type=openapi.TYPE_STRING),
+                        'clarification_response': openapi.Schema(type=openapi.TYPE_STRING),
+                        'new_status': openapi.Schema(type=openapi.TYPE_STRING)
+                    }
+                )
+            ),
+            400: "Bad request",
+            404: "Asset not found"
+        }
+    )
+    @action(detail=True, methods=['post'], url_path='provide-clarification')
+    def provide_clarification(self, request, pk=None):
+        """Admin/Manager provides clarification and returns asset to ASSIGNED status"""
+        try:
+            employee = self.get_object()
+            
+            # Validate request data
+            serializer = AssetClarificationProvisionSerializer(data=request.data)
+            if not serializer.is_valid():
+                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            
+            asset_id = serializer.validated_data['asset_id']
+            clarification_response = serializer.validated_data['clarification_response']
+            
+            from .asset_models import Asset, AssetActivity
+            
+            try:
+                asset = Asset.objects.get(id=asset_id, assigned_to=employee)
+            except Asset.DoesNotExist:
+                return Response(
+                    {'error': 'Asset not found or not assigned to this employee'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            
+            if asset.status != 'NEED_CLARIFICATION':
+                return Response(
+                    {'error': f'Asset is not awaiting clarification. Current status: {asset.get_status_display()}'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            with transaction.atomic():
+                # Return to ASSIGNED status
+                asset.status = 'ASSIGNED'
+                asset.save()
+                
+                # Log activity
+                AssetActivity.objects.create(
+                    asset=asset,
+                    activity_type='CLARIFICATION_PROVIDED',
+                    description=f"Clarification provided by {request.user.get_full_name()}: {clarification_response}",
+                    performed_by=request.user,
+                    metadata={
+                        'clarification_response': clarification_response,
+                        'previous_status': 'NEED_CLARIFICATION',
+                        'new_status': 'ASSIGNED',
+                        'returned_for_approval': True,
+                        'employee_id': employee.employee_id,
+                        'employee_name': employee.full_name
+                    }
+                )
+            
+            return Response({
+                'success': True,
+                'message': 'Clarification provided, asset returned for employee approval',
+                'asset_id': str(asset.id),
+                'clarification_response': clarification_response,
+                'new_status': asset.get_status_display(),
+                'employee_name': employee.full_name
+            })
+            
+        except Exception as e:
+            logger.error(f"Error providing clarification for employee {pk}: {str(e)}")
+            return Response(
+                {'error': f'Failed to provide clarification: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+        
     @swagger_auto_schema(
         method='post',
         operation_description="Remove tag from multiple employees",

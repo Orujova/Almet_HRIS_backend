@@ -408,3 +408,57 @@ class AssetExportSerializer(serializers.Serializer):
             raise serializers.ValidationError("Date range 'from' cannot be after 'to'")
         
         return attrs
+
+
+
+# asset_serializers.py-də əlavə et
+class AssetAcceptanceSerializer(serializers.Serializer):
+    """Serializer for employee accepting assigned asset"""
+    
+    asset_id = serializers.UUIDField(help_text="Asset ID to accept")
+    comments = serializers.CharField(
+        required=False, 
+        allow_blank=True, 
+        max_length=500,
+        help_text="Optional comments about acceptance"
+    )
+    
+    class Meta:
+        ref_name = 'AssetAcceptance'
+
+class AssetClarificationRequestSerializer(serializers.Serializer):
+    """Serializer for requesting asset clarification"""
+    
+    asset_id = serializers.UUIDField(help_text="Asset ID")
+    clarification_reason = serializers.CharField(
+        max_length=500,
+        help_text="Reason for requesting clarification"
+    )
+    
+    class Meta:
+        ref_name = 'AssetClarificationRequest'
+class AssetCancellationSerializer(serializers.Serializer):
+    """Serializer for cancelling asset assignment"""
+    
+    asset_id = serializers.UUIDField(help_text="Asset ID to cancel assignment for")
+    cancellation_reason = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=500,
+        help_text="Reason for cancelling assignment (optional)"
+    )
+    
+    class Meta:
+        ref_name = 'AssetCancellation'
+
+class AssetClarificationProvisionSerializer(serializers.Serializer):
+    """Serializer for providing clarification to employee"""
+    
+    asset_id = serializers.UUIDField(help_text="Asset ID that needs clarification")
+    clarification_response = serializers.CharField(
+        max_length=1000,
+        help_text="Response/clarification to provide to employee"
+    )
+    
+    class Meta:
+        ref_name = 'AssetClarificationProvision'        

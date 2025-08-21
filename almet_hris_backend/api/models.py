@@ -1268,6 +1268,7 @@ class EmployeeDocument(SoftDeleteModel):
         ]
 
 class EmployeeActivity(models.Model):
+   
     ACTIVITY_TYPES = [
         ('CREATED', 'Employee Created'),
         ('UPDATED', 'Employee Updated'),
@@ -1283,10 +1284,14 @@ class EmployeeActivity(models.Model):
         ('RESTORED', 'Employee Restored'),
         ('BULK_CREATED', 'Bulk Created'),
         ('STATUS_AUTO_UPDATED', 'Status Auto Updated'),
+        # YENİ ACTIVITY TYPES LAZIMDIR:
+        ('ASSET_ACCEPTED', 'Asset Accepted'),  # 14 hərf
+        ('ASSET_CLARIFICATION_REQUESTED', 'Asset Clarification Requested'),  # 29 hərf - ÇOX UZUN!
     ]
     
+  
     employee = models.ForeignKey(Employee, on_delete=models.CASCADE, related_name='activities')
-    activity_type = models.CharField(max_length=20, choices=ACTIVITY_TYPES)
+    activity_type = models.CharField(max_length=30, choices=ACTIVITY_TYPES)
     description = models.TextField()
     performed_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
     metadata = models.JSONField(default=dict, blank=True)

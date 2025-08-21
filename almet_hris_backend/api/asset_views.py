@@ -270,18 +270,16 @@ class AssetViewSet(viewsets.ModelViewSet):
     )
     @action(detail=True, methods=['post'])
     def assign_to_employee(self, request, pk=None):
-        """Assign asset to an employee"""
+        """Assign asset to an employee - UPDATED for approval workflow"""
         try:
             asset = self.get_object()
             
-            # Validate asset can be assigned
             if not asset.can_be_assigned():
                 return Response(
                     {'error': f'Asset cannot be assigned. Current status: {asset.get_status_display()}'},
                     status=status.HTTP_400_BAD_REQUEST
                 )
             
-            # Create assignment
             serializer = AssetAssignmentCreateSerializer(
                 data=request.data,
                 context={'request': request}
@@ -289,11 +287,37 @@ class AssetViewSet(viewsets.ModelViewSet):
             if not serializer.is_valid():
                 return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
             
-            assignment = serializer.save()
+            with transaction.atomic():
+                assignment = AssetAssignment.objects.create(
+                    **serializer.validated_data,
+                    assigned_by=request.user
+                )
+                
+                # Update asset status to ASSIGNED (pending approval)
+                asset = assignment.asset
+                asset.status = 'ASSIGNED'  # DEYİŞİKLİK: IN_USE əvəzinə ASSIGNED
+                asset.assigned_to = assignment.employee
+                asset.save()
+                
+                # Log activities
+                AssetActivity.objects.create(
+                    asset=asset,
+                    activity_type='ASSIGNED',
+                    description=f"Asset assigned to {assignment.employee.full_name} - awaiting employee confirmation",
+                    performed_by=request.user,
+                    metadata={
+                        'employee_id': assignment.employee.employee_id,
+                        'employee_name': assignment.employee.full_name,
+                        'check_out_date': assignment.check_out_date.isoformat(),
+                        'condition': assignment.condition_on_checkout,
+                        'status': 'PENDING_APPROVAL',
+                        'awaiting_confirmation': True
+                    }
+                )
             
             return Response({
                 'success': True,
-                'message': f'Asset successfully assigned to {assignment.employee.full_name}',
+                'message': f'Asset assigned to {assignment.employee.full_name} - awaiting employee confirmation',
                 'asset_id': str(asset.id),
                 'assignment_id': assignment.id,
                 'employee': {
@@ -302,16 +326,16 @@ class AssetViewSet(viewsets.ModelViewSet):
                     'employee_id': assignment.employee.employee_id
                 },
                 'check_out_date': assignment.check_out_date,
-                'status': asset.get_status_display()
+                'status': asset.get_status_display(),
+                'requires_approval': True,
+                'approval_status': 'PENDING'
             })
-            
         except Exception as e:
             logger.error(f"Error assigning asset {pk}: {str(e)}")
             return Response(
                 {'error': f'Failed to assign asset: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-    
     @swagger_auto_schema(
         method='post',
         operation_description="Check in asset from employee",
