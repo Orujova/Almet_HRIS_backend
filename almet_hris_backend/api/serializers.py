@@ -574,7 +574,7 @@ class EmployeeDetailSerializer(serializers.ModelSerializer):
     
     
     def get_assigned_assets(self, obj):
-        """Get all assets assigned to this employee"""
+        """Get all assets assigned to this employee with clarification info"""
         try:
             from .asset_models import Asset
             assets = Asset.objects.filter(
@@ -600,7 +600,10 @@ class EmployeeDetailSerializer(serializers.ModelSerializer):
                     
                     # Assignment details
                     'assignment_date': None,
-                    'days_assigned': 0
+                    'days_assigned': 0,
+                    
+                    # YENİ: Clarification information
+                    'clarification_info': self._get_asset_clarification_info(asset)
                 }
                 
                 # Get assignment details
@@ -615,6 +618,83 @@ class EmployeeDetailSerializer(serializers.ModelSerializer):
         except Exception as e:
             logger.error(f"Error getting assigned assets for employee {obj.employee_id}: {e}")
             return []
+
+    def _get_asset_clarification_info(self, asset):
+        """Get clarification information for asset"""
+        try:
+            # Əgər asset model-də clarification field-ləri varsa
+            if hasattr(asset, 'clarification_requested_reason'):
+                if asset.status == 'NEED_CLARIFICATION' or asset.clarification_requested_reason:
+                    return {
+                        'has_clarification': True,
+                        'requested_reason': asset.clarification_requested_reason,
+                        'requested_at': asset.clarification_requested_at,
+                        'requested_by': asset.clarification_requested_by.get_full_name() if asset.clarification_requested_by else None,
+                        'response': asset.clarification_response,
+                        'provided_at': asset.clarification_provided_at,
+                        'provided_by': asset.clarification_provided_by.get_full_name() if asset.clarification_provided_by else None,
+                        'has_response': bool(asset.clarification_response),
+                        'is_pending': asset.status == 'NEED_CLARIFICATION' and not asset.clarification_response,
+                        'status': 'pending' if asset.status == 'NEED_CLARIFICATION' and not asset.clarification_response else 'resolved'
+                    }
+            
+            # Əgər model field-ləri yoxdursa, activity-lərindən məlumat al
+            return self._get_clarification_from_activities(asset)
+            
+        except Exception as e:
+            logger.error(f"Error getting clarification info for asset {asset.id}: {e}")
+            return {'has_clarification': False}
+    
+    def _get_clarification_from_activities(self, asset):
+        """Get clarification info from asset activities if model fields don't exist"""
+        try:
+            from .asset_models import AssetActivity
+            
+            # Get latest clarification request
+            clarification_request = AssetActivity.objects.filter(
+                asset=asset,
+                activity_type='CLARIFICATION_REQUESTED'
+            ).order_by('-performed_at').first()
+            
+            # Get latest clarification response
+            clarification_response = AssetActivity.objects.filter(
+                asset=asset,
+                activity_type='CLARIFICATION_PROVIDED'
+            ).order_by('-performed_at').first()
+            
+            if clarification_request:
+                # Extract reason from description or metadata
+                reason = ''
+                if clarification_request.metadata and 'clarification_reason' in clarification_request.metadata:
+                    reason = clarification_request.metadata['clarification_reason']
+                else:
+                    # Extract from description
+                    desc = clarification_request.description
+                    if 'Clarification requested by' in desc and ':' in desc:
+                        reason = desc.split(':', 1)[1].strip()
+                
+                response_text = ''
+                if clarification_response and clarification_response.metadata and 'clarification_response' in clarification_response.metadata:
+                    response_text = clarification_response.metadata['clarification_response']
+                
+                return {
+                    'has_clarification': True,
+                    'requested_reason': reason,
+                    'requested_at': clarification_request.performed_at,
+                    'requested_by': clarification_request.performed_by.get_full_name() if clarification_request.performed_by else None,
+                    'response': response_text,
+                    'provided_at': clarification_response.performed_at if clarification_response else None,
+                    'provided_by': clarification_response.performed_by.get_full_name() if clarification_response and clarification_response.performed_by else None,
+                    'has_response': bool(clarification_response),
+                    'is_pending': asset.status == 'NEED_CLARIFICATION' and not clarification_response,
+                    'status': 'pending' if asset.status == 'NEED_CLARIFICATION' and not clarification_response else 'resolved'
+                }
+            
+            return {'has_clarification': False}
+            
+        except Exception as e:
+            logger.error(f"Error getting clarification from activities for asset {asset.id}: {e}")
+            return {'has_clarification': False}
     
     def get_pending_asset_approvals(self, obj):
         """Get assets pending employee approval"""

@@ -3153,11 +3153,18 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             
             with transaction.atomic():
                 # Update asset status to NEED_CLARIFICATION
+               
                 old_status = asset.status
                 asset.status = 'NEED_CLARIFICATION'
+                asset.clarification_requested_reason = clarification_reason  # YENİ
+                asset.clarification_requested_at = timezone.now()            # YENİ
+                asset.clarification_requested_by = request.user              # YENİ
+                # Clear previous clarification response
+                asset.clarification_response = None                          # YENİ
+                asset.clarification_provided_at = None                       # YENİ
+                asset.clarification_provided_by = None                       # YENİ
                 asset.save()
-                
-                # Log asset activity
+                    # Log asset activity
                 AssetActivity.objects.create(
                     asset=asset,
                     activity_type='CLARIFICATION_REQUESTED',
@@ -3369,8 +3376,11 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 )
             
             with transaction.atomic():
-                # Return to ASSIGNED status
+                # Return to ASSIGNED status və clarification məlumatını saxla
                 asset.status = 'ASSIGNED'
+                asset.clarification_response = clarification_response  # YENİ
+                asset.clarification_provided_at = timezone.now()        # YENİ
+                asset.clarification_provided_by = request.user          # YENİ
                 asset.save()
                 
                 # Log activity
@@ -3403,8 +3413,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             return Response(
                 {'error': f'Failed to provide clarification: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-        
+            )   
     @swagger_auto_schema(
         method='post',
         operation_description="Remove tag from multiple employees",

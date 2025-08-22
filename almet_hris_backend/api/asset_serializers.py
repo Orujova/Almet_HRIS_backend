@@ -86,7 +86,6 @@ class AssetListSerializer(serializers.ModelSerializer):
     assigned_to_employee_id = serializers.CharField(source='assigned_to.employee_id', read_only=True)
     created_by_name = serializers.CharField(source='created_by.get_full_name', read_only=True)
     status_display = serializers.CharField(source='get_status_display', read_only=True)
-   
     
     class Meta:
         model = Asset
@@ -97,7 +96,6 @@ class AssetListSerializer(serializers.ModelSerializer):
         ]
         ref_name = 'AssetList'
     
-   
 
 class AssetDetailSerializer(serializers.ModelSerializer):
     """Serializer for asset detail view - MINIMAL"""
@@ -105,7 +103,7 @@ class AssetDetailSerializer(serializers.ModelSerializer):
     # Related object details
     category = AssetCategorySerializer(read_only=True)
     assigned_to = AssetEmployeeBasicSerializer(read_only=True)
-    
+    clarification_info = serializers.SerializerMethodField()
     # User details
     created_by_detail = AssetUserBasicSerializer(source='created_by', read_only=True)
     updated_by_detail = AssetUserBasicSerializer(source='updated_by', read_only=True)
@@ -131,7 +129,7 @@ class AssetDetailSerializer(serializers.ModelSerializer):
             'id', 'asset_name', 'category', 'serial_number',
             
             # Financial info
-            'purchase_price', 'purchase_date', 'useful_life_years', 
+            'purchase_price', 'purchase_date', 'useful_life_years', 'clarification_info',
             
             # Status and assignment
             'status', 'status_display', 'assigned_to', 'current_assignment',
@@ -152,7 +150,20 @@ class AssetDetailSerializer(serializers.ModelSerializer):
         ref_name = 'AssetDetail'
     
     
-    
+    def get_clarification_info(self, obj):
+        """Get clarification information"""
+        if obj.status == 'NEED_CLARIFICATION' or obj.clarification_requested_reason:
+            return {
+                'requested_reason': obj.clarification_requested_reason,
+                'requested_at': obj.clarification_requested_at,
+                'requested_by': obj.clarification_requested_by.get_full_name() if obj.clarification_requested_by else None,
+                'response': obj.clarification_response,
+                'provided_at': obj.clarification_provided_at,
+                'provided_by': obj.clarification_provided_by.get_full_name() if obj.clarification_provided_by else None,
+                'has_response': bool(obj.clarification_response),
+                'is_pending': obj.status == 'NEED_CLARIFICATION' and not obj.clarification_response
+            }
+        return None
     def get_current_assignment(self, obj):
         return obj.get_current_assignment()
     

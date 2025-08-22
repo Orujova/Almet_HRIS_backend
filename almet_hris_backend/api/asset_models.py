@@ -116,6 +116,25 @@ class Asset(models.Model):
     )
     archive_reason = models.TextField(blank=True, null=True)
     
+    clarification_requested_reason = models.TextField(blank=True, null=True)
+    clarification_response = models.TextField(blank=True, null=True)
+    clarification_requested_at = models.DateTimeField(blank=True, null=True)
+    clarification_provided_at = models.DateTimeField(blank=True, null=True)
+    clarification_requested_by = models.ForeignKey(
+        User, 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True,
+        related_name='clarification_requested_assets'
+    )
+    clarification_provided_by = models.ForeignKey(
+        User, 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True,
+        related_name='clarification_provided_assets'
+    )
+    
     class Meta:
         db_table = 'assets'
         verbose_name = 'Asset'
