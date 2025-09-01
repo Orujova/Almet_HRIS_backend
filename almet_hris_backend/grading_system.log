@@ -1,0 +1,22 @@
+INFO 2025-09-01 15:28:30,722 views 552 12244 User info request for user: n.orujova
+INFO 2025-09-01 15:28:30,739 views 552 12244 [n.orujova] No employee profile found
+INFO 2025-09-01 15:28:30,740 views 552 12244 [n.orujova] User info response prepared successfully
+INFO 2025-09-01 15:28:30,943 views 552 12244 Using pagination (explicitly requested)
+INFO 2025-09-01 15:28:31,189 views 552 12244 Using pagination (explicitly requested)
+INFO 2025-09-01 15:30:28,694 competency_assessment_serializers 21768 15068 Creating core assessment with data: {'employee': <Employee: GEO3 - Arzu Hasanova>, 'position_assessment': <PositionCoreAssessment: CASHIER - Core Assessment>, 'assessment_date': datetime.date(2025, 9, 1), 'assessed_by': <User: n.orujova>, 'notes': 'Q3 2025 competency review - employee shows good progress', 'competency_ratings': [{'skill_id': 1, 'actual_level': 4, 'notes': 'Strong communication skills, leads team meetings effectively'}], 'save_action': 'draft'}
+ERROR 2025-09-01 15:30:28,697 competency_assessment_serializers 21768 15068 Error creating core assessment: EmployeeCoreAssessment matching query does not exist.
+ERROR 2025-09-01 15:30:28,699 competency_assessment_serializers 21768 15068 Full traceback: Traceback (most recent call last):
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\almet_hris_backend\api\competency_assessment_serializers.py", line 439, in create
+    assessment.save()
+    ~~~~~~~~~~~~~~~^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\almet_hris_backend\api\competency_assessment_models.py", line 232, in save
+    old_instance = EmployeeCoreAssessment.objects.get(pk=self.pk)
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\manager.py", line 87, in manager_method
+    return getattr(self.get_queryset(), name)(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\venv\Lib\site-packages\django\db\models\query.py", line 633, in get
+    raise self.model.DoesNotExist(
+        "%s matching query does not exist." % self.model._meta.object_name
+    )
+api.competency_assessment_models.EmployeeCoreAssessment.DoesNotExist: EmployeeCoreAssessment matching query does not exist.
+
