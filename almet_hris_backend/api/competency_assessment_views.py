@@ -51,10 +51,8 @@ class CoreCompetencyScaleViewSet(viewsets.ModelViewSet):
                 Q(scale__icontains=search) | Q(description__icontains=search)
             )
         return queryset.order_by('scale')
-    
-    
-    
-   
+
+
 class BehavioralScaleViewSet(viewsets.ModelViewSet):
     """Behavioral Scale Management"""
     queryset = BehavioralScale.objects.all()
@@ -69,10 +67,8 @@ class BehavioralScaleViewSet(viewsets.ModelViewSet):
                 Q(scale__icontains=search) | Q(description__icontains=search)
             )
         return queryset.order_by('scale')
-    
-    
-    
-   
+
+
 class LetterGradeMappingViewSet(viewsets.ModelViewSet):
     """Letter Grade Mapping Management"""
     queryset = LetterGradeMapping.objects.all()
@@ -82,7 +78,6 @@ class LetterGradeMappingViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         return LetterGradeMapping.objects.all().order_by('-min_percentage')
     
-   
     @action(detail=False, methods=['get'])
     def get_grade_for_percentage(self, request):
         """Get letter grade for given percentage"""
@@ -99,7 +94,6 @@ class LetterGradeMappingViewSet(viewsets.ModelViewSet):
             return Response({
                 'percentage': pct,
                 'letter_grade': grade,
-              
                 'description': grade_obj.description if grade_obj else ''
             })
         except ValueError:
@@ -242,7 +236,6 @@ class PositionBehavioralAssessmentViewSet(viewsets.ModelViewSet):
         
         return queryset.order_by('position_group__hierarchy_level', 'job_title')
     
-    
     @action(detail=True, methods=['post'])
     def duplicate(self, request, pk=None):
         """Duplicate behavioral position assessment for new job title"""
@@ -326,7 +319,7 @@ class PositionBehavioralAssessmentViewSet(viewsets.ModelViewSet):
 # EMPLOYEE ASSESSMENT VIEWS
 
 class EmployeeCoreAssessmentViewSet(viewsets.ModelViewSet):
-    """Employee Core Competency Assessments"""
+    """Employee Core Competency Assessments - Simplified"""
     queryset = EmployeeCoreAssessment.objects.all()
     permission_classes = [IsAuthenticated]
     
@@ -350,15 +343,79 @@ class EmployeeCoreAssessmentViewSet(viewsets.ModelViewSet):
         if assessment_status:
             queryset = queryset.filter(status=assessment_status)
         
-        # Filter by date range
-        date_from = self.request.query_params.get('date_from')
-        date_to = self.request.query_params.get('date_to')
-        if date_from:
-            queryset = queryset.filter(assessment_date__gte=date_from)
-        if date_to:
-            queryset = queryset.filter(assessment_date__lte=date_to)
-        
         return queryset.order_by('-assessment_date')
+    
+    def perform_create(self, serializer):
+        """Always create as DRAFT"""
+        assessment = serializer.save(status='DRAFT')
+        return assessment
+    
+    def perform_update(self, serializer):
+        """Keep as DRAFT unless explicitly submitting"""
+        assessment = serializer.save()
+        # Status only changes through specific actions
+        return assessment
+    
+    @action(detail=True, methods=['post'])
+    def submit(self, request, pk=None):
+        """Submit behavioral assessment as completed (finalizes assessment)"""
+        assessment = self.get_object()
+        
+        # Can only submit DRAFT assessments
+        if assessment.status != 'DRAFT':
+            return Response({
+                'error': 'Only draft assessments can be submitted'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Update assessment data if provided
+        if request.data:
+            serializer = EmployeeCoreAssessmentCreateSerializer(
+                assessment, 
+                data=request.data, 
+                partial=True,
+                context={'request': request}
+            )
+            
+            if serializer.is_valid():
+                # Save with COMPLETED status
+                updated_assessment = serializer.save()
+                updated_assessment.status = 'COMPLETED'  # Explicitly set status
+                updated_assessment.save()
+                assessment = updated_assessment
+            else:
+                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            # No data provided, just change status
+            assessment.status = 'COMPLETED'
+            assessment.save()
+        
+        # Calculate final scores
+        assessment.calculate_scores()
+        
+        return Response({
+            'success': True,
+            'message': 'Behavioral assessment submitted successfully',
+            'assessment': EmployeeCoreAssessmentCreateSerializer(assessment).data
+        })
+    
+    @action(detail=True, methods=['post'])
+    def reopen(self, request, pk=None):
+        """Reopen completed assessment for editing"""
+        assessment = self.get_object()
+        
+        if assessment.status != 'COMPLETED':
+            return Response({
+                'error': 'Only completed assessments can be reopened'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        assessment.status = 'DRAFT'
+        assessment.save()
+        
+        return Response({
+            'success': True,
+            'message': 'Assessment reopened for editing',
+            'assessment': EmployeeCoreAssessmentSerializer(assessment).data
+        })
     
     @action(detail=True, methods=['post'])
     def recalculate_scores(self, request, pk=None):
@@ -493,7 +550,7 @@ class EmployeeCoreAssessmentViewSet(viewsets.ModelViewSet):
 
 
 class EmployeeBehavioralAssessmentViewSet(viewsets.ModelViewSet):
-    """Employee Behavioral Competency Assessments"""
+    """Employee Behavioral Competency Assessments - Simplified"""
     queryset = EmployeeBehavioralAssessment.objects.all()
     permission_classes = [IsAuthenticated]
     
@@ -523,6 +580,91 @@ class EmployeeBehavioralAssessmentViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(assessment_date__lte=date_to)
         
         return queryset.order_by('-assessment_date')
+    
+    def perform_create(self, serializer):
+        """Always create as DRAFT"""
+        assessment = serializer.save(status='DRAFT')
+        return assessment
+    
+    def perform_update(self, serializer):
+        """Keep as DRAFT unless explicitly submitting"""
+        assessment = serializer.save()
+        # Status only changes through specific actions
+        return assessment
+    
+    @action(detail=True, methods=['post'])
+    def submit(self, request, pk=None):
+        """Submit behavioral assessment as completed (finalizes assessment)"""
+        assessment = self.get_object()
+        
+        # Can only submit DRAFT assessments
+        if assessment.status != 'DRAFT':
+            return Response({
+                'error': 'Only draft assessments can be submitted'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Update assessment data if provided
+        if request.data:
+            serializer = EmployeeBehavioralAssessmentCreateSerializer(
+                assessment, 
+                data=request.data, 
+                partial=True,
+                context={'request': request}
+            )
+            
+            if serializer.is_valid():
+                # Save with COMPLETED status
+                updated_assessment = serializer.save()
+                updated_assessment.status = 'COMPLETED'  # Explicitly set status
+                updated_assessment.save()
+                assessment = updated_assessment
+            else:
+                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            # No data provided, just change status
+            assessment.status = 'COMPLETED'
+            assessment.save()
+        
+        # Calculate final scores
+        assessment.calculate_scores()
+        
+        return Response({
+            'success': True,
+            'message': 'Behavioral assessment submitted successfully',
+            'assessment': EmployeeBehavioralAssessmentSerializer(assessment).data
+        })
+    
+    @action(detail=True, methods=['post'])
+    def reopen(self, request, pk=None):
+        """Reopen completed behavioral assessment for editing"""
+        assessment = self.get_object()
+        
+        if assessment.status != 'COMPLETED':
+            return Response({
+                'error': 'Only completed assessments can be reopened'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        assessment.status = 'DRAFT'
+        assessment.save()
+        
+        return Response({
+            'success': True,
+            'message': 'Behavioral assessment reopened for editing',
+            'assessment': EmployeeBehavioralAssessmentSerializer(assessment).data
+        })
+    
+    @action(detail=True, methods=['post'])
+    def recalculate_scores(self, request, pk=None):
+        """Recalculate behavioral assessment scores"""
+        assessment = self.get_object()
+        assessment.calculate_scores()
+        
+        serializer = EmployeeBehavioralAssessmentSerializer(assessment)
+        return Response({
+            'success': True,
+            'message': 'Behavioral scores recalculated successfully',
+            'assessment': serializer.data
+        })
     
     @action(detail=True, methods=['get'])
     def export_document(self, request, pk=None):
@@ -713,7 +855,7 @@ class EmployeeBehavioralAssessmentViewSet(viewsets.ModelViewSet):
                 row += 1
                 
                 for area in sorted(improvement_areas, key=lambda x: x['gap'], reverse=True):
-                    ws[f'A{row}'] = f"â€¢ {area['competency']}: Current {area['current']} â†’ Target {area['target']} (Gap: {area['gap']})"
+                    ws[f'A{row}'] = f"• {area['competency']}: Current {area['current']} → Target {area['target']} (Gap: {area['gap']})"
                     row += 1
             else:
                 ws[f'A{row}'] = "All competencies meet or exceed required levels!"
@@ -751,19 +893,6 @@ class EmployeeBehavioralAssessmentViewSet(viewsets.ModelViewSet):
             return Response({
                 'error': f'Failed to export behavioral assessment: {str(e)}'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-    
-    @action(detail=True, methods=['post'])
-    def recalculate_scores(self, request, pk=None):
-        """Recalculate behavioral assessment scores"""
-        assessment = self.get_object()
-        assessment.calculate_scores()
-        
-        serializer = EmployeeBehavioralAssessmentSerializer(assessment)
-        return Response({
-            'success': True,
-            'message': 'Behavioral scores recalculated successfully',
-            'assessment': serializer.data
-        })
 
 
 # SUMMARY AND REPORTING VIEWS
@@ -898,8 +1027,8 @@ class AssessmentDashboardViewSet(viewsets.ViewSet):
                     'name': employee.full_name,
                     'job_title': employee.job_title,
                     'position_group': employee.position_group.get_name_display(),
-                    'department': employee.department.name,
-                    'business_function': employee.business_function.name
+                    'department': employee.department.name if employee.department else 'N/A',
+                    'business_function': employee.business_function.name if employee.business_function else 'N/A'
                 },
                 'core_assessments': core_serializer.data,
                 'behavioral_assessments': behavioral_serializer.data,
@@ -912,7 +1041,6 @@ class AssessmentDashboardViewSet(viewsets.ViewSet):
         except Employee.DoesNotExist:
             return Response({'error': 'Employee not found'}, 
                           status=status.HTTP_404_NOT_FOUND)
-    
     
     @action(detail=False, methods=['get'])
     def scale_levels(self, request):

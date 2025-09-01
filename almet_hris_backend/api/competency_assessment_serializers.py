@@ -54,7 +54,7 @@ class LetterGradeMappingSerializer(serializers.ModelSerializer):
         model = LetterGradeMapping
         fields = [
             'id', 'letter_grade', 'min_percentage', 'max_percentage', 
-             'description', 'is_active', 'created_at'
+            'description', 'is_active', 'created_at'
         ]
         read_only_fields = ['created_at']
     
@@ -72,8 +72,7 @@ class LetterGradeMappingSerializer(serializers.ModelSerializer):
             existing = existing.exclude(id=self.instance.id)
         
         for grade in existing:
-            # Check if ranges overlap: two ranges [a,b] and [c,d] overlap if max(a,c) < min(b,d)
-            # They DON'T overlap if max_pct < grade.min_percentage OR min_pct > grade.max_percentage
+            # Check if ranges overlap
             ranges_overlap = not (max_pct < grade.min_percentage or min_pct > grade.max_percentage)
             
             if ranges_overlap:
@@ -274,6 +273,10 @@ class EmployeeCoreAssessmentSerializer(serializers.ModelSerializer):
     assessed_by_name = serializers.CharField(source='assessed_by.username', read_only=True)
     competency_ratings = EmployeeCoreCompetencyRatingSerializer(many=True, read_only=True)
     
+    # Status display
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    can_edit = serializers.SerializerMethodField()
+    
     # Gap analysis summary
     gap_analysis = serializers.SerializerMethodField()
     
@@ -281,7 +284,8 @@ class EmployeeCoreAssessmentSerializer(serializers.ModelSerializer):
         model = EmployeeCoreAssessment
         fields = [
             'id', 'employee', 'employee_name', 'employee_id',
-            'position_assessment', 'position_assessment_title', 'assessment_date', 'status',
+            'position_assessment', 'position_assessment_title', 'assessment_date', 
+            'status', 'status_display', 'can_edit',
             'assessed_by', 'assessed_by_name', 'notes',
             'total_position_score', 'total_employee_score', 'gap_score',
             'completion_percentage', 'competency_ratings', 'gap_analysis',
@@ -291,6 +295,10 @@ class EmployeeCoreAssessmentSerializer(serializers.ModelSerializer):
             'total_position_score', 'total_employee_score', 'gap_score', 
             'completion_percentage', 'created_at', 'updated_at'
         ]
+    
+    def get_can_edit(self, obj):
+        """Check if assessment can be edited (only DRAFT status)"""
+        return obj.status == 'DRAFT'
     
     def get_gap_analysis(self, obj):
         """Get gap analysis summary by skill groups"""
@@ -324,14 +332,23 @@ class EmployeeCoreAssessmentCreateSerializer(serializers.ModelSerializer):
     competency_ratings = serializers.ListField(
         child=serializers.DictField(),
         write_only=True,
-        help_text="List of {skill_id: actual_level} mappings"
+        help_text="List of {skill_id: actual_level} mappings",
+        required=False
+    )
+    
+    # Add action_type field to handle status transitions
+    action_type = serializers.ChoiceField(
+        choices=[('save_draft', 'Save Draft'), ('submit', 'Submit')],
+        write_only=True,
+        required=False,
+        default='save_draft'
     )
     
     class Meta:
         model = EmployeeCoreAssessment
         fields = [
             'employee', 'position_assessment', 'assessment_date', 
-            'assessed_by', 'notes', 'competency_ratings'
+            'assessed_by', 'notes', 'competency_ratings', 'action_type'
         ]
     
     def validate(self, data):
@@ -352,7 +369,7 @@ class EmployeeCoreAssessmentCreateSerializer(serializers.ModelSerializer):
     def validate_competency_ratings(self, value):
         """Validate competency ratings format"""
         if not value:
-            raise serializers.ValidationError("Competency ratings are required")
+            return value  # Allow empty for draft saves
         
         for rating in value:
             if 'skill_id' not in rating or 'actual_level' not in rating:
@@ -370,30 +387,83 @@ class EmployeeCoreAssessmentCreateSerializer(serializers.ModelSerializer):
     
     @transaction.atomic
     def create(self, validated_data):
-        competency_ratings = validated_data.pop('competency_ratings')
+        competency_ratings = validated_data.pop('competency_ratings', [])
+        action_type = validated_data.pop('action_type', 'save_draft')
+        
+        # Set status based on action type
+        if action_type == 'submit':
+            validated_data['status'] = 'COMPLETED'
+        else:
+            validated_data['status'] = 'DRAFT'
         
         assessment = super().create(validated_data)
         
-        # Get position requirements
-        position_ratings = assessment.position_assessment.competency_ratings.all()
-        position_requirements = {pr.skill_id: pr.required_level for pr in position_ratings}
-        
-        # Create employee ratings
-        for rating_data in competency_ratings:
-            skill_id = rating_data['skill_id']
-            actual_level = rating_data['actual_level']
-            required_level = position_requirements.get(skill_id, 0)
+        # Create employee ratings if provided
+        if competency_ratings:
+            # Get position requirements
+            position_ratings = assessment.position_assessment.competency_ratings.all()
+            position_requirements = {pr.skill_id: pr.required_level for pr in position_ratings}
             
-            EmployeeCoreCompetencyRating.objects.create(
-                assessment=assessment,
-                skill_id=skill_id,
-                required_level=required_level,
-                actual_level=actual_level,
-                notes=rating_data.get('notes', '')
-            )
+            for rating_data in competency_ratings:
+                skill_id = rating_data['skill_id']
+                actual_level = rating_data['actual_level']
+                required_level = position_requirements.get(skill_id, 0)
+                
+                EmployeeCoreCompetencyRating.objects.create(
+                    assessment=assessment,
+                    skill_id=skill_id,
+                    required_level=required_level,
+                    actual_level=actual_level,
+                    notes=rating_data.get('notes', '')
+                )
         
-        # Calculate scores
-        assessment.calculate_scores()
+        # Calculate scores if submitting
+        if action_type == 'submit':
+            assessment.calculate_scores()
+        
+        return assessment
+    
+    @transaction.atomic
+    def update(self, instance, validated_data):
+        competency_ratings = validated_data.pop('competency_ratings', None)
+        action_type = validated_data.pop('action_type', 'save_draft')
+        
+        # Handle status transitions
+        if action_type == 'submit':
+            validated_data['status'] = 'COMPLETED'
+        elif action_type == 'save_draft':
+            validated_data['status'] = 'DRAFT'
+        
+        # Update the assessment
+        assessment = super().update(instance, validated_data)
+        
+        # Update competency ratings if provided
+        if competency_ratings is not None:
+            # Clear existing ratings
+            assessment.competency_ratings.all().delete()
+            
+            if competency_ratings:
+                # Get position requirements
+                position_ratings = assessment.position_assessment.competency_ratings.all()
+                position_requirements = {pr.skill_id: pr.required_level for pr in position_ratings}
+                
+                # Create new ratings
+                for rating_data in competency_ratings:
+                    skill_id = rating_data['skill_id']
+                    actual_level = rating_data['actual_level']
+                    required_level = position_requirements.get(skill_id, 0)
+                    
+                    EmployeeCoreCompetencyRating.objects.create(
+                        assessment=assessment,
+                        skill_id=skill_id,
+                        required_level=required_level,
+                        actual_level=actual_level,
+                        notes=rating_data.get('notes', '')
+                    )
+        
+        # Calculate scores if submitting or if completed
+        if action_type == 'submit' or assessment.status == 'COMPLETED':
+            assessment.calculate_scores()
         
         return assessment
 
@@ -418,6 +488,10 @@ class EmployeeBehavioralAssessmentSerializer(serializers.ModelSerializer):
     assessed_by_name = serializers.CharField(source='assessed_by.username', read_only=True)
     competency_ratings = EmployeeBehavioralCompetencyRatingSerializer(many=True, read_only=True)
     
+    # Status display
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    can_edit = serializers.SerializerMethodField()
+    
     # Group scores with letter grades
     group_scores_display = serializers.SerializerMethodField()
     overall_grade_info = serializers.SerializerMethodField()
@@ -426,7 +500,8 @@ class EmployeeBehavioralAssessmentSerializer(serializers.ModelSerializer):
         model = EmployeeBehavioralAssessment
         fields = [
             'id', 'employee', 'employee_name', 'employee_id',
-            'position_assessment', 'position_assessment_title', 'assessment_date', 'status',
+            'position_assessment', 'position_assessment_title', 'assessment_date', 
+            'status', 'status_display', 'can_edit',
             'assessed_by', 'assessed_by_name', 'notes',
             'group_scores', 'group_scores_display', 'overall_percentage', 
             'overall_letter_grade', 'overall_grade_info', 'competency_ratings',
@@ -436,6 +511,10 @@ class EmployeeBehavioralAssessmentSerializer(serializers.ModelSerializer):
             'group_scores', 'overall_percentage', 'overall_letter_grade',
             'created_at', 'updated_at'
         ]
+    
+    def get_can_edit(self, obj):
+        """Check if assessment can be edited (only DRAFT status)"""
+        return obj.status == 'DRAFT'
     
     def get_group_scores_display(self, obj):
         """Format group scores for display"""
@@ -447,12 +526,12 @@ class EmployeeBehavioralAssessmentSerializer(serializers.ModelSerializer):
             
             display_scores[group_name] = {
                 **scores,
-               
+                'description': letter_grade_obj.description if letter_grade_obj else ''
             }
         return display_scores
     
     def get_overall_grade_info(self, obj):
-        """Get overall grade information with color"""
+        """Get overall grade information with description"""
         letter_grade_obj = LetterGradeMapping.objects.filter(
             letter_grade=obj.overall_letter_grade
         ).first()
@@ -460,7 +539,6 @@ class EmployeeBehavioralAssessmentSerializer(serializers.ModelSerializer):
         return {
             'letter_grade': obj.overall_letter_grade,
             'percentage': obj.overall_percentage,
-        
             'description': letter_grade_obj.description if letter_grade_obj else ''
         }
 
@@ -469,14 +547,23 @@ class EmployeeBehavioralAssessmentCreateSerializer(serializers.ModelSerializer):
     competency_ratings = serializers.ListField(
         child=serializers.DictField(),
         write_only=True,
-        help_text="List of {behavioral_competency_id: actual_level} mappings"
+        help_text="List of {behavioral_competency_id: actual_level} mappings",
+        required=False
+    )
+    
+    # Add action_type field to handle status transitions
+    action_type = serializers.ChoiceField(
+        choices=[('save_draft', 'Save Draft'), ('submit', 'Submit')],
+        write_only=True,
+        required=False,
+        default='save_draft'
     )
     
     class Meta:
         model = EmployeeBehavioralAssessment
         fields = [
             'employee', 'position_assessment', 'assessment_date',
-            'assessed_by', 'notes', 'competency_ratings'
+            'assessed_by', 'notes', 'competency_ratings', 'action_type'
         ]
     
     def validate(self, data):
@@ -497,7 +584,7 @@ class EmployeeBehavioralAssessmentCreateSerializer(serializers.ModelSerializer):
     def validate_competency_ratings(self, value):
         """Validate competency ratings format"""
         if not value:
-            raise serializers.ValidationError("Competency ratings are required")
+            return value  # Allow empty for draft saves
         
         for rating in value:
             if 'behavioral_competency_id' not in rating or 'actual_level' not in rating:
@@ -515,30 +602,83 @@ class EmployeeBehavioralAssessmentCreateSerializer(serializers.ModelSerializer):
     
     @transaction.atomic
     def create(self, validated_data):
-        competency_ratings = validated_data.pop('competency_ratings')
+        competency_ratings = validated_data.pop('competency_ratings', [])
+        action_type = validated_data.pop('action_type', 'save_draft')
+        
+        # Set status based on action type
+        if action_type == 'submit':
+            validated_data['status'] = 'COMPLETED'
+        else:
+            validated_data['status'] = 'DRAFT'
         
         assessment = super().create(validated_data)
         
-        # Get position requirements
-        position_ratings = assessment.position_assessment.competency_ratings.all()
-        position_requirements = {pr.behavioral_competency_id: pr.required_level for pr in position_ratings}
-        
-        # Create employee ratings
-        for rating_data in competency_ratings:
-            competency_id = rating_data['behavioral_competency_id']
-            actual_level = rating_data['actual_level']
-            required_level = position_requirements.get(competency_id, 1)
+        # Create employee ratings if provided
+        if competency_ratings:
+            # Get position requirements
+            position_ratings = assessment.position_assessment.competency_ratings.all()
+            position_requirements = {pr.behavioral_competency_id: pr.required_level for pr in position_ratings}
             
-            EmployeeBehavioralCompetencyRating.objects.create(
-                assessment=assessment,
-                behavioral_competency_id=competency_id,
-                required_level=required_level,
-                actual_level=actual_level,
-                notes=rating_data.get('notes', '')
-            )
+            for rating_data in competency_ratings:
+                competency_id = rating_data['behavioral_competency_id']
+                actual_level = rating_data['actual_level']
+                required_level = position_requirements.get(competency_id, 1)
+                
+                EmployeeBehavioralCompetencyRating.objects.create(
+                    assessment=assessment,
+                    behavioral_competency_id=competency_id,
+                    required_level=required_level,
+                    actual_level=actual_level,
+                    notes=rating_data.get('notes', '')
+                )
         
-        # Calculate scores
-        assessment.calculate_scores()
+        # Calculate scores if submitting
+        if action_type == 'submit':
+            assessment.calculate_scores()
+        
+        return assessment
+    
+    @transaction.atomic
+    def update(self, instance, validated_data):
+        competency_ratings = validated_data.pop('competency_ratings', None)
+        action_type = validated_data.pop('action_type', 'save_draft')
+        
+        # Handle status transitions
+        if action_type == 'submit':
+            validated_data['status'] = 'COMPLETED'
+        elif action_type == 'save_draft':
+            validated_data['status'] = 'DRAFT'
+        
+        # Update the assessment
+        assessment = super().update(instance, validated_data)
+        
+        # Update competency ratings if provided
+        if competency_ratings is not None:
+            # Clear existing ratings
+            assessment.competency_ratings.all().delete()
+            
+            if competency_ratings:
+                # Get position requirements
+                position_ratings = assessment.position_assessment.competency_ratings.all()
+                position_requirements = {pr.behavioral_competency_id: pr.required_level for pr in position_ratings}
+                
+                # Create new ratings
+                for rating_data in competency_ratings:
+                    competency_id = rating_data['behavioral_competency_id']
+                    actual_level = rating_data['actual_level']
+                    required_level = position_requirements.get(competency_id, 1)
+                    
+                    EmployeeBehavioralCompetencyRating.objects.create(
+                        assessment=assessment,
+                        behavioral_competency_id=competency_id,
+                        required_level=required_level,
+                        actual_level=actual_level,
+                        notes=rating_data.get('notes', '')
+                    )
+        
+        # Calculate scores if submitting or if completed
+        if action_type == 'submit' or assessment.status == 'COMPLETED':
+            assessment.calculate_scores()
         
         return assessment
 

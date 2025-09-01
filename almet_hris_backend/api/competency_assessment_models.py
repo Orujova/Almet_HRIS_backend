@@ -4,6 +4,7 @@ from django.db import models
 from django.contrib.auth.models import User
 from django.core.validators import MinValueValidator, MaxValueValidator
 from django.utils import timezone
+from django.core.exceptions import ValidationError
 import uuid
 import logging
 
@@ -79,7 +80,10 @@ class LetterGradeMapping(models.Model):
         except:
             return 'N/A'
     
-    
+    def clean(self):
+        """Validate that min_percentage < max_percentage"""
+        if self.min_percentage >= self.max_percentage:
+            raise ValidationError("Minimum percentage must be less than maximum percentage")
 
 
 class PositionCoreAssessment(models.Model):
@@ -185,7 +189,7 @@ class EmployeeCoreAssessment(models.Model):
     position_assessment = models.ForeignKey(PositionCoreAssessment, on_delete=models.CASCADE)
     assessment_date = models.DateField(default=timezone.now)
     
-    # Status
+    # Status with proper choices
     STATUS_CHOICES = [
         ('DRAFT', 'Draft'),
         ('COMPLETED', 'Completed'),
@@ -227,6 +231,25 @@ class EmployeeCoreAssessment(models.Model):
         
         self.save()
     
+    def can_edit(self):
+        """Check if assessment can be edited"""
+        return self.status == 'DRAFT'
+    
+    def save(self, *args, **kwargs):
+        """Override save to handle status transitions"""
+        # Only check for old instance if this is an update (not a create)
+        if self.pk:
+            try:
+                # Check if status is changing from COMPLETED to DRAFT
+                old_instance = EmployeeCoreAssessment.objects.get(pk=self.pk)
+                if old_instance.status == 'COMPLETED' and self.status == 'DRAFT':
+                    logger.info(f"Core assessment {self.pk} reopened for editing")
+            except EmployeeCoreAssessment.DoesNotExist:
+                # This shouldn't happen, but if it does, just continue
+                pass
+        
+        super().save(*args, **kwargs)
+    
     def __str__(self):
         return f"{self.employee.full_name} - Core Assessment ({self.assessment_date})"
 
@@ -267,7 +290,7 @@ class EmployeeBehavioralAssessment(models.Model):
     position_assessment = models.ForeignKey(PositionBehavioralAssessment, on_delete=models.CASCADE)
     assessment_date = models.DateField(default=timezone.now)
     
-    # Status
+    # Status with proper choices
     STATUS_CHOICES = [
         ('DRAFT', 'Draft'),
         ('COMPLETED', 'Completed'),
@@ -345,9 +368,30 @@ class EmployeeBehavioralAssessment(models.Model):
         
         self.save()
     
+    def can_edit(self):
+        """Check if assessment can be edited"""
+        return self.status == 'DRAFT'
+    
+    def save(self, *args, **kwargs):
+        """Override save to handle status transitions"""
+        # Only check for old instance if this is an update (not a create)
+        if self.pk:
+            try:
+                # Check if status is changing from COMPLETED to DRAFT
+                old_instance = EmployeeBehavioralAssessment.objects.get(pk=self.pk)
+                if old_instance.status == 'COMPLETED' and self.status == 'DRAFT':
+                    logger.info(f"Behavioral assessment {self.pk} reopened for editing")
+            except EmployeeBehavioralAssessment.DoesNotExist:
+                # This shouldn't happen, but if it does, just continue
+                pass
+        
+        super().save(*args, **kwargs)
+    
     def __str__(self):
         return f"{self.employee.full_name} - Behavioral Assessment ({self.assessment_date})"
 
+
+# Core Assessment model-də də eyni problem ola bilər, onu da düzəltək:
 
 class EmployeeBehavioralCompetencyRating(models.Model):
     """Individual behavioral competency rating within employee assessment"""
