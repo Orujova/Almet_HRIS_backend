@@ -1,4 +1,4 @@
-# api/urls.py - UPDATED: Asset Management əlavə edilməsi
+# api/urls.py
 
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
@@ -21,12 +21,18 @@ from .job_description_views import (
     JobDescriptionStatsViewSet
 )
 
-# ADDED: Asset Management Views Import
+# Asset Management Views Import
 from .asset_views import (
     AssetCategoryViewSet,
     AssetViewSet,
+)
 
- 
+# UPDATED: Competency Assessment Views Import
+from .competency_assessment_views import (
+    CoreCompetencyScaleViewSet, BehavioralScaleViewSet, LetterGradeMappingViewSet,
+    PositionCoreAssessmentViewSet, PositionBehavioralAssessmentViewSet,
+    EmployeeCoreAssessmentViewSet, EmployeeBehavioralAssessmentViewSet,
+    AssessmentDashboardViewSet
 )
 
 # Create router for viewsets
@@ -75,12 +81,19 @@ router.register(r'job-description/access-matrix', AccessMatrixViewSet, basename=
 router.register(r'job-description/company-benefits', CompanyBenefitViewSet, basename='companybenefit')
 router.register(r'job-description/stats', JobDescriptionStatsViewSet, basename='jobdescriptionstats')
 
-# ADDED: Asset Management URLs
+# Asset Management URLs
 router.register(r'assets/categories', AssetCategoryViewSet, basename='assetcategory')
 router.register(r'assets/assets', AssetViewSet, basename='asset')
 
-
-
+# UPDATED: Competency Assessment URLs - simplified structure
+router.register(r'assessments/core-scales', CoreCompetencyScaleViewSet, basename='assessment-core-scales')
+router.register(r'assessments/behavioral-scales', BehavioralScaleViewSet, basename='assessment-behavioral-scales')
+router.register(r'assessments/letter-grades', LetterGradeMappingViewSet, basename='assessment-letter-grades')
+router.register(r'assessments/position-core', PositionCoreAssessmentViewSet, basename='assessment-position-core')
+router.register(r'assessments/position-behavioral', PositionBehavioralAssessmentViewSet, basename='assessment-position-behavioral')
+router.register(r'assessments/employee-core', EmployeeCoreAssessmentViewSet, basename='assessment-employee-core')
+router.register(r'assessments/employee-behavioral', EmployeeBehavioralAssessmentViewSet, basename='assessment-employee-behavioral')
+router.register(r'assessments/dashboard', AssessmentDashboardViewSet, basename='assessment-dashboard')
 
 urlpatterns = [
     # Authentication endpoints
@@ -111,35 +124,20 @@ urlpatterns = [
     # Competency Stats endpoint
     path('competency/stats/', CompetencyStatsView.as_view(), name='competency-stats'),
     
-   
-    
-   
-    
-   
-    
-   
-    
+    # Asset management endpoints
     path('assets/assets/<uuid:pk>/activities/', 
          AssetViewSet.as_view({'get': 'activities'}), 
          name='asset-activities'),
     
-  
-    
     path('assets/assets/export/', 
          AssetViewSet.as_view({'post': 'export_assets'}), 
          name='asset-export'),
-    
-
-    
-
-    
-   
     
     # Statistics and filters
     path('org-chart/statistics/', 
          views.OrgChartViewSet.as_view({'get': 'get_statistics'}), 
          name='org_chart_statistics'),
     
-    # Include all router URLs - IMPORTANT: This MUST be last
+    # Include router URLs
     path('', include(router.urls)),
 ]
