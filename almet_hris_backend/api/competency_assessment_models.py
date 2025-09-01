@@ -71,20 +71,61 @@ class LetterGradeMapping(models.Model):
     def get_letter_grade(cls, percentage):
         """Get letter grade for given percentage"""
         try:
+            # Round percentage to 2 decimal places to avoid floating point issues
+            percentage = round(float(percentage), 2)
+            
+            # Find grade where percentage falls within range
             grade = cls.objects.filter(
                 min_percentage__lte=percentage,
                 max_percentage__gte=percentage,
                 is_active=True
             ).first()
-            return grade.letter_grade if grade else 'N/A'
-        except:
+            
+            if grade:
+                return grade.letter_grade
+            
+            # If no exact match, find closest grade
+            # Check if percentage is above highest grade
+            highest_grade = cls.objects.filter(is_active=True).order_by('-max_percentage').first()
+            if highest_grade and percentage > highest_grade.max_percentage:
+                return highest_grade.letter_grade
+            
+            # Check if percentage is below lowest grade
+            lowest_grade = cls.objects.filter(is_active=True).order_by('min_percentage').first()
+            if lowest_grade and percentage < lowest_grade.min_percentage:
+                return lowest_grade.letter_grade
+            
+            return 'N/A'
+            
+        except (ValueError, TypeError):
             return 'N/A'
     
     def clean(self):
-        """Validate that min_percentage < max_percentage"""
-        if self.min_percentage >= self.max_percentage:
-            raise ValidationError("Minimum percentage must be less than maximum percentage")
-
+        """Validate that min_percentage <= max_percentage"""
+        if self.min_percentage > self.max_percentage:
+            raise ValidationError("Minimum percentage must be less than or equal to maximum percentage")
+        
+        # Check for overlaps with existing grades (excluding self)
+        overlapping = LetterGradeMapping.objects.filter(is_active=True)
+        if self.pk:
+            overlapping = overlapping.exclude(pk=self.pk)
+        
+        for grade in overlapping:
+            # Check if ranges overlap
+            ranges_overlap = not (
+                self.max_percentage < grade.min_percentage or 
+                self.min_percentage > grade.max_percentage
+            )
+            
+            if ranges_overlap:
+                raise ValidationError(
+                    f"Percentage range {self.min_percentage}-{self.max_percentage}% overlaps "
+                    f"with existing grade '{grade.letter_grade}' ({grade.min_percentage}-{grade.max_percentage}%)"
+                )
+    
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
 
 class PositionCoreAssessment(models.Model):
     """Position-specific Core Competency Assessment Template"""

@@ -10,7 +10,8 @@ from django.utils import timezone
 from django.http import HttpResponse
 import io
 import openpyxl
-from openpyxl.styles import Font, PatternFill, Alignment
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.utils import get_column_letter
 from datetime import datetime, timedelta
 
 from .competency_assessment_models import (
@@ -80,14 +81,27 @@ class LetterGradeMappingViewSet(viewsets.ModelViewSet):
     
     @action(detail=False, methods=['get'])
     def get_grade_for_percentage(self, request):
-        """Get letter grade for given percentage"""
+        """Get letter grade for given percentage
+        
+        Query Parameters:
+        - percentage (required): The percentage value (0-100)
+        
+        Example: /api/assessments/letter-grades/get_grade_for_percentage/?percentage=85
+        """
         percentage = request.query_params.get('percentage')
         if not percentage:
-            return Response({'error': 'Percentage parameter required'}, 
-                          status=status.HTTP_400_BAD_REQUEST)
+            return Response({
+                'error': 'Percentage parameter required',
+                'help': 'Add ?percentage=85 to your request URL'
+            }, status=status.HTTP_400_BAD_REQUEST)
         
         try:
             pct = float(percentage)
+            if pct < 0 or pct > 100:
+                return Response({
+                    'error': 'Percentage must be between 0 and 100'
+                }, status=status.HTTP_400_BAD_REQUEST)
+                
             grade = LetterGradeMapping.get_letter_grade(pct)
             grade_obj = LetterGradeMapping.objects.filter(letter_grade=grade).first()
             
@@ -97,8 +111,9 @@ class LetterGradeMappingViewSet(viewsets.ModelViewSet):
                 'description': grade_obj.description if grade_obj else ''
             })
         except ValueError:
-            return Response({'error': 'Invalid percentage value'}, 
-                          status=status.HTTP_400_BAD_REQUEST)
+            return Response({
+                'error': 'Invalid percentage value. Must be a number.'
+            }, status=status.HTTP_400_BAD_REQUEST)
 
 
 # POSITION ASSESSMENT VIEWS
@@ -168,11 +183,19 @@ class PositionCoreAssessmentViewSet(viewsets.ModelViewSet):
     
     @action(detail=False, methods=['get'])
     def get_for_employee(self, request):
-        """Get position assessment template for specific employee"""
+        """Get position assessment template for specific employee
+        
+        Query Parameters:
+        - employee_id (required): The employee ID
+        
+        Example: /api/assessments/position-core/get_for_employee/?employee_id=63
+        """
         employee_id = request.query_params.get('employee_id')
         if not employee_id:
-            return Response({'error': 'employee_id is required'}, 
-                          status=status.HTTP_400_BAD_REQUEST)
+            return Response({
+                'error': 'employee_id is required',
+                'help': 'Add ?employee_id=63 to your request URL'
+            }, status=status.HTTP_400_BAD_REQUEST)
         
         try:
             employee = Employee.objects.get(id=employee_id)
@@ -209,6 +232,9 @@ class PositionCoreAssessmentViewSet(viewsets.ModelViewSet):
         except Employee.DoesNotExist:
             return Response({'error': 'Employee not found'}, 
                           status=status.HTTP_404_NOT_FOUND)
+        except ValueError:
+            return Response({'error': 'Invalid employee_id format'}, 
+                          status=status.HTTP_400_BAD_REQUEST)
 
 
 class PositionBehavioralAssessmentViewSet(viewsets.ModelViewSet):
@@ -274,11 +300,19 @@ class PositionBehavioralAssessmentViewSet(viewsets.ModelViewSet):
     
     @action(detail=False, methods=['get'])
     def get_for_employee(self, request):
-        """Get behavioral assessment template for specific employee"""
+        """Get behavioral assessment template for specific employee
+        
+        Query Parameters:
+        - employee_id (required): The employee ID
+        
+        Example: /api/assessments/position-behavioral/get_for_employee/?employee_id=63
+        """
         employee_id = request.query_params.get('employee_id')
         if not employee_id:
-            return Response({'error': 'employee_id is required'}, 
-                          status=status.HTTP_400_BAD_REQUEST)
+            return Response({
+                'error': 'employee_id is required',
+                'help': 'Add ?employee_id=63 to your request URL'
+            }, status=status.HTTP_400_BAD_REQUEST)
         
         try:
             employee = Employee.objects.get(id=employee_id)
@@ -314,6 +348,9 @@ class PositionBehavioralAssessmentViewSet(viewsets.ModelViewSet):
         except Employee.DoesNotExist:
             return Response({'error': 'Employee not found'}, 
                           status=status.HTTP_404_NOT_FOUND)
+        except ValueError:
+            return Response({'error': 'Invalid employee_id format'}, 
+                          status=status.HTTP_400_BAD_REQUEST)
 
 
 # EMPLOYEE ASSESSMENT VIEWS
@@ -358,7 +395,7 @@ class EmployeeCoreAssessmentViewSet(viewsets.ModelViewSet):
     
     @action(detail=True, methods=['post'])
     def submit(self, request, pk=None):
-        """Submit behavioral assessment as completed (finalizes assessment)"""
+        """Submit core assessment as completed (finalizes assessment)"""
         assessment = self.get_object()
         
         # Can only submit DRAFT assessments
@@ -394,8 +431,8 @@ class EmployeeCoreAssessmentViewSet(viewsets.ModelViewSet):
         
         return Response({
             'success': True,
-            'message': 'Behavioral assessment submitted successfully',
-            'assessment': EmployeeCoreAssessmentCreateSerializer(assessment).data
+            'message': 'Core assessment submitted successfully',
+            'assessment': EmployeeCoreAssessmentSerializer(assessment).data
         })
     
     @action(detail=True, methods=['post'])
@@ -441,15 +478,28 @@ class EmployeeCoreAssessmentViewSet(viewsets.ModelViewSet):
             ws = wb.active
             ws.title = "Core Competency Assessment"
             
+            # Define styles
+            header_font = Font(bold=True, size=16, color="FFFFFF")
+            header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+            section_font = Font(bold=True, size=12)
+            section_fill = PatternFill(start_color="D3D3D3", end_color="D3D3D3", fill_type="solid")
+            table_header_font = Font(bold=True)
+            border = Border(left=Side(style='thin'), right=Side(style='thin'), 
+                          top=Side(style='thin'), bottom=Side(style='thin'))
+            
             # Header information
             ws['A1'] = "CORE COMPETENCY ASSESSMENT REPORT"
-            ws['A1'].font = Font(bold=True, size=16)
-            ws['A1'].fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+            ws['A1'].font = header_font
+            ws['A1'].fill = header_fill
+            ws.merge_cells('A1:F1')
+            ws['A1'].alignment = Alignment(horizontal='center')
             
             # Employee information
             row = 3
             ws[f'A{row}'] = "Employee Information"
-            ws[f'A{row}'].font = Font(bold=True)
+            ws[f'A{row}'].font = section_font
+            ws[f'A{row}'].fill = section_fill
+            ws.merge_cells(f'A{row}:B{row}')
             row += 1
             
             employee_info = [
@@ -463,13 +513,16 @@ class EmployeeCoreAssessmentViewSet(viewsets.ModelViewSet):
             
             for label, value in employee_info:
                 ws[f'A{row}'] = label
+                ws[f'A{row}'].font = Font(bold=True)
                 ws[f'B{row}'] = value
                 row += 1
             
             # Summary scores
             row += 2
             ws[f'A{row}'] = "ASSESSMENT SUMMARY"
-            ws[f'A{row}'].font = Font(bold=True)
+            ws[f'A{row}'].font = section_font
+            ws[f'A{row}'].fill = section_fill
+            ws.merge_cells(f'A{row}:B{row}')
             row += 1
             
             summary_data = [
@@ -481,50 +534,59 @@ class EmployeeCoreAssessmentViewSet(viewsets.ModelViewSet):
             
             for label, value in summary_data:
                 ws[f'A{row}'] = label
+                ws[f'A{row}'].font = Font(bold=True)
                 ws[f'B{row}'] = value
                 row += 1
             
             # Detailed ratings
             row += 2
             ws[f'A{row}'] = "DETAILED COMPETENCY RATINGS"
-            ws[f'A{row}'].font = Font(bold=True)
+            ws[f'A{row}'].font = section_font
+            ws[f'A{row}'].fill = section_fill
+            ws.merge_cells(f'A{row}:F{row}')
             row += 1
             
             # Headers
             headers = ['Skill Group', 'Skill Name', 'Required Level', 'Actual Level', 'Gap', 'Notes']
             for col, header in enumerate(headers, start=1):
                 cell = ws.cell(row=row, column=col, value=header)
-                cell.font = Font(bold=True)
-                cell.fill = PatternFill(start_color="D3D3D3", end_color="D3D3D3", fill_type="solid")
+                cell.font = table_header_font
+                cell.fill = section_fill
+                cell.border = border
             row += 1
             
             # Rating data
             for rating in assessment.competency_ratings.select_related('skill__group').all():
-                ws.cell(row=row, column=1, value=rating.skill.group.name)
-                ws.cell(row=row, column=2, value=rating.skill.name)
-                ws.cell(row=row, column=3, value=rating.required_level)
-                ws.cell(row=row, column=4, value=rating.actual_level)
+                ws.cell(row=row, column=1, value=rating.skill.group.name).border = border
+                ws.cell(row=row, column=2, value=rating.skill.name).border = border
+                ws.cell(row=row, column=3, value=rating.required_level).border = border
+                ws.cell(row=row, column=4, value=rating.actual_level).border = border
                 
                 # Gap with color coding
                 gap_cell = ws.cell(row=row, column=5, value=rating.gap)
+                gap_cell.border = border
                 if rating.gap > 0:
-                    gap_cell.fill = PatternFill(start_color="90EE90", end_color="90EE90", fill_type="solid")  # Light green
+                    gap_cell.fill = PatternFill(start_color="90EE90", end_color="90EE90", fill_type="solid")
                 elif rating.gap < 0:
-                    gap_cell.fill = PatternFill(start_color="FFB6C1", end_color="FFB6C1", fill_type="solid")  # Light red
+                    gap_cell.fill = PatternFill(start_color="FFB6C1", end_color="FFB6C1", fill_type="solid")
                 
-                ws.cell(row=row, column=6, value=rating.notes)
+                notes_cell = ws.cell(row=row, column=6, value=rating.notes or '')
+                notes_cell.border = border
                 row += 1
             
             # Auto-adjust column widths
-            for column in ws.columns:
+            for col_num in range(1, 7):
+                column_letter = get_column_letter(col_num)
                 max_length = 0
-                column_letter = column[0].column_letter
-                for cell in column:
-                    try:
-                        if len(str(cell.value)) > max_length:
-                            max_length = len(str(cell.value))
-                    except:
-                        pass
+                
+                for row_cells in ws[f'{column_letter}1:{column_letter}{ws.max_row}']:
+                    for cell in row_cells:
+                        try:
+                            if cell.value and len(str(cell.value)) > max_length:
+                                max_length = len(str(cell.value))
+                        except:
+                            pass
+                
                 adjusted_width = min(max_length + 2, 50)
                 ws.column_dimensions[column_letter].width = adjusted_width
             
@@ -677,13 +739,18 @@ class EmployeeBehavioralAssessmentViewSet(viewsets.ModelViewSet):
             ws = wb.active
             ws.title = "Behavioral Assessment"
             
-            # Header colors
+            # Define styles
+            header_font = Font(bold=True, size=16, color="FFFFFF")
             header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+            section_font = Font(bold=True, size=12)
             section_fill = PatternFill(start_color="D3D3D3", end_color="D3D3D3", fill_type="solid")
+            table_header_font = Font(bold=True)
+            border = Border(left=Side(style='thin'), right=Side(style='thin'), 
+                          top=Side(style='thin'), bottom=Side(style='thin'))
             
             # Header information
             ws['A1'] = "BEHAVIORAL COMPETENCY ASSESSMENT REPORT"
-            ws['A1'].font = Font(bold=True, size=16, color="FFFFFF")
+            ws['A1'].font = header_font
             ws['A1'].fill = header_fill
             ws.merge_cells('A1:F1')
             ws['A1'].alignment = Alignment(horizontal='center')
@@ -691,7 +758,7 @@ class EmployeeBehavioralAssessmentViewSet(viewsets.ModelViewSet):
             # Employee information
             row = 3
             ws[f'A{row}'] = "Employee Information"
-            ws[f'A{row}'].font = Font(bold=True, size=12)
+            ws[f'A{row}'].font = section_font
             ws[f'A{row}'].fill = section_fill
             ws.merge_cells(f'A{row}:B{row}')
             row += 1
@@ -715,15 +782,14 @@ class EmployeeBehavioralAssessmentViewSet(viewsets.ModelViewSet):
             # Overall Summary
             row += 2
             ws[f'A{row}'] = "OVERALL PERFORMANCE SUMMARY"
-            ws[f'A{row}'].font = Font(bold=True, size=12)
+            ws[f'A{row}'].font = section_font
             ws[f'A{row}'].fill = section_fill
             ws.merge_cells(f'A{row}:D{row}')
             row += 1
             
             # Overall grade with color coding
-            overall_cell = ws[f'A{row}']
-            overall_cell.value = "Overall Grade:"
-            overall_cell.font = Font(bold=True)
+            ws[f'A{row}'] = "Overall Grade:"
+            ws[f'A{row}'].font = Font(bold=True)
             
             grade_cell = ws[f'B{row}']
             grade_cell.value = f"{assessment.overall_letter_grade} ({assessment.overall_percentage}%)"
@@ -731,19 +797,19 @@ class EmployeeBehavioralAssessmentViewSet(viewsets.ModelViewSet):
             
             # Color code based on grade
             if assessment.overall_letter_grade in ['A+', 'A', 'A-']:
-                grade_cell.fill = PatternFill(start_color="00FF00", end_color="00FF00", fill_type="solid")  # Green
+                grade_cell.fill = PatternFill(start_color="00FF00", end_color="00FF00", fill_type="solid")
             elif assessment.overall_letter_grade in ['B+', 'B', 'B-']:
-                grade_cell.fill = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")  # Yellow
+                grade_cell.fill = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
             elif assessment.overall_letter_grade in ['C+', 'C', 'C-']:
-                grade_cell.fill = PatternFill(start_color="FFA500", end_color="FFA500", fill_type="solid")  # Orange
+                grade_cell.fill = PatternFill(start_color="FFA500", end_color="FFA500", fill_type="solid")
             else:
-                grade_cell.fill = PatternFill(start_color="FF0000", end_color="FF0000", fill_type="solid")  # Red
+                grade_cell.fill = PatternFill(start_color="FF0000", end_color="FF0000", fill_type="solid")
             
             row += 2
             
             # Group Performance Summary
             ws[f'A{row}'] = "COMPETENCY GROUP PERFORMANCE"
-            ws[f'A{row}'].font = Font(bold=True, size=12)
+            ws[f'A{row}'].font = section_font
             ws[f'A{row}'].fill = section_fill
             ws.merge_cells(f'A{row}:E{row}')
             row += 1
@@ -752,32 +818,35 @@ class EmployeeBehavioralAssessmentViewSet(viewsets.ModelViewSet):
             group_headers = ['Competency Group', 'Required Score', 'Actual Score', 'Percentage', 'Grade']
             for col, header in enumerate(group_headers, start=1):
                 cell = ws.cell(row=row, column=col, value=header)
-                cell.font = Font(bold=True)
+                cell.font = table_header_font
                 cell.fill = section_fill
+                cell.border = border
             row += 1
             
             # Group scores
             for group_name, scores in assessment.group_scores.items():
-                ws.cell(row=row, column=1, value=group_name)
-                ws.cell(row=row, column=2, value=scores['position_total'])
-                ws.cell(row=row, column=3, value=scores['employee_total'])
+                ws.cell(row=row, column=1, value=group_name).border = border
+                ws.cell(row=row, column=2, value=scores['position_total']).border = border
+                ws.cell(row=row, column=3, value=scores['employee_total']).border = border
                 
                 # Percentage with color coding
                 pct_cell = ws.cell(row=row, column=4, value=f"{scores['percentage']}%")
+                pct_cell.border = border
                 grade_cell = ws.cell(row=row, column=5, value=scores['letter_grade'])
+                grade_cell.border = border
                 
                 # Color code based on percentage
                 if scores['percentage'] >= 90:
-                    pct_cell.fill = PatternFill(start_color="90EE90", end_color="90EE90", fill_type="solid")  # Light green
+                    pct_cell.fill = PatternFill(start_color="90EE90", end_color="90EE90", fill_type="solid")
                     grade_cell.fill = PatternFill(start_color="90EE90", end_color="90EE90", fill_type="solid")
                 elif scores['percentage'] >= 80:
-                    pct_cell.fill = PatternFill(start_color="FFFF99", end_color="FFFF99", fill_type="solid")  # Light yellow
+                    pct_cell.fill = PatternFill(start_color="FFFF99", end_color="FFFF99", fill_type="solid")
                     grade_cell.fill = PatternFill(start_color="FFFF99", end_color="FFFF99", fill_type="solid")
                 elif scores['percentage'] >= 70:
-                    pct_cell.fill = PatternFill(start_color="FFE4B5", end_color="FFE4B5", fill_type="solid")  # Light orange
+                    pct_cell.fill = PatternFill(start_color="FFE4B5", end_color="FFE4B5", fill_type="solid")
                     grade_cell.fill = PatternFill(start_color="FFE4B5", end_color="FFE4B5", fill_type="solid")
                 else:
-                    pct_cell.fill = PatternFill(start_color="FFB6C1", end_color="FFB6C1", fill_type="solid")  # Light red
+                    pct_cell.fill = PatternFill(start_color="FFB6C1", end_color="FFB6C1", fill_type="solid")
                     grade_cell.fill = PatternFill(start_color="FFB6C1", end_color="FFB6C1", fill_type="solid")
                 
                 row += 1
@@ -785,7 +854,7 @@ class EmployeeBehavioralAssessmentViewSet(viewsets.ModelViewSet):
             # Detailed Competency Ratings
             row += 2
             ws[f'A{row}'] = "DETAILED COMPETENCY RATINGS"
-            ws[f'A{row}'].font = Font(bold=True, size=12)
+            ws[f'A{row}'].font = section_font
             ws[f'A{row}'].fill = section_fill
             ws.merge_cells(f'A{row}:F{row}')
             row += 1
@@ -794,8 +863,9 @@ class EmployeeBehavioralAssessmentViewSet(viewsets.ModelViewSet):
             headers = ['Competency Group', 'Competency Name', 'Required Level', 'Actual Level', 'Performance', 'Notes']
             for col, header in enumerate(headers, start=1):
                 cell = ws.cell(row=row, column=col, value=header)
-                cell.font = Font(bold=True)
+                cell.font = table_header_font
                 cell.fill = section_fill
+                cell.border = border
             row += 1
             
             # Rating data grouped by competency group
@@ -811,14 +881,15 @@ class EmployeeBehavioralAssessmentViewSet(viewsets.ModelViewSet):
                         row += 1  # Add space between groups
                     current_group = rating.behavioral_competency.group.name
                 
-                ws.cell(row=row, column=1, value=rating.behavioral_competency.group.name)
-                ws.cell(row=row, column=2, value=rating.behavioral_competency.name)
-                ws.cell(row=row, column=3, value=rating.required_level)
-                ws.cell(row=row, column=4, value=rating.actual_level)
+                ws.cell(row=row, column=1, value=rating.behavioral_competency.group.name).border = border
+                ws.cell(row=row, column=2, value=rating.behavioral_competency.name).border = border
+                ws.cell(row=row, column=3, value=rating.required_level).border = border
+                ws.cell(row=row, column=4, value=rating.actual_level).border = border
                 
                 # Performance indicator
                 performance = "Meets" if rating.actual_level >= rating.required_level else "Below"
                 performance_cell = ws.cell(row=row, column=5, value=performance)
+                performance_cell.border = border
                 
                 if performance == "Meets":
                     performance_cell.fill = PatternFill(start_color="90EE90", end_color="90EE90", fill_type="solid")
@@ -827,13 +898,14 @@ class EmployeeBehavioralAssessmentViewSet(viewsets.ModelViewSet):
                     performance_cell.fill = PatternFill(start_color="FFB6C1", end_color="FFB6C1", fill_type="solid")
                     performance_cell.font = Font(color="8B0000")  # Dark red
                 
-                ws.cell(row=row, column=6, value=rating.notes or '')
+                notes_cell = ws.cell(row=row, column=6, value=rating.notes or '')
+                notes_cell.border = border
                 row += 1
             
             # Development recommendations
             row += 2
             ws[f'A{row}'] = "DEVELOPMENT RECOMMENDATIONS"
-            ws[f'A{row}'].font = Font(bold=True, size=12)
+            ws[f'A{row}'].font = section_font
             ws[f'A{row}'].fill = section_fill
             ws.merge_cells(f'A{row}:F{row}')
             row += 1
@@ -862,15 +934,18 @@ class EmployeeBehavioralAssessmentViewSet(viewsets.ModelViewSet):
                 ws[f'A{row}'].font = Font(bold=True, color="006400")
             
             # Auto-adjust column widths
-            for column in ws.columns:
+            for col_num in range(1, 7):
+                column_letter = get_column_letter(col_num)
                 max_length = 0
-                column_letter = column[0].column_letter
-                for cell in column:
-                    try:
-                        if len(str(cell.value)) > max_length:
-                            max_length = len(str(cell.value))
-                    except:
-                        pass
+                
+                for row_cells in ws[f'{column_letter}1:{column_letter}{ws.max_row}']:
+                    for cell in row_cells:
+                        try:
+                            if cell.value and len(str(cell.value)) > max_length:
+                                max_length = len(str(cell.value))
+                        except:
+                            pass
+                
                 adjusted_width = min(max_length + 2, 50)
                 ws.column_dimensions[column_letter].width = adjusted_width
             
@@ -969,11 +1044,19 @@ class AssessmentDashboardViewSet(viewsets.ViewSet):
     
     @action(detail=False, methods=['get'])
     def employee_overview(self, request):
-        """Get comprehensive assessment overview for specific employee"""
+        """Get comprehensive assessment overview for specific employee
+        
+        Query Parameters:
+        - employee_id (required): The employee ID
+        
+        Example: /api/assessments/dashboard/employee_overview/?employee_id=63
+        """
         employee_id = request.query_params.get('employee_id')
         if not employee_id:
-            return Response({'error': 'employee_id is required'}, 
-                          status=status.HTTP_400_BAD_REQUEST)
+            return Response({
+                'error': 'employee_id is required',
+                'help': 'Add ?employee_id=63 to your request URL'
+            }, status=status.HTTP_400_BAD_REQUEST)
         
         try:
             employee = Employee.objects.get(id=employee_id)
@@ -1041,6 +1124,9 @@ class AssessmentDashboardViewSet(viewsets.ViewSet):
         except Employee.DoesNotExist:
             return Response({'error': 'Employee not found'}, 
                           status=status.HTTP_404_NOT_FOUND)
+        except ValueError:
+            return Response({'error': 'Invalid employee_id format'}, 
+                          status=status.HTTP_400_BAD_REQUEST)
     
     @action(detail=False, methods=['get'])
     def scale_levels(self, request):

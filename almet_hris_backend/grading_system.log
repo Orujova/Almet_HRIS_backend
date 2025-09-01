@@ -36,3 +36,6 @@ INFO 2025-09-01 16:54:55,769 views 8080 30464 Token validated successfully for u
 INFO 2025-09-01 16:54:55,770 views 8080 30464 JWT tokens generated for user: n.orujova
 INFO 2025-09-01 16:54:55,771 views 8080 30464 Returning successful response for user: n.orujova
 ERROR 2025-09-01 17:01:48,295 competency_assessment_views 10680 27888 Error exporting behavioral assessment: 'MergedCell' object has no attribute 'column_letter'
+INFO 2025-09-01 17:40:49,948 views 18100 22580 User info request for user: n.orujova
+INFO 2025-09-01 17:40:49,990 views 18100 22580 [n.orujova] No employee profile found
+INFO 2025-09-01 17:40:49,994 views 18100 22580 [n.orujova] User info response prepared successfully
