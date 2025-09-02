@@ -8,6 +8,8 @@ from django.db.models import Q, Count, Avg
 from django.db import transaction
 from django.utils import timezone
 from django.http import HttpResponse
+from drf_yasg.utils import swagger_auto_schema
+from drf_yasg import openapi
 import io
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -79,15 +81,43 @@ class LetterGradeMappingViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         return LetterGradeMapping.objects.all().order_by('-min_percentage')
     
+    @swagger_auto_schema(
+        method='get',
+        operation_description='Get letter grade for given percentage',
+        manual_parameters=[
+            openapi.Parameter(
+                'percentage',
+                openapi.IN_QUERY,
+                description='The percentage value (0-100)',
+                type=openapi.TYPE_NUMBER,
+                required=True,
+                example=85
+            )
+        ],
+        responses={
+            200: openapi.Response(
+                description='Letter grade information',
+                examples={
+                    'application/json': {
+                        'percentage': 85,
+                        'letter_grade': 'B',
+                        'description': 'Good performance'
+                    }
+                }
+            ),
+            400: openapi.Response(
+                description='Bad Request',
+                examples={
+                    'application/json': {
+                        'error': 'Percentage parameter required'
+                    }
+                }
+            )
+        }
+    )
     @action(detail=False, methods=['get'])
     def get_grade_for_percentage(self, request):
-        """Get letter grade for given percentage
-        
-        Query Parameters:
-        - percentage (required): The percentage value (0-100)
-        
-        Example: /api/assessments/letter-grades/get_grade_for_percentage/?percentage=85
-        """
+        """Get letter grade for given percentage"""
         percentage = request.query_params.get('percentage')
         if not percentage:
             return Response({
@@ -181,15 +211,59 @@ class PositionCoreAssessmentViewSet(viewsets.ModelViewSet):
                 'error': f'Failed to duplicate assessment: {str(e)}'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
+    @swagger_auto_schema(
+        method='get',
+        operation_description='Get position assessment template for specific employee',
+        manual_parameters=[
+            openapi.Parameter(
+                'employee_id',
+                openapi.IN_QUERY,
+                description='The employee ID',
+                type=openapi.TYPE_INTEGER,
+                required=True,
+                example=63
+            )
+        ],
+        responses={
+            200: openapi.Response(
+                description='Employee position assessment template',
+                examples={
+                    'application/json': {
+                        'employee_info': {
+                            'id': 63,
+                            'name': 'John Doe',
+                            'job_title': 'Software Engineer',
+                            'position_group': 'Engineering'
+                        },
+                        'assessment_template': {
+                            'id': 'uuid',
+                            'job_title': 'Software Engineer',
+                            'competency_ratings': []
+                        }
+                    }
+                }
+            ),
+            400: openapi.Response(
+                description='Bad Request',
+                examples={
+                    'application/json': {
+                        'error': 'employee_id is required'
+                    }
+                }
+            ),
+            404: openapi.Response(
+                description='Not Found',
+                examples={
+                    'application/json': {
+                        'error': 'Employee not found'
+                    }
+                }
+            )
+        }
+    )
     @action(detail=False, methods=['get'])
     def get_for_employee(self, request):
-        """Get position assessment template for specific employee
-        
-        Query Parameters:
-        - employee_id (required): The employee ID
-        
-        Example: /api/assessments/position-core/get_for_employee/?employee_id=63
-        """
+        """Get position assessment template for specific employee"""
         employee_id = request.query_params.get('employee_id')
         if not employee_id:
             return Response({
@@ -298,15 +372,59 @@ class PositionBehavioralAssessmentViewSet(viewsets.ModelViewSet):
                 'error': f'Failed to duplicate behavioral assessment: {str(e)}'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
+    @swagger_auto_schema(
+        method='get',
+        operation_description='Get behavioral assessment template for specific employee',
+        manual_parameters=[
+            openapi.Parameter(
+                'employee_id',
+                openapi.IN_QUERY,
+                description='The employee ID',
+                type=openapi.TYPE_INTEGER,
+                required=True,
+                example=63
+            )
+        ],
+        responses={
+            200: openapi.Response(
+                description='Employee behavioral assessment template',
+                examples={
+                    'application/json': {
+                        'employee_info': {
+                            'id': 63,
+                            'name': 'John Doe',
+                            'job_title': 'Software Engineer',
+                            'position_group': 'Engineering'
+                        },
+                        'assessment_template': {
+                            'id': 'uuid',
+                            'job_title': 'Software Engineer',
+                            'competency_ratings': []
+                        }
+                    }
+                }
+            ),
+            400: openapi.Response(
+                description='Bad Request',
+                examples={
+                    'application/json': {
+                        'error': 'employee_id is required'
+                    }
+                }
+            ),
+            404: openapi.Response(
+                description='Not Found',
+                examples={
+                    'application/json': {
+                        'error': 'Employee not found'
+                    }
+                }
+            )
+        }
+    )
     @action(detail=False, methods=['get'])
     def get_for_employee(self, request):
-        """Get behavioral assessment template for specific employee
-        
-        Query Parameters:
-        - employee_id (required): The employee ID
-        
-        Example: /api/assessments/position-behavioral/get_for_employee/?employee_id=63
-        """
+        """Get behavioral assessment template for specific employee"""
         employee_id = request.query_params.get('employee_id')
         if not employee_id:
             return Response({
@@ -367,7 +485,7 @@ class EmployeeCoreAssessmentViewSet(viewsets.ModelViewSet):
     
     def get_queryset(self):
         queryset = EmployeeCoreAssessment.objects.select_related(
-            'employee', 'position_assessment', 'assessed_by'
+            'employee', 'position_assessment'
         ).prefetch_related('competency_ratings__skill__group')
         
         # Filter by employee
@@ -507,7 +625,7 @@ class EmployeeCoreAssessmentViewSet(viewsets.ModelViewSet):
                 ("Name:", assessment.employee.full_name),
                 ("Job Title:", assessment.employee.job_title),
                 ("Assessment Date:", assessment.assessment_date.strftime('%Y-%m-%d')),
-                ("Assessed By:", assessment.assessed_by.get_full_name() if assessment.assessed_by else 'System'),
+               
                 ("Status:", assessment.get_status_display())
             ]
             
@@ -623,7 +741,7 @@ class EmployeeBehavioralAssessmentViewSet(viewsets.ModelViewSet):
     
     def get_queryset(self):
         queryset = EmployeeBehavioralAssessment.objects.select_related(
-            'employee', 'position_assessment', 'assessed_by'
+            'employee', 'position_assessment'
         ).prefetch_related('competency_ratings__behavioral_competency__group')
         
         employee_id = self.request.query_params.get('employee_id')
@@ -715,19 +833,6 @@ class EmployeeBehavioralAssessmentViewSet(viewsets.ModelViewSet):
             'assessment': EmployeeBehavioralAssessmentSerializer(assessment).data
         })
     
-    @action(detail=True, methods=['post'])
-    def recalculate_scores(self, request, pk=None):
-        """Recalculate behavioral assessment scores"""
-        assessment = self.get_object()
-        assessment.calculate_scores()
-        
-        serializer = EmployeeBehavioralAssessmentSerializer(assessment)
-        return Response({
-            'success': True,
-            'message': 'Behavioral scores recalculated successfully',
-            'assessment': serializer.data
-        })
-    
     @action(detail=True, methods=['get'])
     def export_document(self, request, pk=None):
         """Export behavioral assessment as Excel document"""
@@ -769,7 +874,7 @@ class EmployeeBehavioralAssessmentViewSet(viewsets.ModelViewSet):
                 ("Job Title:", assessment.employee.job_title),
                 ("Department:", getattr(assessment.employee.department, 'name', 'N/A')),
                 ("Assessment Date:", assessment.assessment_date.strftime('%Y-%m-%d')),
-                ("Assessed By:", assessment.assessed_by.get_full_name() if assessment.assessed_by else 'System'),
+     
                 ("Status:", assessment.get_status_display())
             ]
             
@@ -968,6 +1073,19 @@ class EmployeeBehavioralAssessmentViewSet(viewsets.ModelViewSet):
             return Response({
                 'error': f'Failed to export behavioral assessment: {str(e)}'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    @action(detail=True, methods=['post'])
+    def recalculate_scores(self, request, pk=None):
+        """Recalculate behavioral assessment scores"""
+        assessment = self.get_object()
+        assessment.calculate_scores()
+        
+        serializer = EmployeeBehavioralAssessmentSerializer(assessment)
+        return Response({
+            'success': True,
+            'message': 'Behavioral scores recalculated successfully',
+            'assessment': serializer.data
+        })
 
 
 # SUMMARY AND REPORTING VIEWS
@@ -1042,15 +1160,64 @@ class AssessmentDashboardViewSet(viewsets.ViewSet):
             'top_behavioral_performers': top_behavioral_data
         })
     
+    @swagger_auto_schema(
+        method='get',
+        operation_description='Get comprehensive assessment overview for specific employee',
+        manual_parameters=[
+            openapi.Parameter(
+                'employee_id',
+                openapi.IN_QUERY,
+                description='The employee ID',
+                type=openapi.TYPE_INTEGER,
+                required=True,
+                example=63
+            )
+        ],
+        responses={
+            200: openapi.Response(
+                description='Employee comprehensive assessment overview',
+                examples={
+                    'application/json': {
+                        'employee_info': {
+                            'id': 63,
+                            'employee_id': 'TRD7',
+                            'name': 'John Doe',
+                            'job_title': 'Software Engineer',
+                            'position_group': 'Engineering',
+                            'department': 'IT',
+                            'business_function': 'Technology'
+                        },
+                        'core_assessments': [],
+                        'behavioral_assessments': [],
+                        'latest_core_assessment': None,
+                        'latest_behavioral_assessment': {},
+                        'development_areas': [],
+                        'strengths': []
+                    }
+                }
+            ),
+            400: openapi.Response(
+                description='Bad Request',
+                examples={
+                    'application/json': {
+                        'error': 'employee_id is required',
+                        'help': 'Add ?employee_id=63 to your request URL'
+                    }
+                }
+            ),
+            404: openapi.Response(
+                description='Not Found',
+                examples={
+                    'application/json': {
+                        'error': 'Employee not found'
+                    }
+                }
+            )
+        }
+    )
     @action(detail=False, methods=['get'])
     def employee_overview(self, request):
-        """Get comprehensive assessment overview for specific employee
-        
-        Query Parameters:
-        - employee_id (required): The employee ID
-        
-        Example: /api/assessments/dashboard/employee_overview/?employee_id=63
-        """
+        """Get comprehensive assessment overview for specific employee"""
         employee_id = request.query_params.get('employee_id')
         if not employee_id:
             return Response({

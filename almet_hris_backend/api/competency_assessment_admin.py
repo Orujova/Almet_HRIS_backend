@@ -156,7 +156,7 @@ class EmployeeCoreCompetencyRatingInline(admin.TabularInline):
 class EmployeeCoreAssessmentAdmin(admin.ModelAdmin):
     list_display = [
         'employee', 'position_assessment', 'assessment_date', 
-        'status', 'completion_percentage', 'assessed_by'
+        'status', 'completion_percentage'
     ]
     list_filter = ['status', 'assessment_date', 'position_assessment__position_group']
     search_fields = [
@@ -167,7 +167,7 @@ class EmployeeCoreAssessmentAdmin(admin.ModelAdmin):
         'id', 'total_position_score', 'total_employee_score', 
         'gap_score', 'completion_percentage', 'created_at', 'updated_at'
     ]
-    autocomplete_fields = ['employee', 'position_assessment', 'assessed_by']
+    autocomplete_fields = ['employee', 'position_assessment']
     inlines = [EmployeeCoreCompetencyRatingInline]
     
     fieldsets = (
@@ -175,7 +175,7 @@ class EmployeeCoreAssessmentAdmin(admin.ModelAdmin):
             'fields': ('employee', 'position_assessment', 'assessment_date', 'status')
         }),
         ('Assessment Details', {
-            'fields': ('assessed_by', 'notes')
+            'fields': ( 'notes')
         }),
         ('Calculated Scores', {
             'fields': (
@@ -208,7 +208,7 @@ class EmployeeCoreAssessmentAdmin(admin.ModelAdmin):
 
     def get_queryset(self, request):
         return super().get_queryset(request).select_related(
-            'employee', 'position_assessment', 'assessed_by'
+            'employee', 'position_assessment',
         )
 
 
@@ -223,7 +223,7 @@ class EmployeeBehavioralCompetencyRatingInline(admin.TabularInline):
 class EmployeeBehavioralAssessmentAdmin(admin.ModelAdmin):
     list_display = [
         'employee', 'position_assessment', 'assessment_date', 
-        'status', 'overall_percentage', 'overall_letter_grade', 'assessed_by'
+        'status', 'overall_percentage', 'overall_letter_grade', 
     ]
     list_filter = ['status', 'assessment_date', 'position_assessment__position_group', 'overall_letter_grade']
     search_fields = [
@@ -234,7 +234,7 @@ class EmployeeBehavioralAssessmentAdmin(admin.ModelAdmin):
         'id', 'group_scores', 'overall_percentage', 'overall_letter_grade',
         'created_at', 'updated_at'
     ]
-    autocomplete_fields = ['employee', 'position_assessment', 'assessed_by']
+    autocomplete_fields = ['employee', 'position_assessment', ]
     inlines = [EmployeeBehavioralCompetencyRatingInline]
     
     fieldsets = (
@@ -242,7 +242,7 @@ class EmployeeBehavioralAssessmentAdmin(admin.ModelAdmin):
             'fields': ('employee', 'position_assessment', 'assessment_date', 'status')
         }),
         ('Assessment Details', {
-            'fields': ('assessed_by', 'notes')
+            'fields': ( 'notes')
         }),
         ('Calculated Scores', {
             'fields': (
@@ -274,7 +274,7 @@ class EmployeeBehavioralAssessmentAdmin(admin.ModelAdmin):
 
     def get_queryset(self, request):
         return super().get_queryset(request).select_related(
-            'employee', 'position_assessment', 'assessed_by'
+            'employee', 'position_assessment'
         )
 
 

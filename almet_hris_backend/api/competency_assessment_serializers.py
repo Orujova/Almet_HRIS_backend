@@ -270,7 +270,7 @@ class EmployeeCoreAssessmentSerializer(serializers.ModelSerializer):
     employee_name = serializers.CharField(source='employee.full_name', read_only=True)
     employee_id = serializers.CharField(source='employee.employee_id', read_only=True)
     position_assessment_title = serializers.CharField(source='position_assessment.job_title', read_only=True)
-    assessed_by_name = serializers.CharField(source='assessed_by.username', read_only=True)
+
     competency_ratings = EmployeeCoreCompetencyRatingSerializer(many=True, read_only=True)
     
     # Status display
@@ -286,7 +286,7 @@ class EmployeeCoreAssessmentSerializer(serializers.ModelSerializer):
             'id', 'employee', 'employee_name', 'employee_id',
             'position_assessment', 'position_assessment_title', 'assessment_date', 
             'status', 'status_display', 'can_edit',
-            'assessed_by', 'assessed_by_name', 'notes',
+            'notes',
             'total_position_score', 'total_employee_score', 'gap_score',
             'completion_percentage', 'competency_ratings', 'gap_analysis',
             'created_at', 'updated_at'
@@ -348,7 +348,7 @@ class EmployeeCoreAssessmentCreateSerializer(serializers.ModelSerializer):
         model = EmployeeCoreAssessment
         fields = [
             'employee', 'position_assessment', 'assessment_date', 
-            'assessed_by', 'notes', 'competency_ratings', 'action_type'
+          'notes', 'competency_ratings', 'action_type'
         ]
     
     def validate(self, data):
@@ -485,7 +485,7 @@ class EmployeeBehavioralAssessmentSerializer(serializers.ModelSerializer):
     employee_name = serializers.CharField(source='employee.full_name', read_only=True)
     employee_id = serializers.CharField(source='employee.employee_id', read_only=True)
     position_assessment_title = serializers.CharField(source='position_assessment.job_title', read_only=True)
-    assessed_by_name = serializers.CharField(source='assessed_by.username', read_only=True)
+
     competency_ratings = EmployeeBehavioralCompetencyRatingSerializer(many=True, read_only=True)
     
     # Status display
@@ -502,7 +502,7 @@ class EmployeeBehavioralAssessmentSerializer(serializers.ModelSerializer):
             'id', 'employee', 'employee_name', 'employee_id',
             'position_assessment', 'position_assessment_title', 'assessment_date', 
             'status', 'status_display', 'can_edit',
-            'assessed_by', 'assessed_by_name', 'notes',
+          'notes',
             'group_scores', 'group_scores_display', 'overall_percentage', 
             'overall_letter_grade', 'overall_grade_info', 'competency_ratings',
             'created_at', 'updated_at'
@@ -563,7 +563,7 @@ class EmployeeBehavioralAssessmentCreateSerializer(serializers.ModelSerializer):
         model = EmployeeBehavioralAssessment
         fields = [
             'employee', 'position_assessment', 'assessment_date',
-            'assessed_by', 'notes', 'competency_ratings', 'action_type'
+           'notes', 'competency_ratings', 'action_type'
         ]
     
     def validate(self, data):
@@ -739,7 +739,7 @@ class BulkEmployeeAssessmentSerializer(serializers.Serializer):
     employee_ids = serializers.ListField(child=serializers.IntegerField())
     position_assessment_id = serializers.UUIDField()
     assessment_date = serializers.DateField()
-    assessed_by = serializers.IntegerField(required=False)
+    
     
     def validate_employee_ids(self, value):
         if not value:

@@ -238,7 +238,7 @@ class EmployeeCoreAssessment(models.Model):
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='DRAFT')
     
     # Assessment metadata
-    assessed_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+ 
     notes = models.TextField(blank=True)
     
     # Calculated scores
@@ -339,7 +339,7 @@ class EmployeeBehavioralAssessment(models.Model):
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='DRAFT')
     
     # Assessment metadata
-    assessed_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+
     notes = models.TextField(blank=True)
     
     # Calculated scores by group
