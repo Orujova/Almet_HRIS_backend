@@ -27,12 +27,10 @@ from .competency_assessment_serializers import (
     PositionBehavioralAssessmentSerializer, PositionBehavioralAssessmentCreateSerializer,
     EmployeeCoreAssessmentSerializer, EmployeeCoreAssessmentCreateSerializer,
     EmployeeBehavioralAssessmentSerializer, EmployeeBehavioralAssessmentCreateSerializer,
-    AssessmentSummarySerializer, EmployeeAssessmentOverviewSerializer,
-    BulkEmployeeAssessmentSerializer, AssessmentExportSerializer,
-    CoreScaleListSerializer, BehavioralScaleListSerializer
+    
 )
 from .models import Employee, PositionGroup
-from .competency_models import Skill, BehavioralCompetency
+
 import logging
 
 logger = logging.getLogger(__name__)

@@ -228,7 +228,7 @@ class EmployeeCoreAssessment(models.Model):
     # Assessment details
     employee = models.ForeignKey(Employee, on_delete=models.CASCADE, related_name='core_assessments')
     position_assessment = models.ForeignKey(PositionCoreAssessment, on_delete=models.CASCADE)
-    assessment_date = models.DateField(default=timezone.now)
+    assessment_date = models.DateTimeField(default=timezone.now)
     
     # Status with proper choices
     STATUS_CHOICES = [
@@ -329,7 +329,7 @@ class EmployeeBehavioralAssessment(models.Model):
     # Assessment details
     employee = models.ForeignKey(Employee, on_delete=models.CASCADE, related_name='behavioral_assessments')
     position_assessment = models.ForeignKey(PositionBehavioralAssessment, on_delete=models.CASCADE)
-    assessment_date = models.DateField(default=timezone.now)
+    assessment_date = models.DateTimeField(default=timezone.now)
     
     # Status with proper choices
     STATUS_CHOICES = [

@@ -417,8 +417,8 @@ class EmployeeCoreAssessmentCreateSerializer(serializers.ModelSerializer):
                     notes=rating_data.get('notes', '')
                 )
         
-        # Calculate scores if submitting
-        if action_type == 'submit':
+        # ALWAYS calculate scores when there are ratings, regardless of status
+        if competency_ratings:
             assessment.calculate_scores()
         
         return assessment
@@ -461,12 +461,11 @@ class EmployeeCoreAssessmentCreateSerializer(serializers.ModelSerializer):
                         notes=rating_data.get('notes', '')
                     )
         
-        # Calculate scores if submitting or if completed
-        if action_type == 'submit' or assessment.status == 'COMPLETED':
+        # ALWAYS calculate scores when there are ratings or when assessment has ratings
+        if competency_ratings or assessment.competency_ratings.exists():
             assessment.calculate_scores()
         
         return assessment
-
 
 class EmployeeBehavioralCompetencyRatingSerializer(serializers.ModelSerializer):
     competency_name = serializers.CharField(source='behavioral_competency.name', read_only=True)
@@ -683,92 +682,4 @@ class EmployeeBehavioralAssessmentCreateSerializer(serializers.ModelSerializer):
         return assessment
 
 
-# SUMMARY AND REPORTING SERIALIZERS
 
-class AssessmentSummarySerializer(serializers.Serializer):
-    """Summary statistics for assessments"""
-    total_core_assessments = serializers.IntegerField()
-    total_behavioral_assessments = serializers.IntegerField()
-    completed_assessments = serializers.IntegerField()
-    pending_assessments = serializers.IntegerField()
-    
-    # Recent activity
-    recent_core_assessments = EmployeeCoreAssessmentSerializer(many=True, read_only=True)
-    recent_behavioral_assessments = EmployeeBehavioralAssessmentSerializer(many=True, read_only=True)
-    
-    # Top performers
-    top_core_performers = serializers.ListField(child=serializers.DictField())
-    top_behavioral_performers = serializers.ListField(child=serializers.DictField())
-
-
-class EmployeeAssessmentOverviewSerializer(serializers.Serializer):
-    """Employee's complete assessment overview"""
-    employee_info = serializers.DictField()
-    
-    # Core competency assessments
-    core_assessments = EmployeeCoreAssessmentSerializer(many=True, read_only=True)
-    latest_core_assessment = EmployeeCoreAssessmentSerializer(read_only=True)
-    
-    # Behavioral assessments
-    behavioral_assessments = EmployeeBehavioralAssessmentSerializer(many=True, read_only=True)
-    latest_behavioral_assessment = EmployeeBehavioralAssessmentSerializer(read_only=True)
-    
-    # Development suggestions
-    development_areas = serializers.ListField(child=serializers.DictField())
-    strengths = serializers.ListField(child=serializers.DictField())
-
-
-class PositionAssessmentTemplateSerializer(serializers.Serializer):
-    """Position assessment template for quick employee assessment"""
-    position_info = serializers.DictField()
-    
-    # Core competencies template
-    core_template = serializers.DictField()
-    
-    # Behavioral competencies template  
-    behavioral_template = serializers.DictField()
-    
-    # Job description competencies
-    job_description_competencies = serializers.ListField(child=serializers.DictField())
-
-
-# BULK OPERATIONS SERIALIZERS
-
-class BulkEmployeeAssessmentSerializer(serializers.Serializer):
-    """Bulk create assessments for multiple employees"""
-    employee_ids = serializers.ListField(child=serializers.IntegerField())
-    position_assessment_id = serializers.UUIDField()
-    assessment_date = serializers.DateField()
-    
-    
-    def validate_employee_ids(self, value):
-        if not value:
-            raise serializers.ValidationError("At least one employee ID is required")
-        
-        # Validate all employee IDs exist
-        existing_count = Employee.objects.filter(id__in=value).count()
-        if existing_count != len(value):
-            raise serializers.ValidationError("Some employee IDs do not exist")
-        
-        return value
-
-
-class AssessmentExportSerializer(serializers.Serializer):
-    """Export assessments in various formats"""
-    assessment_ids = serializers.ListField(child=serializers.UUIDField(), required=False)
-    employee_ids = serializers.ListField(child=serializers.IntegerField(), required=False)
-    export_format = serializers.ChoiceField(choices=[('excel', 'Excel'), ('pdf', 'PDF')])
-    include_charts = serializers.BooleanField(default=True)
-    include_details = serializers.BooleanField(default=True)
-
-
-# SCALE DISPLAY SERIALIZERS
-
-class CoreScaleListSerializer(serializers.Serializer):
-    """List all available core competency scale levels"""
-    scales = CoreCompetencyScaleSerializer(many=True, read_only=True)
-    
-    
-class BehavioralScaleListSerializer(serializers.Serializer):
-    """List all available behavioral scale levels"""
-    scales = BehavioralScaleSerializer(many=True, read_only=True)
