@@ -103,18 +103,7 @@ urlpatterns = [
     # User endpoints
     path('me/', views.user_info, name='user_info'),
     
-    # Vacancy-specific endpoints
-    path('vacancies/convert-to-employee/<int:vacancy_id>/', 
-         views.VacantPositionViewSet.as_view({'post': 'convert_to_employee'}), 
-         name='convert_vacancy_to_employee'),
-    
-    path('vacancies/<int:pk>/mark-filled/', 
-         views.VacantPositionViewSet.as_view({'post': 'mark_filled'}), 
-         name='mark_vacancy_filled'),
-    
-    path('vacancies/<int:pk>/reopen/', 
-         views.VacantPositionViewSet.as_view({'post': 'reopen_vacancy'}), 
-         name='reopen_vacancy'),
+
     
     # Headcount endpoints with vacancy integration
     path('employees/headcount-with-vacancies/', 

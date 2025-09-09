@@ -24,10 +24,9 @@ try:
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib.units import inch, cm
     from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
-    from reportlab.platypus.flowables import HRFlowable
+
     from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT, TA_JUSTIFY
-    from reportlab.pdfgen import canvas
-    from reportlab.lib.utils import ImageReader
+
     HAS_REPORTLAB = True
 except ImportError:
     HAS_REPORTLAB = False
@@ -49,7 +48,7 @@ from .competency_models import Skill, BehavioralCompetency
 from .models import BusinessFunction, Department, Unit, PositionGroup, Employee, JobFunction
 from .job_description_serializers import JobDescriptionExportSerializer
 
-logger = logging.getLogger(__name__)
+
 
 
 class JobDescriptionFilter:
@@ -1073,33 +1072,66 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
         story.append(Paragraph(job_description.job_purpose, purpose_style))
     
     def _add_compact_sections(self, story, job_description, styles):
-        """Kompakt job sections"""
+        """FIXED: Kompakt job sections with proper text wrapping"""
         
         story.append(Paragraph("Job Sections", styles['SectionHeader']))
         
         for section in job_description.sections.all():
-            # Kiçik section title
+            # Section title style
             section_style = ParagraphStyle(
                 'SectionTitle',
                 parent=styles['SubHeader'],
                 fontSize=10,
-                textColor=colors.HexColor('#2980b9')
+                textColor=colors.HexColor('#2980b9'),
+                spaceAfter=6,
+                spaceBefore=8
             )
             
-            # Kompakt content
+            # FIXED: Content style with proper wrapping
             content_style = ParagraphStyle(
                 'SectionContent',
                 parent=styles['SimpleNormal'],
                 fontSize=8,
                 leftIndent=10,
-                spaceAfter=8
+                spaceAfter=10,
+                alignment=TA_JUSTIFY,  # Justify text for better appearance
+                wordWrap='LTR',        # Enable word wrapping
+                leading=10             # Line spacing
             )
             
             story.append(Paragraph(f"• {section.title}", section_style))
-            story.append(Paragraph(section.content, content_style))
-    
+            
+            # FIXED: Split long content into paragraphs if needed
+            content_text = section.content.strip()
+            
+            # If content is very long, split by sentences for better formatting
+            if len(content_text) > 500:
+                sentences = content_text.split('. ')
+                current_paragraph = ""
+                
+                for sentence in sentences:
+                    if len(current_paragraph + sentence) > 400:  # Break at ~400 chars
+                        if current_paragraph:
+                            story.append(Paragraph(current_paragraph.strip() + '.', content_style))
+                            current_paragraph = sentence
+                        else:
+                            story.append(Paragraph(sentence + '.', content_style))
+                            current_paragraph = ""
+                    else:
+                        current_paragraph += sentence + '. '
+                
+                # Add remaining content
+                if current_paragraph.strip():
+                    story.append(Paragraph(current_paragraph.strip(), content_style))
+            else:
+                story.append(Paragraph(content_text, content_style))
+            
+            # Add small spacer between sections
+            story.append(Spacer(1, 0.05*inch))
+
+
     def _add_compact_skills_competencies(self, story, job_description, styles):
-        """Kompakt skills və competencies"""
+        """FIXED: Kompakt skills with better table formatting"""
         
         # Skills
         if hasattr(job_description, 'required_skills') and job_description.required_skills.exists():
@@ -1108,65 +1140,75 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
             skills_data = [['Skill', 'Level', 'Required']]
             
             for skill_req in job_description.required_skills.all():
+                # FIXED: Better text wrapping for skill names
+                skill_name = skill_req.skill.name
+                if len(skill_name) > 30:
+                    skill_name = skill_name[:27] + '...'
+                
                 skills_data.append([
-                    skill_req.skill.name[:25] + '...' if len(skill_req.skill.name) > 25 else skill_req.skill.name,
-                    skill_req.get_proficiency_level_display()[:10],
+                    skill_name,
+                    skill_req.get_proficiency_level_display()[:12],  # Limit level text
                     'Yes' if skill_req.is_mandatory else 'No'
                 ])
             
-            skills_table = Table(skills_data, colWidths=[7*cm, 3*cm, 2*cm])
+            # FIXED: Better column widths
+            skills_table = Table(skills_data, colWidths=[8*cm, 3*cm, 2*cm])
             skills_table.setStyle(TableStyle([
-                # Header - sadə mavi
+                # Header styling
                 ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#3498db')),
                 ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
                 ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
                 ('FONTSIZE', (0, 0), (-1, 0), 9),
                 
-                # Data rows
+                # Data styling
                 ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
                 ('FONTSIZE', (0, 1), (-1, -1), 8),
                 ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-                ('ALIGN', (1, 0), (-1, -1), 'CENTER'),  # Level və Required columns center
+                ('ALIGN', (1, 0), (-1, -1), 'CENTER'),
                 ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
                 
-                # Minimal grid
+                # Grid and colors
                 ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#bdc3c7')),
-                
-                # Alternating rows - çox açıq
                 ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f8f9fa')]),
                 
-                # Minimal padding
-                ('TOPPADDING', (0, 0), (-1, -1), 3),
-                ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
-                ('LEFTPADDING', (0, 0), (-1, -1), 4),
-                ('RIGHTPADDING', (0, 0), (-1, -1), 4),
+                # FIXED: Better padding for text wrapping
+                ('TOPPADDING', (0, 0), (-1, -1), 4),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+                ('LEFTPADDING', (0, 0), (-1, -1), 6),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+                
+                # FIXED: Word wrap for long text
+                ('WORDWRAP', (0, 0), (-1, -1), True),
             ]))
             
             story.append(skills_table)
             story.append(Spacer(1, 0.1*inch))
         
-        # Behavioral Competencies - eyni style
+        # FIXED: Similar improvements for Behavioral Competencies
         if hasattr(job_description, 'behavioral_competencies') and job_description.behavioral_competencies.exists():
             story.append(Paragraph("Behavioral Competencies", styles['SectionHeader']))
             
             comp_data = [['Competency', 'Level', 'Required']]
             
             for comp_req in job_description.behavioral_competencies.all():
+                comp_name = comp_req.competency.name
+                if len(comp_name) > 30:
+                    comp_name = comp_name[:27] + '...'
+                
                 comp_data.append([
-                    comp_req.competency.name[:25] + '...' if len(comp_req.competency.name) > 25 else comp_req.competency.name,
-                    comp_req.get_proficiency_level_display()[:10],
+                    comp_name,
+                    comp_req.get_proficiency_level_display()[:12],
                     'Yes' if comp_req.is_mandatory else 'No'
                 ])
             
-            comp_table = Table(comp_data, colWidths=[7*cm, 3*cm, 2*cm])
+            comp_table = Table(comp_data, colWidths=[8*cm, 3*cm, 2*cm])
             comp_table.setStyle(TableStyle([
-                # Header - sadə yaşıl
+                # Same styling as skills table but with green header
                 ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#27ae60')),
                 ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
                 ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
                 ('FONTSIZE', (0, 0), (-1, 0), 9),
                 
-                # Eyni data styling
                 ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
                 ('FONTSIZE', (0, 1), (-1, -1), 8),
                 ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
@@ -1174,15 +1216,15 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                 ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
                 ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#bdc3c7')),
                 ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f8f9fa')]),
-                ('TOPPADDING', (0, 0), (-1, -1), 3),
-                ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
-                ('LEFTPADDING', (0, 0), (-1, -1), 4),
-                ('RIGHTPADDING', (0, 0), (-1, -1), 4),
+                ('TOPPADDING', (0, 0), (-1, -1), 4),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+                ('LEFTPADDING', (0, 0), (-1, -1), 6),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+                ('WORDWRAP', (0, 0), (-1, -1), True),
             ]))
             
             story.append(comp_table)
             story.append(Spacer(1, 0.1*inch))
-    
     def _add_simple_approval_section(self, story, job_description, styles):
         """Sadə approval section"""
         
