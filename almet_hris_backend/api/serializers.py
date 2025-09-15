@@ -153,8 +153,46 @@ class ContractTypeConfigSerializer(serializers.ModelSerializer):
     def get_employee_count(self, obj):
         return Employee.objects.filter(contract_duration=obj.contract_type).count()
 
+class VacantPositionCreateSerializer(serializers.ModelSerializer):
+    """Enhanced serializer for creating vacant positions with business function based position_id"""
+    
+    # Auto-generate position_id preview like employee_id
+    position_id_preview = serializers.SerializerMethodField(read_only=True)
+    
+    class Meta:
+        model = VacantPosition
+        fields = [
+            # Required organizational fields
+            'business_function', 'department', 'unit', 'job_function', 
+            'position_group', 'job_title', 'grading_level',
+            
+            # Management
+            'reporting_to',
+            
+            # Configuration
+            'is_visible_in_org_chart', 'include_in_headcount',
+            
+            # Additional info
+            'notes',
+            
+            # Read-only fields
+            'position_id_preview', 'id', 'created_at', 'updated_at'
+        ]
+        read_only_fields = ['position_id', 'created_at', 'updated_at']
+    
+    def get_position_id_preview(self, obj):
+        """Preview what position ID will be generated"""
+        if hasattr(obj, 'business_function') and obj.business_function:
+            return VacantPosition.get_next_position_id_preview(obj.business_function.id)
+        return None
+    
+    def create(self, validated_data):
+        # position_id will be auto-generated in model save() method
+        validated_data['created_by'] = self.context['request'].user
+        return super().create(validated_data)
+
 class VacantPositionListSerializer(serializers.ModelSerializer):
-    """ENHANCED: List serializer with employee-like fields"""
+    """ENHANCED: List serializer with employee-like fields and business function based ID"""
     business_function_name = serializers.CharField(source='business_function.name', read_only=True)
     business_function_code = serializers.CharField(source='business_function.code', read_only=True)
     department_name = serializers.CharField(source='department.name', read_only=True)
@@ -164,38 +202,33 @@ class VacantPositionListSerializer(serializers.ModelSerializer):
     position_group_level = serializers.IntegerField(source='position_group.hierarchy_level', read_only=True)
     reporting_to_name = serializers.CharField(source='reporting_to.full_name', read_only=True)
     reporting_to_hc_number = serializers.CharField(source='reporting_to.employee_id', read_only=True)
-    filled_by_name = serializers.CharField(source='filled_by_employee.full_name', read_only=True)  # FIXED: use filled_by_employee
+    filled_by_name = serializers.CharField(source='filled_by_employee.full_name', read_only=True)
     
-    # ENHANCED: Employee-like fields for unified display
-    name = serializers.CharField(source='display_name', read_only=True)
-    employee_id = serializers.CharField(source='position_id', read_only=True)
-    job_title = serializers.CharField(source='title', read_only=True)  # FIXED: map to 'title' field
+    # ENHANCED: Employee-like fields for unified display (using position_id as employee_id)
+    
+    employee_id = serializers.CharField(source='position_id', read_only=True)  # position_id acts as employee_id
+    job_title = serializers.CharField()
     status_name = serializers.CharField(source='vacancy_status.name', read_only=True)
     status_color = serializers.CharField(source='vacancy_status.color', read_only=True)
-    grading_display = serializers.SerializerMethodField()
-    
-    # Vacancy-specific fields
-    days_open = serializers.SerializerMethodField()
-    urgency_display = serializers.CharField(source='get_urgency_display', read_only=True)
-    vacancy_type_display = serializers.CharField(source='get_vacancy_type_display', read_only=True)
+ 
     
     # ENHANCED: Mark as vacancy for frontend identification
     is_vacancy = serializers.SerializerMethodField()
+
     
     class Meta:
         model = VacantPosition
         fields = [
             # Employee-like fields for unified display
-            'id', 'employee_id', 'name', 'job_title', 'business_function_name', 'business_function_code',
+            'id', 'employee_id',  'job_title', 'business_function_name', 'business_function_code',
             'department_name', 'unit_name', 'job_function_name', 'position_group_name', 'position_group_level',
-            'grading_level', 'grading_display', 'status_name', 'status_color',
+            'grading_level',  'status_name', 'status_color',
             'reporting_to_name', 'reporting_to_hc_number', 'is_visible_in_org_chart',
+            'is_filled', 'filled_by_name', 'filled_date', 'include_in_headcount',
+            'is_vacancy',  'created_at', 'updated_at',
             
-            # Vacancy-specific fields  
-            'title', 'description', 'vacancy_type', 'vacancy_type_display',
-            'urgency', 'urgency_display', 'expected_start_date', 'expected_salary_range_min', 'expected_salary_range_max',
-            'is_filled', 'filled_by_name', 'filled_date', 'days_open', 'include_in_headcount',
-            'is_vacancy', 'created_at', 'updated_at'
+            # Original vacancy fields
+            'position_id',  'notes'
         ]
     
     def get_grading_display(self, obj):
@@ -206,18 +239,13 @@ class VacantPositionListSerializer(serializers.ModelSerializer):
                 return f"{position_short}-{level}"
         return "No Grade"
     
-    def get_days_open(self, obj):
-        if obj.is_filled and obj.filled_date:
-            delta = obj.filled_date - obj.created_at.date()
-        else:
-            delta = timezone.now().date() - obj.created_at.date()
-        return delta.days
-    
     def get_is_vacancy(self, obj):
         return True
 
 class VacantPositionDetailSerializer(serializers.ModelSerializer):
-    """ENHANCED: Detail serializer with complete information"""
+    """FIXED: Detail serializer with proper JSON serialization"""
+    
+    # Use proper serialization instead of including objects directly
     business_function_detail = BusinessFunctionSerializer(source='business_function', read_only=True)
     department_detail = DepartmentSerializer(source='department', read_only=True)
     unit_detail = UnitSerializer(source='unit', read_only=True)
@@ -230,12 +258,45 @@ class VacantPositionDetailSerializer(serializers.ModelSerializer):
     filled_by_detail = serializers.SerializerMethodField()
     created_by_name = serializers.CharField(source='created_by.username', read_only=True)
     
-    # Employee-like conversion
+    # Simple field references instead of complex objects
+    business_function_name = serializers.CharField(source='business_function.name', read_only=True)
+    business_function_code = serializers.CharField(source='business_function.code', read_only=True)
+    department_name = serializers.CharField(source='department.name', read_only=True)
+    unit_name = serializers.CharField(source='unit.name', read_only=True)
+    job_function_name = serializers.CharField(source='job_function.name', read_only=True)
+    position_group_name = serializers.CharField(source='position_group.get_name_display', read_only=True)
+    status_name = serializers.CharField(source='vacancy_status.name', read_only=True)
+    status_color = serializers.CharField(source='vacancy_status.color', read_only=True)
+    
+    # Employee-like conversion - FIXED to avoid BusinessFunction object serialization
     as_employee_data = serializers.SerializerMethodField()
+    
+
+    next_position_id_would_be = serializers.SerializerMethodField()
     
     class Meta:
         model = VacantPosition
-        fields = '__all__'
+        fields = [
+            # Basic info
+            'id', 'position_id', 'job_title', 'grading_level', 'display_name',
+            'is_filled', 'filled_date', 'include_in_headcount', 'is_visible_in_org_chart',
+            'notes', 'created_at', 'updated_at',
+            
+            # Simple name fields (JSON serializable)
+            'business_function_name', 'business_function_code', 'department_name', 
+            'unit_name', 'job_function_name', 'position_group_name',
+            'status_name', 'status_color',
+            
+            # Detailed objects (properly serialized)
+            'business_function_detail', 'department_detail', 'unit_detail',
+            'job_function_detail', 'position_group_detail', 'status_detail',
+            
+            # Management
+            'reporting_to_detail', 'filled_by_detail', 'created_by_name',
+            
+            # Complex fields
+            'as_employee_data',  'next_position_id_would_be'
+        ]
     
     def get_reporting_to_detail(self, obj):
         if obj.reporting_to:
@@ -249,7 +310,7 @@ class VacantPositionDetailSerializer(serializers.ModelSerializer):
         return None
     
     def get_filled_by_detail(self, obj):
-        if obj.filled_by_employee:  # FIXED: use filled_by_employee
+        if obj.filled_by_employee:
             return {
                 'id': obj.filled_by_employee.id,
                 'employee_id': obj.filled_by_employee.employee_id,
@@ -260,30 +321,201 @@ class VacantPositionDetailSerializer(serializers.ModelSerializer):
         return None
     
     def get_as_employee_data(self, obj):
-        """Get vacancy data in employee-like format"""
-        return obj.get_as_employee_data()
-
-class VacantPositionCreateSerializer(serializers.ModelSerializer):
-    """ENHANCED: Create serializer with validation"""
+        """Get vacancy data in employee-like format - FIXED"""
+        return {
+            'id': f"vacancy_{obj.id}",
+            'employee_id': obj.position_id,
+            'name': obj.display_name,
+            'full_name': None,
+            'email': None,
+            'job_title': obj.job_title,
+            
+            # Use simple string references instead of objects
+            'business_function_name': obj.business_function.name if obj.business_function else 'N/A',
+            'business_function_code': obj.business_function.code if obj.business_function else 'N/A',
+            'department_name': obj.department.name if obj.department else 'N/A',
+            'unit_name': obj.unit.name if obj.unit else None,
+            'job_function_name': obj.job_function.name if obj.job_function else 'N/A',
+            'position_group_name': obj.position_group.get_name_display() if obj.position_group else 'N/A',
+            'grading_level': obj.grading_level,
+            
+            'status_name': obj.vacancy_status.name if obj.vacancy_status else 'VACANT',
+            'status_color': obj.vacancy_status.color if obj.vacancy_status else '#F97316',
+            'line_manager_name': obj.reporting_to.full_name if obj.reporting_to else None,
+            'line_manager_hc_number': obj.reporting_to.employee_id if obj.reporting_to else None,
+            'is_visible_in_org_chart': obj.is_visible_in_org_chart,
+            'is_vacancy': True,
+            'created_at': obj.created_at,
+            'notes': obj.notes,
+            'filled_by': obj.filled_by_employee.full_name if obj.filled_by_employee else None,
+            'vacancy_details': {
+                'internal_id': obj.id,
+                'position_id': obj.position_id,
+                'include_in_headcount': obj.include_in_headcount,
+                'is_filled': obj.is_filled,
+                'filled_date': obj.filled_date,
+                'business_function_based_id': True
+            }
+        }
     
-    class Meta:
-        model = VacantPosition
-        exclude = ['filled_by_employee', 'filled_date', 'is_filled', 'display_name', 'vacancy_status']
+    
+    def get_next_position_id_would_be(self, obj):
+        """Show what the next position ID would be for this business function"""
+        if obj.business_function:
+            return VacantPosition.get_next_position_id_preview(obj.business_function.id)
+        return None
+
+class VacancyToEmployeeConversionSerializer(serializers.Serializer):
+    """Serializer for converting vacancy to employee"""
+    
+    # Required employee data
+    first_name = serializers.CharField(max_length=150)
+    last_name = serializers.CharField(max_length=150)  
+    email = serializers.EmailField()
+    start_date = serializers.DateField()
+    contract_duration = serializers.CharField(max_length=50, default='PERMANENT')
+    
+    # Personal data - ALL OPTIONAL
+    father_name = serializers.CharField(max_length=200, required=False, allow_blank=True)
+    date_of_birth = serializers.DateField(required=False, allow_null=True)
+    gender = serializers.ChoiceField(choices=Employee.GENDER_CHOICES, required=False, allow_null=True)
+    address = serializers.CharField(required=False, allow_blank=True)
+    phone = serializers.CharField(max_length=20, required=False, allow_blank=True)
+    emergency_contact = serializers.CharField(required=False, allow_blank=True)
+    
+    # Employment details - OPTIONAL
+    end_date = serializers.DateField(required=False, allow_null=True)
+    contract_start_date = serializers.DateField(required=False, allow_null=True)
+    
+    # File uploads - OPTIONAL
+    document = serializers.FileField(required=False)
+    profile_photo = serializers.ImageField(required=False)
+    document_type = serializers.ChoiceField(
+        choices=EmployeeDocument.DOCUMENT_TYPES, 
+        required=False, 
+        default='OTHER'
+    )
+    document_name = serializers.CharField(max_length=255, required=False)
+    
+    # Additional - OPTIONAL
+    tag_ids = serializers.ListField(child=serializers.IntegerField(), required=False, default=list)
+    
+    def validate_email(self, value):
+        if User.objects.filter(email=value).exists():
+            raise serializers.ValidationError("Email already exists.")
+        return value
+    
+    def validate_contract_duration(self, value):
+        """Validate that contract duration exists in configurations"""
+        try:
+            ContractTypeConfig.objects.get(contract_type=value, is_active=True)
+        except ContractTypeConfig.DoesNotExist:
+            available_choices = list(ContractTypeConfig.objects.filter(is_active=True).values_list('contract_type', flat=True))
+            if not available_choices:
+                ContractTypeConfig.get_or_create_defaults()
+                available_choices = list(ContractTypeConfig.objects.filter(is_active=True).values_list('contract_type', flat=True))
+            
+            raise serializers.ValidationError(
+                f"Invalid contract duration '{value}'. Available choices: {', '.join(available_choices)}"
+            )
+        return value
     
     def create(self, validated_data):
-        validated_data['created_by'] = self.context['request'].user
-        return super().create(validated_data)
-    
-    def validate_position_id(self, value):
-        """Ensure position_id is unique across both employees and vacancies"""
-        if Employee.objects.filter(employee_id=value).exists():
-            raise serializers.ValidationError("This position ID already exists as an employee ID.")
+        """Convert vacancy to employee"""
+        # Get vacancy from context instead of validated_data
+        vacancy = self.context['vacancy']
         
-        if VacantPosition.objects.filter(position_id=value).exists():
-            raise serializers.ValidationError("This position ID already exists as another vacancy.")
+        tag_ids = validated_data.pop('tag_ids', [])
+        document = validated_data.pop('document', None)
+        profile_photo = validated_data.pop('profile_photo', None)
+        document_type = validated_data.pop('document_type', 'OTHER')
+        document_name = validated_data.pop('document_name', '')
         
-        return value
-
+        with transaction.atomic():
+            # Create user
+            user = User.objects.create_user(
+                username=validated_data['email'],
+                email=validated_data['email'],
+                first_name=validated_data['first_name'],
+                last_name=validated_data['last_name']
+            )
+            
+            # Create employee with vacancy data
+            employee = Employee.objects.create(
+                user=user,
+                # Personal information
+                date_of_birth=validated_data.get('date_of_birth'),
+                gender=validated_data.get('gender'),
+                father_name=validated_data.get('father_name', ''),
+                address=validated_data.get('address', ''),
+                phone=validated_data.get('phone', ''),
+                emergency_contact=validated_data.get('emergency_contact', ''),
+                
+                # Copy organizational structure from vacancy
+                business_function=vacancy.business_function,
+                department=vacancy.department,
+                unit=vacancy.unit,
+                job_function=vacancy.job_function,
+                job_title=vacancy.job_title,
+                position_group=vacancy.position_group,
+                grading_level=vacancy.grading_level,
+                
+                # Employment details
+                start_date=validated_data['start_date'],
+                end_date=validated_data.get('end_date'),
+                contract_duration=validated_data['contract_duration'],
+                contract_start_date=validated_data.get('contract_start_date') or validated_data['start_date'],
+                
+                # Management
+                line_manager=vacancy.reporting_to,
+                
+                # Configuration
+                is_visible_in_org_chart=vacancy.is_visible_in_org_chart,
+                original_vacancy=vacancy,
+                created_by=self.context['request'].user
+            )
+            
+            # Handle profile photo
+            if profile_photo:
+                employee.profile_image = profile_photo
+                employee.save()
+            
+            # Add tags
+            if tag_ids:
+                valid_tags = EmployeeTag.objects.filter(id__in=tag_ids, is_active=True)
+                employee.tags.set(valid_tags)
+            
+            # Handle document upload
+            if document:
+                doc_name = document_name or document.name
+                EmployeeDocument.objects.create(
+                    employee=employee,
+                    name=doc_name,
+                    document_type=document_type,
+                    document_file=document,
+                    uploaded_by=self.context['request'].user,
+                    document_status='ACTIVE',
+                    version=1,
+                    is_current_version=True
+                )
+            
+            # Mark vacancy as filled
+            vacancy.mark_as_filled(employee)
+            
+            # Log activity
+            EmployeeActivity.objects.create(
+                employee=employee,
+                activity_type='CREATED',
+                description=f"Employee {employee.full_name} created from vacancy {vacancy.position_id}",
+                performed_by=self.context['request'].user,
+                metadata={
+                    'converted_from_vacancy': True,
+                    'vacancy_id': vacancy.id,
+                    'vacancy_position_id': vacancy.position_id
+                }
+            )
+            
+            return employee
 class EmployeeDocumentSerializer(serializers.ModelSerializer):
     uploaded_by_name = serializers.CharField(source='uploaded_by.username', read_only=True)
     file_size_display = serializers.CharField(source='get_file_size_display', read_only=True)
@@ -1001,6 +1233,82 @@ class EmployeeJobDescriptionSerializer(serializers.ModelSerializer):
         return (timezone.now() - obj.created_at).days
 
 
+
+class BulkSoftDeleteSerializer(serializers.Serializer):
+    """Simple serializer for bulk soft delete operations"""
+    employee_ids = serializers.ListField(
+        child=serializers.IntegerField(),
+        help_text="List of employee IDs to soft delete"
+    )
+    reason = serializers.CharField(
+        max_length=500,
+        required=False,
+        default="Bulk restructuring",
+        help_text="Reason for bulk deletion"
+    )
+    
+    def validate_employee_ids(self, value):
+        if not value:
+            raise serializers.ValidationError("At least one employee ID is required.")
+        
+        employees = Employee.objects.filter(id__in=value, is_deleted=False)
+        if employees.count() != len(value):
+            raise serializers.ValidationError("Some employee IDs were not found or already deleted.")
+        
+        return value
+
+class BulkHardDeleteSerializer(serializers.Serializer):
+    """Simple serializer for bulk hard delete operations"""
+    employee_ids = serializers.ListField(
+        child=serializers.IntegerField(),
+        help_text="List of employee IDs to hard delete"
+    )
+    confirm_hard_delete = serializers.BooleanField(
+        help_text="Confirmation flag (must be true)"
+    )
+    notes = serializers.CharField(
+        max_length=1000,
+        required=False,
+        help_text="Additional notes about deletion"
+    )
+    
+    def validate_employee_ids(self, value):
+        if not value:
+            raise serializers.ValidationError("At least one employee ID is required.")
+        
+        employees = Employee.objects.filter(id__in=value)
+        if employees.count() != len(value):
+            raise serializers.ValidationError("Some employee IDs were not found.")
+        
+        return value
+    
+    def validate_confirm_hard_delete(self, value):
+        if not value:
+            raise serializers.ValidationError("confirm_hard_delete must be true for hard deletion.")
+        return value
+
+class HardDeleteSerializer(serializers.Serializer):
+    """Simple serializer for single employee hard delete"""
+    employee_id = serializers.IntegerField(help_text="Employee ID to hard delete")
+    confirm_hard_delete = serializers.BooleanField(help_text="Confirmation flag (must be true)")
+    notes = serializers.CharField(
+        max_length=1000,
+        required=False,
+        help_text="Additional notes about deletion"
+    )
+    
+    def validate_employee_id(self, value):
+        try:
+            Employee.objects.get(id=value)
+        except Employee.DoesNotExist:
+            raise serializers.ValidationError("Employee not found.")
+        return value
+    
+    def validate_confirm_hard_delete(self, value):
+        if not value:
+            raise serializers.ValidationError("confirm_hard_delete must be true for hard deletion.")
+        return value
+
 class ManagerJobDescriptionSerializer(serializers.ModelSerializer):
     """Job description serializer for manager views (team members)"""
     
@@ -1046,134 +1354,95 @@ class ManagerJobDescriptionSerializer(serializers.ModelSerializer):
             return 'high'
         else:
             return 'normal'
-                               
 class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
-    """Serializer for creating and updating employees with enhanced validation"""
-    first_name = serializers.CharField(write_only=True)
-    last_name = serializers.CharField(write_only=True)
+    """Serializer for creating and updating employees with auto-generated employee_id"""
+    
+    # User fields (write-only for creation)
+    first_name = serializers.CharField(write_only=True, max_length=150)
+    last_name = serializers.CharField(write_only=True, max_length=150)
     email = serializers.EmailField(write_only=True)
-    father_name = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    
+    # Optional personal fields
+    father_name = serializers.CharField(write_only=True, required=False, allow_blank=True, max_length=200)
     tag_ids = serializers.ListField(child=serializers.IntegerField(), write_only=True, required=False)
     vacancy_id = serializers.IntegerField(write_only=True, required=False, help_text="Link to vacant position")
     
-    # ƏLAVƏ SAHƏLƏRİ
-    document = serializers.FileField(
-        write_only=True, 
-        required=False, 
-        help_text="Employee document file (PDF, DOC, DOCX, etc.)"
-    )
-    profile_photo = serializers.ImageField(
-        write_only=True, 
-        required=False, 
-        help_text="Employee profile photo (JPG, PNG, etc.)"
-    )
-    
-    # Document metadata (optional)
+    # File upload fields
+    document = serializers.FileField(write_only=True, required=False, help_text="Employee document file")
+    profile_photo = serializers.ImageField(write_only=True, required=False, help_text="Employee profile photo")
     document_type = serializers.ChoiceField(
         choices=EmployeeDocument.DOCUMENT_TYPES,
-        write_only=True,
-        required=False,
-        default='OTHER',
-        help_text="Type of document being uploaded"
+        write_only=True, 
+        required=False, 
+        default='OTHER'
     )
-    document_name = serializers.CharField(
-        write_only=True,
-        required=False,
-        max_length=255,
-        help_text="Name for the document (optional, will use filename if not provided)"
-    )
+    document_name = serializers.CharField(write_only=True, required=False, max_length=255)
+    
+    # Preview field (read-only) - shows what the employee_id will be
+    employee_id_preview = serializers.SerializerMethodField(read_only=True)
     
     class Meta:
         model = Employee
+        # COMPLETELY EXCLUDE employee_id from all operations
         exclude = [
-            'user', 'full_name', 'tags', 'original_vacancy', 'status', 
-            'created_by', 'updated_by', 'profile_image'
+            'employee_id',  # This is the key fix - completely exclude from serializer
+            'user', 
+            'full_name', 
+            'tags', 
+            'original_vacancy', 
+            'status', 
+            'created_by', 
+            'updated_by', 
+            'profile_image'
         ]
         read_only_fields = [
-            # Avtomatik sahələr - POST/PUT zamanı dəyişdirilə bilməz
-            'contract_extensions', 'last_extension_date', 
-            'deleted_by', 'deleted_at', 'is_deleted',
-            'contract_end_date',  # Avtomatik hesablanır
-            'created_at', 'updated_at'  # Avtomatik timestamp-lər
+            'contract_extensions', 
+            'last_extension_date', 
+            'deleted_by', 
+            'deleted_at', 
+            'is_deleted',
+            'contract_end_date', 
+            'created_at', 
+            'updated_at'
         ]
     
-    def validate_document(self, value):
-        """Validate document file"""
-        if value:
-            # File size validation (50MB max)
-            if value.size > 50 * 1024 * 1024:
-                raise serializers.ValidationError("Document size cannot exceed 50MB.")
-            
-            # File type validation
-            allowed_types = [
-                'application/pdf', 'application/msword', 
-                'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-                'text/plain', 'application/vnd.ms-excel',
-                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-            ]
-            
-            import mimetypes
-            file_type, _ = mimetypes.guess_type(value.name)
-            
-            if file_type and file_type not in allowed_types:
-                raise serializers.ValidationError(f"Document type {file_type} is not allowed.")
-        
-        return value
-    
-    def validate_profile_photo(self, value):
-        """Validate profile photo"""
-        if value:
-            # Image size validation (10MB max)
-            if value.size > 10 * 1024 * 1024:
-                raise serializers.ValidationError("Profile photo size cannot exceed 10MB.")
-            
-            # Image format validation
-            allowed_formats = ['image/jpeg', 'image/png', 'image/gif', 'image/bmp']
-            
-            import mimetypes
-            file_type, _ = mimetypes.guess_type(value.name)
-            
-            if file_type and file_type not in allowed_formats:
-                raise serializers.ValidationError(f"Image format {file_type} is not allowed.")
-        
-        return value
-    
-    def validate_contract_duration(self, value):
-        """Validate that contract duration exists in configurations"""
-        try:
-            if not ContractTypeConfig.objects.filter(contract_type=value, is_active=True).exists():
-                # Get available choices for error message
-                available_choices = list(ContractTypeConfig.objects.filter(is_active=True).values_list('contract_type', flat=True))
-                if not available_choices:
-                    # Create defaults if none exist
-                    ContractTypeConfig.get_or_create_defaults()
-                    available_choices = list(ContractTypeConfig.objects.filter(is_active=True).values_list('contract_type', flat=True))
+    def get_employee_id_preview(self, obj):
+        """Preview what employee ID will be generated"""
+        if hasattr(obj, 'business_function') and obj.business_function:
+            try:
+                business_code = obj.business_function.code
                 
-                if not available_choices:
-                    # Final fallback
-                    available_choices = ['3_MONTHS', '6_MONTHS', '1_YEAR', '2_YEARS', '3_YEARS', 'PERMANENT']
+                # Get next number for this business function
+                last_employee = Employee.all_objects.filter(
+                    employee_id__startswith=business_code
+                ).order_by('-employee_id').first()
                 
-                raise serializers.ValidationError(
-                    f"Invalid contract duration '{value}'. Available choices: {', '.join(available_choices)}"
-                )
-        except ContractTypeConfig.DoesNotExist:
-            # This shouldn't happen with the above code, but just in case
-            pass
-        
-        return value
+                if last_employee:
+                    try:
+                        last_number = int(last_employee.employee_id[len(business_code):])
+                        next_number = last_number + 1
+                    except (ValueError, IndexError):
+                        next_number = 1
+                else:
+                    next_number = 1
+                
+                return f"{business_code}{next_number}"
+            except:
+                return None
+        return None
     
-    def validate_employee_id(self, value):
-        if self.instance:
-            # Updating existing employee
-            if Employee.objects.filter(employee_id=value).exclude(id=self.instance.id).exists():
-                raise serializers.ValidationError("Employee ID already exists.")
-        else:
-            # Creating new employee
-            if Employee.objects.filter(employee_id=value).exists():
-                raise serializers.ValidationError("Employee ID already exists.")
-        return value
+    def validate(self, data):
+        """Custom validation - ensure business function is provided"""
+        # Business function is required for auto-generating employee_id
+        if not data.get('business_function'):
+            raise serializers.ValidationError({
+                'business_function': 'Business function is required for generating employee ID'
+            })
+        
+        return data
     
     def validate_email(self, value):
+        """Validate email uniqueness"""
         if self.instance and self.instance.user:
             # Updating existing employee
             if User.objects.filter(email=value).exclude(id=self.instance.user.id).exists():
@@ -1183,26 +1452,6 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
             if User.objects.filter(email=value).exists():
                 raise serializers.ValidationError("Email already exists.")
         return value
-    
-    def validate(self, data):
-        """Cross-field validation including grading level"""
-        # Validate grading level matches position group
-        grading_level = data.get('grading_level')
-        position_group = data.get('position_group')
-        
-        # If updating, get existing values if not provided
-        if self.instance:
-            if not position_group:
-                position_group = self.instance.position_group
-        
-        if grading_level and position_group:
-            expected_prefix = position_group.grading_shorthand
-            if not grading_level.startswith(expected_prefix):
-                raise serializers.ValidationError({
-                    'grading_level': f"Grading level must start with {expected_prefix} for this position group."
-                })
-        
-        return data
     
     @transaction.atomic
     def create(self, validated_data):
@@ -1222,13 +1471,13 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
         
         # Create user
         user = User.objects.create_user(
-            username=email,
+            username=email,  # Use email as username
             email=email,
             first_name=first_name,
             last_name=last_name
         )
         
-        # Create employee
+        # Create employee (employee_id will be auto-generated in model save())
         validated_data['user'] = user
         validated_data['created_by'] = self.context['request'].user
         
@@ -1236,6 +1485,7 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
         if profile_photo:
             validated_data['profile_image'] = profile_photo
         
+        # Set vacancy link if provided
         if vacancy_id:
             validated_data['_vacancy_id'] = vacancy_id
         
@@ -1243,10 +1493,9 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
         if not validated_data.get('contract_start_date'):
             validated_data['contract_start_date'] = validated_data.get('start_date')
         
-        # Set default values for new fields
+        # Set default values for required fields
         if 'contract_extensions' not in validated_data:
             validated_data['contract_extensions'] = 0
-        
         if 'notes' not in validated_data:
             validated_data['notes'] = ''
         if 'grading_level' not in validated_data:
@@ -1254,13 +1503,14 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
         if 'father_name' not in validated_data:
             validated_data['father_name'] = father_name
         
+        # Create the employee (employee_id auto-generated)
         employee = super().create(validated_data)
         
         # Add tags
         if tag_ids:
             employee.tags.set(tag_ids)
         
-        # Document əlavəsi
+        # Handle document upload
         if document:
             doc_name = document_name or document.name
             EmployeeDocument.objects.create(
@@ -1275,7 +1525,7 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
             )
         
         # Log activity
-        activity_description = f"Employee {employee.full_name} was created"
+        activity_description = f"Employee {employee.full_name} created with auto-generated ID {employee.employee_id}"
         if document:
             activity_description += f" with document '{doc_name}'"
         if profile_photo:
@@ -1287,10 +1537,10 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
             description=activity_description,
             performed_by=self.context['request'].user,
             metadata={
+                'auto_generated_employee_id': employee.employee_id,
                 'has_document': bool(document),
                 'has_profile_photo': bool(profile_photo),
-                'document_type': document_type if document else None,
-                'job_function': employee.job_function.name if employee.job_function else None
+                'document_type': document_type if document else None
             }
         )
         
@@ -1306,7 +1556,7 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
         tag_ids = validated_data.pop('tag_ids', None)
         vacancy_id = validated_data.pop('vacancy_id', None)
         
-        # ƏLAVƏ SAHƏLƏRİ EXTRACT ET
+        # Extract file data
         document = validated_data.pop('document', None)
         profile_photo = validated_data.pop('profile_photo', None)
         document_type = validated_data.pop('document_type', 'OTHER')
@@ -1326,13 +1576,12 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
                 changes.append(f"Last name changed to {last_name}")
             if email and user.email != email:
                 user.email = email
-                user.username = email
+                user.username = email  # Update username to match email
                 changes.append(f"Email changed to {email}")
             user.save()
         
         # Update profile photo if provided
         if profile_photo:
-            # Delete old profile image if exists
             if instance.profile_image:
                 try:
                     if hasattr(instance.profile_image, 'path'):
@@ -1351,29 +1600,10 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
             instance.father_name = father_name
             changes.append(f"Father name changed to {father_name}")
         
-        # Track other significant changes
-        if 'line_manager' in validated_data and validated_data['line_manager'] != instance.line_manager:
-            old_manager = instance.line_manager.full_name if instance.line_manager else "None"
-            new_manager = validated_data['line_manager'].full_name if validated_data['line_manager'] else "None"
-            changes.append(f"Line manager changed from {old_manager} to {new_manager}")
-        
-        if 'position_group' in validated_data and validated_data['position_group'] != instance.position_group:
-            changes.append(f"Position changed from {instance.position_group.get_name_display()} to {validated_data['position_group'].get_name_display()}")
-        
-        if 'grading_level' in validated_data and validated_data['grading_level'] != instance.grading_level:
-            changes.append(f"Grading level changed from {instance.grading_level} to {validated_data['grading_level']}")
-        
-        
-        if 'job_function' in validated_data and validated_data['job_function'] != instance.job_function:
-            old_job_function = instance.job_function.name if instance.job_function else "None"
-            new_job_function = validated_data['job_function'].name if validated_data['job_function'] else "None"
-            changes.append(f"Job function changed from {old_job_function} to {new_job_function}")
-        
-        
         # Set updated_by
         validated_data['updated_by'] = self.context['request'].user
         
-        # Update employee
+        # Update employee (employee_id should NOT be changed)
         employee = super().update(instance, validated_data)
         
         # Update tags
@@ -1381,7 +1611,7 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
             employee.tags.set(tag_ids)
             changes.append("Tags updated")
         
-        # DOKUMENT ƏLAVƏSİ
+        # Handle document upload
         if document:
             doc_name = document_name or document.name
             EmployeeDocument.objects.create(
@@ -1410,51 +1640,17 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
             EmployeeActivity.objects.create(
                 employee=employee,
                 activity_type='UPDATED',
-                description=f"Employee {employee.full_name} was updated: {'; '.join(changes)}",
+                description=f"Employee {employee.full_name} updated: {'; '.join(changes)}",
                 performed_by=self.context['request'].user,
                 metadata={
                     'changes': changes,
                     'has_new_document': bool(document),
                     'has_new_profile_photo': bool(profile_photo),
-                    'document_type': document_type if document else None
+                    'employee_id_unchanged': employee.employee_id  # Log that ID wasn't changed
                 }
             )
         
         return employee
-
-class BulkEmployeeCreateItemSerializer(serializers.Serializer):
-    """Serializer for a single employee in bulk creation"""
-    employee_id = serializers.CharField(max_length=50)
-    first_name = serializers.CharField(max_length=150)
-    last_name = serializers.CharField(max_length=150)
-    email = serializers.EmailField()
-    date_of_birth = serializers.DateField(required=False, allow_null=True)
-    gender = serializers.ChoiceField(choices=Employee.GENDER_CHOICES, required=False, allow_null=True)
-    father_name = serializers.CharField(max_length=200, required=False, allow_blank=True)  # NEW FIELD
-    address = serializers.CharField(required=False, allow_blank=True)
-    phone = serializers.CharField(max_length=20, required=False, allow_blank=True)
-    emergency_contact = serializers.CharField(required=False, allow_blank=True)
-    
-    # Job Information
-    business_function_id = serializers.IntegerField()
-    department_id = serializers.IntegerField()
-    unit_id = serializers.IntegerField(required=False, allow_null=True)
-    job_function_id = serializers.IntegerField()
-    job_title = serializers.CharField(max_length=200)
-    position_group_id = serializers.IntegerField()
-    grading_level = serializers.CharField(max_length=15, required=False, allow_blank=True)
-    
-    # Employment Details
-    start_date = serializers.DateField()
-    contract_duration = serializers.CharField(max_length=50, default='PERMANENT')
-    contract_start_date = serializers.DateField(required=False, allow_null=True)
-    line_manager_id = serializers.IntegerField(required=False, allow_null=True)  # ENHANCED FOR LINE MANAGER
-    
-    # Additional
-    is_visible_in_org_chart = serializers.BooleanField(default=True)
-    tag_ids = serializers.ListField(child=serializers.IntegerField(), required=False, default=list)
-    notes = serializers.CharField(required=False, allow_blank=True)
-    vacancy_id = serializers.IntegerField(required=False, allow_null=True)
 
 class BulkEmployeeCreateItemSerializer(serializers.Serializer):
     """Serializer for a single employee in bulk creation"""
@@ -1981,40 +2177,6 @@ class ContractExpirySerializer(serializers.ModelSerializer):
         except:
             return False
 
-class BulkSoftDeleteSerializer(serializers.Serializer):
-    """Bulk soft delete employees"""
-    employee_ids = serializers.ListField(
-        child=serializers.IntegerField(),
-        help_text="List of employee IDs to soft delete"
-    )
-    
-    def validate_employee_ids(self, value):
-        if not value:
-            raise serializers.ValidationError("At least one employee ID is required.")
-        
-        existing_count = Employee.objects.filter(id__in=value, is_deleted=False).count()
-        if existing_count != len(value):
-            raise serializers.ValidationError("Some employee IDs do not exist or are already deleted.")
-        
-        return value
-
-class BulkRestoreSerializer(serializers.Serializer):
-    """Bulk restore soft-deleted employees"""
-    employee_ids = serializers.ListField(
-        child=serializers.IntegerField(),
-        help_text="List of employee IDs to restore"
-    )
-    
-    def validate_employee_ids(self, value):
-        if not value:
-            raise serializers.ValidationError("At least one employee ID is required.")
-        
-        existing_count = Employee.all_objects.filter(id__in=value, is_deleted=True).count()
-        if existing_count != len(value):
-            raise serializers.ValidationError("Some employee IDs do not exist or are not deleted.")
-        
-        return value
-
 class EmployeeExportSerializer(serializers.Serializer):
     employee_ids = serializers.ListField(
         child=serializers.IntegerField(), 
@@ -2103,234 +2265,5 @@ class BulkContractExtensionSerializer(serializers.Serializer):
             )
         return value
 
-class VacancyToEmployeeConversionSerializer(serializers.Serializer):
-    """UPDATED: Job Function field əlavə olundu"""
-    vacancy_id = serializers.IntegerField()
-    
-    # Employee data
-    first_name = serializers.CharField(max_length=150)
-    last_name = serializers.CharField(max_length=150)  
-    email = serializers.EmailField()
-    date_of_birth = serializers.DateField(required=False, allow_null=True)
-    gender = serializers.ChoiceField(choices=Employee.GENDER_CHOICES, required=False, allow_null=True)
-    father_name = serializers.CharField(max_length=200, required=False, allow_blank=True)
-    address = serializers.CharField(required=False, allow_blank=True)
-    phone = serializers.CharField(max_length=20, required=False, allow_blank=True)
-    emergency_contact = serializers.CharField(required=False, allow_blank=True)
-    
-    # Employment details
-    start_date = serializers.DateField()
-    contract_duration = serializers.CharField(max_length=50, default='PERMANENT')
-    contract_start_date = serializers.DateField(required=False, allow_null=True)
-    
-    # Additional
-    notes = serializers.CharField(required=False, allow_blank=True)
-    tag_ids = serializers.ListField(child=serializers.IntegerField(), required=False, default=list)
-    
-    def validate_vacancy_id(self, value):
-        try:
-            vacancy = VacantPosition.objects.get(id=value, is_filled=False, is_deleted=False)
-            return value
-        except VacantPosition.DoesNotExist:
-            raise serializers.ValidationError("Vacancy not found or already filled.")
-    
-    def validate_email(self, value):
-        if User.objects.filter(email=value).exists():
-            raise serializers.ValidationError("Email already exists.")
-        return value
-    
-    def create(self, validated_data):
-        """UPDATED: Convert vacancy to employee with job function"""
-        vacancy_id = validated_data.pop('vacancy_id')
-        tag_ids = validated_data.pop('tag_ids', [])
-        
-        with transaction.atomic():
-            # Get vacancy
-            vacancy = VacantPosition.objects.get(id=vacancy_id)
-            
-            # Create user
-            user = User.objects.create_user(
-                username=validated_data['email'],
-                email=validated_data['email'],
-                first_name=validated_data['first_name'],
-                last_name=validated_data['last_name']
-            )
-            
-            # Create employee with vacancy data
-            employee = Employee.objects.create(
-                user=user,
-                employee_id=vacancy.position_id,
-                date_of_birth=validated_data.get('date_of_birth'),
-                gender=validated_data.get('gender'),
-                father_name=validated_data.get('father_name', ''),
-                address=validated_data.get('address', ''),
-                phone=validated_data.get('phone', ''),
-                emergency_contact=validated_data.get('emergency_contact', ''),
-                
-                # Copy organizational structure from vacancy
-                business_function=vacancy.business_function,
-                department=vacancy.department,
-                unit=vacancy.unit,
-                job_function=vacancy.job_function,  # UPDATED: job_function əlavə olundu
-                job_title=vacancy.title,
-                position_group=vacancy.position_group,
-                grading_level=vacancy.grading_level,
-                
-                # Employment details
-                start_date=validated_data['start_date'],
-                contract_duration=validated_data.get('contract_duration', 'PERMANENT'),
-                contract_start_date=validated_data.get('contract_start_date') or validated_data['start_date'],
-                
-                # Management
-                line_manager=vacancy.reporting_to,
-                
-                # Status (will be auto-assigned based on start date)
-                is_visible_in_org_chart=vacancy.is_visible_in_org_chart,
-                notes=validated_data.get('notes', ''),
-                
-                # Link to vacancy
-                original_vacancy=vacancy,
-                created_by=self.context['request'].user
-            )
-            
-            # Add tags
-            if tag_ids:
-                employee.tags.set(tag_ids)
-            
-            # Mark vacancy as filled
-            vacancy.mark_as_filled(employee)
-            
-            # Log activities
-            EmployeeActivity.objects.create(
-                employee=employee,
-                activity_type='CREATED',
-                description=f"Employee created from vacancy {vacancy.position_id}",
-                performed_by=self.context['request'].user,
-                metadata={
-                    'converted_from_vacancy': True,
-                    'vacancy_id': vacancy.id,
-                    'vacancy_position_id': vacancy.position_id,
-                    'job_function': employee.job_function.name if employee.job_function else None
-                }
-            )
-            
-            return employee
-    
-    def get_job_descriptions_count(self, obj):
-        """Get total count of job descriptions for this employee"""
-        try:
-            return JobDescription.objects.filter(assigned_employee=obj).count()
-        except:
-            return 0
-    
-    def get_pending_job_description_approvals(self, obj):
-        """Get job descriptions pending employee approval"""
-        try:
-            if not self.context.get('request') or not self.context.get('request').user:
-                return []
-            
-            request_user = self.context.get('request').user
-            pending_jds = JobDescription.objects.filter(
-                assigned_employee=obj,
-                status='PENDING_EMPLOYEE'
-            ).select_related('business_function', 'department', 'job_function', 'reports_to')
-            
-            return [
-                {
-                    'id': str(jd.id),
-                    'job_title': jd.job_title,
-                    'status': jd.status,
-                    'status_display': jd.get_status_display(),
-                    'status_color': jd.get_status_display_with_color()['color'],
-                    'created_at': jd.created_at,
-                    'version': jd.version,
-                    'can_approve': jd.can_be_approved_by_employee(request_user),
-                    'business_function': jd.business_function.name if jd.business_function else None,
-                    'department': jd.department.name if jd.department else None,
-                    'job_function': jd.job_function.name if jd.job_function else None,  # YENİ
-                    'reports_to_name': jd.reports_to.full_name if jd.reports_to else None,
-                    'urgency': 'high' if (timezone.now() - jd.created_at).days > 7 else 'normal',
-                    'days_pending': (timezone.now() - jd.created_at).days
-                }
-                for jd in pending_jds
-            ]
-        except Exception as e:
-            logger.error(f"Error getting pending job descriptions for employee {obj.employee_id}: {e}")
-            return []
-    
-    def get_team_job_descriptions(self, obj):
-        """Get job descriptions for direct reports (for managers)"""
-        try:
-            if not self.context.get('request') or not self.context.get('request').user:
-                return []
-            
-            # Get job descriptions where this employee is the reports_to manager
-            team_jds = JobDescription.objects.filter(
-                reports_to=obj
-            ).select_related(
-                'assigned_employee', 'business_function', 'department', 'job_function', 'created_by'
-            ).order_by('-created_at')[:10]  # Son 10 team job description
-            
-            return [
-                {
-                    'id': str(jd.id),
-                    'job_title': jd.job_title,
-                    'status': jd.status,
-                    'status_display': jd.get_status_display(),
-                    'status_color': jd.get_status_display_with_color()['color'],
-                    'created_at': jd.created_at,
-                    'version': jd.version,
-                    'employee_name': jd.get_employee_info()['name'] if jd.get_employee_info() else 'Unknown',
-                    'employee_id': jd.assigned_employee.employee_id if jd.assigned_employee else None,
-                    'can_approve': jd.can_be_approved_by_line_manager(self.context.get('request').user),
-                    'business_function': jd.business_function.name if jd.business_function else None,
-                    'department': jd.department.name if jd.department else None,
-                    'job_function': jd.job_function.name if jd.job_function else None,  # YENİ
-                    'days_since_created': (timezone.now() - jd.created_at).days,
-                    'is_vacant_position': not jd.assigned_employee
-                }
-                for jd in team_jds
-            ]
-        except Exception as e:
-            logger.error(f"Error getting team job descriptions for manager {obj.employee_id}: {e}")
-            return []
-    
-    def get_team_pending_approvals(self, obj):
-        """Get job descriptions pending line manager approval for this manager"""
-        try:
-            if not self.context.get('request') or not self.context.get('request').user:
-                return []
-            
-            request_user = self.context.get('request').user
-            pending_team_jds = JobDescription.objects.filter(
-                reports_to=obj,
-                status='PENDING_LINE_MANAGER'
-            ).select_related('assigned_employee', 'business_function', 'department', 'job_function')
-            
-            return [
-                {
-                    'id': str(jd.id),
-                    'job_title': jd.job_title,
-                    'status': jd.status,
-                    'status_display': jd.get_status_display(),
-                    'status_color': jd.get_status_display_with_color()['color'],
-                    'created_at': jd.created_at,
-                    'version': jd.version,
-                    'employee_name': jd.get_employee_info()['name'] if jd.get_employee_info() else 'Unknown',
-                    'can_approve': jd.can_be_approved_by_line_manager(request_user),
-                    'business_function': jd.business_function.name if jd.business_function else None,
-                    'department': jd.department.name if jd.department else None,
-                    'job_function': jd.job_function.name if jd.job_function else None,  # YENİ
-                    'days_pending': (timezone.now() - jd.created_at).days,
-                    'urgency': 'high' if (timezone.now() - jd.created_at).days > 7 else 'normal'
-                }
-                for jd in pending_team_jds
-            ]
-        except Exception as e:
-            logger.error(f"Error getting team pending approvals for manager {obj.employee_id}: {e}")
-            return []
-   
-
-                    
                     
                     

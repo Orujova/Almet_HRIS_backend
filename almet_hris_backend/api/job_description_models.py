@@ -1,4 +1,4 @@
-# api/job_description_models.py - UPDATED: Automatic manager assignment and optional employee
+# api/job_description_models.py - UPDATED: Smart employee selection based on organizational hierarchy
 
 from django.db import models
 from django.contrib.auth.models import User
@@ -9,15 +9,26 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-
+def normalize_grading_level(grading_level):
+        """
+        Normalize grading level for comparison
+        Removes underscores and spaces, converts to uppercase
+        Examples: '_M' -> 'M', 'm' -> 'M', ' M ' -> 'M'
+        """
+        if not grading_level:
+            return ""
+        
+        # Remove underscores, spaces, and convert to uppercase
+        normalized = grading_level.strip().replace('_', '').replace(' ', '').upper()
+        return normalized
 class JobDescription(models.Model):
-    """UPDATED: Job Description model with automatic manager assignment"""
+    """FIXED: Job Description with complete job title validation"""
     
     # Primary fields
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     job_title = models.CharField(max_length=200, verbose_name="Job Title")
     
-    # Hierarchical and organizational data from existing models
+    # Hierarchical and organizational data
     business_function = models.ForeignKey(
         'BusinessFunction', 
         on_delete=models.CASCADE,
@@ -35,14 +46,11 @@ class JobDescription(models.Model):
         blank=True,
         verbose_name="Unit"
     )
-    
-    # ADDED: Job Function field
     job_function = models.ForeignKey(
         'JobFunction',
         on_delete=models.CASCADE,
         verbose_name="Job Function"
     )
-    
     position_group = models.ForeignKey(
         'PositionGroup', 
         on_delete=models.CASCADE,
@@ -53,38 +61,22 @@ class JobDescription(models.Model):
         help_text="Grading level from position group"
     )
     
-    # UPDATED: Employee this job description is for (NOW OPTIONAL)
+    # Employee assignment
     assigned_employee = models.ForeignKey(
         'Employee',
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,  # Made optional
+        on_delete=models.CASCADE,
         related_name='assigned_job_descriptions',
         verbose_name="Assigned Employee"
     )
     
-    # UPDATED: Manual employee info (when no existing employee)
-    manual_employee_name = models.CharField(
-        max_length=200,
-        blank=True,
-        verbose_name="Employee Name (for vacant positions)"
-    )
-
-    manual_employee_phone = models.CharField(
-        max_length=50,
-        blank=True,
-        verbose_name="Employee Phone (for vacant positions)"
-    )
-    
-    # UPDATED: Reports to (Manager/Supervisor - AUTOMATICALLY ASSIGNED)
+    # Auto-assigned manager
     reports_to = models.ForeignKey(
         'Employee', 
         on_delete=models.SET_NULL, 
         null=True, 
         blank=True,
         related_name='subordinate_job_descriptions',
-        verbose_name="Reports To (Auto-assigned from Employee's Manager)",
-        help_text="Automatically assigned based on selected employee's line manager"
+        verbose_name="Reports To"
     )
     
     # Job details
@@ -109,7 +101,7 @@ class JobDescription(models.Model):
         default='DRAFT'
     )
     
-    # Approval workflow
+    # Approval workflow fields
     line_manager_approved_by = models.ForeignKey(
         User, 
         on_delete=models.SET_NULL, 
@@ -167,26 +159,383 @@ class JobDescription(models.Model):
         verbose_name = 'Job Description'
         verbose_name_plural = 'Job Descriptions'
         ordering = ['-created_at']
-        indexes = [
-            models.Index(fields=['job_title']),
-            models.Index(fields=['status']),
-            models.Index(fields=['business_function', 'department']),
-            models.Index(fields=['created_at']),
-        ]
     
     def __str__(self):
-        employee_info = self.get_employee_info()
-        employee_name = employee_info['name'] if employee_info else 'Vacant Position'
+        employee_name = self.assigned_employee.full_name if self.assigned_employee else 'No Employee'
         return f"{self.job_title} - {employee_name} ({self.status})"
     
+   
+    
+    @classmethod
+    def get_eligible_employees_with_priority(cls, job_title=None, business_function_id=None, 
+                                           department_id=None, unit_id=None, job_function_id=None, 
+                                           position_group_id=None, grading_level=None):
+        """FIXED: Get employees matching ALL criteria INCLUDING job title"""
+        from .models import Employee
+       
+        print(f"  Job Title: '{job_title}'")
+        print(f"  Business Function ID: {business_function_id}")
+        print(f"  Department ID: {department_id}")
+        print(f"  Unit ID: {unit_id}")
+        print(f"  Job Function ID: {job_function_id}")
+        print(f"  Position Group ID: {position_group_id}")
+        print(f"  Grading Level: '{grading_level}'")
+        
+        # Start with all active employees
+        queryset = Employee.objects.filter(
+           
+            is_deleted=False
+        ).select_related(
+            'business_function', 'department', 'unit', 'job_function', 
+            'position_group', 'line_manager'
+        )
+        
+        
+        
+
+        
+        # 1. JOB TITLE FILTER (MOST IMPORTANT - WAS MISSING!)
+        if job_title:
+            job_title_clean = job_title.strip()
+            queryset = queryset.filter(job_title__iexact=job_title_clean)
+            print(f"  ✅ After job_title '{job_title_clean}' filter: {queryset.count()}")
+            
+            if queryset.count() == 0:
+           
+                existing_titles = Employee.objects.filter(
+                     is_deleted=False
+                ).values_list('job_title', flat=True).distinct()
+                print(f"  Available job titles: {list(existing_titles)}")
+        
+        # 2. BUSINESS FUNCTION FILTER
+        if business_function_id:
+            queryset = queryset.filter(business_function_id=business_function_id)
+            print(f"  ✅ After business_function filter: {queryset.count()}")
+        
+        # 3. DEPARTMENT FILTER
+        if department_id:
+            queryset = queryset.filter(department_id=department_id)
+            print(f"  ✅ After department filter: {queryset.count()}")
+        
+        # 4. UNIT FILTER (optional)
+        if unit_id:
+            queryset = queryset.filter(unit_id=unit_id)
+            print(f"  ✅ After unit filter: {queryset.count()}")
+        
+        # 5. JOB FUNCTION FILTER
+        if job_function_id:
+            queryset = queryset.filter(job_function_id=job_function_id)
+            print(f"  ✅ After job_function filter: {queryset.count()}")
+        
+        # 6. POSITION GROUP FILTER
+        if position_group_id:
+            queryset = queryset.filter(position_group_id=position_group_id)
+            print(f"  ✅ After position_group filter: {queryset.count()}")
+        
+        # 7. GRADING LEVEL FILTER
+        if grading_level:
+            grading_level_clean = grading_level.strip()
+            normalized_target = normalize_grading_level(grading_level_clean)
+            
+            print(f"  Target grading level: '{grading_level_clean}' (normalized: '{normalized_target}')")
+            
+            # Get all employees and filter manually for smart comparison
+            all_employees = list(queryset)
+            matching_employees = []
+            
+            for employee in all_employees:
+                emp_grade = employee.grading_level.strip() if employee.grading_level else ""
+                emp_normalized = normalize_grading_level(emp_grade)
+                
+                if emp_normalized == normalized_target:
+                    matching_employees.append(employee.id)
+                    print(f"    ✅ Match: {employee.full_name} - '{emp_grade}' (normalized: '{emp_normalized}')")
+                else:
+                    print(f"    ❌ No match: {employee.full_name} - '{emp_grade}' (normalized: '{emp_normalized}')")
+        
+      
+        
+        if queryset.count() == 0:
+      
+            
+            # Debug: Show what employees exist with each criteria
+            if job_title:
+                job_title_matches = Employee.objects.filter(
+                    is_deleted=False, job_title__iexact=job_title.strip()
+                ).count()
+                print(f"     Employees with job title '{job_title}': {job_title_matches}")
+            
+            if business_function_id:
+                bf_matches = Employee.objects.filter(
+                 is_deleted=False, business_function_id=business_function_id
+                ).count()
+                print(f"     Employees in business function {business_function_id}: {bf_matches}")
+                
+            if department_id:
+                dept_matches = Employee.objects.filter(
+                   is_deleted=False, department_id=department_id
+                ).count()
+                print(f"     Employees in department {department_id}: {dept_matches}")
+        
+        return queryset.order_by('line_manager_id', 'employee_id')
+    
+    @classmethod 
+    def get_eligible_employees(cls, job_title=None, business_function=None, department=None, 
+                             unit=None, job_function=None, position_group=None, grading_level=None):
+        """Wrapper method for backward compatibility"""
+        job_title_str = job_title
+        business_function_id = business_function.id if hasattr(business_function, 'id') else business_function
+        department_id = department.id if hasattr(department, 'id') else department  
+        unit_id = unit.id if hasattr(unit, 'id') else unit
+        job_function_id = job_function.id if hasattr(job_function, 'id') else job_function
+        position_group_id = position_group.id if hasattr(position_group, 'id') else position_group
+        
+        return cls.get_eligible_employees_with_priority(
+            job_title=job_title_str,
+            business_function_id=business_function_id,
+            department_id=department_id,
+            unit_id=unit_id,
+            job_function_id=job_function_id,
+            position_group_id=position_group_id,
+            grading_level=grading_level
+        )
+    
+    def validate_employee_assignment(self):
+        """FIXED: Validate employee against ALL criteria INCLUDING job title"""
+        if not self.assigned_employee:
+            return False, "No employee assigned"
+        
+        emp = self.assigned_employee
+        errors = []
+        
+      
+        # 1. JOB TITLE CHECK (Case insensitive, strip whitespace) - MOST IMPORTANT!
+        if self.job_title:
+            emp_title = emp.job_title.strip() if emp.job_title else ""
+            jd_title = self.job_title.strip()
+            if emp_title.upper() != jd_title.upper():
+                errors.append(f"Job Title: Required '{jd_title}', Employee has '{emp_title}'")
+                print(f"  ❌ Job Title mismatch: Required '{jd_title}' vs Employee '{emp_title}'")
+            else:
+                print(f"  ✅ Job Title matches: '{jd_title}'")
+        
+        # 2. BUSINESS FUNCTION CHECK
+        if self.business_function:
+            if not emp.business_function or emp.business_function.id != self.business_function.id:
+                req_bf = self.business_function.name
+                emp_bf = emp.business_function.name if emp.business_function else "None"
+                errors.append(f"Business Function: Required '{req_bf}', Employee has '{emp_bf}'")
+                print(f"  ❌ Business Function mismatch: Required '{req_bf}' vs Employee '{emp_bf}'")
+            else:
+                print(f"  ✅ Business Function matches: '{self.business_function.name}'")
+        
+        # 3. DEPARTMENT CHECK
+        if self.department:
+            if not emp.department or emp.department.id != self.department.id:
+                req_dept = self.department.name
+                emp_dept = emp.department.name if emp.department else "None"
+                errors.append(f"Department: Required '{req_dept}', Employee has '{emp_dept}'")
+                print(f"  ❌ Department mismatch: Required '{req_dept}' vs Employee '{emp_dept}'")
+            else:
+                print(f"  ✅ Department matches: '{self.department.name}'")
+        
+        # 4. UNIT CHECK (optional)
+        if self.unit:
+            if not emp.unit or emp.unit.id != self.unit.id:
+                req_unit = self.unit.name
+                emp_unit = emp.unit.name if emp.unit else "None"
+                errors.append(f"Unit: Required '{req_unit}', Employee has '{emp_unit}'")
+                print(f"  ❌ Unit mismatch: Required '{req_unit}' vs Employee '{emp_unit}'")
+            else:
+                print(f"  ✅ Unit matches: '{self.unit.name}'")
+        
+        # 5. JOB FUNCTION CHECK
+        if self.job_function:
+            if not emp.job_function or emp.job_function.id != self.job_function.id:
+                req_jf = self.job_function.name
+                emp_jf = emp.job_function.name if emp.job_function else "None"
+                errors.append(f"Job Function: Required '{req_jf}', Employee has '{emp_jf}'")
+                print(f"  ❌ Job Function mismatch: Required '{req_jf}' vs Employee '{emp_jf}'")
+            else:
+                print(f"  ✅ Job Function matches: '{self.job_function.name}'")
+        
+        # 6. POSITION GROUP CHECK
+        if self.position_group:
+            if not emp.position_group or emp.position_group.id != self.position_group.id:
+                req_pg = self.position_group.name
+                emp_pg = emp.position_group.name if emp.position_group else "None"
+                errors.append(f"Position Group: Required '{req_pg}', Employee has '{emp_pg}'")
+                print(f"  ❌ Position Group mismatch: Required '{req_pg}' vs Employee '{emp_pg}'")
+            else:
+                print(f"  ✅ Position Group matches: '{self.position_group.name}'")
+        
+        # 7. GRADING LEVEL CHECK
+        if self.grading_level:
+            emp_grade = emp.grading_level.strip() if emp.grading_level else ""
+            jd_grade = self.grading_level.strip()
+            
+            # Normalize both for comparison
+            emp_grade_normalized = normalize_grading_level(emp_grade)
+            jd_grade_normalized = normalize_grading_level(jd_grade)
+            
+            if emp_grade_normalized != jd_grade_normalized:
+                errors.append(f"Grading Level: Required '{jd_grade}', Employee has '{emp_grade}' (normalized: '{jd_grade_normalized}' vs '{emp_grade_normalized}')")
+                print(f"  ❌ Grading Level mismatch: Required '{jd_grade}' vs Employee '{emp_grade}'")
+                print(f"     Normalized: Required '{jd_grade_normalized}' vs Employee '{emp_grade_normalized}'")
+            else:
+                print(f"  ✅ Grading Level matches: '{jd_grade}' (normalized: '{jd_grade_normalized}')")
+            
+            if errors:
+                error_msg = "; ".join(errors)
+                print(f"  🚫 VALIDATION FAILED: {error_msg}")
+                return False, error_msg
+            
+            print(f"  ✅ VALIDATION PASSED: All criteria match including job title")
+            return True, "Employee matches all criteria including job title"
+    
+    def get_employee_matching_details(self):
+        """Get detailed matching information for all criteria"""
+        if not self.assigned_employee:
+            return None
+        
+        emp = self.assigned_employee
+        details = {
+            'employee_info': {
+                'id': emp.id,
+                'name': emp.full_name,
+                'employee_id': emp.employee_id
+            },
+            'matches': {},
+            'overall_match': True,
+            'mismatch_details': []
+        }
+        
+        # JOB TITLE CHECK
+        if self.job_title:
+            emp_title = emp.job_title.strip() if emp.job_title else ""
+            jd_title = self.job_title.strip()
+            matches = (emp_title.upper() == jd_title.upper())
+            
+            details['matches']['job_title'] = {
+                'required': jd_title,
+                'employee_has': emp_title,
+                'matches': matches
+            }
+            
+            if not matches:
+                details['overall_match'] = False
+                details['mismatch_details'].append(f"Job Title: Required '{jd_title}', Employee has '{emp_title}'")
+        
+        # BUSINESS FUNCTION CHECK
+        if self.business_function:
+            req_bf = self.business_function.name
+            emp_bf = emp.business_function.name if emp.business_function else "None"
+            matches = (emp.business_function and emp.business_function.id == self.business_function.id)
+            
+            details['matches']['business_function'] = {
+                'required': req_bf,
+                'employee_has': emp_bf,
+                'matches': matches
+            }
+            
+            if not matches:
+                details['overall_match'] = False
+                details['mismatch_details'].append(f"Business Function: Required '{req_bf}', Employee has '{emp_bf}'")
+        
+        # DEPARTMENT CHECK
+        if self.department:
+            req_dept = self.department.name
+            emp_dept = emp.department.name if emp.department else "None"
+            matches = (emp.department and emp.department.id == self.department.id)
+            
+            details['matches']['department'] = {
+                'required': req_dept,
+                'employee_has': emp_dept,
+                'matches': matches
+            }
+            
+            if not matches:
+                details['overall_match'] = False
+                details['mismatch_details'].append(f"Department: Required '{req_dept}', Employee has '{emp_dept}'")
+        
+        # UNIT CHECK (optional)
+        if self.unit:
+            req_unit = self.unit.name
+            emp_unit = emp.unit.name if emp.unit else "None"
+            matches = (emp.unit and emp.unit.id == self.unit.id)
+            
+            details['matches']['unit'] = {
+                'required': req_unit,
+                'employee_has': emp_unit,
+                'matches': matches
+            }
+            
+            if not matches:
+                details['overall_match'] = False
+                details['mismatch_details'].append(f"Unit: Required '{req_unit}', Employee has '{emp_unit}'")
+        
+        # JOB FUNCTION CHECK
+        if self.job_function:
+            req_jf = self.job_function.name
+            emp_jf = emp.job_function.name if emp.job_function else "None"
+            matches = (emp.job_function and emp.job_function.id == self.job_function.id)
+            
+            details['matches']['job_function'] = {
+                'required': req_jf,
+                'employee_has': emp_jf,
+                'matches': matches
+            }
+            
+            if not matches:
+                details['overall_match'] = False
+                details['mismatch_details'].append(f"Job Function: Required '{req_jf}', Employee has '{emp_jf}'")
+        
+        # POSITION GROUP CHECK
+        if self.position_group:
+            req_pg = self.position_group.name
+            emp_pg = emp.position_group.name if emp.position_group else "None"
+            matches = (emp.position_group and emp.position_group.id == self.position_group.id)
+            
+            details['matches']['position_group'] = {
+                'required': req_pg,
+                'employee_has': emp_pg,
+                'matches': matches
+            }
+            
+            if not matches:
+                details['overall_match'] = False
+                details['mismatch_details'].append(f"Position Group: Required '{req_pg}', Employee has '{emp_pg}'")
+        
+        # GRADING LEVEL CHECK
+        if self.grading_level:
+            emp_grade = emp.grading_level.strip() if emp.grading_level else ""
+            jd_grade = self.grading_level.strip()
+            
+            # Normalize both for comparison
+            emp_grade_normalized = normalize_grading_level(emp_grade)
+            jd_grade_normalized = normalize_grading_level(jd_grade)
+            matches = (emp_grade_normalized == jd_grade_normalized)
+            
+            details['matches']['grading_level'] = {
+                'required': jd_grade,
+                'employee_has': emp_grade,
+                'required_normalized': jd_grade_normalized,
+                'employee_normalized': emp_grade_normalized,
+                'matches': matches
+            }
+            
+            if not matches:
+                details['overall_match'] = False
+                details['mismatch_details'].append(f"Grading Level: Required '{jd_grade}' (norm: '{jd_grade_normalized}'), Employee has '{emp_grade}' (norm: '{emp_grade_normalized}')")
+    
+        return details
+    
     def save(self, *args, **kwargs):
-        """UPDATED: Auto-assign reports_to from employee's line_manager"""
+        """Auto-assign reports_to from employee's line_manager"""
         if self.assigned_employee and self.assigned_employee.line_manager:
             self.reports_to = self.assigned_employee.line_manager
-            logger.info(f"Auto-assigned reports_to: {self.reports_to.full_name} for JD {self.job_title}")
-        elif not self.assigned_employee:
-            # For vacant positions, reports_to can be manually set or left empty
-            logger.info(f"No employee assigned for JD {self.job_title}, reports_to not auto-assigned")
+        elif self.assigned_employee:
+            self.reports_to = None
         
         super().save(*args, **kwargs)
     
@@ -206,91 +555,35 @@ class JobDescription(models.Model):
         }
     
     def can_be_approved_by_line_manager(self, user):
-        """UPDATED: Check if user can approve as line manager - NO ROLE RESTRICTION"""
-        try:
-            logger.info(f"Checking line manager approval for user {user.username} on JD {self.id}")
-            logger.info(f"JD status: {self.status}")
-            logger.info(f"Reports to: {self.reports_to}")
-            
-            # Check status first
-            if self.status != 'PENDING_LINE_MANAGER':
-                logger.info(f"Status is not PENDING_LINE_MANAGER: {self.status}")
-                return False
-            
-            # Check if there's a reports_to manager
-            if not self.reports_to:
-                logger.info("No reports_to manager set")
-                return False
-            
-            # Check if the user is linked to the reports_to employee
-            if not hasattr(self.reports_to, 'user') or not self.reports_to.user:
-                logger.info(f"Reports_to employee {self.reports_to.employee_id} has no linked user")
-                return False
-            
-            # Check if user matches
-            is_manager = self.reports_to.user == user
-            logger.info(f"User {user.username} is manager: {is_manager}")
-            
-            return is_manager
-            
-        except Exception as e:
-            logger.error(f"Error checking line manager approval: {e}")
-            return False
+        """Check if user can approve as line manager"""
+        return (
+            self.status == 'PENDING_LINE_MANAGER' and 
+            self.reports_to and 
+            hasattr(self.reports_to, 'user') and 
+            self.reports_to.user == user
+        )
 
     def can_be_approved_by_employee(self, user):
-        """UPDATED: Check if user can approve as employee - NO ROLE RESTRICTION"""
-        try:
-            logger.info(f"Checking employee approval for user {user.username} on JD {self.id}")
-            logger.info(f"JD status: {self.status}")
-            logger.info(f"Assigned employee: {self.assigned_employee}")
-            
-            # Check status first
-            if self.status != 'PENDING_EMPLOYEE':
-                logger.info(f"Status is not PENDING_EMPLOYEE: {self.status}")
-                return False
-            
-            # Check if there's an assigned employee
-            if not self.assigned_employee:
-                logger.info("No assigned employee - cannot approve")
-                return False
-            
-            # Check if the user is linked to the assigned employee
-            if not hasattr(self.assigned_employee, 'user') or not self.assigned_employee.user:
-                logger.info(f"Assigned employee {self.assigned_employee.employee_id} has no linked user")
-                return False
-            
-            # Check if user matches
-            is_employee = self.assigned_employee.user == user
-            logger.info(f"User {user.username} is assigned employee: {is_employee}")
-            
-            return is_employee
-            
-        except Exception as e:
-            logger.error(f"Error checking employee approval: {e}")
-            return False
+        """Check if user can approve as employee"""
+        return (
+            self.status == 'PENDING_EMPLOYEE' and 
+            self.assigned_employee and 
+            hasattr(self.assigned_employee, 'user') and 
+            self.assigned_employee.user == user
+        )
     
     def get_employee_info(self):
-        """UPDATED: Get employee information (existing or manual)"""
+        """Get employee information"""
         if self.assigned_employee:
             return {
-                'type': 'existing',
+                'type': 'assigned',
                 'id': self.assigned_employee.id,
                 'name': self.assigned_employee.full_name,
                 'phone': self.assigned_employee.phone,
-                'employee_id': self.assigned_employee.employee_id
+                'employee_id': self.assigned_employee.employee_id,
+                'email': getattr(self.assigned_employee, 'email', None)
             }
-        elif self.manual_employee_name:
-            return {
-                'type': 'manual',
-                'name': self.manual_employee_name,
-                'phone': self.manual_employee_phone
-            }
-        else:
-            return {
-                'type': 'vacant',
-                'name': 'Vacant Position',
-                'phone': 'N/A'
-            }
+        return None
     
     def get_manager_info(self):
         """Get manager information"""
@@ -302,107 +595,9 @@ class JobDescription(models.Model):
                 'employee_id': self.reports_to.employee_id
             }
         return None
-    
-    def approve_by_line_manager(self, user, comments="", signature=None):
-        """Approve by line manager with better error handling"""
-        try:
-            logger.info(f"Line manager approval attempt by {user.username} for JD {self.id}")
-            
-            if not self.can_be_approved_by_line_manager(user):
-                error_msg = f"User {user.username} cannot approve this job description as line manager"
-                logger.error(error_msg)
-                raise ValueError(error_msg)
-            
-            self.line_manager_approved_by = user
-            self.line_manager_approved_at = timezone.now()
-            self.line_manager_comments = comments
-            if signature:
-                self.line_manager_signature = signature
-            
-            # UPDATED: Move to appropriate next status
-            if self.assigned_employee:
-                # If there's an assigned employee, move to employee approval
-                self.status = 'PENDING_EMPLOYEE'
-            else:
-                # If it's a vacant position, directly approve
-                self.status = 'APPROVED'
-            
-            self.save()
-            
-            logger.info(f"Line manager approval successful for JD {self.id}")
-            
-        except Exception as e:
-            logger.error(f"Error in approve_by_line_manager: {e}")
-            raise
-    
-    def approve_by_employee(self, user, comments="", signature=None):
-        """Approve by employee with better error handling"""
-        try:
-            logger.info(f"Employee approval attempt by {user.username} for JD {self.id}")
-            
-            if not self.can_be_approved_by_employee(user):
-                error_msg = f"User {user.username} cannot approve this job description as employee"
-                logger.error(error_msg)
-                raise ValueError(error_msg)
-            
-            self.employee_approved_by = user
-            self.employee_approved_at = timezone.now()
-            self.employee_comments = comments
-            if signature:
-                self.employee_signature = signature
-            
-            # Final approval
-            self.status = 'APPROVED'
-            self.save()
-            
-            logger.info(f"Employee approval successful for JD {self.id}")
-            
-        except Exception as e:
-            logger.error(f"Error in approve_by_employee: {e}")
-            raise
-    
-    def reject(self, user, reason):
-        """Reject job description with better error handling"""
-        try:
-            logger.info(f"Rejection attempt by {user.username} for JD {self.id}")
-            
-            self.status = 'REJECTED'
-            
-            # Add reason to appropriate comments field
-            if self.can_be_approved_by_line_manager(user):
-                self.line_manager_comments = reason
-            elif self.can_be_approved_by_employee(user):
-                self.employee_comments = reason
-            
-            self.save()
-            logger.info(f"Job description {self.id} rejected successfully")
-            
-        except Exception as e:
-            logger.error(f"Error in reject: {e}")
-            raise
-    
-    def request_revision(self, user, reason):
-        """Request revision with better error handling"""
-        try:
-            logger.info(f"Revision request by {user.username} for JD {self.id}")
-            
-            self.status = 'REVISION_REQUIRED'
-            
-            # Add reason to appropriate comments field
-            if self.can_be_approved_by_line_manager(user):
-                self.line_manager_comments = reason
-            elif self.can_be_approved_by_employee(user):
-                self.employee_comments = reason
-            
-            self.save()
-            logger.info(f"Revision requested for JD {self.id}")
-            
-        except Exception as e:
-            logger.error(f"Error in request_revision: {e}")
-            raise
 
 
-# Keep all other models the same as in the original file...
+# Keep all other model classes the same...
 class JobDescriptionSection(models.Model):
     """Flexible sections for job descriptions"""
     
@@ -509,14 +704,13 @@ class JobBusinessResource(models.Model):
     
     name = models.CharField(max_length=200, unique=True)
     description = models.TextField(blank=True)
-
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
     
     class Meta:
         db_table = 'job_business_resources'
-        ordering = ['description', 'name']
+        ordering = ['name']
     
     def __str__(self):
         return self.name
@@ -527,7 +721,6 @@ class AccessMatrix(models.Model):
     
     name = models.CharField(max_length=200, unique=True)
     description = models.TextField(blank=True)
-
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
@@ -535,10 +728,10 @@ class AccessMatrix(models.Model):
     class Meta:
         db_table = 'access_matrix'
         verbose_name_plural = 'Access Matrix'
-        ordering = [ 'name','description']
+        ordering = ['name']
     
     def __str__(self):
-        return f"{self.name} "
+        return self.name
 
 
 class CompanyBenefit(models.Model):
@@ -546,14 +739,13 @@ class CompanyBenefit(models.Model):
     
     name = models.CharField(max_length=200, unique=True)
     description = models.TextField(blank=True)
-   
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
     
     class Meta:
         db_table = 'company_benefits'
-        ordering = ['description', 'name']
+        ordering = ['name']
     
     def __str__(self):
         return self.name

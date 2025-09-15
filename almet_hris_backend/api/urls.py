@@ -103,13 +103,6 @@ urlpatterns = [
     # User endpoints
     path('me/', views.user_info, name='user_info'),
     
-
-    
-    # Headcount endpoints with vacancy integration
-    path('employees/headcount-with-vacancies/', 
-         views.EmployeeViewSet.as_view({'get': 'headcount_with_vacancies'}), 
-         name='headcount_with_vacancies'),
-    
     # Competency Stats endpoint
     path('competency/stats/', CompetencyStatsView.as_view(), name='competency-stats'),
     

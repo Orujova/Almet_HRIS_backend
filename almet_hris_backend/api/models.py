@@ -6,10 +6,12 @@ from django.contrib.auth.models import User
 from django.utils import timezone
 from django.core.validators import MinValueValidator, MaxValueValidator
 from datetime import date, timedelta
-import uuid
+from django.db import transaction
+import os
 import logging
+from django.db.models import Q
 
-# dateutil əvəzinə Python built-in datetime istifadə edəcəyik
+import traceback
 from datetime import datetime, timedelta
 try:
     from dateutil.relativedelta import relativedelta
@@ -402,65 +404,104 @@ class EmployeeStatus(SoftDeleteModel):
         verbose_name_plural = "Employee Statuses"
 
 class VacantPosition(SoftDeleteModel):
-    """
-    ENHANCED: Vacant Position with proper field relations
-    """
-    VACANCY_TYPES = [
-        ('NEW_POSITION', 'New Position'),
-        ('REPLACEMENT', 'Replacement'),
-        ('EXPANSION', 'Expansion'),
-        ('TEMPORARY', 'Temporary'),
-    ]
+    """Enhanced Vacant Position with business function based position_id generation"""
     
-    URGENCY_LEVELS = [
-        ('LOW', 'Low'),
-        ('MEDIUM', 'Medium'),
-        ('HIGH', 'High'),
-        ('CRITICAL', 'Critical'),
-    ]
+    # Auto-generated position ID (business function based)
+    position_id = models.CharField(
+        max_length=50, 
+        unique=True, 
+        help_text="Auto-generated position ID based on business function code",
+        editable=False  # Make it read-only like employee_id
+    )
+    original_employee_pk = models.IntegerField(
+        null=True,
+        blank=True,
+        help_text="Original employee database ID (pk) that created this vacancy"
+    )
+    # Basic Information - REQUIRED FIELDS
+    job_title = models.CharField(max_length=200, help_text="Job title for the vacant position")
     
-    # Basic Information
-    position_id = models.CharField(max_length=50, unique=True, help_text="Unique vacancy identifier")
-    title = models.CharField(max_length=200)
-    description = models.TextField(blank=True)
+    # REQUIRED: Organizational Structure
+    business_function = models.ForeignKey(
+        BusinessFunction, 
+        on_delete=models.PROTECT,
+        help_text="Business function (required for position_id generation)"
+    )
+    department = models.ForeignKey(
+        Department, 
+        on_delete=models.PROTECT,
+        help_text="Department (required)"
+    )
+    unit = models.ForeignKey(
+        Unit, 
+        on_delete=models.PROTECT, 
+        null=True, 
+        blank=True,
+        help_text="Unit (optional)"
+    )
+    job_function = models.ForeignKey(
+        JobFunction, 
+        on_delete=models.PROTECT,
+        help_text="Job function (required)"
+    )
+    position_group = models.ForeignKey(
+        PositionGroup, 
+        on_delete=models.PROTECT,
+        help_text="Position group (required)"
+    )
     
-    # ENHANCED: Employee-like fields for headcount integration
+    # REQUIRED: Grading and Position Details
+    grading_level = models.CharField(
+        max_length=15, 
+        help_text="Grading level (e.g., MGR_UQ)"
+    )
+    
+    # REQUIRED: Management
+    reporting_to = models.ForeignKey(
+        'Employee', 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True,
+        related_name='managed_vacant_positions',
+        help_text="Line manager for this position"
+    )
+    
+    # REQUIRED: Configuration
+    is_visible_in_org_chart = models.BooleanField(
+        default=True,
+        help_text="Show this position in organizational chart"
+    )
+    include_in_headcount = models.BooleanField(
+        default=True,
+        help_text="Include this position in headcount calculations"
+    )
+    
+    # REQUIRED: Additional Information
+    notes = models.TextField(
+        blank=True, 
+        help_text="Additional notes about this position"
+    )
+    
+    # Auto-generated display name
     display_name = models.CharField(max_length=300, editable=False, default='')
     
-    # Organizational Structure
-    business_function = models.ForeignKey(BusinessFunction, on_delete=models.PROTECT)
-    department = models.ForeignKey(Department, on_delete=models.PROTECT)
-    unit = models.ForeignKey(Unit, on_delete=models.PROTECT, null=True, blank=True)
-    job_function = models.ForeignKey(JobFunction, on_delete=models.PROTECT)
-    position_group = models.ForeignKey(PositionGroup, on_delete=models.PROTECT)
-    
-    # ENHANCED: Grading like Employee
-    grading_level = models.CharField(max_length=15, default='')
-    
-    # Vacancy Details
-    vacancy_type = models.CharField(max_length=20, choices=VACANCY_TYPES)
-    urgency = models.CharField(max_length=10, choices=URGENCY_LEVELS, default='MEDIUM')
-    expected_start_date = models.DateField()
-    expected_salary_range_min = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
-    expected_salary_range_max = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
-    
-    # Management
-    reporting_to = models.ForeignKey('Employee', on_delete=models.SET_NULL, null=True, blank=True, 
-                                   related_name='managed_vacant_positions')
-    
-    # ENHANCED: Headcount integration
-    include_in_headcount = models.BooleanField(default=True)
-    is_visible_in_org_chart = models.BooleanField(default=True)
-    
-    # Status tracking - FIXED: No conflicts
+    # Status tracking
     is_filled = models.BooleanField(default=False)
-    filled_by_employee = models.ForeignKey('Employee', on_delete=models.SET_NULL, null=True, blank=True, 
-                                         related_name='filled_vacancy_position')
+    filled_by_employee = models.ForeignKey(
+        'Employee', 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True,
+        related_name='filled_vacancy_position'
+    )
     filled_date = models.DateField(null=True, blank=True)
     
-    # ENHANCED: Status integration
-    vacancy_status = models.ForeignKey(EmployeeStatus, on_delete=models.PROTECT, 
-                                     related_name='vacant_positions_with_status')
+    # Status integration
+    vacancy_status = models.ForeignKey(
+        EmployeeStatus, 
+        on_delete=models.PROTECT,
+        related_name='vacant_positions_with_status'
+    )
     
     # Management
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
@@ -468,10 +509,113 @@ class VacantPosition(SoftDeleteModel):
     # Metadata
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    
+    def generate_position_id(self):
+        """Generate position ID based on business function code - same format as employee_id"""
+        if not self.business_function:
+            raise ValueError("Business function is required to generate position ID")
+        
+        business_code = self.business_function.code
+        
+        with transaction.atomic():
+            # Get ALL existing position IDs for this business function (including filled and deleted)
+            existing_ids = set()
+            
+            # Get from VacantPosition
+            vacancy_ids = VacantPosition.all_objects.filter(
+                position_id__startswith=business_code,
+                position_id__regex=f'^{business_code}[0-9]+$'  # Only numeric suffixes
+            ).values_list('position_id', flat=True)
+            existing_ids.update(vacancy_ids)
+            
+            # IMPORTANT: Also check Employee IDs to avoid conflicts
+            employee_ids = Employee.all_objects.filter(
+                employee_id__startswith=business_code,
+                employee_id__regex=f'^{business_code}[0-9]+$'  # Only numeric suffixes
+            ).values_list('employee_id', flat=True)
+            existing_ids.update(employee_ids)
+            
+            # Extract numbers from existing IDs
+            used_numbers = set()
+            for pos_id in existing_ids:
+                try:
+                    number_part = pos_id[len(business_code):]
+                    if number_part.isdigit():
+                        used_numbers.add(int(number_part))
+                except (ValueError, IndexError):
+                    continue
+            
+            # Find the next available number
+            next_number = 1
+            while next_number in used_numbers:
+                next_number += 1
+            
+            new_position_id = f"{business_code}{next_number}"
+            
+            # Final safety check against both vacancy and employee IDs
+            while (VacantPosition.all_objects.filter(position_id=new_position_id).exists() or 
+                   Employee.all_objects.filter(employee_id=new_position_id).exists()):
+                next_number += 1
+                new_position_id = f"{business_code}{next_number}"
+            
+            return new_position_id
+    
+    @classmethod
+    def get_next_position_id_preview(cls, business_function_id):
+        """Preview next position ID for business function"""
+        try:
+            business_function = BusinessFunction.objects.get(id=business_function_id)
+            business_code = business_function.code
+            
+            # Get all existing IDs (both vacancy and employee)
+            existing_ids = set()
+            
+            # From vacancies
+            vacancy_ids = cls.all_objects.filter(
+                position_id__startswith=business_code,
+                position_id__regex=f'^{business_code}[0-9]+$'
+            ).values_list('position_id', flat=True)
+            existing_ids.update(vacancy_ids)
+            
+            # From employees
+            employee_ids = Employee.all_objects.filter(
+                employee_id__startswith=business_code,
+                employee_id__regex=f'^{business_code}[0-9]+$'
+            ).values_list('employee_id', flat=True)
+            existing_ids.update(employee_ids)
+            
+            # Extract numbers
+            used_numbers = set()
+            for id_value in existing_ids:
+                try:
+                    number_part = id_value[len(business_code):]
+                    if number_part.isdigit():
+                        used_numbers.add(int(number_part))
+                except (ValueError, IndexError):
+                    continue
+            
+            # Find next available number
+            next_number = 1
+            while next_number in used_numbers:
+                next_number += 1
+            
+            return f"{business_code}{next_number}"
+            
+        except BusinessFunction.DoesNotExist:
+            return None
 
     def save(self, *args, **kwargs):
+        """FIXED: Properly preserve original_employee_pk during all save operations"""
+        
+        # CRITICAL: Store original_employee_pk BEFORE any operations
+        original_pk_to_preserve = self.original_employee_pk
+        
+        # Auto-generate position_id if not set
+        if not self.position_id and self.business_function:
+            self.position_id = self.generate_position_id()
+        
         # Auto-generate display name
-        self.display_name = f"[VACANT] {self.title}"
+        self.display_name = f"[VACANT]"
         
         # Auto-generate grading level based on position group if not set
         if self.position_group and not self.grading_level:
@@ -484,20 +628,54 @@ class VacantPosition(SoftDeleteModel):
                 defaults={
                     'status_type': 'VACANT',
                     'color': '#F97316',
-                    'affects_headcount': True,  # IMPORTANT: Counts in headcount
+                    'affects_headcount': True,
                     'allows_org_chart': True,
                     'is_active': True,
-                    'description': 'Vacant position waiting to be filled'
                 }
             )
             self.vacancy_status = vacant_status
         
-        super().save(*args, **kwargs)
-
+        # CRITICAL: Ensure original_employee_pk is preserved during ALL operations
+        # This is the main fix - force preserve the original value
+        if original_pk_to_preserve is not None:
+            self.original_employee_pk = original_pk_to_preserve
+            logger.debug(f"VacantPosition save: Preserving original_employee_pk = {original_pk_to_preserve}")
+        
+        # Call parent save with explicit field preservation
+        if original_pk_to_preserve is not None:
+            # First save without the PK field in update_fields to avoid conflicts
+            super().save(*args, **kwargs)
+            
+            # Then explicitly update the PK field if it was lost
+            if self.original_employee_pk != original_pk_to_preserve:
+                logger.warning(f"VacantPosition: original_employee_pk was lost during save! Forcing restore: {original_pk_to_preserve}")
+                # Use raw SQL update to force the value
+                from django.db import connection
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        "UPDATE api_vacantposition SET original_employee_pk = %s WHERE id = %s",
+                        [original_pk_to_preserve, self.id]
+                    )
+                # Refresh from database
+                self.refresh_from_db()
+                logger.info(f"Force-updated original_employee_pk to {self.original_employee_pk}")
+        else:
+            # Normal save when no PK to preserve
+            super().save(*args, **kwargs)
+        
+        # FINAL VERIFICATION: Log the final state
+        logger.debug(f"VacantPosition save complete: ID={self.id}, position_id={self.position_id}, original_employee_pk={self.original_employee_pk}")
+        
+        # CRITICAL: Double-check that the value is actually in the database
+        if original_pk_to_preserve is not None:
+            self.refresh_from_db()
+            if self.original_employee_pk != original_pk_to_preserve:
+                logger.error(f"CRITICAL: original_employee_pk still not saved correctly! Expected: {original_pk_to_preserve}, Got: {self.original_employee_pk}")
+                raise Exception(f"Failed to preserve original_employee_pk: {original_pk_to_preserve}")
     def mark_as_filled(self, employee):
         """Mark vacancy as filled by an employee"""
         self.is_filled = True
-        self.filled_by_employee = employee  # FIXED: use filled_by_employee
+        self.filled_by_employee = employee
         self.filled_date = timezone.now().date()
         self.include_in_headcount = False  # Remove from headcount when filled
         
@@ -506,47 +684,191 @@ class VacantPosition(SoftDeleteModel):
         employee.save()
         
         self.save()
-
+    
     def get_as_employee_data(self):
-        """Return vacancy data in employee-like format"""
+        """Return vacancy data in employee-like format for unified display"""
         return {
             'id': f"vacancy_{self.id}",
-            'employee_id': self.position_id,
+            'employee_id': self.position_id,  # Use position_id as employee_id equivalent
             'name': self.display_name,
             'full_name': self.display_name,
             'email': None,
-            'job_title': self.title,
+            'job_title': self.job_title,
             'business_function': self.business_function,
-            'business_function_name': self.business_function.name,
+            'business_function_name': self.business_function.name if self.business_function else 'N/A',
             'department': self.department,
-            'department_name': self.department.name,
+            'department_name': self.department.name if self.department else 'N/A',
             'unit': self.unit,
             'unit_name': self.unit.name if self.unit else None,
             'job_function': self.job_function,
-            'job_function_name': self.job_function.name,
+            'job_function_name': self.job_function.name if self.job_function else 'N/A',
             'position_group': self.position_group,
-            'position_group_name': self.position_group.get_name_display(),
+            'position_group_name': self.position_group.get_name_display() if self.position_group else 'N/A',
             'grading_level': self.grading_level,
             'status': self.vacancy_status,
-            'status_name': self.vacancy_status.name,
-            'status_color': self.vacancy_status.color,
-            'start_date': self.expected_start_date,
+            'status_name': self.vacancy_status.name if self.vacancy_status else 'VACANT',
+            'status_color': self.vacancy_status.color if self.vacancy_status else '#F97316',
             'line_manager': self.reporting_to,
             'line_manager_name': self.reporting_to.full_name if self.reporting_to else None,
             'is_visible_in_org_chart': self.is_visible_in_org_chart,
             'is_vacancy': True,
-            'vacancy_type': self.vacancy_type,
-            'urgency': self.urgency,
             'created_at': self.created_at,
+            'notes': self.notes,
+            'filled_by': self.filled_by_employee.full_name if self.filled_by_employee else None,
+            'vacancy_details': {
+                'internal_id': self.id,
+                'position_id': self.position_id,
+                'include_in_headcount': self.include_in_headcount,
+                'is_filled': self.is_filled,
+                'filled_date': self.filled_date,
+                'business_function_based_id': True
+            }
         }
 
     def __str__(self):
-        return f"{self.position_id} - {self.title} [VACANT]"
+        return f"{self.position_id} - {self.job_title} [VACANT]"
 
     class Meta:
         ordering = ['-created_at']
         verbose_name = "Vacant Position"
         verbose_name_plural = "Vacant Positions"
+
+class EmployeeArchive(models.Model):
+    """ENHANCED: Archive for both soft and hard deleted employees"""
+    
+    # Original employee information
+    original_employee_id = models.CharField(max_length=50, db_index=True)
+    full_name = models.CharField(max_length=300)
+    email = models.EmailField()
+    job_title = models.CharField(max_length=200)
+    
+    # Organizational info - FIXED: Allow blank and null for unit_name
+    business_function_name = models.CharField(max_length=100, blank=True)
+    department_name = models.CharField(max_length=100, blank=True)
+    unit_name = models.CharField(max_length=100, blank=True, null=True)  # FIXED: Added null=True
+    job_function_name = models.CharField(max_length=100, blank=True)
+    
+    # Employment dates
+    start_date = models.DateField()
+    end_date = models.DateField(null=True, blank=True)
+    contract_duration = models.CharField(max_length=50)
+    
+    # Management info
+    line_manager_name = models.CharField(max_length=300, blank=True)
+    
+    deletion_notes = models.TextField(
+        blank=True, 
+        help_text="Additional notes about deletion and any restorations"
+    )
+    deleted_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    deleted_at = models.DateTimeField()
+    
+    # NEW: Track if employee still exists in main table (for soft deletes)
+    employee_still_exists = models.BooleanField(
+        default=False, 
+        help_text="True if this was a soft delete and employee data still exists in main table"
+    )
+    
+    # Enhanced data preservation
+    original_data = models.JSONField(
+        default=dict, 
+        help_text="Complete original employee data in JSON format"
+    )
+    data_quality = models.CharField(
+        max_length=20,
+        choices=[
+            ('COMPLETE', 'Complete Data'),
+            ('PARTIAL', 'Partial Data'),
+            ('BASIC', 'Basic Info Only'),
+            ('MINIMAL', 'Minimal Data')
+        ],
+        default='BASIC'
+    )
+    
+    # Archive metadata
+    archive_version = models.CharField(max_length=10, default='2.0')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    def get_archive_reference(self):
+        """Generate unique archive reference"""
+        return f"{self.id}-{self.original_employee_id}"
+    
+    def get_deletion_summary(self):
+        """Enhanced deletion summary"""
+        return {
+            'employee_id': self.original_employee_id,
+            'name': self.full_name,
+            'deleted_by': self.deleted_by.get_full_name() if self.deleted_by else 'System',
+            'deleted_at': self.deleted_at,
+            'data_quality': self.get_data_quality_display(),
+            'archive_reference': self.get_archive_reference(),
+            'deletion_notes': self.deletion_notes,
+            'employee_still_exists': self.employee_still_exists,
+            'last_updated': self.updated_at
+        }
+    
+    @classmethod
+    def get_soft_deleted_archives(cls):
+        """Get archives from soft deletions (employee still exists)"""
+        return cls.objects.filter(employee_still_exists=True)
+    
+    @classmethod
+    def get_hard_deleted_archives(cls):
+        """Get archives from hard deletions (employee completely removed)"""
+        return cls.objects.filter(employee_still_exists=False)
+    
+    def get_deletion_type(self):
+        """Get the type of deletion this archive represents"""
+        return 'soft_delete' if self.employee_still_exists else 'hard_delete'
+    
+    def get_deletion_type_display(self):
+        """Get human readable deletion type"""
+        return 'Soft Delete (Restorable)' if self.employee_still_exists else 'Hard Delete (Permanent)'
+    
+    def can_be_restored(self):
+        """Check if this archived employee can be restored"""
+        if not self.employee_still_exists:
+            return False
+        
+        # Check if employee still exists in database
+        try:
+            from .models import Employee
+            Employee.all_objects.get(
+                employee_id=self.original_employee_id,
+                is_deleted=True
+            )
+            return True
+        except Employee.DoesNotExist:
+            return False
+    
+    def get_enhanced_deletion_summary(self):
+        """Enhanced deletion summary with type information"""
+        base_summary = self.get_deletion_summary()
+        base_summary.update({
+            'deletion_type': self.get_deletion_type(),
+            'deletion_type_display': self.get_deletion_type_display(),
+            'can_be_restored': self.can_be_restored(),
+            'is_restorable': self.employee_still_exists,
+            'restoration_available': self.can_be_restored()
+        })
+        return base_summary
+    
+    def __str__(self):
+        return f"Archive: {self.original_employee_id} - {self.full_name}"
+    
+    class Meta:
+        ordering = ['-deleted_at']
+        verbose_name = "Employee Archive"
+        verbose_name_plural = "Employee Archives"
+        indexes = [
+            models.Index(fields=['original_employee_id']),
+            models.Index(fields=['deleted_at']),
+            models.Index(fields=['employee_still_exists']),
+            models.Index(fields=['data_quality']),
+            models.Index(fields=['business_function_name']),
+            models.Index(fields=['department_name']),
+        ]
 class Employee(SoftDeleteModel):
     GENDER_CHOICES = [
         ('MALE', 'Male'),
@@ -560,11 +882,21 @@ class Employee(SoftDeleteModel):
         help_text="Employee profile photo"
     )
 
-    
+   
+  
     # Basic Information
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='employee_profile')
-    employee_id = models.CharField(max_length=50, unique=True, help_text="HC Number")
-    
+    employee_id = models.CharField(
+        max_length=50, 
+        unique=True, 
+        editable=False,  # This makes it read-only in forms
+        help_text="Auto-generated based on Business Function code"
+    )
+    original_employee_pk = models.IntegerField(
+        null=True,
+        blank=True,
+        help_text="Original employee database ID (pk) that created this vacancy"
+    )
     # Auto-generated full name
     full_name = models.CharField(max_length=300, editable=False, default='')
     
@@ -588,6 +920,7 @@ class Employee(SoftDeleteModel):
     # Enhanced grading system integration
     grading_level = models.CharField(max_length=15, default='', help_text="Specific grading level (e.g., MGR_UQ)")
     
+
     # Employment Dates
     start_date = models.DateField()
     end_date = models.DateField(null=True, blank=True)
@@ -628,13 +961,93 @@ class Employee(SoftDeleteModel):
     # Metadata
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-
+    
+    def generate_employee_id(self):
+        """FIXED: Generate employee ID with better uniqueness logic"""
+        if not self.business_function:
+            raise ValueError("Business function is required to generate employee ID")
+        
+        business_code = self.business_function.code
+        
+        with transaction.atomic():
+            # Get ALL existing employee IDs for this business function (including deleted ones)
+            existing_ids = set(
+                Employee.all_objects.filter(
+                    employee_id__startswith=business_code,
+                    employee_id__regex=f'^{business_code}[0-9]+$'  # Only numeric suffixes
+                ).values_list('employee_id', flat=True)
+            )
+            
+            # Extract numbers from existing IDs
+            used_numbers = set()
+            for emp_id in existing_ids:
+                try:
+                    number_part = emp_id[len(business_code):]
+                    if number_part.isdigit():
+                        used_numbers.add(int(number_part))
+                except (ValueError, IndexError):
+                    continue
+            
+            # Find the next available number
+            next_number = 1
+            while next_number in used_numbers:
+                next_number += 1
+            
+            new_employee_id = f"{business_code}{next_number}"
+            
+            # Final safety check
+            while Employee.all_objects.filter(employee_id=new_employee_id).exists():
+                next_number += 1
+                new_employee_id = f"{business_code}{next_number}"
+            
+            return new_employee_id
+    
+    @classmethod
+    def get_next_employee_id_preview(cls, business_function_id):
+        """FIXED: Preview next employee ID"""
+        try:
+            business_function = BusinessFunction.objects.get(id=business_function_id)
+            business_code = business_function.code
+            
+            # Get all existing IDs for this business function
+            existing_ids = set(
+                cls.all_objects.filter(
+                    employee_id__startswith=business_code,
+                    employee_id__regex=f'^{business_code}[0-9]+$'
+                ).values_list('employee_id', flat=True)
+            )
+            
+            # Extract numbers
+            used_numbers = set()
+            for emp_id in existing_ids:
+                try:
+                    number_part = emp_id[len(business_code):]
+                    if number_part.isdigit():
+                        used_numbers.add(int(number_part))
+                except (ValueError, IndexError):
+                    continue
+            
+            # Find next available number
+            next_number = 1
+            while next_number in used_numbers:
+                next_number += 1
+            
+            return f"{business_code}{next_number}"
+            
+        except BusinessFunction.DoesNotExist:
+            return None
     def save(self, *args, **kwargs):
-        # Auto-generate full name
+        # Auto-generate employee_id BEFORE calling super().save()
+        if not self.employee_id and self.business_function:
+            self.employee_id = self.generate_employee_id()
+        
+        # Continue with existing save logic...
         if self.user:
             first_name = self.user.first_name or ''
             last_name = self.user.last_name or ''
             self.full_name = f"{first_name} {last_name}".strip()
+    
+    
         
         # Auto-calculate contract end date
         if self.contract_start_date and self.contract_duration != 'PERMANENT':
@@ -789,7 +1202,7 @@ class Employee(SoftDeleteModel):
         except Exception as e:
             logger.error(f"Error updating status automatically for {self.employee_id}: {e}")
             return False
-
+ 
     def extend_contract(self, extension_months, user=None):
         """Extend employee contract"""
         if self.contract_duration == 'PERMANENT':
@@ -893,7 +1306,7 @@ class Employee(SoftDeleteModel):
             }
         )
     
-    
+   
     def get_profile_image_url(self, request=None):
         """Get profile image URL safely"""
         if self.profile_image:
@@ -926,6 +1339,692 @@ class Employee(SoftDeleteModel):
             return f"{self.status.name}"
         return "No Status"
 
+    def _serialize_complete_employee_data(self):
+        """Serialize complete employee data for archiving"""
+        try:
+            return {
+                'id': self.id,
+                'employee_id': self.employee_id,
+                'full_name': self.full_name,
+                'user_info': {
+                    'id': self.user.id if self.user else None,
+                    'username': self.user.username if self.user else None,
+                    'email': self.user.email if self.user else None,
+                    'first_name': self.user.first_name if self.user else None,
+                    'last_name': self.user.last_name if self.user else None,
+                },
+                'personal_info': {
+                    'date_of_birth': self.date_of_birth.isoformat() if self.date_of_birth else None,
+                    'gender': self.gender,
+                    'father_name': self.father_name,
+                    'address': self.address,
+                    'phone': self.phone,
+                    'emergency_contact': self.emergency_contact,
+                },
+                'job_info': {
+                    'business_function': self.business_function.name if self.business_function else None,
+                    'business_function_code': self.business_function.code if self.business_function else None,
+                    'department': self.department.name if self.department else None,
+                    'unit': self.unit.name if self.unit else None,
+                    'job_function': self.job_function.name if self.job_function else None,
+                    'job_title': self.job_title,
+                    'position_group': self.position_group.get_name_display() if self.position_group else None,
+                    'grading_level': self.grading_level,
+                },
+                'employment_details': {
+                    'start_date': self.start_date.isoformat() if self.start_date else None,
+                    'end_date': self.end_date.isoformat() if self.end_date else None,
+                    'contract_duration': self.contract_duration,
+                    'contract_start_date': self.contract_start_date.isoformat() if self.contract_start_date else None,
+                    'contract_end_date': self.contract_end_date.isoformat() if self.contract_end_date else None,
+                    'contract_extensions': self.contract_extensions,
+                    'last_extension_date': self.last_extension_date.isoformat() if self.last_extension_date else None,
+                },
+                'management': {
+                    'line_manager_id': self.line_manager.employee_id if self.line_manager else None,
+                    'line_manager_name': self.line_manager.full_name if self.line_manager else None,
+                    'direct_reports': [
+                        {
+                            'id': report.employee_id,
+                            'name': report.full_name,
+                            'job_title': report.job_title
+                        }
+                        for report in self.direct_reports.filter(is_deleted=False)
+                    ]
+                },
+                'status_info': {
+                    'status_name': self.status.name if self.status else None,
+                    'status_type': self.status.status_type if self.status else None,
+                    'is_visible_in_org_chart': self.is_visible_in_org_chart,
+                },
+                'tags': [
+                    {'id': tag.id, 'name': tag.name, 'color': tag.color}
+                    for tag in self.tags.all()
+                ],
+                'calculated_fields': {
+                    'years_of_service': self.years_of_service,
+                    'grading_display': self.get_grading_display(),
+                },
+                'metadata': {
+                    'created_at': self.created_at.isoformat() if self.created_at else None,
+                    'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+                    'created_by': self.created_by.username if self.created_by else None,
+                    'updated_by': self.updated_by.username if self.updated_by else None,
+                },
+                'notes': self.notes,
+                'original_vacancy': {
+                    'id': self.original_vacancy.id if self.original_vacancy else None,
+                    'position_id': self.original_vacancy.position_id if self.original_vacancy else None,
+                } if self.original_vacancy else None,
+                'documents_info': {
+                    'total_documents': self.documents.count() if hasattr(self, 'documents') else 0,
+                    'document_types': list(
+                        self.documents.values_list('document_type', flat=True).distinct()
+                    ) if hasattr(self, 'documents') else [],
+                },
+                'profile_image_info': {
+                    'has_profile_image': bool(self.profile_image),
+                    'image_name': self.profile_image.name if self.profile_image else None,
+                }
+            }
+        except Exception as e:
+            logger.error(f"Error serializing employee data for archive: {e}")
+            return {
+                'error': f'Could not serialize complete data: {str(e)}',
+                'basic_info': {
+                    'employee_id': self.employee_id,
+                    'full_name': self.full_name,
+                    'email': self.user.email if self.user else None,
+                },
+                'serialization_error': True,
+                'error_timestamp': timezone.now().isoformat()
+            }
+    
+    def prepare_for_archiving(self):
+        """Prepare employee data for archiving (can be called before deletion)"""
+        return {
+            'archive_preview': self._serialize_complete_employee_data(),
+            'deletion_impact': {
+                'direct_reports_count': self.direct_reports.filter(is_deleted=False).count(),
+                'documents_count': self.documents.count() if hasattr(self, 'documents') else 0,
+                'activities_count': self.activities.count(),
+                'has_profile_image': bool(self.profile_image),
+                'will_create_vacancy': True if hasattr(self, 'job_title') else False,
+                'line_manager_exists': bool(self.line_manager),
+            },
+            'data_quality_check': {
+                'has_user_account': bool(self.user),
+                'has_complete_job_info': all([
+                    self.business_function, self.department, 
+                    self.job_function, self.position_group, self.job_title
+                ]),
+                'has_personal_info': any([
+                    self.date_of_birth, self.phone, self.address, self.father_name
+                ]),
+                'has_employment_dates': bool(self.start_date),
+                'has_contract_info': bool(self.contract_duration),
+            }
+        }
+    
+    def can_be_safely_deleted(self):
+        """Check if employee can be safely deleted"""
+        issues = []
+        warnings = []
+        
+        # Check for blocking issues
+        if self.direct_reports.filter(is_deleted=False).exists() and not self.line_manager:
+            issues.append("Employee has direct reports but no line manager to reassign them to")
+        
+        # Check for warnings
+        if self.direct_reports.filter(is_deleted=False).count() > 10:
+            warnings.append(f"Employee has {self.direct_reports.filter(is_deleted=False).count()} direct reports")
+        
+        if hasattr(self, 'documents') and self.documents.filter(is_confidential=True).exists():
+            warnings.append("Employee has confidential documents")
+        
+        if self.status and self.status.name == 'ACTIVE':
+            warnings.append("Employee is currently active")
+        
+        return {
+            'can_delete': len(issues) == 0,
+            'blocking_issues': issues,
+            'warnings': warnings,
+            'recommendation': 'safe_to_delete' if len(issues) == 0 and len(warnings) == 0 else (
+                'proceed_with_caution' if len(issues) == 0 else 'resolve_issues_first'
+            )
+        }
+
+    @classmethod
+    def get_soft_deleted_employees(cls, include_details=False):
+        """Get all soft deleted employees with optional details"""
+        deleted_employees = cls.all_objects.filter(is_deleted=True).select_related(
+            'user', 'business_function', 'department', 'status', 'line_manager'
+        ).order_by('-deleted_at')
+        
+        if not include_details:
+            return deleted_employees
+        
+        detailed_list = []
+        for emp in deleted_employees:
+            emp_data = {
+                'id': emp.id,
+                'employee_id': emp.employee_id,
+                'full_name': emp.full_name,
+                'email': emp.user.email if emp.user else None,
+                'job_title': emp.job_title,
+                'business_function_name': emp.business_function.name if emp.business_function else None,
+                'department_name': emp.department.name if emp.department else None,
+                'deleted_at': emp.deleted_at,
+                'deleted_by': emp.deleted_by.username if emp.deleted_by else None,
+                'can_restore': True,
+                'days_since_deletion': (timezone.now() - emp.deleted_at).days if emp.deleted_at else 0,
+                'related_vacancies': VacantPosition.objects.filter(
+                    business_function=emp.business_function,
+                    department=emp.department,
+                    job_title=emp.job_title,
+                    notes__icontains=f"vacated by {emp.full_name}"
+                ).count()
+            }
+            detailed_list.append(emp_data)
+        
+        return detailed_list
+    
+    @classmethod 
+    def cleanup_old_soft_deleted(cls, days_old=90, user=None):
+        """
+        Convert old soft-deleted employees to hard delete with archive
+        Useful for data cleanup
+        """
+        cutoff_date = timezone.now() - timedelta(days=days_old)
+        old_deleted = cls.all_objects.filter(
+            is_deleted=True,
+            deleted_at__lt=cutoff_date
+        )
+        
+        cleanup_results = {
+            'total_found': old_deleted.count(),
+            'successfully_archived': 0,
+            'failed': 0,
+            'errors': [],
+            'archived_employees': []
+        }
+        
+        for employee in old_deleted:
+            try:
+                # Store info before hard deletion
+                emp_info = {
+                    'employee_id': employee.employee_id,
+                    'full_name': employee.full_name,
+                    'deleted_at': employee.deleted_at
+                }
+                
+                # Hard delete with archive
+                archive = employee.hard_delete_with_archive(user)
+                
+                # Update archive to reflect cleanup process
+                if archive:
+       
+                    archive.deletion_notes = f"Automatic cleanup of employee soft-deleted {days_old}+ days ago"
+                    archive.save()
+                
+                cleanup_results['successfully_archived'] += 1
+                cleanup_results['archived_employees'].append({
+                    'original_employee_id': emp_info['employee_id'],
+                    'name': emp_info['full_name'],
+                    'originally_deleted': emp_info['deleted_at'],
+                    'archive_id': archive.id if archive else None
+                })
+                
+            except Exception as e:
+                cleanup_results['failed'] += 1
+                cleanup_results['errors'].append(f"Failed to archive {employee.employee_id}: {str(e)}")
+                logger.error(f"Cleanup failed for employee {employee.employee_id}: {e}")
+        
+        return cleanup_results
+    
+    @classmethod
+    def get_deletion_statistics(cls):
+        """Get comprehensive deletion statistics"""
+        total_employees = cls.all_objects.count()
+        active_employees = cls.objects.count()
+        soft_deleted = cls.all_objects.filter(is_deleted=True).count()
+        
+        # Archive statistics
+        archived_count = EmployeeArchive.objects.count()
+        
+        # Recent deletions (last 30 days)
+        recent_cutoff = timezone.now() - timedelta(days=30)
+        recent_soft_deletions = cls.all_objects.filter(
+            is_deleted=True,
+            deleted_at__gte=recent_cutoff
+        ).count()
+        
+        recent_hard_deletions = EmployeeArchive.objects.filter(
+            deleted_at__gte=recent_cutoff
+        ).count()
+        
+       
+        
+        return {
+            'overview': {
+                'total_employees_ever': total_employees + archived_count,
+                'currently_active': active_employees,
+                'soft_deleted': soft_deleted,
+                'hard_deleted_archived': archived_count,
+                'total_deletions': soft_deleted + archived_count
+            },
+            'recent_activity': {
+                'soft_deletions_last_30_days': recent_soft_deletions,
+                'hard_deletions_last_30_days': recent_hard_deletions,
+                'total_deletions_last_30_days': recent_soft_deletions + recent_hard_deletions
+            },
+           
+            'data_quality': {
+                'employees_with_complete_archive_data': EmployeeArchive.objects.filter(
+                    data_quality='COMPLETE'
+                ).count(),
+                'employees_needing_cleanup': cls.all_objects.filter(
+                    is_deleted=True,
+                    deleted_at__lt=timezone.now() - timedelta(days=90)
+                ).count()
+            }
+        }
+
+    def soft_delete_and_create_vacancy(self, user=None):
+        """
+        ENHANCED: Soft delete employee, create vacancy AND archive the employee data
+        FIXED: Properly preserve original_employee_pk with explicit database operations
+        """
+        with transaction.atomic():
+            # CRITICAL: Store the original employee PK BEFORE any database operations
+            original_employee_pk = self.pk
+            
+            logger.info(f"Starting soft delete for employee {self.employee_id} (PK: {original_employee_pk})")
+            
+            # Store employee data for vacancy creation
+            employee_data = {
+                'job_title': self.job_title,
+                'business_function': self.business_function,
+                'department': self.department,
+                'unit': self.unit,
+                'job_function': self.job_function,
+                'position_group': self.position_group,
+                'grading_level': self.grading_level,
+                'reporting_to': self.line_manager,
+                'is_visible_in_org_chart': self.is_visible_in_org_chart,
+                'notes': f"Position vacated by {self.full_name} ({self.employee_id}) on {timezone.now().date()}"
+            }
+            
+            # FIXED: Create vacancy with EXPLICIT original_employee_pk setting
+            vacancy = VacantPosition(
+                job_title=employee_data['job_title'],
+                business_function=employee_data['business_function'],
+                department=employee_data['department'],
+                unit=employee_data['unit'],
+                job_function=employee_data['job_function'],
+                position_group=employee_data['position_group'],
+                grading_level=employee_data['grading_level'],
+                reporting_to=employee_data['reporting_to'],
+                include_in_headcount=True,
+                is_visible_in_org_chart=employee_data['is_visible_in_org_chart'],
+                notes=employee_data['notes'],
+                created_by=user
+            )
+            
+            # CRITICAL: Set original_employee_pk BEFORE save
+            vacancy.original_employee_pk = original_employee_pk
+            
+            # Save with explicit logging
+            logger.info(f"Saving vacancy with original_employee_pk={original_employee_pk}")
+            vacancy.save()
+            
+            # CRITICAL: Verify the PK was saved correctly with multiple checks
+            vacancy.refresh_from_db()
+            
+            if vacancy.original_employee_pk != original_employee_pk:
+                logger.error(f"CRITICAL: original_employee_pk not saved correctly! Expected: {original_employee_pk}, Got: {vacancy.original_employee_pk}")
+                
+                # Force update using raw SQL as a fallback
+                from django.db import connection
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        "UPDATE api_vacantposition SET original_employee_pk = %s WHERE id = %s",
+                        [original_employee_pk, vacancy.id]
+                    )
+                
+                # Re-verify
+                vacancy.refresh_from_db()
+                
+                if vacancy.original_employee_pk != original_employee_pk:
+                    raise Exception(f"Failed to preserve original_employee_pk after multiple attempts: {original_employee_pk}")
+                
+                logger.warning(f"Had to force-update original_employee_pk using raw SQL: {vacancy.original_employee_pk}")
+            
+            logger.info(f"Vacancy {vacancy.position_id} created successfully with original_employee_pk={vacancy.original_employee_pk}")
+            
+            # Update direct reports to report to this employee's manager
+            direct_reports_updated = 0
+            if self.line_manager:
+                direct_reports = self.direct_reports.filter(is_deleted=False)
+                for report in direct_reports:
+                    report.line_manager = self.line_manager
+                    report.updated_by = user
+                    report.save()
+                    direct_reports_updated += 1
+                    
+                    # Log activity for each direct report
+                    EmployeeActivity.objects.create(
+                        employee=report,
+                        activity_type='MANAGER_CHANGED',
+                        description=f"Line manager changed from {self.full_name} to {self.line_manager.full_name} due to manager departure",
+                        performed_by=user,
+                        metadata={
+                            'reason': 'manager_departure',
+                            'old_manager_id': self.id,
+                            'old_manager_name': self.full_name,
+                            'new_manager_id': self.line_manager.id,
+                            'new_manager_name': self.line_manager.full_name,
+                            'vacancy_created': vacancy.id
+                        }
+                    )
+            
+            # Create archive record for soft delete
+            archive = self._create_archive_record(
+                deletion_notes=f"Employee soft deleted and vacancy {vacancy.position_id} created",
+                deleted_by=user,
+                preserve_original_data=True  # Keep employee data in database
+            )
+            
+            # Soft delete the employee (keeps all data in database)
+            self.soft_delete(user)
+            
+            # Log the soft delete activity with preserved PK
+            EmployeeActivity.objects.create(
+                employee=self,
+                activity_type='SOFT_DELETED',
+                description=f"Employee {self.full_name} soft deleted, vacancy {vacancy.position_id} created, and archived (Archive ID: {archive.id if archive else 'N/A'})",
+                performed_by=user,
+                metadata={
+                    'delete_type': 'soft_with_vacancy',
+                    'vacancy_created': True,
+                    'vacancy_id': vacancy.id,
+                    'vacancy_position_id': vacancy.position_id,
+                    'original_employee_pk': original_employee_pk,  # Store the preserved PK
+                    'direct_reports_updated': direct_reports_updated,
+                    'employee_data_preserved': True,
+                    'can_be_restored': True,
+                    'archive_id': archive.id if archive else None,
+                    'archive_reference': archive.get_archive_reference() if archive else None
+                }
+            )
+            
+            # FINAL VERIFICATION: Log the final state
+            final_check_vacancy = VacantPosition.objects.get(id=vacancy.id)
+            logger.info(f"FINAL VERIFICATION: Vacancy {final_check_vacancy.position_id} has original_employee_pk={final_check_vacancy.original_employee_pk}")
+            
+            if final_check_vacancy.original_employee_pk != original_employee_pk:
+                raise Exception(f"FINAL CHECK FAILED: original_employee_pk mismatch! Expected: {original_employee_pk}, Got: {final_check_vacancy.original_employee_pk}")
+            
+            logger.info(f"Employee {self.employee_id} - {self.full_name} soft deleted successfully. Vacancy created with preserved PK.")
+            return vacancy, archive
+    def hard_delete_with_archive(self, user=None):
+        """
+        FIXED: Hard delete employee completely and create comprehensive archive - NO VACANCY CREATION
+        """
+        # Store employee info before any database operations
+        employee_info = {
+            'id': self.id,
+            'employee_id': self.employee_id,
+            'full_name': self.full_name,
+            'direct_reports_count': self.direct_reports.filter(is_deleted=False).count()
+        }
+        
+        try:
+            # Create archive record FIRST, outside of transaction
+            archive = self._create_archive_record(
+                deletion_notes="Employee hard deleted and completely removed from system - NO VACANCY CREATED",
+                deleted_by=user,
+                preserve_original_data=False  # Employee will be removed from database
+            )
+            
+            # Now handle the deletion in transaction
+            with transaction.atomic():
+                # Update direct reports to report to this employee's manager
+                direct_reports_updated = 0
+                if self.line_manager:
+                    direct_reports = self.direct_reports.filter(is_deleted=False)
+                    for report in direct_reports:
+                        report.line_manager = self.line_manager
+                        report.updated_by = user
+                        report.save()
+                        direct_reports_updated += 1
+                
+                # Delete related data
+                self.activities.all().delete()
+                if hasattr(self, 'documents'):
+                    self.documents.all().delete()
+                
+                # Delete profile image file
+                if self.profile_image:
+                    try:
+                        if hasattr(self.profile_image, 'path') and os.path.exists(self.profile_image.path):
+                            os.remove(self.profile_image.path)
+                    except Exception as e:
+                        logger.warning(f"Could not delete profile image file: {e}")
+                
+                # Store user for deletion after employee deletion
+                user_to_delete = self.user if self.user else None
+                
+                # Delete the employee record completely - NO VACANCY CREATION
+                super().delete()  # This bypasses soft delete and does hard delete
+                
+                # Delete user account after employee deletion
+                if user_to_delete:
+                    user_to_delete.delete()
+            
+            logger.info(f"Employee {employee_info['employee_id']} - {employee_info['full_name']} hard deleted and archived (Archive ID: {archive.id if archive else 'N/A'}). NO VACANCY CREATED.")
+            
+            return archive
+            
+        except Exception as e:
+            logger.error(f"Hard delete failed for employee {employee_info['employee_id']}: {str(e)}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            raise e
+    
+    def _create_archive_record(self, deletion_notes, deleted_by, preserve_original_data=True):
+        """
+        FIXED: Create archive record for both soft and hard delete with proper null handling
+        """
+        try:
+            # FIXED: Safely handle unit_name with proper null checking
+            unit_name = None
+            if self.unit and hasattr(self.unit, 'name'):
+                unit_name = self.unit.name
+            
+            # FIXED: Safely handle all field extraction
+            archive_data = {
+                'original_employee_id': self.employee_id or '',
+                'full_name': self.full_name or '',
+                'email': self.user.email if self.user else '',
+                'job_title': self.job_title or '',
+                'business_function_name': self.business_function.name if self.business_function else '',
+                'department_name': self.department.name if self.department else '',
+                'unit_name': unit_name,  # FIXED: This can now be None/null
+                'job_function_name': self.job_function.name if self.job_function else '',
+                'start_date': self.start_date,
+                'end_date': self.end_date,
+                'contract_duration': self.contract_duration or 'PERMANENT',
+                'line_manager_name': self.line_manager.full_name if self.line_manager else '',
+                'deletion_notes': deletion_notes or '',
+                'deleted_by': deleted_by,
+                'deleted_at': timezone.now(),
+                'employee_still_exists': preserve_original_data,  # True for soft delete, False for hard delete
+                'original_data': self._serialize_complete_employee_data(),
+                'data_quality': 'COMPLETE' if preserve_original_data else 'BASIC',
+                'archive_version': '2.0'
+            }
+            
+            # Create the archive record
+            archive = EmployeeArchive.objects.create(**archive_data)
+            
+            logger.info(f"Archive record created for employee {self.employee_id}: {archive.get_archive_reference()}")
+            return archive
+            
+        except Exception as e:
+            logger.error(f"Failed to create archive record for employee {self.employee_id}: {e}")
+            logger.error(f"Archive creation traceback: {traceback.format_exc()}")
+            
+            # Try to create a minimal archive record as fallback
+            try:
+                minimal_archive = EmployeeArchive.objects.create(
+                    original_employee_id=self.employee_id or 'UNKNOWN',
+                    full_name=self.full_name or 'Unknown Employee',
+                    email=self.user.email if self.user else 'unknown@example.com',
+                    job_title=self.job_title or 'Unknown Position',
+                    business_function_name=self.business_function.name if self.business_function else 'Unknown',
+                    department_name=self.department.name if self.department else 'Unknown',
+                    unit_name=None,  # FIXED: Safe to be null
+                    job_function_name=self.job_function.name if self.job_function else 'Unknown',
+                    start_date=self.start_date or timezone.now().date(),
+                    end_date=self.end_date,
+                    contract_duration=self.contract_duration or 'PERMANENT',
+                    line_manager_name='',
+                    deletion_notes=f"Minimal archive due to error: {str(e)}",
+                    deleted_by=deleted_by,
+                    deleted_at=timezone.now(),
+                    employee_still_exists=preserve_original_data,
+                    original_data={'error': f'Could not serialize: {str(e)}'},
+                    data_quality='MINIMAL',
+                    archive_version='2.0'
+                )
+                logger.info(f"Created minimal archive record: {minimal_archive.get_archive_reference()}")
+                return minimal_archive
+            except Exception as fallback_error:
+                logger.error(f"Even minimal archive creation failed: {fallback_error}")
+                return None
+    
+    def restore_from_soft_delete(self, user=None):
+        """
+        ENHANCED: Restore employee from soft delete, handle vacancy cleanup, and REMOVE archive
+        FIXED: Vacancy-ləri mütləq şəkildə silir - HƏLL EDİLMİŞ VERSİYA
+        """
+        if not self.is_deleted:
+            return False, "Employee is not deleted"
+        
+        try:
+            with transaction.atomic():
+                # DEBUG: Employee PK-ni və məlumatları logla
+                employee_pk = self.pk
+                employee_id = self.employee_id
+                logger.info(f"RESTORE DEBUG: Employee PK={employee_pk}, employee_id={employee_id}")
+                
+                # FIXED: Vacancy-ləri tapıb sil - Bütün mümkün variantları yoxla
+                related_vacancies = VacantPosition.objects.filter(
+                    original_employee_pk=employee_pk
+                )
+                
+                logger.info(f"RESTORE DEBUG: Found {related_vacancies.count()} vacancies with original_employee_pk={employee_pk}")
+                
+                # Əlavə olaraq, notes sahəsindəki məlumatla da axtarış
+                notes_based_vacancies = VacantPosition.objects.filter(
+                    notes__icontains=f"vacated by {self.full_name}",
+                    is_filled=False
+                )
+                
+                logger.info(f"RESTORE DEBUG: Found {notes_based_vacancies.count()} vacancies based on notes")
+                
+                # HƏLL: Həm PK həm də notes əsasında tapılan vacancy-ləri birləşdir
+                all_vacancies = (related_vacancies | notes_based_vacancies).distinct()
+                
+                logger.info(f"RESTORE DEBUG: Total unique vacancies to delete: {all_vacancies.count()}")
+                
+                # Vacancy məlumatlarını saxla və sil
+                vacancy_info = []
+                deleted_vacancy_count = 0
+                
+                for vacancy in all_vacancies:
+                    vacancy_data = {
+                        'id': vacancy.id,
+                        'position_id': vacancy.position_id,
+                        'job_title': vacancy.job_title,
+                        'original_employee_pk': vacancy.original_employee_pk,
+                        'notes': vacancy.notes[:100] + "..." if len(vacancy.notes) > 100 else vacancy.notes
+                    }
+                    vacancy_info.append(vacancy_data)
+                    
+                    logger.info(f"RESTORE DEBUG: Deleting vacancy ID={vacancy.id}, position_id={vacancy.position_id}")
+                    
+                    # VACANCY-Nİ SİL
+                    vacancy.delete()
+                    deleted_vacancy_count += 1
+                    
+                    logger.info(f"RESTORE DEBUG: Successfully deleted vacancy {vacancy.position_id}")
+                
+                # Verify vacancy deletion - təsdiq et ki, silinib
+                remaining_vacancies = VacantPosition.objects.filter(
+                    Q(original_employee_pk=employee_pk) | 
+                    Q(notes__icontains=f"vacated by {self.full_name}")
+                )
+                
+                if remaining_vacancies.exists():
+                    logger.error(f"RESTORE ERROR: {remaining_vacancies.count()} vacancies still exist after deletion!")
+                    for rv in remaining_vacancies:
+                        logger.error(f"Remaining vacancy: ID={rv.id}, position_id={rv.position_id}")
+                else:
+                    logger.info(f"RESTORE SUCCESS: All {deleted_vacancy_count} vacancies successfully deleted")
+                
+                # Archive record-ları tap və sil
+                soft_delete_archives = EmployeeArchive.objects.filter(
+                    original_employee_id=employee_id,
+                    employee_still_exists=True
+                ).order_by('-deleted_at')
+                
+                logger.info(f"RESTORE DEBUG: Found {soft_delete_archives.count()} archives to delete")
+                
+                archive_info = []
+                for archive in soft_delete_archives:
+                    archive_data = {
+                        'id': archive.id,
+                        'reference': archive.get_archive_reference(),
+                        'deleted_at': archive.deleted_at.isoformat() if archive.deleted_at else None
+                    }
+                    archive_info.append(archive_data)
+                    
+                    logger.info(f"RESTORE DEBUG: Deleting archive {archive.get_archive_reference()}")
+                    archive.delete()
+                    logger.info(f"RESTORE DEBUG: Successfully deleted archive")
+                
+                # Employee-ni restore et
+                logger.info(f"RESTORE DEBUG: Restoring employee {employee_id}")
+                self.restore()
+                
+                # Activity log et
+                EmployeeActivity.objects.create(
+                    employee=self,
+                    activity_type='RESTORED',
+                    description=f"Employee {self.full_name} restored from soft deletion. {deleted_vacancy_count} vacancies DELETED. {len(archive_info)} archives deleted.",
+                    performed_by=user,
+                    metadata={
+                        'restored_from_soft_delete': True,
+                        'vacancies_deleted': vacancy_info,
+                        'archives_deleted': archive_info,
+                        'restoration_date': timezone.now().isoformat(),
+                        'restored_by': user.username if user else 'System',
+                        'original_employee_pk_restored': employee_pk,
+                        'total_vacancies_deleted': deleted_vacancy_count,
+                        'total_archives_deleted': len(archive_info),
+                        'vacancy_deletion_verified': not remaining_vacancies.exists()
+                    }
+                )
+                
+                logger.info(f"Employee {employee_id} - {self.full_name} restored successfully. {deleted_vacancy_count} vacancies and {len(archive_info)} archives deleted.")
+                
+                return True, f"Employee restored successfully. {deleted_vacancy_count} vacancies DELETED. {len(archive_info)} archives deleted."
+                
+        except Exception as e:
+            logger.error(f"Restore failed for employee {self.employee_id}: {str(e)}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            raise e
     def get_contract_duration_choices(self):
         """Get available contract duration choices"""
         return ContractTypeConfig.get_contract_choices()
@@ -1060,6 +2159,114 @@ class Employee(SoftDeleteModel):
             models.Index(fields=['contract_end_date']),
             models.Index(fields=['line_manager']),
         ]
+
+class EmployeeDeletionManager:
+    """Utility class for managing employee deletions"""
+    
+    @staticmethod
+    def bulk_soft_delete_with_vacancy_creation(employee_ids, user=None, reason="Bulk restructuring"):
+        """Bulk soft delete employees and create vacancies"""
+        employees = Employee.objects.filter(id__in=employee_ids, is_deleted=False)
+        results = {
+            'successful': 0,
+            'failed': 0,
+            'vacancies_created': [],
+            'errors': []
+        }
+        
+        for employee in employees:
+            try:
+                vacancy = employee.soft_delete_and_create_vacancy(user)
+                results['successful'] += 1
+                results['vacancies_created'].append({
+                    'employee_id': employee.employee_id,
+                    'employee_name': employee.full_name,
+                    'vacancy_id': vacancy.id,
+                    'vacancy_position_id': vacancy.position_id
+                })
+            except Exception as e:
+                results['failed'] += 1
+                results['errors'].append(f"Failed to delete {employee.employee_id}: {str(e)}")
+        
+        return results
+    
+    @staticmethod
+    def bulk_hard_delete_with_archiving(employee_ids, user=None,):
+        """Bulk hard delete employees and create archives"""
+        employees = Employee.objects.filter(id__in=employee_ids)
+        results = {
+            'successful': 0,
+            'failed': 0,
+            'archives_created': [],
+            'errors': []
+        }
+        
+        for employee in employees:
+            try:
+                # Store info before deletion
+                emp_info = {
+                    'employee_id': employee.employee_id,
+                    'full_name': employee.full_name
+                }
+                
+                archive = employee.hard_delete_with_archive(user)
+                
+                if archive:
+                 
+                    archive.save()
+                
+                results['successful'] += 1
+                results['archives_created'].append({
+                    'original_employee_id': emp_info['employee_id'],
+                    'employee_name': emp_info['full_name'],
+                    'archive_id': archive.id if archive else None,
+                    'archive_reference': archive.get_archive_reference() if archive else None
+                })
+            except Exception as e:
+                results['failed'] += 1
+                results['errors'].append(f"Failed to delete {employee.employee_id}: {str(e)}")
+        
+        return results
+    
+    @staticmethod
+    def validate_deletion_request(employee_ids, deletion_type='soft'):
+        """Validate bulk deletion request"""
+        validation_results = {
+            'valid': True,
+            'warnings': [],
+            'blocking_issues': [],
+            'employee_analysis': []
+        }
+        
+        employees = Employee.objects.filter(id__in=employee_ids)
+        
+        if employees.count() != len(employee_ids):
+            validation_results['blocking_issues'].append(
+                f"Some employee IDs not found. Expected {len(employee_ids)}, found {employees.count()}"
+            )
+            validation_results['valid'] = False
+        
+        for employee in employees:
+            analysis = employee.can_be_safely_deleted()
+            validation_results['employee_analysis'].append({
+                'employee_id': employee.employee_id,
+                'employee_name': employee.full_name,
+                'can_delete': analysis['can_delete'],
+                'issues': analysis['blocking_issues'],
+                'warnings': analysis['warnings']
+            })
+            
+            validation_results['warnings'].extend([
+                f"{employee.employee_id}: {warning}" for warning in analysis['warnings']
+            ])
+            validation_results['blocking_issues'].extend([
+                f"{employee.employee_id}: {issue}" for issue in analysis['blocking_issues']
+            ])
+        
+        if validation_results['blocking_issues']:
+            validation_results['valid'] = False
+        
+        return validation_results
 
 class EmployeeDocument(SoftDeleteModel):
     DOCUMENT_TYPES = [
@@ -1379,5 +2586,3 @@ def employee_post_save_handler(sender, instance, created, **kwargs):
             }
         )
         
-# api/models.py sonuna
-from .competency_models import *            

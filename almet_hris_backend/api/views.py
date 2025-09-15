@@ -33,7 +33,7 @@ from .models import (
     Employee, BusinessFunction, Department, Unit, JobFunction, 
     PositionGroup, EmployeeTag, EmployeeStatus,
     EmployeeActivity, VacantPosition, ContractTypeConfig,
-    ContractStatusManager
+    ContractStatusManager,EmployeeArchive
 )
 from .asset_serializers import (
     AssetAcceptanceSerializer, AssetClarificationRequestSerializer,
@@ -42,23 +42,26 @@ from .asset_serializers import (
 
 
 from .serializers import (
-    EmployeeListSerializer, EmployeeDetailSerializer, EmployeeCreateUpdateSerializer,
+    EmployeeListSerializer, EmployeeDetailSerializer,
     BusinessFunctionSerializer, DepartmentSerializer, UnitSerializer,
     JobFunctionSerializer, PositionGroupSerializer, EmployeeTagSerializer,
     EmployeeStatusSerializer,  EmployeeActivitySerializer,
     UserSerializer, OrgChartNodeSerializer,
     VacantPositionListSerializer, VacantPositionDetailSerializer, VacantPositionCreateSerializer,
-     ProfileImageDeleteSerializer,
+     ProfileImageDeleteSerializer,BulkHardDeleteSerializer,
     ProfileImageUploadSerializer, EmployeeGradingListSerializer,
     BulkEmployeeGradingUpdateSerializer, EmployeeExportSerializer,
     ContractTypeConfigSerializer, BulkContractExtensionSerializer, ContractExtensionSerializer,
     SingleEmployeeTagUpdateSerializer, SingleLineManagerAssignmentSerializer,
-    BulkEmployeeTagUpdateSerializer, BulkSoftDeleteSerializer, BulkRestoreSerializer,
+    BulkEmployeeTagUpdateSerializer, 
     BulkLineManagerAssignmentSerializer,VacancyToEmployeeConversionSerializer,EmployeeJobDescriptionSerializer,ManagerJobDescriptionSerializer
 )
+
 from .auth import MicrosoftTokenValidator
 from drf_yasg.inspectors import SwaggerAutoSchema
 logger = logging.getLogger(__name__)
+
+
 class StandardResultsSetPagination(PageNumberPagination):
     page_size = 2
     page_size_query_param = 'page_size'
@@ -129,6 +132,7 @@ class ModernPagination(PageNumberPagination):
             'pagination_used': True,  # NEW: Indicates pagination was used
             'results': data
         })
+
 class FileUploadAutoSchema(SwaggerAutoSchema):
     """Custom schema for file upload endpoints"""
     
@@ -291,6 +295,7 @@ def user_info(request):
             "error": f"Failed to get user info: {str(e)}",
             "success": False
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 class ComprehensiveEmployeeFilter:
     """
     COMPLETELY FIXED: Frontend component-lərinə uyğun tam filter sistemi
@@ -653,9 +658,10 @@ class ComprehensiveEmployeeFilter:
                 pass
         
         final_count = queryset.count()
-        print(f"✅ FILTER COMPLETE: {final_count} employees after filtering")
+       
         
         return queryset
+
 class AdvancedEmployeeSorter:
     """
     MultipleSortingSystem.jsx component-inə uyğun sorting sistemi
@@ -830,7 +836,6 @@ class JobFunctionViewSet(viewsets.ModelViewSet):
     search_fields = ['name']
     ordering = ['name']
 
-
 class PositionGroupViewSet(viewsets.ModelViewSet):
     queryset = PositionGroup.objects.all()
     serializer_class = PositionGroupSerializer
@@ -912,40 +917,73 @@ class ContractTypeConfigViewSet(viewsets.ModelViewSet):
         })
 
 class VacantPositionViewSet(viewsets.ModelViewSet):
-    """ENHANCED: Vacant Position ViewSet with headcount integration"""
+    """FIXED: Vacant Position ViewSet with proper field validation"""
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = [
-        'business_function', 'department', 'position_group', 'vacancy_type', 
-        'urgency', 'is_filled', 'include_in_headcount'
+        'business_function', 'department', 'position_group', 'is_filled', 'include_in_headcount'
     ]
-    search_fields = ['title', 'position_id', 'description']
-    ordering_fields = ['created_at', 'expected_start_date', 'urgency']
+    search_fields = ['job_title', 'position_id']
     ordering = ['-created_at']
     
     def get_queryset(self):
-        return VacantPosition.objects.select_related(
+        queryset = VacantPosition.objects.select_related(
             'business_function', 'department', 'unit', 'job_function',
-            'position_group', 'reporting_to', 'filled_by', 'created_by', 'vacancy_status'
+            'position_group', 'reporting_to', 'filled_by_employee', 'created_by', 'vacancy_status'
         ).all()
+        
+        # Default olaraq filled olanları gizlət
+        show_filled = self.request.query_params.get('show_filled', 'false').lower() == 'true'
+        if not show_filled:
+            queryset = queryset.filter(is_filled=False)
+        
+        return queryset
     
     def get_serializer_class(self):
         if self.action == 'list':
             return VacantPositionListSerializer
-        elif self.action == 'create':
-            return VacantPositionCreateSerializer
+        elif self.action in ['create', 'update', 'partial_update']:  # UPDATE ƏLAVƏ ET
+            return VacantPositionCreateSerializer  # Eyni serializer istifadə et
+        elif self.action == 'convert_to_employee':
+            return VacancyToEmployeeConversionSerializer
         else:
             return VacantPositionDetailSerializer
     
     @swagger_auto_schema(
-        method='post',
-        operation_description="Convert vacancy to employee",
-        request_body=VacancyToEmployeeConversionSerializer,
-        responses={201: "Employee created successfully from vacancy"}
-    )
-    @action(detail=True, methods=['post'])
+    method='post',
+    operation_description="Convert vacancy to employee with required fields only",
+    # ƏLAVƏ ET:
+    request_body=VacancyToEmployeeConversionSerializer,  # Dəqiq serializer göstər
+    manual_parameters=[
+        # Yalnız file field-lər burada olsun
+        openapi.Parameter(
+            'document',
+            openapi.IN_FORM,
+            description="Employee document file",
+            type=openapi.TYPE_FILE,
+            required=False
+        ),
+        openapi.Parameter(
+            'profile_photo',
+            openapi.IN_FORM,
+            description="Profile photo",
+            type=openapi.TYPE_FILE,
+            required=False
+        ),
+    ],
+    consumes=['multipart/form-data'],
+    responses={
+        201: openapi.Response(
+            description="Employee created successfully from vacancy",
+            schema=EmployeeDetailSerializer
+        ),
+        400: openapi.Response(description="Bad request - validation errors"),
+        404: openapi.Response(description="Vacancy not found")
+    }
+)
+    @action(detail=True, methods=['post'], parser_classes=[MultiPartParser, FormParser])
     def convert_to_employee(self, request, pk=None):
-        """ENHANCED: Convert vacancy to employee"""
+        """Convert vacancy to employee with all required and optional fields"""
         vacancy = self.get_object()
         
         if vacancy.is_filled:
@@ -954,203 +992,84 @@ class VacantPositionViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        # Add vacancy_id to request data
-        data = request.data.copy()
-        data['vacancy_id'] = vacancy.id
+        # Check required fields
+        required_fields = ['first_name', 'last_name', 'email', 'start_date', 'contract_duration']
+        missing_fields = []
         
-        serializer = VacancyToEmployeeConversionSerializer(data=data, context={'request': request})
+        for field in required_fields:
+            if not request.data.get(field):
+                missing_fields.append(field)
+        
+        if missing_fields:
+            return Response({
+                'error': 'Missing required fields',
+                'missing_fields': missing_fields,
+                'message': f'The following fields are required: {", ".join(missing_fields)}'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Validate email uniqueness
+        email = request.data.get('email')
+        if User.objects.filter(email=email).exists():
+            return Response({
+                'error': 'Email already exists',
+                'email': email,
+                'message': f'An account with email {email} already exists'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Prepare data for serializer
+        data = request.data.copy()
+        
+        # Handle tag_ids if provided as comma-separated string or array
+        if 'tag_ids' in data:
+            if isinstance(data['tag_ids'], str):
+                try:
+                    tag_ids = [int(id.strip()) for id in data['tag_ids'].split(',') if id.strip()]
+                    data['tag_ids'] = tag_ids
+                except ValueError:
+                    return Response({
+                        'error': 'Invalid tag_ids format',
+                        'message': 'Use comma-separated integers (e.g., "1,2,3")'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Create serializer with context that includes vacancy
+        serializer = VacancyToEmployeeConversionSerializer(
+            data=data, 
+            context={'request': request, 'vacancy': vacancy}  # Pass vacancy in context
+        )
+        
         if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            return Response({
+                'error': 'Validation failed',
+                'details': serializer.errors,
+                'message': 'Please check the provided data and try again'
+            }, status=status.HTTP_400_BAD_REQUEST)
         
         try:
             employee = serializer.save()
             
             return Response({
                 'success': True,
-                'message': f'Vacancy {vacancy.position_id} successfully converted to employee {employee.employee_id}',
+                'message': f'Vacancy {vacancy.position_id} successfully converted to employee with ID {employee.employee_id}',
                 'employee': EmployeeDetailSerializer(employee, context={'request': request}).data,
-                'vacancy': VacantPositionDetailSerializer(vacancy, context={'request': request}).data
+                'generated_employee_id': employee.employee_id,
+                'conversion_details': {
+                    'vacancy_position_id': vacancy.position_id,
+                    'employee_auto_id': employee.employee_id,
+                    'business_function': vacancy.business_function.code if vacancy.business_function else None,
+                    'files_uploaded': {
+                        'has_document': bool(request.FILES.get('document')),
+                        'has_profile_photo': bool(request.FILES.get('profile_photo'))
+                    }
+                }
             }, status=status.HTTP_201_CREATED)
             
         except Exception as e:
             logger.error(f"Error converting vacancy to employee: {str(e)}")
-            return Response(
-                {'error': f'Failed to convert vacancy to employee: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-    
-    @action(detail=True, methods=['post'])
-    def mark_filled(self, request, pk=None):
-        """ENHANCED: Mark a vacant position as filled with better integration"""
-        vacancy = self.get_object()
-        employee_id = request.data.get('employee_id')
-        
-        if vacancy.is_filled:
-            return Response(
-                {'error': 'Vacancy is already filled'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        if not employee_id:
-            return Response(
-                {'error': 'employee_id is required'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        try:
-            employee = Employee.objects.get(id=employee_id)
-            
-            # Check if employee already has a position
-            if hasattr(employee, 'original_vacancy') and employee.original_vacancy:  # FIXED: use original_vacancy
-                return Response(
-                    {'error': f'Employee {employee.full_name} already fills vacancy {employee.original_vacancy.position_id}'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            
-            # Mark vacancy as filled
-            vacancy.mark_as_filled(employee)
-            
-            # Log activity
-            EmployeeActivity.objects.create(
-                employee=employee,
-                activity_type='POSITION_CHANGED',
-                description=f"Employee assigned to fill vacant position {vacancy.position_id}",
-                performed_by=request.user,
-                metadata={
-                    'vacancy_id': str(vacancy.id), 
-                    'position_id': vacancy.position_id,
-                    'vacancy_title': vacancy.title
-                }
-            )
-            
+            logger.error(f"Traceback: {traceback.format_exc()}")
             return Response({
-                'success': True,
-                'message': f'Vacancy {vacancy.position_id} marked as filled by {employee.full_name}',
-                'employee': EmployeeListSerializer(employee, context={'request': request}).data,
-                'vacancy': VacantPositionDetailSerializer(vacancy, context={'request': request}).data
-            })
-            
-        except Employee.DoesNotExist:
-            return Response(
-                {'error': 'Employee not found'},
-                status=status.HTTP_404_NOT_FOUND
-            )
-        except Exception as e:
-            logger.error(f"Error marking vacancy as filled: {str(e)}")
-            return Response(
-                {'error': f'Failed to mark vacancy as filled: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-    
-    @action(detail=True, methods=['post'])
-    def reopen_vacancy(self, request, pk=None):
-        """ENHANCED: Reopen a filled vacancy"""
-        vacancy = self.get_object()
-        
-        if not vacancy.is_filled:
-            return Response(
-                {'error': 'Vacancy is not filled'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        try:
-            with transaction.atomic():
-                # Get the employee who filled this vacancy
-                employee = vacancy.filled_by_employee  # FIXED: use filled_by_employee
-                
-                # Clear the vacancy link
-                vacancy.is_filled = False
-                vacancy.filled_by_employee = None  # FIXED: use filled_by_employee
-                vacancy.filled_date = None
-                vacancy.include_in_headcount = True  # Add back to headcount
-                vacancy.save()
-                
-                if employee:
-                    # Clear employee's vacancy link
-                    employee.original_vacancy = None  # FIXED: use original_vacancy
-                    employee.save()
-                    
-                    # Log activity
-                    EmployeeActivity.objects.create(
-                        employee=employee,
-                        activity_type='POSITION_CHANGED',
-                        description=f"Employee removed from vacancy {vacancy.position_id} - vacancy reopened",
-                        performed_by=request.user,
-                        metadata={
-                            'vacancy_id': str(vacancy.id),
-                            'position_id': vacancy.position_id,
-                            'action': 'vacancy_reopened'
-                        }
-                    )
-                
-                return Response({
-                    'success': True,
-                    'message': f'Vacancy {vacancy.position_id} has been reopened',
-                    'vacancy': VacantPositionDetailSerializer(vacancy, context={'request': request}).data
-                })
-                
-        except Exception as e:
-            logger.error(f"Error reopening vacancy: {str(e)}")
-            return Response(
-                {'error': f'Failed to reopen vacancy: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-    
-    @action(detail=False, methods=['get'])
-    def statistics(self, request):
-        """ENHANCED: Get vacancy statistics with headcount integration"""
-        total_vacancies = self.get_queryset().count()
-        open_vacancies = self.get_queryset().filter(is_filled=False).count()
-        filled_vacancies = total_vacancies - open_vacancies
-        headcount_vacancies = self.get_queryset().filter(include_in_headcount=True, is_filled=False).count()
-        
-        # By urgency
-        urgency_stats = {}
-        for urgency_choice in VacantPosition.URGENCY_LEVELS:
-            urgency_code = urgency_choice[0]
-            count = self.get_queryset().filter(urgency=urgency_code, is_filled=False).count()
-            urgency_stats[urgency_choice[1]] = count
-        
-        # By business function
-        function_stats = {}
-        for func in BusinessFunction.objects.filter(is_active=True):
-            count = self.get_queryset().filter(business_function=func, is_filled=False).count()
-            if count > 0:
-                function_stats[func.name] = count
-        
-        # By department
-        department_stats = {}
-        for dept in Department.objects.filter(is_active=True):
-            count = self.get_queryset().filter(department=dept, is_filled=False).count()
-            if count > 0:
-                department_stats[dept.name] = count
-        
-        # Recent activity
-        recent_created = self.get_queryset().filter(
-            created_at__gte=timezone.now() - timedelta(days=30)
-        ).count()
-        
-        recent_filled = self.get_queryset().filter(
-            filled_date__gte=timezone.now().date() - timedelta(days=30)
-        ).count()
-        
-        return Response({
-            'total_vacancies': total_vacancies,
-            'open_vacancies': open_vacancies,
-            'filled_vacancies': filled_vacancies,
-            'headcount_vacancies': headcount_vacancies,
-            'by_urgency': urgency_stats,
-            'by_business_function': function_stats,
-            'by_department': department_stats,
-            'recent_created_30_days': recent_created,
-            'recent_filled_30_days': recent_filled,
-            'headcount_impact': {
-                'vacancies_in_headcount': headcount_vacancies,
-                'vacancies_excluded': open_vacancies - headcount_vacancies
-            }
-        })
-
-
+                'error': 'Failed to convert vacancy to employee',
+                'message': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 class EmployeeViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
@@ -1166,6 +1085,104 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             'tags', 'documents', 'activities'
         ).all()
     
+    def _convert_boolean_fields(self, data):
+        """Convert string boolean values to actual booleans"""
+        boolean_fields = ['is_visible_in_org_chart']
+        
+        for field in boolean_fields:
+            if field in data:
+                value = data[field]
+                if isinstance(value, str):
+                    # Convert string representations to boolean
+                    data[field] = value.lower() in ['true', '1', 'yes', 'on']
+                elif isinstance(value, bool):
+                    # Already a boolean, keep as is
+                    pass
+                else:
+                    # For any other type, convert to boolean
+                    data[field] = bool(value)
+        
+        return data
+
+    def _clean_form_data(self, data):
+        """Comprehensive data cleaning for form data"""
+        cleaned_data = {}
+        
+        # Handle each field with appropriate conversion
+        for key, value in data.items():
+            # Skip files and empty values
+            if hasattr(value, 'read') or value in [None, '']:
+                cleaned_data[key] = value
+                continue
+            
+            # Convert list values (like from getlist())
+            if isinstance(value, list):
+                if len(value) == 1:
+                    value = value[0]
+                elif len(value) == 0:
+                    cleaned_data[key] = None
+                    continue
+            
+            # Boolean fields
+            if key in ['is_visible_in_org_chart']:
+                if isinstance(value, str):
+                    cleaned_data[key] = value.lower() in ['true', '1', 'yes', 'on']
+                else:
+                    cleaned_data[key] = bool(value)
+            
+            # Integer fields (foreign keys and IDs)
+            elif key in ['business_function', 'department', 'unit', 'job_function', 
+                         'position_group', 'line_manager', 'vacancy_id', 'original_employee_pk']:
+                try:
+                    cleaned_data[key] = int(value) if value else None
+                except (ValueError, TypeError):
+                    cleaned_data[key] = None
+            
+            # Date fields
+            elif key in ['date_of_birth', 'start_date', 'end_date', 'contract_start_date']:
+                if isinstance(value, str) and value.strip():
+                    # Validate date format
+                    try:
+                        from datetime import datetime
+                        datetime.strptime(value.strip(), '%Y-%m-%d')
+                        cleaned_data[key] = value.strip()
+                    except ValueError:
+                        # Invalid date format, skip this field
+                        continue
+                else:
+                    cleaned_data[key] = value
+            
+            # Choice fields that need string values
+            elif key in ['gender', 'contract_duration', 'document_type']:
+                if isinstance(value, list):
+                    cleaned_data[key] = value[0] if value else None
+                else:
+                    cleaned_data[key] = str(value).strip() if value else None
+            
+            # Array fields (tag_ids)
+            elif key == 'tag_ids':
+                if isinstance(value, str):
+                    # Convert comma-separated string to list of integers
+                    try:
+                        cleaned_data[key] = [int(id.strip()) for id in value.split(',') if id.strip()]
+                    except ValueError:
+                        cleaned_data[key] = []
+                elif isinstance(value, list):
+                    try:
+                        cleaned_data[key] = [int(id) for id in value if id]
+                    except ValueError:
+                        cleaned_data[key] = []
+                else:
+                    cleaned_data[key] = []
+            
+            # String fields
+            else:
+                if isinstance(value, list):
+                    cleaned_data[key] = value[0] if value else ''
+                else:
+                    cleaned_data[key] = str(value).strip() if value else ''
+        
+        return cleaned_data
     def get_serializer_class(self):
         from .serializers import (
             EmployeeListSerializer, EmployeeDetailSerializer, EmployeeCreateUpdateSerializer
@@ -1178,9 +1195,12 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             return EmployeeDetailSerializer
     
     def list(self, request, *args, **kwargs):
-        """ENHANCED: Düzgün filter və sorting ilə"""
+        """ENHANCED: Employee list that includes vacant positions by default"""
         
         try:
+            # Check if we should include vacancies (default: True)
+            include_vacancies = request.query_params.get('include_vacancies', 'true').lower() == 'true'
+            
             # Check pagination parameters
             page_param = request.query_params.get('page')
             page_size_param = request.query_params.get('page_size')
@@ -1188,132 +1208,12 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             
             should_paginate = bool(page_param or page_size_param or use_pagination)
             
-            # Get base queryset
-            queryset = self.get_queryset()
-            
-            # Apply comprehensive filtering
-            employee_filter = ComprehensiveEmployeeFilter(queryset, request.query_params)
-            queryset = employee_filter.filter()
-            
-            # Apply advanced sorting - ENHANCED for MultipleSortingSystem
-            sorting_data = request.query_params.get('sorting')
-            if sorting_data:
-                try:
-                    import json
-                    # Parse JSON sorting data from frontend
-                    sorting_params = json.loads(sorting_data)
-                except:
-                    # Fallback to old ordering system
-                    ordering = request.query_params.get('ordering', '')
-                    sort_params = [param.strip() for param in ordering.split(',') if param.strip()]
-                    # Convert to new format
-                    sorting_params = []
-                    for param in sort_params:
-                        if param.startswith('-'):
-                            sorting_params.append({'field': param[1:], 'direction': 'desc'})
-                        else:
-                            sorting_params.append({'field': param, 'direction': 'asc'})
+            if include_vacancies:
+                # Get unified employee and vacancy data
+                return self._get_unified_employee_vacancy_list(request, should_paginate)
             else:
-                # Try old ordering parameter
-                ordering = request.query_params.get('ordering', '')
-                sort_params = [param.strip() for param in ordering.split(',') if param.strip()]
-                sorting_params = []
-                for param in sort_params:
-                    if param.startswith('-'):
-                        sorting_params.append({'field': param[1:], 'direction': 'desc'})
-                    else:
-                        sorting_params.append({'field': param, 'direction': 'asc'})
-            
-            employee_sorter = AdvancedEmployeeSorter(queryset, sorting_params)
-            queryset = employee_sorter.sort()
-            
-            # Handle special filter: status_needs_update
-            status_needs_update = request.query_params.get('status_needs_update')
-            if status_needs_update and status_needs_update.lower() == 'true':
-                employees_needing_update = []
-                for employee in queryset:
-                    try:
-                        preview = employee.get_status_preview()
-                        if preview and preview.get('needs_update', False):
-                            employees_needing_update.append(employee.id)
-                    except Exception as e:
-                        logger.warning(f"Error checking status for employee {employee.employee_id}: {e}")
-                        pass
-                
-                queryset = queryset.filter(id__in=employees_needing_update)
-            
-            total_count = queryset.count()
-            
-            # Return response based on pagination preference
-            if not should_paginate:
-                logger.info(f"Returning ALL {total_count} employees (no pagination requested)")
-                serializer = self.get_serializer(queryset, many=True)
-                return Response({
-                    'count': total_count,
-                    'total_pages': 1,
-                    'current_page': 1,
-                    'page_size': total_count,
-                    'page_size_options': [10, 20, 50, 100, 500, 1000, "All"],
-                    'has_next': False,
-                    'has_previous': False,
-                    'next': None,
-                    'previous': None,
-                    'page_numbers': [1],
-                    'start_page': 1,
-                    'end_page': 1,
-                    'show_first': False,
-                    'show_last': False,
-                    'range_display': f"Showing all {total_count} results",
-                    'pagination_used': False,
-                    'results': serializer.data,
-                    'filter_summary': {
-                        'total_before_filters': self.get_queryset().count(),
-                        'total_after_filters': total_count,
-                        'filters_applied': len([k for k, v in request.query_params.items() if v and k not in ['format', 'page', 'page_size']]),
-                        'sort_applied': bool(sorting_params),
-                        'sort_fields': [s.get('field') for s in sorting_params] if sorting_params else [],
-                        'pagination_disabled': True,
-                        'default_behavior': 'all_data'
-                    }
-                })
-            
-            # Apply pagination when requested
-            else:
-                logger.info(f"Using pagination (explicitly requested)")
-                
-                try:
-                    if page_size_param and page_size_param.isdigit():
-                        custom_page_size = min(int(page_size_param), 1000)
-                        self.pagination_class.page_size = custom_page_size
-                except ValueError:
-                    logger.warning(f"Invalid page_size parameter: {page_size_param}")
-                
-                page = self.paginate_queryset(queryset)
-                if page is not None:
-                    serializer = self.get_serializer(page, many=True)
-                    paginated_response = self.get_paginated_response(serializer.data)
-                    
-                    paginated_response.data['pagination_used'] = True
-                    paginated_response.data['filter_summary'] = {
-                        'total_before_filters': self.get_queryset().count(),
-                        'total_after_filters': total_count,
-                        'filters_applied': len([k for k, v in request.query_params.items() if v and k not in ['format', 'page', 'page_size']]),
-                        'sort_applied': bool(sorting_params),
-                        'sort_fields': [s.get('field') for s in sorting_params] if sorting_params else [],
-                        'pagination_enabled': True,
-                        'requested_page_size': page_size_param,
-                        'default_behavior': 'pagination_requested'
-                    }
-                    
-                    return paginated_response
-                
-                # Fallback
-                serializer = self.get_serializer(queryset, many=True)
-                return Response({
-                    'count': total_count,
-                    'pagination_used': False,
-                    'results': serializer.data
-                })
+                # Original employee-only logic
+                return self._get_employee_only_list(request, should_paginate)
                 
         except Exception as e:
             logger.error(f"Error in employee list view: {str(e)}")
@@ -1323,6 +1223,383 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
     
+    def _get_unified_employee_vacancy_list(self, request, should_paginate):
+        """Get unified list of employees and vacant positions"""
+        
+        # Get employees
+        employee_queryset = self.get_queryset()
+        employee_filter = ComprehensiveEmployeeFilter(employee_queryset, request.query_params)
+        filtered_employees = employee_filter.filter()
+        
+        # Get vacant positions that should be included
+        vacancy_queryset = VacantPosition.objects.filter(
+            is_filled=False,
+            is_deleted=False,
+            include_in_headcount=True
+        ).select_related(
+            'business_function', 'department', 'unit', 'job_function',
+            'position_group', 'vacancy_status', 'reporting_to'
+        )
+        
+        # Apply same filters to vacancies where applicable
+        vacancy_filter = self._get_vacancy_filter_from_employee_params(request.query_params)
+        filtered_vacancies = vacancy_queryset.filter(vacancy_filter) if vacancy_filter else vacancy_queryset
+        
+        # Convert to unified format
+        unified_data = []
+        
+        # Add employees
+        employee_serializer = EmployeeListSerializer(filtered_employees, many=True, context={'request': request})
+        for emp_data in employee_serializer.data:
+            emp_data['is_vacancy'] = False
+            emp_data['record_type'] = 'employee'
+            unified_data.append(emp_data)
+        
+        # Add vacancies as employee-like records
+        for vacancy in filtered_vacancies:
+            vacancy_data = self._convert_vacancy_to_employee_format(vacancy, request)
+            unified_data.append(vacancy_data)
+        
+        # Apply sorting to unified data
+        sorting_params = self._get_sorting_params_from_request(request)
+        if sorting_params:
+            unified_data = self._sort_unified_data(unified_data, sorting_params)
+        else:
+            # Default sort by employee_id
+            unified_data.sort(key=lambda x: x.get('employee_id', ''))
+        
+        # Apply pagination if requested
+        if should_paginate:
+            return self._paginate_unified_data(unified_data, request)
+        else:
+            # Return all data
+            total_count = len(unified_data)
+            employee_count = filtered_employees.count()
+            vacancy_count = filtered_vacancies.count()
+            
+            return Response({
+                'count': total_count,
+                'total_pages': 1,
+                'current_page': 1,
+                'page_size': total_count,
+                'page_size_options': [10, 20, 50, 100, 500, 1000, "All"],
+                'has_next': False,
+                'has_previous': False,
+                'next': None,
+                'previous': None,
+                'pagination_used': False,
+                'results': unified_data,
+                'summary': {
+                    'total_records': total_count,
+                    'employee_records': employee_count,
+                    'vacancy_records': vacancy_count,
+                    'includes_vacancies': True,
+                    'unified_view': True
+                }
+            })
+    
+    def _get_employee_only_list(self, request, should_paginate):
+        """Original employee-only list logic"""
+        queryset = self.get_queryset()
+        employee_filter = ComprehensiveEmployeeFilter(queryset, request.query_params)
+        queryset = employee_filter.filter()
+        
+        # Apply sorting
+        sorting_data = request.query_params.get('sorting')
+        if sorting_data:
+            try:
+                import json
+                sorting_params = json.loads(sorting_data)
+            except:
+                ordering = request.query_params.get('ordering', '')
+                sort_params = [param.strip() for param in ordering.split(',') if param.strip()]
+                sorting_params = []
+                for param in sort_params:
+                    if param.startswith('-'):
+                        sorting_params.append({'field': param[1:], 'direction': 'desc'})
+                    else:
+                        sorting_params.append({'field': param, 'direction': 'asc'})
+        else:
+            sorting_params = []
+        
+        employee_sorter = AdvancedEmployeeSorter(queryset, sorting_params)
+        queryset = employee_sorter.sort()
+        
+        total_count = queryset.count()
+        
+        if not should_paginate:
+            serializer = self.get_serializer(queryset, many=True)
+            return Response({
+                'count': total_count,
+                'pagination_used': False,
+                'results': serializer.data,
+                'summary': {
+                    'total_records': total_count,
+                    'employee_records': total_count,
+                    'vacancy_records': 0,
+                    'includes_vacancies': False,
+                    'unified_view': False
+                }
+            })
+        else:
+            page = self.paginate_queryset(queryset)
+            if page is not None:
+                serializer = self.get_serializer(page, many=True)
+                paginated_response = self.get_paginated_response(serializer.data)
+                paginated_response.data['summary'] = {
+                    'total_records': total_count,
+                    'employee_records': total_count,
+                    'vacancy_records': 0,
+                    'includes_vacancies': False,
+                    'unified_view': False
+                }
+                return paginated_response
+    
+    def _get_vacancy_filter_from_employee_params(self, params):
+        """Convert employee filter parameters to vacancy filters where applicable"""
+        filters = Q()
+        
+        # Business function filter
+        business_function_ids = self._get_int_list_param(params, 'business_function')
+        if business_function_ids:
+            filters &= Q(business_function__id__in=business_function_ids)
+        
+        # Department filter
+        department_ids = self._get_int_list_param(params, 'department')
+        if department_ids:
+            filters &= Q(department__id__in=department_ids)
+        
+        # Unit filter
+        unit_ids = self._get_int_list_param(params, 'unit')
+        if unit_ids:
+            filters &= Q(unit__id__in=unit_ids)
+        
+        # Job function filter
+        job_function_ids = self._get_int_list_param(params, 'job_function')
+        if job_function_ids:
+            filters &= Q(job_function__id__in=job_function_ids)
+        
+        # Position group filter
+        position_group_ids = self._get_int_list_param(params, 'position_group')
+        if position_group_ids:
+            filters &= Q(position_group__id__in=position_group_ids)
+        
+        # General search
+        search = params.get('search')
+        if search:
+            filters &= (
+                Q(job_title__icontains=search) |
+                Q(position_id__icontains=search) |
+                Q(business_function__name__icontains=search) |
+                Q(department__name__icontains=search) |
+                Q(notes__icontains=search)
+            )
+        
+        return filters if filters.children else None
+    
+    def _get_int_list_param(self, params, param_name):
+        """Helper to get integer list from parameters"""
+        values = []
+        if hasattr(params, 'getlist'):
+            param_values = params.getlist(param_name)
+        else:
+            param_values = [params.get(param_name)] if params.get(param_name) else []
+        
+        for value in param_values:
+            if value:
+                if ',' in str(value):
+                    values.extend([int(v.strip()) for v in str(value).split(',') if v.strip().isdigit()])
+                elif str(value).isdigit():
+                    values.append(int(value))
+        
+        return values
+    
+    def _convert_vacancy_to_employee_format(self, vacancy, request):
+        """Convert vacancy to employee-like format for unified display"""
+        return {
+            'id': vacancy.original_employee_pk,  # FIXED: Use original employee PK instead of None
+            'employee_id': vacancy.position_id,
+            'name': "VACANT",
+            'email': None,
+            'father_name': None,
+            'date_of_birth': None,
+            'gender': None,
+            'phone': None,
+            'business_function_name': vacancy.business_function.name if vacancy.business_function else 'N/A',
+            'business_function_code': vacancy.business_function.code if vacancy.business_function else 'N/A',
+            'department_name': vacancy.department.name if vacancy.department else 'N/A',
+            'unit_name': vacancy.unit.name if vacancy.unit else None,
+            'job_function_name': vacancy.job_function.name if vacancy.job_function else 'N/A',
+            'job_title': vacancy.job_title,
+            'position_group_name': vacancy.position_group.get_name_display() if vacancy.position_group else 'N/A',
+            'position_group_level': vacancy.position_group.hierarchy_level if vacancy.position_group else 0,
+            'grading_level': vacancy.grading_level,
+            'start_date': None,
+            'end_date': None,
+            'contract_duration': 'VACANT',
+            'contract_duration_display': 'Vacant Position',
+            'contract_start_date': None,
+            'contract_end_date': None,
+            'contract_extensions': 0,
+            'last_extension_date': None,
+            'line_manager_name': vacancy.reporting_to.full_name if vacancy.reporting_to else None,
+            'line_manager_hc_number': vacancy.reporting_to.employee_id if vacancy.reporting_to else None,
+            'status_name': vacancy.vacancy_status.name if vacancy.vacancy_status else 'VACANT',
+            'status_color': vacancy.vacancy_status.color if vacancy.vacancy_status else '#F97316',
+            'tag_names': [],
+            'years_of_service': 0,
+            'current_status_display': 'Vacant Position',
+            'is_visible_in_org_chart': vacancy.is_visible_in_org_chart,
+            'direct_reports_count': 0,
+            'status_needs_update': False,
+            'created_at': vacancy.created_at,
+            'updated_at': vacancy.updated_at,
+            'profile_image_url': None,
+            'is_deleted': False,
+            'is_vacancy': True,
+            'record_type': 'vacancy',
+            'vacancy_details': {
+                'internal_id': vacancy.id,
+                'position_id': vacancy.position_id,
+                'include_in_headcount': vacancy.include_in_headcount,
+                'is_filled': vacancy.is_filled,
+                'filled_date': vacancy.filled_date,
+                'notes': vacancy.notes,
+                'original_employee_pk': vacancy.original_employee_pk  # FIXED: Include original employee PK in details
+            }
+        }
+    def _get_sorting_params_from_request(self, request):
+        """Extract sorting parameters from request"""
+        sorting_data = request.query_params.get('sorting')
+        if sorting_data:
+            try:
+                import json
+                return json.loads(sorting_data)
+            except:
+                pass
+        
+        # Fallback to ordering parameter
+        ordering = request.query_params.get('ordering', '')
+        if ordering:
+            sort_params = [param.strip() for param in ordering.split(',') if param.strip()]
+            sorting_params = []
+            for param in sort_params:
+                if param.startswith('-'):
+                    sorting_params.append({'field': param[1:], 'direction': 'desc'})
+                else:
+                    sorting_params.append({'field': param, 'direction': 'asc'})
+            return sorting_params
+        
+        return []
+    
+    def _sort_unified_data(self, data, sorting_params):
+        """Sort unified employee and vacancy data"""
+        def get_sort_key(item, field, direction):
+            value = item.get(field, '')
+            
+            # Handle None values
+            if value is None:
+                return '' if direction == 'asc' else 'z' * 100
+            
+            # Handle dates
+            if field in ['start_date', 'end_date', 'created_at', 'updated_at']:
+                if isinstance(value, str):
+                    try:
+                        from datetime import datetime
+                        return datetime.fromisoformat(value.replace('Z', '+00:00'))
+                    except:
+                        return datetime.min if direction == 'asc' else datetime.max
+                return value or (datetime.min if direction == 'asc' else datetime.max)
+            
+            # Handle numbers
+            if field in ['years_of_service', 'direct_reports_count', 'position_group_level']:
+                try:
+                    return float(value) if value else 0
+                except:
+                    return 0
+            
+            # Handle strings (case-insensitive)
+            return str(value).lower()
+        
+        # Apply multi-level sorting
+        for sort_param in reversed(sorting_params):
+            field = sort_param.get('field', '')
+            direction = sort_param.get('direction', 'asc')
+            
+            if field:
+                data.sort(
+                    key=lambda x: get_sort_key(x, field, direction),
+                    reverse=(direction == 'desc')
+                )
+        
+        return data
+    
+    def _paginate_unified_data(self, data, request):
+        """Apply pagination to unified data"""
+        page_size = int(request.query_params.get('page_size', 20))
+        page = int(request.query_params.get('page', 1))
+        
+        # Calculate pagination
+        total_count = len(data)
+        start_index = (page - 1) * page_size
+        end_index = start_index + page_size
+        
+        paginated_data = data[start_index:end_index]
+        
+        # Calculate pagination info
+        total_pages = (total_count + page_size - 1) // page_size
+        has_next = page < total_pages
+        has_previous = page > 1
+        
+        # Calculate page numbers for display
+        start_page = max(1, page - 2)
+        end_page = min(total_pages, page + 2)
+        
+        if end_page - start_page < 4:
+            if start_page == 1:
+                end_page = min(total_pages, start_page + 4)
+            else:
+                start_page = max(1, end_page - 4)
+        
+        page_numbers = list(range(start_page, end_page + 1))
+        
+        # Calculate range display
+        start_item = start_index + 1 if paginated_data else 0
+        end_item = min(end_index, total_count)
+        
+        # Count records by type
+        employee_count = len([item for item in data if not item.get('is_vacancy', False)])
+        vacancy_count = len([item for item in data if item.get('is_vacancy', False)])
+        
+        return Response({
+            'count': total_count,
+            'total_pages': total_pages,
+            'current_page': page,
+            'page_size': page_size,
+            'page_size_options': [10, 20, 50, 100, 500, 1000, "All"],
+            'has_next': has_next,
+            'has_previous': has_previous,
+            'next': None,  # Could build next URL if needed
+            'previous': None,  # Could build previous URL if needed
+            'page_numbers': page_numbers,
+            'start_page': start_page,
+            'end_page': end_page,
+            'show_first': start_page > 1,
+            'show_last': end_page < total_pages,
+            'range_display': f"Showing {start_item}-{end_item} of {total_count}",
+            'pagination_used': True,
+            'results': paginated_data,
+            'summary': {
+                'total_records': total_count,
+                'employee_records': employee_count,
+                'vacancy_records': vacancy_count,
+                'includes_vacancies': True,
+                'unified_view': True,
+                'current_page_employees': len([item for item in paginated_data if not item.get('is_vacancy', False)]),
+                'current_page_vacancies': len([item for item in paginated_data if item.get('is_vacancy', False)])
+            }
+        })
+    
     @swagger_auto_schema(
         auto_schema=FileUploadAutoSchema,
         operation_description="Create a new employee with optional document and profile photo",
@@ -1331,7 +1608,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             openapi.Parameter('first_name', openapi.IN_FORM, description="First name", type=openapi.TYPE_STRING, required=True),
             openapi.Parameter('last_name', openapi.IN_FORM, description="Last name", type=openapi.TYPE_STRING, required=True),
             openapi.Parameter('email', openapi.IN_FORM, description="Email", type=openapi.TYPE_STRING, required=True),
-            openapi.Parameter('employee_id', openapi.IN_FORM, description="Employee ID", type=openapi.TYPE_STRING, required=True),
+           
             openapi.Parameter('job_title', openapi.IN_FORM, description="Job title", type=openapi.TYPE_STRING, required=True),
             openapi.Parameter('start_date', openapi.IN_FORM, description="Start date (YYYY-MM-DD)", type=openapi.TYPE_STRING, required=True),
             openapi.Parameter('business_function', openapi.IN_FORM, description="Business function ID", type=openapi.TYPE_INTEGER, required=True),
@@ -1396,77 +1673,253 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         return super().create(request, *args, **kwargs)
     
     @swagger_auto_schema(
-        auto_schema=FileUploadAutoSchema,
-        operation_description="Update an existing employee with optional document and profile photo",
-        manual_parameters=[
-            # All fields are optional for update
-            openapi.Parameter('first_name', openapi.IN_FORM, description="First name", type=openapi.TYPE_STRING, required=False),
-            openapi.Parameter('last_name', openapi.IN_FORM, description="Last name", type=openapi.TYPE_STRING, required=False),
-            openapi.Parameter('email', openapi.IN_FORM, description="Email", type=openapi.TYPE_STRING, required=False),
-            openapi.Parameter('employee_id', openapi.IN_FORM, description="Employee ID", type=openapi.TYPE_STRING, required=False),
-            openapi.Parameter('job_title', openapi.IN_FORM, description="Job title", type=openapi.TYPE_STRING, required=False),
-            openapi.Parameter('start_date', openapi.IN_FORM, description="Start date (YYYY-MM-DD)", type=openapi.TYPE_STRING, required=False),
-            openapi.Parameter('business_function', openapi.IN_FORM, description="Business function ID", type=openapi.TYPE_INTEGER, required=False),
-            openapi.Parameter('department', openapi.IN_FORM, description="Department ID", type=openapi.TYPE_INTEGER, required=False),
-            openapi.Parameter('job_function', openapi.IN_FORM, description="Job function ID", type=openapi.TYPE_INTEGER, required=False),
-            openapi.Parameter('position_group', openapi.IN_FORM, description="Position group ID", type=openapi.TYPE_INTEGER, required=False),
-            openapi.Parameter('contract_duration', openapi.IN_FORM, description="Contract duration", type=openapi.TYPE_STRING, required=False),
-            
-            # Optional fields
-            openapi.Parameter('father_name', openapi.IN_FORM, description="Father name", type=openapi.TYPE_STRING, required=False),
-            openapi.Parameter('date_of_birth', openapi.IN_FORM, description="Date of birth (YYYY-MM-DD)", type=openapi.TYPE_STRING, required=False),
-            openapi.Parameter('gender', openapi.IN_FORM, description="Gender", type=openapi.TYPE_STRING, enum=['MALE', 'FEMALE'], required=False),
-            openapi.Parameter('phone', openapi.IN_FORM, description="Phone number", type=openapi.TYPE_STRING, required=False),
-            openapi.Parameter('address', openapi.IN_FORM, description="Address", type=openapi.TYPE_STRING, required=False),
-            openapi.Parameter('emergency_contact', openapi.IN_FORM, description="Emergency contact", type=openapi.TYPE_STRING, required=False),
-            openapi.Parameter('unit', openapi.IN_FORM, description="Unit ID", type=openapi.TYPE_INTEGER, required=False),
-            openapi.Parameter('grading_level', openapi.IN_FORM, description="Grading level", type=openapi.TYPE_STRING, required=False),
-            openapi.Parameter('contract_start_date', openapi.IN_FORM, description="Contract start date (YYYY-MM-DD)", type=openapi.TYPE_STRING, required=False),
-            openapi.Parameter('line_manager', openapi.IN_FORM, description="Line manager ID", type=openapi.TYPE_INTEGER, required=False),
-            openapi.Parameter('is_visible_in_org_chart', openapi.IN_FORM, description="Visible in org chart", type=openapi.TYPE_BOOLEAN, required=False),
-            openapi.Parameter('notes', openapi.IN_FORM, description="Notes", type=openapi.TYPE_STRING, required=False),
-            
-            # File fields
-            openapi.Parameter(
-                'document',
-                openapi.IN_FORM,
-                description="Employee document file (PDF, DOC, DOCX, TXT, XLS, XLSX)",
-                type=openapi.TYPE_FILE,
-                required=False
-            ),
-            openapi.Parameter(
-                'profile_photo',
-                openapi.IN_FORM,
-                description="Profile photo (JPG, PNG, GIF, BMP)",
-                type=openapi.TYPE_FILE,
-                required=False
-            ),
-            openapi.Parameter(
-                'document_type',
-                openapi.IN_FORM,
-                description="Document type",
-                type=openapi.TYPE_STRING,
-                enum=['CONTRACT', 'ID', 'CERTIFICATE', 'CV', 'PERFORMANCE', 'MEDICAL', 'TRAINING', 'OTHER'],
-                required=False
-            ),
-            openapi.Parameter(
-                'document_name',
-                openapi.IN_FORM,
-                description="Document name (optional, will use filename if not provided)",
-                type=openapi.TYPE_STRING,
-                required=False
-            ),
-        ],
-        responses={
-            200: openapi.Response(description="Employee updated successfully", schema=EmployeeDetailSerializer),
-            400: openapi.Response(description="Bad request - validation errors"),
-            404: openapi.Response(description="Employee not found"),
-        }
-    )
+    auto_schema=FileUploadAutoSchema,
+    operation_description="Update an existing employee with optional document and profile photo",
+    manual_parameters=[
+        # All fields are optional for update
+        openapi.Parameter('first_name', openapi.IN_FORM, description="First name", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('last_name', openapi.IN_FORM, description="Last name", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('email', openapi.IN_FORM, description="Email", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('job_title', openapi.IN_FORM, description="Job title", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('start_date', openapi.IN_FORM, description="Start date (YYYY-MM-DD)", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('business_function', openapi.IN_FORM, description="Business function ID", type=openapi.TYPE_INTEGER, required=False),
+        openapi.Parameter('department', openapi.IN_FORM, description="Department ID", type=openapi.TYPE_INTEGER, required=False),
+        openapi.Parameter('job_function', openapi.IN_FORM, description="Job function ID", type=openapi.TYPE_INTEGER, required=False),
+        openapi.Parameter('position_group', openapi.IN_FORM, description="Position group ID", type=openapi.TYPE_INTEGER, required=False),
+        openapi.Parameter('contract_duration', openapi.IN_FORM, description="Contract duration", type=openapi.TYPE_STRING, required=False),
+        
+        # Optional fields
+        openapi.Parameter('father_name', openapi.IN_FORM, description="Father name", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('date_of_birth', openapi.IN_FORM, description="Date of birth (YYYY-MM-DD)", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('gender', openapi.IN_FORM, description="Gender", type=openapi.TYPE_STRING, enum=['MALE', 'FEMALE'], required=False),
+        openapi.Parameter('phone', openapi.IN_FORM, description="Phone number", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('address', openapi.IN_FORM, description="Address", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('emergency_contact', openapi.IN_FORM, description="Emergency contact", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('unit', openapi.IN_FORM, description="Unit ID", type=openapi.TYPE_INTEGER, required=False),
+        openapi.Parameter('grading_level', openapi.IN_FORM, description="Grading level", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('contract_start_date', openapi.IN_FORM, description="Contract start date (YYYY-MM-DD)", type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('line_manager', openapi.IN_FORM, description="Line manager ID", type=openapi.TYPE_INTEGER, required=False),
+        openapi.Parameter('is_visible_in_org_chart', openapi.IN_FORM, description="Visible in org chart", type=openapi.TYPE_BOOLEAN, required=False),
+        openapi.Parameter('notes', openapi.IN_FORM, description="Notes", type=openapi.TYPE_STRING, required=False),
+        
+        # File fields
+        openapi.Parameter(
+            'document',
+            openapi.IN_FORM,
+            description="Employee document file (PDF, DOC, DOCX, TXT, XLS, XLSX)",
+            type=openapi.TYPE_FILE,
+            required=False
+        ),
+        openapi.Parameter(
+            'profile_photo',
+            openapi.IN_FORM,
+            description="Profile photo (JPG, PNG, GIF, BMP)",
+            type=openapi.TYPE_FILE,
+            required=False
+        ),
+        openapi.Parameter(
+            'document_type',
+            openapi.IN_FORM,
+            description="Document type",
+            type=openapi.TYPE_STRING,
+            enum=['CONTRACT', 'ID', 'CERTIFICATE', 'CV', 'PERFORMANCE', 'MEDICAL', 'TRAINING', 'OTHER'],
+            required=False
+        ),
+        openapi.Parameter(
+            'document_name',
+            openapi.IN_FORM,
+            description="Document name (optional, will use filename if not provided)",
+            type=openapi.TYPE_STRING,
+            required=False
+        ),
+    ],
+    responses={
+        200: openapi.Response(description="Employee updated successfully", schema=EmployeeDetailSerializer),
+        400: openapi.Response(description="Bad request - validation errors"),
+        404: openapi.Response(description="Employee not found"),
+    }
+)
     def update(self, request, *args, **kwargs):
-        """Update an existing employee with optional document and profile photo"""
-        return super().update(request, *args, **kwargs)
-    
+        """Update an existing employee with optional document and profile photo - FIXED BOOLEAN HANDLING"""
+        try:
+            # Get the employee instance
+            employee = self.get_object()
+            
+            # Log incoming request
+            logger.info(f"Employee update request for {employee.employee_id} from user: {request.user}")
+            logger.info(f"Request data: {list(request.data.keys())}")
+            
+            # FIXED: Clean all form data comprehensively
+            cleaned_data = self._clean_form_data(dict(request.data))
+            
+            # Create serializer for validation with cleaned data
+            serializer = self.get_serializer(employee, data=cleaned_data, partial=True)
+            
+            if not serializer.is_valid():
+                logger.error(f"Employee update validation failed: {serializer.errors}")
+                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Manual update process with proper boolean handling
+            with transaction.atomic():
+                # Track changes for logging
+                changes = []
+                
+                # Update user fields if provided
+                user_fields = ['first_name', 'last_name', 'email']
+                user_updated = False
+                
+                for field in user_fields:
+                    if field in cleaned_data:
+                        old_value = getattr(employee.user, field)
+                        new_value = cleaned_data[field]
+                        if old_value != new_value:
+                            setattr(employee.user, field, new_value)
+                            changes.append(f"{field}: {old_value} → {new_value}")
+                            user_updated = True
+                
+                if user_updated:
+                    # Update username to match email if email changed
+                    if 'email' in cleaned_data:
+                        employee.user.username = cleaned_data['email']
+                    employee.user.save()
+                
+                # Update employee fields with cleaned data
+                employee_fields = [
+                    'date_of_birth', 'gender', 'father_name', 'address', 'phone', 'emergency_contact',
+                    'business_function', 'department', 'unit', 'job_function', 'job_title',
+                    'position_group', 'grading_level', 'start_date', 'end_date',
+                    'contract_duration', 'contract_start_date', 'line_manager',
+                    'is_visible_in_org_chart', 'notes'
+                ]
+                
+                for field in employee_fields:
+                    if field in cleaned_data and cleaned_data[field] is not None:
+                        old_value = getattr(employee, field)
+                        new_value = cleaned_data[field]
+                        
+                        # Handle foreign key fields
+                        if field in ['business_function', 'department', 'unit', 'job_function', 'position_group', 'line_manager']:
+                            if new_value:
+                                try:
+                                    # Get the actual object
+                                    model_map = {
+                                        'business_function': BusinessFunction,
+                                        'department': Department,
+                                        'unit': Unit,
+                                        'job_function': JobFunction,
+                                        'position_group': PositionGroup,
+                                        'line_manager': Employee
+                                    }
+                                    new_value = model_map[field].objects.get(id=new_value)
+                                except (ValueError, models.ObjectDoesNotExist):
+                                    logger.warning(f"Invalid {field} ID: {new_value}")
+                                    continue
+                            else:
+                                new_value = None
+                        
+                        # Handle date fields
+                        elif field in ['date_of_birth', 'start_date', 'end_date', 'contract_start_date']:
+                            if new_value and isinstance(new_value, str):
+                                try:
+                                    from datetime import datetime
+                                    new_value = datetime.strptime(new_value, '%Y-%m-%d').date()
+                                except ValueError:
+                                    logger.warning(f"Invalid date format for {field}: {new_value}")
+                                    continue
+                        
+                        # Update the field if value has changed
+                        if old_value != new_value:
+                            setattr(employee, field, new_value)
+                            old_display = str(old_value) if old_value else 'None'
+                            new_display = str(new_value) if new_value else 'None'
+                            changes.append(f"{field}: {old_display} → {new_display}")
+                
+                # Handle profile photo upload
+                if 'profile_photo' in request.FILES:
+                    # Delete old profile image if exists
+                    if employee.profile_image:
+                        try:
+                            if hasattr(employee.profile_image, 'path') and os.path.exists(employee.profile_image.path):
+                                os.remove(employee.profile_image.path)
+                        except Exception as e:
+                            logger.warning(f"Could not delete old profile image: {e}")
+                    
+                    employee.profile_image = request.FILES['profile_photo']
+                    changes.append("Profile photo updated")
+                
+                # Set updated_by
+                employee.updated_by = request.user
+                
+                # Save employee
+                employee.save()
+                
+                # Handle tags update
+                if 'tag_ids' in cleaned_data:
+                    try:
+                        tag_ids = cleaned_data['tag_ids']
+                        if isinstance(tag_ids, str):
+                            tag_ids = [int(id.strip()) for id in tag_ids.split(',') if id.strip()]
+                        elif not isinstance(tag_ids, list):
+                            tag_ids = [tag_ids] if tag_ids else []
+                        
+                        old_tags = set(employee.tags.values_list('id', flat=True))
+                        new_tags = set(int(id) for id in tag_ids if id)
+                        
+                        if old_tags != new_tags:
+                            employee.tags.set(tag_ids)
+                            changes.append("Tags updated")
+                    except Exception as e:
+                        logger.warning(f"Error updating tags: {e}")
+                
+                # Handle document upload
+                if 'document' in request.FILES:
+                    document = request.FILES['document']
+                    document_type = cleaned_data.get('document_type', 'OTHER')
+                    document_name = cleaned_data.get('document_name', document.name)
+                    
+                    try:
+                        from .models import EmployeeDocument
+                        EmployeeDocument.objects.create(
+                            employee=employee,
+                            name=document_name,
+                            document_type=document_type,
+                            document_file=document,
+                            uploaded_by=request.user,
+                            document_status='ACTIVE',
+                            version=1,
+                            is_current_version=True
+                        )
+                        changes.append(f"Document '{document_name}' uploaded")
+                    except Exception as e:
+                        logger.error(f"Error uploading document: {e}")
+                
+                # Log activity if there were changes
+                if changes:
+                    EmployeeActivity.objects.create(
+                        employee=employee,
+                        activity_type='UPDATED',
+                        description=f"Employee {employee.full_name} updated: {'; '.join(changes)}",
+                        performed_by=request.user,
+                        metadata={
+                            'changes': changes,
+                            'manual_update': True,
+                            'update_method': 'comprehensive_data_cleaning'
+                        }
+                    )
+            
+            # Return updated employee data
+            serializer = EmployeeDetailSerializer(employee, context={'request': request})
+            
+            logger.info(f"Employee {employee.employee_id} updated successfully with {len(changes)} changes")
+            return Response(serializer.data)
+            
+        except Exception as e:
+            logger.error(f"Employee update failed: {str(e)}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return Response(
+                {'error': f'Employee update failed: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
     @swagger_auto_schema(
         method='post',
         operation_description="Toggle org chart visibility for single employee",
@@ -3226,7 +3679,773 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             'ARCHIVED': '#7F1D1D',            # Dark red - archived
         }
         return colors.get(status, '#6B7280')
+        
     
+   
+    @action(detail=False, methods=['get'], url_path='archived-employees')
+    def get_archived_employees(self, request):
+        """ENHANCED: Get list of ALL archived employees with deletion type filtering"""
+        try:
+            archives = EmployeeArchive.objects.all().order_by('-deleted_at')
+            
+            # Apply filtering
+            search = request.query_params.get('search')
+            if search:
+                archives = archives.filter(
+                    Q(original_employee_id__icontains=search) |
+                    Q(full_name__icontains=search) |
+                    Q(email__icontains=search) |
+                    Q(business_function_name__icontains=search) |
+                    Q(department_name__icontains=search)
+                )
+            
+            # NEW: Deletion type filtering
+            deletion_type = request.query_params.get('deletion_type')
+            if deletion_type:
+                if deletion_type.lower() == 'soft':
+                    archives = archives.filter(employee_still_exists=True)
+                elif deletion_type.lower() == 'hard':
+                    archives = archives.filter(employee_still_exists=False)
+            
+            # Employee still exists filter (legacy support)
+            still_exists = request.query_params.get('employee_still_exists')
+            if still_exists:
+                if still_exists.lower() == 'true':
+                    archives = archives.filter(employee_still_exists=True)
+                elif still_exists.lower() == 'false':
+                    archives = archives.filter(employee_still_exists=False)
+            
+            # Date filtering
+            deleted_after = request.query_params.get('deleted_after')
+            if deleted_after:
+                try:
+                    date_after = datetime.strptime(deleted_after, '%Y-%m-%d').date()
+                    archives = archives.filter(deleted_at__date__gte=date_after)
+                except ValueError:
+                    pass
+            
+            deleted_before = request.query_params.get('deleted_before')
+            if deleted_before:
+                try:
+                    date_before = datetime.strptime(deleted_before, '%Y-%m-%d').date()
+                    archives = archives.filter(deleted_at__date__lte=date_before)
+                except ValueError:
+                    pass
+            
+            # Pagination
+            page_size = int(request.query_params.get('page_size', 20))
+            page = int(request.query_params.get('page', 1))
+            start = (page - 1) * page_size
+            end = start + page_size
+            
+            total_count = archives.count()
+            paginated_archives = archives[start:end]
+            
+            archive_data = []
+            for archive in paginated_archives:
+                archive_info = archive.get_enhanced_deletion_summary()
+                
+                archive_data.append({
+                    'id': archive.id,
+                    'reference': archive.get_archive_reference(),
+                    'original_employee_id': archive.original_employee_id,
+                    'full_name': archive.full_name,
+                    'email': archive.email,
+                    'job_title': archive.job_title,
+                    'business_function_name': archive.business_function_name,
+                    'department_name': archive.department_name,
+                    'unit_name': archive.unit_name,
+                    'start_date': archive.start_date,
+                    'end_date': archive.end_date,
+                    'contract_duration': archive.contract_duration,
+                    'line_manager_name': archive.line_manager_name,
+                    'deletion_notes': archive.deletion_notes,
+                    'deleted_by': archive.deleted_by.get_full_name() if archive.deleted_by else 'System',
+                    'deleted_at': archive.deleted_at,
+                    'updated_at': archive.updated_at,
+                    'has_complete_data': bool(archive.original_data),
+                    'data_quality': archive.get_data_quality_display(),
+                    'archive_version': archive.archive_version,
+                    'days_since_deletion': (timezone.now() - archive.deleted_at).days if archive.deleted_at else 0,
+                    
+                    # NEW: Enhanced deletion type information
+                    'deletion_type': archive_info['deletion_type'],
+                    'deletion_type_display': archive_info['deletion_type_display'],
+                    'employee_still_exists': archive.employee_still_exists,
+                    'can_be_restored': archive_info['can_be_restored'],
+                    'is_restorable': archive_info['is_restorable'],
+                    'restoration_available': archive_info['restoration_available']
+                })
+            
+            # Enhanced statistics with deletion type breakdown
+            total_soft_deleted = archives.filter(employee_still_exists=True).count() if deletion_type != 'hard' else EmployeeArchive.objects.filter(employee_still_exists=True).count()
+            total_hard_deleted = archives.filter(employee_still_exists=False).count() if deletion_type != 'soft' else EmployeeArchive.objects.filter(employee_still_exists=False).count()
+            
+            stats = {
+                'total_archived': total_count,
+                'soft_deleted_archives': total_soft_deleted,
+                'hard_deleted_archives': total_hard_deleted,
+                'restorable_count': archives.filter(employee_still_exists=True).count(),
+                'permanent_deletions': archives.filter(employee_still_exists=False).count(),
+                'by_deletion_type': {
+                    'soft_delete': total_soft_deleted,
+                    'hard_delete': total_hard_deleted
+                },
+                'recent_30_days': archives.filter(deleted_at__gte=timezone.now() - timedelta(days=30)).count(),
+                'by_data_quality': {}
+            }
+            
+            # Data quality breakdown
+            quality_counts = archives.values('data_quality').annotate(count=Count('data_quality'))
+            for quality_data in quality_counts:
+                quality_display = dict(EmployeeArchive._meta.get_field('data_quality').choices).get(
+                    quality_data['data_quality'], quality_data['data_quality']
+                )
+                stats['by_data_quality'][quality_display] = quality_data['count']
+            
+            return Response({
+                'count': total_count,
+                'page': page,
+                'page_size': page_size,
+                'total_pages': (total_count + page_size - 1) // page_size,
+                'results': archive_data,
+                'statistics': stats,
+                'filters_applied': {
+                    'search': bool(search),
+                    'deletion_type': deletion_type,
+                    'employee_still_exists': still_exists,
+                    'date_range': bool(deleted_after or deleted_before)
+                }
+            })
+            
+        except Exception as e:
+            logger.error(f"Get archived employees failed: {str(e)}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return Response(
+                {'error': f'Failed to get archived employees: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    
+    @swagger_auto_schema(
+    method='post',
+    operation_description="Bulk hard delete employees and create archives - NO VACANCY CREATION",
+    request_body=openapi.Schema(
+        type=openapi.TYPE_OBJECT,
+        required=['employee_ids', 'confirm_hard_delete'],
+        properties={
+            'employee_ids': openapi.Schema(
+                type=openapi.TYPE_ARRAY,
+                items=openapi.Schema(type=openapi.TYPE_INTEGER),
+                description='List of employee IDs to hard delete',
+                example=[1, 2, 3]
+            ),
+            'confirm_hard_delete': openapi.Schema(
+                type=openapi.TYPE_BOOLEAN, 
+                description='Confirmation flag (must be true)',
+                example=True
+            ),
+            'notes': openapi.Schema(
+                type=openapi.TYPE_STRING,
+                description='Additional notes about deletion',
+                example='End of contract period - bulk cleanup'
+            )
+        }
+    ),
+    responses={
+        200: openapi.Response(
+            description="Bulk hard deletion completed",
+            schema=openapi.Schema(
+                type=openapi.TYPE_OBJECT,
+                properties={
+                    'success': openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                    'message': openapi.Schema(type=openapi.TYPE_STRING),
+                    'summary': openapi.Schema(
+                        type=openapi.TYPE_OBJECT,
+                        properties={
+                            'total_requested': openapi.Schema(type=openapi.TYPE_INTEGER),
+                            'successful': openapi.Schema(type=openapi.TYPE_INTEGER),
+                            'failed': openapi.Schema(type=openapi.TYPE_INTEGER),
+                            'archives_created': openapi.Schema(type=openapi.TYPE_INTEGER),
+                            'data_permanently_deleted': openapi.Schema(type=openapi.TYPE_BOOLEAN)
+                        }
+                    ),
+                    'results': openapi.Schema(
+                        type=openapi.TYPE_ARRAY,
+                        items=openapi.Schema(
+                            type=openapi.TYPE_OBJECT,
+                            properties={
+                                'employee_id': openapi.Schema(type=openapi.TYPE_INTEGER),
+                                'employee_name': openapi.Schema(type=openapi.TYPE_STRING),
+                                'status': openapi.Schema(type=openapi.TYPE_STRING),
+                                'archive_created': openapi.Schema(type=openapi.TYPE_OBJECT)
+                            }
+                        )
+                    )
+                }
+            )
+        ),
+        400: "Bad request - validation errors"
+    }
+)
+    @action(detail=False, methods=['post'], url_path='bulk-hard-delete-with-archives')
+    def bulk_hard_delete_with_archives(self, request):
+        """FIXED: Bulk hard delete with proper serializer validation - NO VACANCY CREATION"""
+        
+        # Use the dedicated serializer
+        serializer = BulkHardDeleteSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        employee_ids = serializer.validated_data['employee_ids']
+        notes = serializer.validated_data.get('notes', '')
+        
+        employees = Employee.objects.filter(id__in=employee_ids)
+        
+        results = []
+        archives_created = []
+        total_direct_reports_updated = 0
+        
+        # Process employees individually
+        for employee in employees:
+            try:
+                # Store info before deletion
+                employee_info = {
+                    'id': employee.id,
+                    'employee_id': employee.employee_id,
+                    'name': employee.full_name,
+                    'email': employee.user.email if employee.user else None,
+                    'direct_reports_count': employee.direct_reports.filter(is_deleted=False).count()
+                }
+                
+                # FIXED: Hard delete and create archive - NO VACANCY CREATION
+                archive = employee.hard_delete_with_archive(request.user)
+                
+                # Update archive with bulk deletion info
+                if archive and notes:
+                    archive.deletion_notes = f"{archive.deletion_notes}\n\nBulk hard deletion notes: {notes}"
+                    archive.save()
+                
+                results.append({
+                    'employee_id': employee_info['id'],
+                    'original_employee_id': employee_info['employee_id'],
+                    'employee_name': employee_info['name'],
+                    'status': 'success',
+                    'archive_created': {
+                        'id': archive.id if archive else None,
+                        'reference': archive.get_archive_reference() if archive else None
+                    },
+                    'direct_reports_updated': employee_info['direct_reports_count'],
+                    'vacancy_created': None,  # FIXED: No vacancy for hard delete
+                    'data_permanently_deleted': True
+                })
+                
+                if archive:
+                    archives_created.append(archive)
+                total_direct_reports_updated += employee_info['direct_reports_count']
+                
+            except Exception as e:
+                results.append({
+                    'employee_id': employee.id,
+                    'original_employee_id': employee.employee_id,
+                    'employee_name': employee.full_name,
+                    'status': 'failed',
+                    'error': str(e)
+                })
+        
+        successful_count = len([r for r in results if r['status'] == 'success'])
+        failed_count = len([r for r in results if r['status'] == 'failed'])
+        
+        return Response({
+            'success': True,
+            'message': f'Bulk hard deletion completed: {successful_count} successful, {failed_count} failed',
+            'summary': {
+                'total_requested': len(employee_ids),
+                'successful': successful_count,
+                'failed': failed_count,
+                'archives_created': len(archives_created),
+                'total_direct_reports_updated': total_direct_reports_updated,
+                'vacancies_created': 0,  # FIXED: No vacancies for hard delete
+                'data_permanently_deleted': True,
+                'cannot_restore': True
+            },
+            'results': results,
+            'notes': notes,
+            'deletion_type': 'bulk_hard_delete_with_archives_only'
+        })
+    
+    @swagger_auto_schema(
+    method='post',
+    operation_description="Bulk restore soft-deleted employees with vacancy cleanup",
+    request_body=openapi.Schema(
+        type=openapi.TYPE_OBJECT,
+        required=['employee_ids'],
+        properties={
+            'employee_ids': openapi.Schema(
+                type=openapi.TYPE_ARRAY,
+                items=openapi.Schema(type=openapi.TYPE_INTEGER),
+                description='List of soft-deleted employee IDs to restore',
+                example=[1, 2, 3]
+            ),
+            'restore_to_active': openapi.Schema(
+                type=openapi.TYPE_BOOLEAN,
+                description='Set status to active after restore',
+                example=False,
+                default=False
+            )
+        }
+    ),
+    responses={
+        200: openapi.Response(
+            description="Bulk restoration completed with vacancy cleanup",
+            schema=openapi.Schema(
+                type=openapi.TYPE_OBJECT,
+                properties={
+                    'success': openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                    'message': openapi.Schema(type=openapi.TYPE_STRING),
+                    'summary': openapi.Schema(
+                        type=openapi.TYPE_OBJECT,
+                        properties={
+                            'total_requested': openapi.Schema(type=openapi.TYPE_INTEGER),
+                            'successful': openapi.Schema(type=openapi.TYPE_INTEGER),
+                            'failed': openapi.Schema(type=openapi.TYPE_INTEGER),
+                            'total_vacancies_removed': openapi.Schema(type=openapi.TYPE_INTEGER),
+                            'total_archives_deleted': openapi.Schema(type=openapi.TYPE_INTEGER)
+                        }
+                    ),
+                    'results': openapi.Schema(
+                        type=openapi.TYPE_ARRAY,
+                        items=openapi.Schema(
+                            type=openapi.TYPE_OBJECT,
+                            properties={
+                                'employee_id': openapi.Schema(type=openapi.TYPE_INTEGER),
+                                'employee_name': openapi.Schema(type=openapi.TYPE_STRING),
+                                'status': openapi.Schema(type=openapi.TYPE_STRING),
+                                'restored_to_active': openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                                'vacancies_removed': openapi.Schema(type=openapi.TYPE_INTEGER),
+                                'archives_deleted': openapi.Schema(type=openapi.TYPE_INTEGER)
+                            }
+                        )
+                    )
+                }
+            )
+        ),
+        400: "Bad request - validation errors"
+    }
+)
+    @action(detail=False, methods=['post'], url_path='bulk-restore-employees')
+    def bulk_restore_employees(self, request):
+        """FIXED: Bulk restore soft-deleted employees with proper vacancy cleanup and archive deletion"""
+        try:
+            employee_ids = request.data.get('employee_ids', [])
+            restore_to_active = request.data.get('restore_to_active', False)
+            
+            if not employee_ids:
+                return Response(
+                    {'error': 'employee_ids list is required'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Use all_objects to include soft-deleted employees
+            employees = Employee.all_objects.filter(id__in=employee_ids, is_deleted=True)
+            
+            if employees.count() != len(employee_ids):
+                return Response(
+                    {'error': 'Some employee IDs were not found or are not deleted'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            results = []
+            active_status = None
+            vacancies_removed = []
+            archives_deleted = []  # FIXED: Track deleted archives
+            
+            if restore_to_active:
+                active_status = EmployeeStatus.objects.filter(status_type='ACTIVE', is_active=True).first()
+            
+            # Process each employee individually
+            for employee in employees:
+                try:
+                    # Store info before restore
+                    employee_info = {
+                        'id': employee.id,
+                        'employee_id': employee.employee_id,
+                        'name': employee.full_name,
+                        'was_deleted_at': employee.deleted_at
+                    }
+                    
+                    with transaction.atomic():
+                        # FIXED: Find and remove vacancies using original_employee_pk
+                        related_vacancies = VacantPosition.objects.filter(
+                            original_employee_pk=employee.pk,  # Use PK for exact match
+                            is_filled=False
+                        )
+                        
+                        vacancy_info = []
+                        for vacancy in related_vacancies:
+                            vacancy_info.append({
+                                'id': vacancy.id,
+                                'position_id': vacancy.position_id,
+                                'job_title': vacancy.job_title
+                            })
+                            vacancy.delete()  # Remove the vacancy
+                            vacancies_removed.append(vacancy_info[-1])
+                        
+                        # FIXED: Find and DELETE the soft delete archive record
+                        soft_delete_archives = EmployeeArchive.objects.filter(
+                            original_employee_id=employee.employee_id,
+                            employee_still_exists=True  # Only soft delete archives
+                        ).order_by('-deleted_at')
+                        
+                        archive_info = []
+                        for archive in soft_delete_archives:
+                            archive_data = {
+                                'id': archive.id,
+                                'reference': archive.get_archive_reference(),
+                                'deleted_at': archive.deleted_at.isoformat() if archive.deleted_at else None
+                            }
+                            archive_info.append(archive_data)
+                            archive.delete()  # DELETE the archive since employee is restored
+                            archives_deleted.append(archive_data)
+                            logger.info(f"Deleted archive {archive_data['reference']} for restored employee {employee.employee_id}")
+                        
+                        # Restore the employee
+                        employee.restore()
+                        
+                        # Set to active if requested
+                        if restore_to_active and active_status:
+                            employee.status = active_status
+                            employee.save()
+                        
+                        # Log activity
+                        EmployeeActivity.objects.create(
+                            employee=employee,
+                            activity_type='RESTORED',
+                            description=f"Employee {employee.full_name} bulk restored from soft deletion. {len(vacancy_info)} vacancies removed. {len(archive_info)} archives deleted.",
+                            performed_by=request.user,
+                            metadata={
+                                'bulk_restoration': True,
+                                'restored_from_deletion': True,
+                                'originally_deleted_at': employee_info['was_deleted_at'].isoformat() if employee_info['was_deleted_at'] else None,
+                                'restored_to_active': restore_to_active,
+                                'restoration_method': 'bulk_restore',
+                                'vacancies_removed': vacancy_info,
+                                'archives_deleted': archive_info,  # FIXED: Include deleted archives
+                                'archive_updated': len(archive_info) > 0,
+                                'original_employee_pk_restored': employee.pk
+                            }
+                        )
+                    
+                    results.append({
+                        'employee_id': employee_info['id'],
+                        'employee_name': employee_info['name'],
+                        'status': 'success',
+                        'original_employee_id': employee_info['employee_id'],
+                        'was_deleted_at': employee_info['was_deleted_at'],
+                        'restored_to_active': restore_to_active,
+                        'vacancies_removed': len(vacancy_info),
+                        'archives_deleted': len(archive_info)  # FIXED: Include in results
+                    })
+                    
+                except Exception as e:
+                    results.append({
+                        'employee_id': employee.id,
+                        'employee_name': employee.full_name,
+                        'status': 'failed',
+                        'error': str(e)
+                    })
+            
+            successful_count = len([r for r in results if r['status'] == 'success'])
+            failed_count = len([r for r in results if r['status'] == 'failed'])
+            
+            return Response({
+                'success': True,
+                'message': f'Bulk restoration completed: {successful_count} successful, {failed_count} failed',
+                'summary': {
+                    'total_requested': len(employee_ids),
+                    'successful': successful_count,
+                    'failed': failed_count,
+                    'restored_to_active': restore_to_active,
+                    'total_vacancies_removed': len(vacancies_removed),
+                    'total_archives_deleted': len(archives_deleted)  # FIXED: Include archive deletion count
+                },
+                'results': results,
+                'restoration_type': 'bulk_restore_with_vacancy_and_archive_cleanup'  # FIXED: Updated type
+            })
+            
+        except Exception as e:
+            logger.error(f"Bulk restore failed: {str(e)}")
+            return Response(
+                {'error': f'Bulk restore failed: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    @swagger_auto_schema(
+    method='post',
+    operation_description="Bulk soft delete employees, create vacancies and archive data",
+    request_body=openapi.Schema(
+        type=openapi.TYPE_OBJECT,
+        required=['employee_ids'],
+        properties={
+            'employee_ids': openapi.Schema(
+                type=openapi.TYPE_ARRAY,
+                items=openapi.Schema(type=openapi.TYPE_INTEGER),
+                description='List of employee IDs to soft delete',
+                example=[1, 2, 3]
+            ),
+            'reason': openapi.Schema(
+                type=openapi.TYPE_STRING,
+                description='Reason for bulk deletion',
+                example='Department restructuring'
+            )
+        }
+    ),
+    responses={
+        200: openapi.Response(
+            description="Bulk soft deletion completed with vacancies created",
+            schema=openapi.Schema(
+                type=openapi.TYPE_OBJECT,
+                properties={
+                    'success': openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                    'message': openapi.Schema(type=openapi.TYPE_STRING),
+                    'summary': openapi.Schema(
+                        type=openapi.TYPE_OBJECT,
+                        properties={
+                            'total_requested': openapi.Schema(type=openapi.TYPE_INTEGER),
+                            'successful': openapi.Schema(type=openapi.TYPE_INTEGER),
+                            'failed': openapi.Schema(type=openapi.TYPE_INTEGER),
+                            'vacancies_created': openapi.Schema(type=openapi.TYPE_INTEGER),
+                            'archives_created': openapi.Schema(type=openapi.TYPE_INTEGER),
+                            'data_preserved': openapi.Schema(type=openapi.TYPE_BOOLEAN)
+                        }
+                    ),
+                    'results': openapi.Schema(
+                        type=openapi.TYPE_ARRAY,
+                        items=openapi.Schema(
+                            type=openapi.TYPE_OBJECT,
+                            properties={
+                                'employee_id': openapi.Schema(type=openapi.TYPE_INTEGER),
+                                'employee_name': openapi.Schema(type=openapi.TYPE_STRING),
+                                'status': openapi.Schema(type=openapi.TYPE_STRING),
+                                'vacancy_created': openapi.Schema(type=openapi.TYPE_OBJECT),
+                                'archive_created': openapi.Schema(type=openapi.TYPE_OBJECT)
+                            }
+                        )
+                    )
+                }
+            )
+        ),
+        400: "Bad request - validation errors"
+    }
+)
+    @action(detail=False, methods=['post'], url_path='bulk-soft-delete-with-vacancies')
+    def bulk_soft_delete_with_vacancies(self, request):
+        """FIXED: Bulk soft delete employees, create vacancies AND archive all data with PK preservation"""
+        try:
+            employee_ids = request.data.get('employee_ids', [])
+            reason = request.data.get('reason', 'Bulk restructuring')
+            
+            logger.info(f"Bulk soft delete request: employee_ids={employee_ids}, reason={reason}")
+            
+            if not employee_ids:
+                return Response(
+                    {'error': 'employee_ids list is required'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Get employees outside transaction first
+            employees = Employee.objects.filter(id__in=employee_ids, is_deleted=False)
+            found_employee_ids = list(employees.values_list('id', flat=True))
+            missing_employee_ids = [emp_id for emp_id in employee_ids if emp_id not in found_employee_ids]
+            
+            if missing_employee_ids:
+                return Response(
+                    {
+                        'error': 'Some employee IDs were not found or already deleted',
+                        'missing_employee_ids': missing_employee_ids,
+                        'found_employee_ids': found_employee_ids,
+                        'total_requested': len(employee_ids),
+                        'found_count': len(found_employee_ids)
+                    },
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            results = []
+            vacancies_created = []
+            archives_created = []
+            total_direct_reports_updated = 0
+            
+            # Process each employee individually with separate transactions
+            for employee in employees:
+                employee_info = {
+                    'id': employee.id,
+                    'employee_id': employee.employee_id,
+                    'name': employee.full_name,
+                    'job_title': employee.job_title,
+                    'department': employee.department.name if employee.department else None,
+                    'direct_reports_count': employee.direct_reports.filter(is_deleted=False).count()
+                }
+                
+                try:
+                    # Use individual transaction for each employee
+                    with transaction.atomic():
+                        vacancy, archive = self._manual_bulk_soft_delete_with_archive(employee, request.user, reason)
+                        
+                        results.append({
+                            'employee_id': employee_info['id'],
+                            'employee_name': employee_info['name'],
+                            'employee_hc_id': employee_info['employee_id'],
+                            'status': 'success',
+                            'vacancy_created': {
+                                'id': vacancy.id,
+                                'position_id': vacancy.position_id,
+                                'job_title': vacancy.job_title,
+                                'original_employee_pk': vacancy.original_employee_pk  # FIXED: Include PK reference
+                            } if vacancy else None,
+                            'archive_created': {
+                                'id': archive.id if archive else None,
+                                'reference': archive.get_archive_reference() if archive else None,
+                                'status': archive.get_deletion_summary()['data_quality'] if archive else None
+                            },
+                            'direct_reports_updated': employee_info['direct_reports_count'],
+                            'original_employee_pk': employee_info['id']  # FIXED: Store for restoration
+                        })
+                        
+                        if vacancy:
+                            vacancies_created.append(vacancy)
+                        if archive:
+                            archives_created.append(archive)
+                        total_direct_reports_updated += employee_info['direct_reports_count']
+                        
+                except Exception as e:
+                    logger.error(f"Failed to process employee {employee.employee_id}: {str(e)}")
+                    results.append({
+                        'employee_id': employee.id,
+                        'employee_name': employee.full_name,
+                        'employee_hc_id': employee.employee_id,
+                        'status': 'failed',
+                        'error': str(e),
+                        'error_details': {
+                            'exception_type': type(e).__name__,
+                            'full_error': str(e)
+                        }
+                    })
+            
+            successful_count = len([r for r in results if r['status'] == 'success'])
+            failed_count = len([r for r in results if r['status'] == 'failed'])
+            
+            logger.info(f"Bulk soft delete completed: {successful_count} successful, {failed_count} failed")
+            
+            return Response({
+                'success': True,
+                'message': f'Bulk soft deletion completed: {successful_count} successful, {failed_count} failed',
+                'summary': {
+                    'total_requested': len(employee_ids),
+                    'employees_found': len(employees),
+                    'successful': successful_count,
+                    'failed': failed_count,
+                    'vacancies_created': len(vacancies_created),
+                    'archives_created': len(archives_created),
+                    'total_direct_reports_updated': total_direct_reports_updated,
+                    'data_preserved': True,
+                    'can_restore': True
+                },
+                'results': results,
+                'reason': reason,
+                'deletion_type': 'bulk_soft_delete_with_vacancies_and_archives'
+            })
+            
+        except Exception as e:
+            logger.error(f"Bulk soft delete failed: {str(e)}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return Response(
+                {
+                    'error': f'Bulk soft delete failed: {str(e)}',
+                    'error_type': type(e).__name__
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    def _manual_bulk_soft_delete_with_archive(self, employee, user, reason):
+        """
+        FIXED: Manual bulk soft delete with proper PK preservation
+        """
+        try:
+            # Store employee data for vacancy creation before any database operations
+            employee_data = {
+                'job_title': employee.job_title,
+                'original_employee_pk': employee.pk,  # FIXED: Store original PK
+                'business_function': employee.business_function,
+                'department': employee.department,
+                'unit': employee.unit,
+                'job_function': employee.job_function,
+                'position_group': employee.position_group,
+                'grading_level': employee.grading_level,
+                'reporting_to': employee.line_manager,
+                'is_visible_in_org_chart': employee.is_visible_in_org_chart,
+                'notes': f"Position vacated by {employee.full_name} ({employee.employee_id}) on {timezone.now().date()}. Reason: {reason}"
+            }
+            
+            # Create vacant position from employee data
+            vacancy = VacantPosition.objects.create(
+                job_title=employee_data['job_title'],
+                original_employee_pk=employee_data['original_employee_pk'],  # FIXED: Set original PK
+                business_function=employee_data['business_function'],
+                department=employee_data['department'],
+                unit=employee_data['unit'],
+                job_function=employee_data['job_function'],
+                position_group=employee_data['position_group'],
+                grading_level=employee_data['grading_level'],
+                reporting_to=employee_data['reporting_to'],
+                include_in_headcount=True,
+                is_visible_in_org_chart=employee_data['is_visible_in_org_chart'],
+                notes=employee_data['notes'],
+                created_by=user
+            )
+            
+            # Update direct reports to report to this employee's manager
+            if employee.line_manager:
+                direct_reports = employee.direct_reports.filter(is_deleted=False)
+                for report in direct_reports:
+                    report.line_manager = employee.line_manager
+                    report.updated_by = user
+                    report.save()
+            
+            # Create archive record BEFORE soft deletion
+            archive = employee._create_archive_record(
+                deletion_notes=f"Employee bulk soft deleted and vacancy {vacancy.position_id} created. Reason: {reason}",
+                deleted_by=user,
+                preserve_original_data=True
+            )
+            
+            # Soft delete the employee
+            employee.soft_delete(user)
+            
+            # Log the soft delete activity
+            EmployeeActivity.objects.create(
+                employee=employee,
+                activity_type='SOFT_DELETED',
+                description=f"Employee {employee.full_name} bulk soft deleted, vacancy {vacancy.position_id} created, and archived",
+                performed_by=user,
+                metadata={
+                    'delete_type': 'bulk_soft_with_vacancy',
+                    'vacancy_created': True,
+                    'vacancy_id': vacancy.id,
+                    'vacancy_position_id': vacancy.position_id,
+                    'employee_data_preserved': True,
+                    'can_be_restored': True,
+                    'archive_id': archive.id if archive else None,
+                    'archive_reference': archive.get_archive_reference() if archive else None,
+                    'original_employee_pk': employee.pk,  # FIXED: Store for restoration
+                    'bulk_operation': True
+                }
+            )
+            
+            return vacancy, archive
+            
+        except Exception as e:
+            logger.error(f"Manual bulk soft delete failed for employee {employee.employee_id}: {str(e)}")
+            raise e
     
     @swagger_auto_schema(
     method='post',
@@ -3414,6 +4633,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 {'error': f'Failed to provide clarification: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )   
+    
     @swagger_auto_schema(
         method='post',
         operation_description="Remove tag from multiple employees",
@@ -3722,106 +4942,6 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             
         except Exception as e:
             return Response({'error': f'Bulk contract update failed: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-    @swagger_auto_schema(
-        method='post',
-        operation_description="Soft delete multiple employees",
-        request_body=BulkSoftDeleteSerializer,
-        responses={200: "Employees soft deleted successfully", 400: "Bad request"}
-    )
-    @action(detail=False, methods=['post'], url_path='soft-delete')
-    def bulk_soft_delete(self, request):
-        """Soft delete multiple employees using employee IDs"""
-        serializer = BulkSoftDeleteSerializer(data=request.data)
-        if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-        
-        employee_ids = serializer.validated_data['employee_ids']
-        
-        try:
-            with transaction.atomic():
-                employees = Employee.objects.filter(id__in=employee_ids, is_deleted=False)
-                deleted_count = 0
-                results = []
-                
-                for employee in employees:
-                    employee.soft_delete(user=request.user)
-                    deleted_count += 1
-                    
-                    # Log activity
-                    EmployeeActivity.objects.create(
-                        employee=employee,
-                        activity_type='SOFT_DELETED',
-                        description=f"Employee {employee.full_name} was soft deleted (bulk operation)",
-                        performed_by=request.user,
-                        metadata={'bulk_delete': True}
-                    )
-                    
-                    results.append({
-                        'employee_id': employee.id,
-                        'employee_name': employee.full_name,
-                        'status': 'deleted'
-                    })
-                
-                return Response({
-                    'success': True,
-                    'message': f'Successfully soft deleted {deleted_count} employees',
-                    'total_requested': len(employee_ids),
-                    'deleted_count': deleted_count,
-                    'results': results
-                })
-        except Exception as e:
-            return Response({'error': f'Soft delete failed: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-    
-    @swagger_auto_schema(
-        method='post',
-        operation_description="Restore multiple soft-deleted employees",
-        request_body=BulkRestoreSerializer,
-        responses={200: "Employees restored successfully", 400: "Bad request"}
-    )
-    @action(detail=False, methods=['post'], url_path='restore')
-    def bulk_restore(self, request):
-        """Restore multiple soft-deleted employees using employee IDs"""
-        serializer = BulkRestoreSerializer(data=request.data)
-        if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-        
-        employee_ids = serializer.validated_data['employee_ids']
-        
-        try:
-            with transaction.atomic():
-                employees = Employee.all_objects.filter(id__in=employee_ids, is_deleted=True)
-                restored_count = 0
-                results = []
-                
-                for employee in employees:
-                    employee.restore()
-                    restored_count += 1
-                    
-                    # Log activity
-                    EmployeeActivity.objects.create(
-                        employee=employee,
-                        activity_type='RESTORED',
-                        description=f"Employee {employee.full_name} was restored (bulk operation)",
-                        performed_by=request.user,
-                        metadata={'bulk_restore': True}
-                    )
-                    
-                    results.append({
-                        'employee_id': employee.id,
-                        'employee_name': employee.full_name,
-                        'status': 'restored'
-                    })
-                
-                return Response({
-                    'success': True,
-                    'message': f'Successfully restored {restored_count} employees',
-                    'total_requested': len(employee_ids),
-                    'restored_count': restored_count,
-                    'results': results
-                })
-        except Exception as e:
-            return Response({'error': f'Restore failed: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
     @action(detail=False, methods=['get'], url_path='contract-expiry-alerts')
     def get_contract_expiry_alerts(self, request):
@@ -4305,7 +5425,6 @@ class EmployeeGradingViewSet(viewsets.ViewSet):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
-
 class OrgChartFilter:
     """
     Comprehensive filter system for organizational chart
@@ -4765,10 +5884,7 @@ class OrgChartViewSet(viewsets.ReadOnlyModelViewSet):
                 } if vacancy.reporting_to else None,
                 'employee_details': {
                     'internal_id': vacancy.id,
-                    'vacancy_type': vacancy.get_vacancy_type_display(),
-                    'urgency': vacancy.get_urgency_display(),
-                    'expected_start_date': vacancy.expected_start_date,
-                    'days_open': (timezone.now().date() - vacancy.created_at.date()).days,
+      
                     'is_vacancy': True
                 }
             }

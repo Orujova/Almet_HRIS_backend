@@ -1,0 +1,52 @@
+INFO 2025-09-16 01:43:13,903 views 37104 17500 === Microsoft authentication request received ===
+INFO 2025-09-16 01:43:13,904 views 37104 17500 Request method: POST
+INFO 2025-09-16 01:43:13,904 views 37104 17500 Request headers: {'Content-Length': '1289', 'Content-Type': 'application/json', 'Host': 'localhost:8000', 'Connection': 'keep-alive', 'Sec-Ch-Ua-Platform': '"Windows"', 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36', 'Accept': 'application/json, text/plain, */*', 'Sec-Ch-Ua': '"Chromium";v="140", "Not=A?Brand";v="24", "Google Chrome";v="140"', 'Sec-Ch-Ua-Mobile': '?0', 'Origin': 'http://localhost:3000', 'Sec-Fetch-Site': 'same-site', 'Sec-Fetch-Mode': 'cors', 'Sec-Fetch-Dest': 'empty', 'Referer': 'http://localhost:3000/', 'Accept-Encoding': 'gzip, deflate, br, zstd', 'Accept-Language': 'en-US,en;q=0.9'}
+INFO 2025-09-16 01:43:13,905 views 37104 17500 Request data keys: ['id_token']
+INFO 2025-09-16 01:43:13,906 views 37104 17500 Microsoft authentication attempt - validating token
+INFO 2025-09-16 01:43:13,906 views 37104 17500 Token length: 1274
+INFO 2025-09-16 01:43:13,906 auth 37104 17500 === Starting Microsoft token validation ===
+INFO 2025-09-16 01:43:13,906 auth 37104 17500 Received token: eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiIsImtpZCI6IkpZaE...
+INFO 2025-09-16 01:43:13,907 auth 37104 17500 === Token payload ===
+INFO 2025-09-16 01:43:13,907 auth 37104 17500 {
+  "aud": "230458ff-ed69-4abb-8496-3888067116f6",
+  "iss": "https://login.microsoftonline.com/b3222ef7-242d-4724-a665-97b0a764f2d0/v2.0",
+  "iat": 1757971675,
+  "nbf": 1757971675,
+  "exp": 1757975575,
+  "email": "n.orujova@almettrading.com",
+  "name": "Narmin Orujova",
+  "nonce": "01994c47-7fe6-7378-ab46-94637d46dd22",
+  "oid": "2c74167f-d69a-43a5-a1e6-910fd8560625",
+  "preferred_username": "n.orujova@almettrading.com",
+  "rh": "1.ATkA9y4isy0kJEemZZewp2Ty0P9YBCNp7btKhJY4iAZxFvaqARM5AA.",
+  "sid": "008b7f09-04df-b08a-3f7b-3a768519ff74",
+  "sub": "i7rUkArSkR21ADRGNhKBNmJkwt25_DaBfDeIyBhUpf4",
+  "tid": "b3222ef7-242d-4724-a665-97b0a764f2d0",
+  "uti": "MGX1wCHo0kGSvxIgYrIUAA",
+  "ver": "2.0"
+}
+INFO 2025-09-16 01:43:13,908 auth 37104 17500 Audience from token: 230458ff-ed69-4abb-8496-3888067116f6
+INFO 2025-09-16 01:43:13,909 auth 37104 17500 Expected audience: 230458ff-ed69-4abb-8496-3888067116f6
+INFO 2025-09-16 01:43:13,910 auth 37104 17500 Microsoft ID (sub): i7rUkArSkR21ADRGNhKBNmJkwt25_DaBfDeIyBhUpf4
+INFO 2025-09-16 01:43:13,910 auth 37104 17500 Full name from token: Narmin Orujova
+INFO 2025-09-16 01:43:13,911 auth 37104 17500 Extracted user info: email=n.orujova@almettrading.com, first_name=Narmin, last_name=Orujova
+INFO 2025-09-16 01:43:13,960 auth 37104 17500 Found existing Microsoft user: n.orujova
+INFO 2025-09-16 01:43:13,961 auth 37104 17500 === Token validation successful for user: n.orujova ===
+INFO 2025-09-16 01:43:13,961 views 37104 17500 Token validated successfully for user: n.orujova
+INFO 2025-09-16 01:43:13,963 views 37104 17500 JWT tokens generated for user: n.orujova
+INFO 2025-09-16 01:43:13,963 views 37104 17500 Returning successful response for user: n.orujova
+INFO 2025-09-16 01:46:45,489 views 37104 40624 User info request for user: n.orujova
+INFO 2025-09-16 01:46:45,532 views 37104 40624 [n.orujova] No employee profile found
+INFO 2025-09-16 01:46:45,533 views 37104 40624 [n.orujova] User info response prepared successfully
+INFO 2025-09-16 01:49:54,666 views 37104 41192 User info request for user: n.orujova
+INFO 2025-09-16 01:49:54,689 views 37104 41192 [n.orujova] No employee profile found
+INFO 2025-09-16 01:49:54,690 views 37104 41192 [n.orujova] User info response prepared successfully
+INFO 2025-09-16 01:50:10,611 views 37104 42568 User info request for user: n.orujova
+INFO 2025-09-16 01:50:10,632 views 37104 42568 [n.orujova] No employee profile found
+INFO 2025-09-16 01:50:10,634 views 37104 42568 [n.orujova] User info response prepared successfully
+INFO 2025-09-16 01:50:11,024 views 37104 31156 User info request for user: n.orujova
+INFO 2025-09-16 01:50:11,035 views 37104 31156 [n.orujova] No employee profile found
+INFO 2025-09-16 01:50:11,037 views 37104 31156 [n.orujova] User info response prepared successfully
+INFO 2025-09-16 02:03:35,268 views 37104 30884 User info request for user: n.orujova
+INFO 2025-09-16 02:03:35,305 views 37104 30884 [n.orujova] No employee profile found
+INFO 2025-09-16 02:03:35,311 views 37104 30884 [n.orujova] User info response prepared successfully

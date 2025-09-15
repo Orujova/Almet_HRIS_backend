@@ -939,22 +939,22 @@ class VacantPositionAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
     """ENHANCED: Vacant Position admin with headcount integration"""
     list_display = (
         'position_id', 'display_name_formatted', 'business_function_display', 'department_display',
-        'vacancy_type', 'urgency_display', 'expected_start_date', 
-        'reporting_to_display', 'headcount_status_display', 'filled_status_display', 
-        'days_open_display', 'is_deleted_display'
+       
+        'reporting_to_display', 'headcount_status_display', 
+     'is_deleted_display'
     )
     list_filter = (
-        'business_function', 'department', 'vacancy_type', 'urgency', 
+        'business_function', 'department',
         'is_filled', 'include_in_headcount', 'is_visible_in_org_chart',
-        'expected_start_date', 'created_at', 'is_deleted'
+        'created_at', 'is_deleted'
     )
-    search_fields = ('position_id', 'title', 'description', 'display_name')
+    search_fields = ('position_id', 'title',  'display_name')
     autocomplete_fields = ['reporting_to', 'filled_by_employee', 'created_by']  # FIXED: use filled_by_employee
     readonly_fields = ('display_name', 'filled_date', 'created_at', 'updated_at', 'vacancy_status')
     
     fieldsets = (
         ('Basic Information', {
-            'fields': ('position_id', 'title', 'description', 'display_name')
+            'fields': ('position_id', 'title',  'display_name')
         }),
         ('Organizational Structure', {
             'fields': (
@@ -962,21 +962,7 @@ class VacantPositionAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
                 ('job_function', 'position_group', 'grading_level')
             )
         }),
-        ('Vacancy Details', {
-            'fields': (
-                ('vacancy_type', 'urgency'),
-                'expected_start_date',
-                ('expected_salary_range_min', 'expected_salary_range_max')
-            )
-        }),
-        ('Headcount & Visibility', {
-            'fields': (
-                'include_in_headcount', 
-                'is_visible_in_org_chart',
-                'vacancy_status'
-            ),
-            'description': 'Controls how this vacancy appears in headcount and organizational charts'
-        }),
+    
         ('Management', {
             'fields': ('reporting_to', 'created_by')
         }),
@@ -1021,21 +1007,7 @@ class VacantPositionAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
         return format_html('<div style="{}">{}</div>', style, obj.department.name)
     department_display.short_description = 'Department'
     
-    def urgency_display(self, obj):
-        colors = {
-            'LOW': '#28a745',
-            'MEDIUM': '#ffc107', 
-            'HIGH': '#fd7e14',
-            'CRITICAL': '#dc3545'
-        }
-        color = colors.get(obj.urgency, '#6c757d')
-        style = 'opacity: 0.5;' if obj.is_deleted else ''
-        return format_html(
-            '<span style="background: {}; color: white; padding: 3px 8px; border-radius: 10px; font-size: 11px; font-weight: bold; {}">{}🔥</span>',
-            color, style, obj.get_urgency_display()
-        )
-    urgency_display.short_description = 'Urgency'
-    urgency_display.admin_order_field = 'urgency'
+
     
     def reporting_to_display(self, obj):
         if obj.reporting_to and not obj.reporting_to.is_deleted:
@@ -1066,64 +1038,9 @@ class VacantPositionAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
             )
     headcount_status_display.short_description = 'Headcount Status'
     
-    def filled_status_display(self, obj):
-        if obj.is_filled:
-            if obj.filled_by_employee:  # FIXED: use filled_by_employee
-                url = reverse('admin:api_employee_change', args=[obj.filled_by_employee.id])
-                return format_html(
-                    '<span style="color: green;">✓ Filled</span><br><small><a href="{}" style="color: #417690;">{}</a></small>',
-                    url, obj.filled_by_employee.full_name
-                )
-            else:
-                return format_html('<span style="color: green;">✓ Filled</span>')
-        
-        # Show vacancy icon based on urgency
-        urgency_icons = {
-            'CRITICAL': '🚨',
-            'HIGH': '⚡',
-            'MEDIUM': '⏳',
-            'LOW': '💭'
-        }
-        icon = urgency_icons.get(obj.urgency, '○')
-        
-        return format_html('<span style="color: orange;">{} Open</span>', icon)
-    filled_status_display.short_description = 'Fill Status'
+   
     
-    def days_open_display(self, obj):
-        if obj.is_filled and obj.filled_date:
-            days = (obj.filled_date - obj.created_at.date()).days
-            return format_html(
-                '<span style="color: green;">{} days</span><br><small style="color: #666;">Filled on {}</small>',
-                days, obj.filled_date.strftime('%d/%m/%Y')
-            )
-        else:
-            days = (date.today() - obj.created_at.date()).days
-            
-            # Color coding based on how long it's been open
-            if days > 90:
-                color = '#dc3545'  # Red - very long
-                icon = '🚨'
-            elif days > 60:
-                color = '#fd7e14'  # Orange - long
-                icon = '⚠️'
-            elif days > 30:
-                color = '#ffc107'  # Yellow - moderate
-                icon = '⏰'
-            else:
-                color = '#28a745'  # Green - recent
-                icon = '🆕'
-            
-            return format_html(
-                '<span style="color: {}; font-weight: bold;">{} {} days</span><br><small style="color: #666;">Since {}</small>',
-                color, icon, days, obj.created_at.strftime('%d/%m/%Y')
-            )
-    days_open_display.short_description = 'Days Open'
-    
-    actions = [
-        'mark_as_filled', 'reopen_vacancies', 'include_in_headcount', 
-        'exclude_from_headcount', 'show_in_org_chart', 'hide_from_org_chart',
-        'generate_vacancy_report', 'convert_to_employees'
-    ]
+   
     
     def mark_as_filled(self, request, queryset):
         """Mark selected vacancies as filled (without specifying employee)"""
@@ -1135,19 +1052,7 @@ class VacantPositionAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
         self.message_user(request, f'Marked {count} vacancies as filled and removed from headcount.')
     mark_as_filled.short_description = 'Mark as filled'
     
-    def reopen_vacancies(self, request, queryset):
-        """Reopen filled vacancies"""
-        count = 0
-        for vacancy in queryset.filter(is_filled=True):
-            vacancy.is_filled = False
-            vacancy.filled_by_employee = None
-            vacancy.filled_date = None
-            vacancy.include_in_headcount = True  # Add back to headcount
-            vacancy.save()
-            count += 1
-        
-        self.message_user(request, f'Reopened {count} vacancies and added back to headcount.')
-    reopen_vacancies.short_description = 'Reopen filled vacancies'
+
     
     def include_in_headcount(self, request, queryset):
         """Include selected vacancies in headcount"""
@@ -1191,16 +1096,16 @@ class VacantPositionAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
         
         writer = csv.writer(response)
         writer.writerow([
-            'Position ID', 'Title', 'Display Name', 'Business Function', 'Department', 'Unit',
+            'Position ID', 'Title',  'Business Function', 'Department', 'Unit',
             'Job Function', 'Position Group', 'Grading Level',
-            'Vacancy Type', 'Urgency', 'Expected Start Date', 
-            'Expected Salary Min', 'Expected Salary Max',
+        
+   
             'Reports To', 'Status', 'In Headcount', 'Visible in Org Chart',
-            'Days Open', 'Filled By', 'Filled Date', 'Created Date', 'Created By'
+         'Filled By', 'Filled Date', 'Created Date', 'Created By'
         ])
         
         for vacancy in queryset:
-            days_open = (date.today() - vacancy.created_at.date()).days
+
             writer.writerow([
                 vacancy.position_id,
                 vacancy.title,
@@ -1211,16 +1116,12 @@ class VacantPositionAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
                 vacancy.job_function.name,
                 vacancy.position_group.get_name_display(),
                 vacancy.grading_level,
-                vacancy.get_vacancy_type_display(),
-                vacancy.get_urgency_display(),
-                vacancy.expected_start_date,
-                vacancy.expected_salary_range_min or '',
-                vacancy.expected_salary_range_max or '',
+              
                 vacancy.reporting_to.full_name if vacancy.reporting_to else '',
                 'Filled' if vacancy.is_filled else 'Open',
                 'Yes' if vacancy.include_in_headcount else 'No',
                 'Yes' if vacancy.is_visible_in_org_chart else 'No',
-                days_open,
+          
                 vacancy.filled_by.full_name if vacancy.filled_by else '',
                 vacancy.filled_date or '',
                 vacancy.created_at.date(),
