@@ -81,7 +81,7 @@ class JobDescription(models.Model):
     
     # Job details
     job_purpose = models.TextField(
-        validators=[MinLengthValidator(50)],
+        validators=[MinLengthValidator(5)],
         help_text="Main purpose and objectives of the role"
     )
     

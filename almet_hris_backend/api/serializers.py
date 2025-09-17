@@ -195,10 +195,15 @@ class VacantPositionListSerializer(serializers.ModelSerializer):
     """ENHANCED: List serializer with employee-like fields and business function based ID"""
     business_function_name = serializers.CharField(source='business_function.name', read_only=True)
     business_function_code = serializers.CharField(source='business_function.code', read_only=True)
+    business_function_id = serializers.CharField(source='business_function.id', read_only=True)
     department_name = serializers.CharField(source='department.name', read_only=True)
+    department_id = serializers.CharField(source='department.id', read_only=True)
     unit_name = serializers.CharField(source='unit.name', read_only=True)
+    unit_id = serializers.CharField(source='unit.id', read_only=True)
     job_function_name = serializers.CharField(source='job_function.name', read_only=True)
+    job_function_id = serializers.CharField(source='job_function.id', read_only=True)
     position_group_name = serializers.CharField(source='position_group.get_name_display', read_only=True)
+    position_group_id = serializers.IntegerField(source='position_group.id', read_only=True)
     position_group_level = serializers.IntegerField(source='position_group.hierarchy_level', read_only=True)
     reporting_to_name = serializers.CharField(source='reporting_to.full_name', read_only=True)
     reporting_to_hc_number = serializers.CharField(source='reporting_to.employee_id', read_only=True)
@@ -220,8 +225,8 @@ class VacantPositionListSerializer(serializers.ModelSerializer):
         model = VacantPosition
         fields = [
             # Employee-like fields for unified display
-            'id', 'employee_id',  'job_title', 'business_function_name', 'business_function_code',
-            'department_name', 'unit_name', 'job_function_name', 'position_group_name', 'position_group_level',
+            'id', 'employee_id',  'job_title', 'business_function_name', 'business_function_code','business_function_id',
+            'department_name', 'department_id','unit_name','unit_id', 'job_function_name','job_function_id', 'position_group_name', 'position_group_level','position_group_id',
             'grading_level',  'status_name', 'status_color',
             'reporting_to_name', 'reporting_to_hc_number', 'is_visible_in_org_chart',
             'is_filled', 'filled_by_name', 'filled_date', 'include_in_headcount',
@@ -516,6 +521,7 @@ class VacancyToEmployeeConversionSerializer(serializers.Serializer):
             )
             
             return employee
+
 class EmployeeDocumentSerializer(serializers.ModelSerializer):
     uploaded_by_name = serializers.CharField(source='uploaded_by.username', read_only=True)
     file_size_display = serializers.CharField(source='get_file_size_display', read_only=True)
@@ -676,11 +682,16 @@ class EmployeeListSerializer(serializers.ModelSerializer):
     email = serializers.CharField(source='user.email', read_only=True)
     business_function_name = serializers.CharField(source='business_function.name', read_only=True)
     business_function_code = serializers.CharField(source='business_function.code', read_only=True)
+    business_function_id = serializers.CharField(source='business_function.id', read_only=True)
     department_name = serializers.CharField(source='department.name', read_only=True)
+    department_id = serializers.CharField(source='department.id', read_only=True)
     unit_name = serializers.CharField(source='unit.name', read_only=True)
+    unit_id = serializers.CharField(source='unit.id', read_only=True)
     job_function_name = serializers.CharField(source='job_function.name', read_only=True)
+    job_function_id = serializers.CharField(source='job_function.id', read_only=True)
     position_group_name = serializers.CharField(source='position_group.get_name_display', read_only=True)
     position_group_level = serializers.IntegerField(source='position_group.hierarchy_level', read_only=True)
+    position_group_id = serializers.IntegerField(source='position_group.id', read_only=True)
     line_manager_name = serializers.CharField(source='line_manager.full_name', read_only=True)
     line_manager_hc_number = serializers.CharField(source='line_manager.employee_id', read_only=True)
     status_name = serializers.CharField(source='status.name', read_only=True)
@@ -701,12 +712,13 @@ class EmployeeListSerializer(serializers.ModelSerializer):
     class Meta:
         model = Employee
         fields = [
+
             'id', 'employee_id', 'name', 'email','father_name', 'date_of_birth', 'gender',  'phone',
-            'business_function_name', 'business_function_code', 'department_name', 'unit_name',
-            'job_function_name', 'job_title', 'position_group_name', 'position_group_level',
-            'grading_level',  'start_date', 'end_date',
+            'business_function_name', 'business_function_code','business_function_id', 'department_name', 'unit_name',
+            'job_function_name', 'job_title', 'position_group_name', 'position_group_level','department_id',
+            'grading_level',  'start_date', 'end_date','unit_id','position_group_id',
             'contract_duration', 'contract_duration_display', 'contract_start_date', 'contract_end_date',
-            'contract_extensions', 'last_extension_date',  
+            'contract_extensions', 'last_extension_date',  'job_function_id',
             'line_manager_name', 'line_manager_hc_number', 'status_name', 'status_color',
             'tag_names', 'years_of_service', 'current_status_display', 'is_visible_in_org_chart',
             'direct_reports_count', 'status_needs_update', 'created_at', 'updated_at','profile_image_url','is_deleted','is_vacancy',
@@ -1195,6 +1207,7 @@ class EmployeeDetailSerializer(serializers.ModelSerializer):
         except Exception as e:
             logger.error(f"Error getting pending team job descriptions for manager {obj.employee_id}: {e}")
             return []
+
 class EmployeeJobDescriptionSerializer(serializers.ModelSerializer):
     """Simple job description serializer for employee views"""
     
@@ -1231,8 +1244,6 @@ class EmployeeJobDescriptionSerializer(serializers.ModelSerializer):
     
     def get_days_since_created(self, obj):
         return (timezone.now() - obj.created_at).days
-
-
 
 class BulkSoftDeleteSerializer(serializers.Serializer):
     """Simple serializer for bulk soft delete operations"""
@@ -1354,6 +1365,7 @@ class ManagerJobDescriptionSerializer(serializers.ModelSerializer):
             return 'high'
         else:
             return 'normal'
+
 class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
     """Serializer for creating and updating employees with auto-generated employee_id"""
     
