@@ -1085,25 +1085,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             'tags', 'documents', 'activities'
         ).all()
     
-    def _convert_boolean_fields(self, data):
-        """Convert string boolean values to actual booleans"""
-        boolean_fields = ['is_visible_in_org_chart']
-        
-        for field in boolean_fields:
-            if field in data:
-                value = data[field]
-                if isinstance(value, str):
-                    # Convert string representations to boolean
-                    data[field] = value.lower() in ['true', '1', 'yes', 'on']
-                elif isinstance(value, bool):
-                    # Already a boolean, keep as is
-                    pass
-                else:
-                    # For any other type, convert to boolean
-                    data[field] = bool(value)
-        
-        return data
-
+    
     def _clean_form_data(self, data):
         """Comprehensive data cleaning for form data"""
         cleaned_data = {}
@@ -2660,77 +2642,164 @@ class EmployeeViewSet(viewsets.ModelViewSet):
    
     @action(detail=False, methods=['post'])
     def export_selected(self, request):
-        """Export selected employees to Excel or CSV"""
-        serializer = EmployeeExportSerializer(data=request.data)
-        if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-        
-        employee_ids = serializer.validated_data.get('employee_ids', [])
-        export_format = serializer.validated_data.get('export_format', 'excel')
-        include_fields = serializer.validated_data.get('include_fields', None)
-        
-        # Get queryset
-        if employee_ids:
-            queryset = Employee.objects.filter(id__in=employee_ids)
-        else:
-            # If no specific IDs, use filtered results
-            queryset = self.get_queryset()
-            employee_filter = ComprehensiveEmployeeFilter(queryset, request.query_params)
-            queryset = employee_filter.filter()
-        
-        # Apply sorting
-        sort_params = request.query_params.get('ordering', '').split(',')
-        sort_params = [param.strip() for param in sort_params if param.strip()]
-        employee_sorter = AdvancedEmployeeSorter(queryset, sort_params)
-        queryset = employee_sorter.sort()
-        
-        # Define default fields for export (ENHANCED with father_name)
-        default_fields = [
-            'employee_id', 'name', 'email', 'job_title', 'business_function_name',
-            'department_name', 'unit_name', 'position_group_name', 'grading_display',
-            'status_name', 'line_manager_name', 'start_date', 'contract_duration_display',
-            'phone', 'father_name', 'years_of_service'
-        ]
-        
-        # Use custom fields if provided
-        fields_to_include = include_fields if include_fields else default_fields
-        
-        if export_format == 'excel':
-            return self._export_to_excel(queryset, fields_to_include)
-        else:
-            return self._export_to_csv(queryset, fields_to_include)
+        """COMPLETELY FIXED: Export selected employees to Excel or CSV with proper field handling"""
+        try:
+            # Extract data from request
+            export_format = request.data.get('export_format', 'excel')
+            employee_ids = request.data.get('employee_ids', [])
+            include_fields = request.data.get('include_fields', None)
+            
+            logger.info(f"🎯 FIXED Export request: format={export_format}, employee_ids={len(employee_ids) if employee_ids else 0}, fields={len(include_fields) if include_fields else 0}")
+            
+            # Build queryset
+            if employee_ids:
+                # Selected employees export
+                queryset = Employee.objects.filter(id__in=employee_ids)
+                logger.info(f"📋 FIXED: Exporting {len(employee_ids)} selected employees")
+            else:
+                # Filtered or all employees export
+                queryset = self.get_queryset()
+                
+                # Apply filtering from query parameters
+                employee_filter = ComprehensiveEmployeeFilter(queryset, request.query_params)
+                queryset = employee_filter.filter()
+                logger.info(f"🔍 FIXED: Exporting {queryset.count()} filtered employees")
+            
+            # Apply sorting
+            sort_params = request.query_params.get('ordering', '').split(',')
+            sort_params = [param.strip() for param in sort_params if param.strip()]
+            if sort_params:
+                employee_sorter = AdvancedEmployeeSorter(queryset, sort_params)
+                queryset = employee_sorter.sort()
+            
+            # COMPLETELY FIXED: Enhanced field mapping for export
+            complete_field_mappings = {
+                # Basic Information
+                'employee_id': 'Employee ID',
+                'name': 'Full Name',
+                'email': 'Email',
+                'father_name': 'Father Name',
+                'date_of_birth': 'Date of Birth',
+                'gender': 'Gender',
+                'phone': 'Phone',
+                'address': 'Address',
+                'emergency_contact': 'Emergency Contact',
+                
+                # Job Information
+                'job_title': 'Job Title',
+                'business_function_name': 'Business Function',
+                'business_function_code': 'Business Function Code',
+                'business_function_id': 'Business Function ID',
+                'department_name': 'Department',
+                'department_id': 'Department ID',
+                'unit_name': 'Unit',
+                'unit_id': 'Unit ID',
+                'job_function_name': 'Job Function',
+                'job_function_id': 'Job Function ID',
+                
+                # Position & Grading
+                'position_group_name': 'Position Group',
+                'position_group_level': 'Position Level',
+                'position_group_id': 'Position Group ID',
+                'grading_level': 'Grade Level',
+                
+                # Management
+                'line_manager_name': 'Line Manager',
+                'line_manager_hc_number': 'Manager Employee ID',
+                'direct_reports_count': 'Direct Reports Count',
+                
+                # Contract & Employment
+                'contract_duration': 'Contract Duration',
+                'contract_duration_display': 'Contract Duration Display',
+                'contract_start_date': 'Contract Start Date',
+                'contract_end_date': 'Contract End Date',
+                'contract_extensions': 'Contract Extensions',
+                'last_extension_date': 'Last Extension Date',
+                'start_date': 'Start Date',
+                'end_date': 'End Date',
+                'years_of_service': 'Years of Service',
+                
+                # Status
+                'status_name': 'Employment Status',
+                'status_color': 'Status Color',
+                'current_status_display': 'Current Status Display',
+                'status_needs_update': 'Status Needs Update',
+                'is_visible_in_org_chart': 'Visible in Org Chart',
+                
+                # Tags
+                'tag_names': 'Tags',
+                
+                # Dates & Metadata
+                'created_at': 'Created Date',
+                'updated_at': 'Last Updated',
+                'is_deleted': 'Is Deleted',
+                
+                # Additional Fields
+                'documents_count': 'Documents Count',
+                'activities_count': 'Activities Count',
+                'profile_image_url': 'Profile Image URL'
+            }
+            
+            # Determine fields to export
+            if include_fields and isinstance(include_fields, list) and len(include_fields) > 0:
+                # Use specified fields
+                fields_to_include = include_fields
+                logger.info(f"📊 FIXED: Using {len(fields_to_include)} specified fields")
+            else:
+                # Use default essential fields
+                fields_to_include = [
+                    'employee_id', 'name', 'email', 'job_title', 'business_function_name',
+                    'department_name', 'unit_name', 'position_group_name', 'grading_level',
+                    'status_name', 'line_manager_name', 'start_date', 'contract_duration_display',
+                    'phone', 'father_name', 'years_of_service'
+                ]
+                logger.info(f"📊 FIXED: Using {len(fields_to_include)} default fields")
+            
+            # Filter out invalid fields and log which ones are valid
+            valid_fields = []
+            invalid_fields = []
+            
+            for field in fields_to_include:
+                if field in complete_field_mappings:
+                    valid_fields.append(field)
+                else:
+                    invalid_fields.append(field)
+            
+            if invalid_fields:
+                logger.warning(f"⚠️ FIXED: Invalid fields ignored: {invalid_fields}")
+            
+            if not valid_fields:
+                # Fallback to basic fields if no valid fields
+                valid_fields = ['employee_id', 'name', 'email', 'job_title', 'department_name']
+                logger.warning("⚠️ FIXED: No valid fields, using fallback basic fields")
+            
+            logger.info(f"✅ FIXED: Exporting with {len(valid_fields)} valid fields: {valid_fields}")
+            
+            # Export based on format
+            if export_format == 'csv':
+                return self._export_to_csv_fixed(queryset, valid_fields, complete_field_mappings)
+            else:
+                return self._export_to_excel_fixed(queryset, valid_fields, complete_field_mappings)
+                
+        except Exception as e:
+            logger.error(f"❌ FIXED Export failed: {str(e)}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return Response(
+                {'error': f'Export failed: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
     
-    def _export_to_excel(self, queryset, fields):
-        """Export employees to Excel format with styling"""
+    def _export_to_excel_fixed(self, queryset, fields, field_mappings):
+        """COMPLETELY FIXED: Export employees to Excel with proper field handling"""
         from openpyxl import Workbook
-        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+        from openpyxl.styles import Font, PatternFill, Alignment
         
         wb = Workbook()
         ws = wb.active
         ws.title = "Employees Export"
         
-        # Field mappings for headers (ENHANCED with father_name)
-        field_headers = {
-            'employee_id': 'Employee ID',
-            'name': 'Full Name',
-            'email': 'Email',
-            'job_title': 'Job Title',
-            'business_function_name': 'Business Function',
-            'department_name': 'Department',
-            'unit_name': 'Unit',
-            'position_group_name': 'Position Group',
-            'grading_display': 'Grade',
-            'status_name': 'Status',
-            'line_manager_name': 'Line Manager',
-            'start_date': 'Start Date',
-            'contract_duration_display': 'Contract Duration',
-            'phone': 'Phone',
-            'father_name': 'Father Name',
-            'years_of_service': 'Years of Service'
-        }
-        
-        # Write headers
-        headers = [field_headers.get(field, field.replace('_', ' ').title()) for field in fields]
+        # Write headers using field mappings
+        headers = [field_mappings.get(field, field.replace('_', ' ').title()) for field in fields]
         ws.append(headers)
         
         # Style headers
@@ -2744,13 +2813,38 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             cell.alignment = header_alignment
         
         # Write data
-        serializer = EmployeeListSerializer(queryset, many=True)
+        serializer = EmployeeListSerializer(queryset, many=True, context={'request': self.request})
+        
         for employee_data in serializer.data:
             row_data = []
             for field in fields:
                 value = employee_data.get(field, '')
-                if value is None:
+                
+                # Handle special field processing
+                if field == 'tag_names':
+                    # Convert tag objects to comma-separated names
+                    if isinstance(value, list):
+                        tag_names = []
+                        for tag in value:
+                            if isinstance(tag, dict) and 'name' in tag:
+                                tag_names.append(tag['name'])
+                            elif isinstance(tag, str):
+                                tag_names.append(tag)
+                        value = ', '.join(tag_names)
+                    elif not value:
+                        value = ''
+                elif field == 'status_needs_update':
+                    # Convert boolean to Yes/No
+                    value = 'Yes' if value else 'No'
+                elif field == 'is_visible_in_org_chart':
+                    # Convert boolean to Yes/No
+                    value = 'Yes' if value else 'No'
+                elif field == 'is_deleted':
+                    # Convert boolean to Yes/No
+                    value = 'Yes' if value else 'No'
+                elif value is None:
                     value = ''
+                
                 row_data.append(str(value))
             ws.append(row_data)
         
@@ -2772,58 +2866,64 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         wb.save(output)
         output.seek(0)
         
+        # Prepare response
         response = HttpResponse(
             output.getvalue(),
             content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
         )
         response['Content-Disposition'] = f'attachment; filename="employees_export_{date.today()}.xlsx"'
         
+        logger.info(f"✅ FIXED: Excel export completed with {len(fields)} fields for {queryset.count()} employees")
         return response
     
-    def _export_to_csv(self, queryset, fields):
-        """Export employees to CSV format"""
-        response = HttpResponse(content_type='text/csv')
+    def _export_to_csv_fixed(self, queryset, fields, field_mappings):
+        """COMPLETELY FIXED: Export employees to CSV with proper field handling"""
+        response = HttpResponse(content_type='text/csv; charset=utf-8')
         response['Content-Disposition'] = f'attachment; filename="employees_export_{date.today()}.csv"'
+        
+        # Add BOM for proper UTF-8 handling in Excel
+        response.write('\ufeff')
         
         writer = csv.writer(response)
         
-        # Field mappings for headers (ENHANCED with father_name)
-        field_headers = {
-            'employee_id': 'Employee ID',
-            'name': 'Full Name',
-            'email': 'Email',
-            'job_title': 'Job Title',
-            'business_function_name': 'Business Function',
-            'department_name': 'Department',
-            'unit_name': 'Unit',
-            'position_group_name': 'Position Group',
-            'grading_display': 'Grade',
-            'status_name': 'Status',
-            'line_manager_name': 'Line Manager',
-            'start_date': 'Start Date',
-            'contract_duration_display': 'Contract Duration',
-            'phone': 'Phone',
-            'father_name': 'Father Name',
-            'years_of_service': 'Years of Service'
-        }
-        
-        # Write headers
-        headers = [field_headers.get(field, field.replace('_', ' ').title()) for field in fields]
+        # Write headers using field mappings
+        headers = [field_mappings.get(field, field.replace('_', ' ').title()) for field in fields]
         writer.writerow(headers)
         
         # Write data
-        serializer = EmployeeListSerializer(queryset, many=True)
+        serializer = EmployeeListSerializer(queryset, many=True, context={'request': self.request})
+        
         for employee_data in serializer.data:
             row_data = []
             for field in fields:
                 value = employee_data.get(field, '')
-                if value is None:
+                
+                # Handle special field processing (same as Excel)
+                if field == 'tag_names':
+                    if isinstance(value, list):
+                        tag_names = []
+                        for tag in value:
+                            if isinstance(tag, dict) and 'name' in tag:
+                                tag_names.append(tag['name'])
+                            elif isinstance(tag, str):
+                                tag_names.append(tag)
+                        value = ', '.join(tag_names)
+                    elif not value:
+                        value = ''
+                elif field == 'status_needs_update':
+                    value = 'Yes' if value else 'No'
+                elif field == 'is_visible_in_org_chart':
+                    value = 'Yes' if value else 'No'
+                elif field == 'is_deleted':
+                    value = 'Yes' if value else 'No'
+                elif value is None:
                     value = ''
+                
                 row_data.append(str(value))
             writer.writerow(row_data)
         
+        logger.info(f"✅ FIXED: CSV export completed with {len(fields)} fields for {queryset.count()} employees")
         return response
-    
     def _process_bulk_employee_data_from_excel(self, df, user):
         """Excel data-sını process et və employee-lar yarat"""
         results = {
@@ -2983,10 +3083,38 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                     try:
                         # Extract required fields with safe string conversion
                         def safe_get(col_name, default=''):
-                            if col_name in actual_columns:
-                                value = row.get(actual_columns[col_name], default)
-                                return str(value).strip() if value and str(value).strip().lower() != 'nan' else default
-                            return default
+                            """Safely get value from row, handling lists and various data types"""
+                            if col_name not in actual_columns:
+                                return default
+                            
+                            value = row.get(actual_columns[col_name], default)
+                            
+                            # Handle None values
+                            if value is None:
+                                return default
+                            
+                            # Handle list values (pandas sometimes returns lists for cells)
+                            if isinstance(value, list):
+                                if len(value) > 0:
+                                    value = value[0]  # Take first element
+                                else:
+                                    return default
+                            
+                            # Handle pandas Series (can happen with duplicate columns)
+                            if hasattr(value, 'iloc'):
+                                try:
+                                    value = value.iloc[0] if len(value) > 0 else default
+                                except:
+                                    value = default
+                            
+                            # Convert to string and check for empty/nan values
+                            str_value = str(value).strip()
+                            
+                            # Check for various empty representations
+                            if str_value.lower() in ['nan', 'none', 'nat', '', 'null']:
+                                return default
+                            
+                            return str_value
                         
                         employee_id = safe_get('employee_id')
                         first_name = safe_get('first_name')
@@ -3174,28 +3302,28 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                             for tag_spec in tags_str.split(','):
                                 tag_spec = tag_spec.strip()
                                 if ':' in tag_spec:
-                                    tag_name = tag_spec.split(':', 1)
-                                 
-                                    tag_name = tag_name.strip()
-                                    
+                                    # FIXED: Properly handle the split result
+                                    tag_parts = tag_spec.split(':', 1)  # Returns a list [type, name]
+                                    if len(tag_parts) >= 2:
+                                        tag_name = tag_parts[1].strip()  # Get the second part (name) and strip it
+                                    else:
+                                        tag_name = tag_spec.strip()  # Fallback to the whole spec
+                                else:
+                                    # Simple tag name without type
+                                    tag_name = tag_spec.strip()
+                                
+                                if tag_name:  # Only process if we have a valid tag name
+                                    # Get or create tag
                                     tag, created = EmployeeTag.objects.get_or_create(
                                         name=tag_name,
                                         defaults={
-                                          
                                             'is_active': True
                                         }
-                                    )
-                                    tags.append(tag)
-                                else:
-                                    tag, created = EmployeeTag.objects.get_or_create(
-                                        name=tag_spec,
-                                        defaults={ 'is_active': True}
                                     )
                                     tags.append(tag)
                             
                             if tags:
                                 employee.tags.set(tags)
-                        
                         # Log activity
                         EmployeeActivity.objects.create(
                             employee=employee,
@@ -3432,8 +3560,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             })
         except EmployeeTag.DoesNotExist:
             return Response({'error': 'Tag not found'}, status=status.HTTP_404_NOT_FOUND)
-    
-    
+      
     @swagger_auto_schema(
         method='post',
         operation_description="Accept assigned asset (Employee approval)",
@@ -3685,8 +3812,6 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         }
         return colors.get(status, '#6B7280')
         
-    
-   
     @action(detail=False, methods=['get'], url_path='archived-employees')
     def get_archived_employees(self, request):
         """ENHANCED: Get list of ALL archived employees with deletion type filtering"""
@@ -3754,6 +3879,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                     'id': archive.id,
                     'reference': archive.get_archive_reference(),
                     'original_employee_id': archive.original_employee_id,
+                    'original_employee_pk': archive.original_employee_pk,
                     'full_name': archive.full_name,
                     'email': archive.email,
                     'job_title': archive.job_title,
@@ -3830,7 +3956,6 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 {'error': f'Failed to get archived employees: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-    
     
     @swagger_auto_schema(
     method='post',
@@ -4099,6 +4224,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                         # FIXED: Find and DELETE the soft delete archive record
                         soft_delete_archives = EmployeeArchive.objects.filter(
                             original_employee_id=employee.employee_id,
+                      
                             employee_still_exists=True  # Only soft delete archives
                         ).order_by('-deleted_at')
                         

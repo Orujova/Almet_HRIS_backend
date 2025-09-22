@@ -7,7 +7,7 @@ from .job_description_models import (
     CompanyBenefit, JobDescriptionBusinessResource, JobDescriptionAccessMatrix,
     JobDescriptionCompanyBenefit, JobDescriptionActivity
 )
-from .models import BusinessFunction, Department, Unit, PositionGroup, Employee, JobFunction
+from .models import BusinessFunction, Department, Unit, PositionGroup, Employee, JobFunction,VacantPosition
 from .competency_models import Skill, BehavioralCompetency
 from django.contrib.auth.models import User
 
@@ -202,8 +202,10 @@ class JobDescriptionActivitySerializer(serializers.ModelSerializer):
             'performed_by_detail', 'performed_at', 'metadata'
         ]
 
+# Updated sections in JobDescriptionCreateUpdateSerializer
+
 class JobDescriptionCreateUpdateSerializer(serializers.ModelSerializer):
-    """ENHANCED: Manual employee selection for multiple matches"""
+    """ENHANCED: Manual employee and vacancy selection for multiple matches"""
     
     # Keep all existing fields...
     sections = serializers.ListField(
@@ -240,17 +242,17 @@ class JobDescriptionCreateUpdateSerializer(serializers.ModelSerializer):
         required=False
     )
     
-    # NEW: Manual employee selection fields
+    # UPDATED: Manual selection field - now supports both employees and vacancies using same field
     selected_employee_ids = serializers.ListField(
         child=serializers.IntegerField(),
         required=False,
-        help_text="List of specific employee IDs to create job descriptions for (when multiple employees match)"
+        help_text="List of specific position IDs (both employee IDs and vacancy IDs) to create job descriptions for"
     )
     
     # Response fields
     created_job_descriptions = serializers.SerializerMethodField()
-    total_employees_assigned = serializers.SerializerMethodField()
-    requires_employee_selection = serializers.SerializerMethodField()
+    total_positions_assigned = serializers.SerializerMethodField()
+    requires_position_selection = serializers.SerializerMethodField()
     
     class Meta:
         model = JobDescription
@@ -259,8 +261,9 @@ class JobDescriptionCreateUpdateSerializer(serializers.ModelSerializer):
             'unit', 'job_function', 'position_group', 'grading_level',
             'sections', 'required_skills_data', 'behavioral_competencies_data',
             'business_resources_ids', 'access_rights_ids', 'company_benefits_ids',
-            'selected_employee_ids',
-            'created_job_descriptions', 'total_employees_assigned', 'requires_employee_selection'
+            'selected_employee_ids',  # UPDATED: Now handles both employees and vacancies
+            'created_job_descriptions', 'total_positions_assigned', 
+            'requires_position_selection'
         ]
         read_only_fields = ['id', 'assigned_employee', 'reports_to']
     
@@ -271,40 +274,54 @@ class JobDescriptionCreateUpdateSerializer(serializers.ModelSerializer):
                 {
                     'id': str(jd.id),
                     'job_title': jd.job_title,
-                    'employee_name': jd.assigned_employee.full_name,
-                    'employee_id': jd.assigned_employee.employee_id,
+                    'position_type': 'employee' if jd.assigned_employee else 'vacancy',
+                    'position_name': jd.assigned_employee.full_name if jd.assigned_employee else 'Vacant Position',
+                    'position_id': jd.assigned_employee.employee_id if jd.assigned_employee else getattr(jd, 'vacancy_position_id', 'Unknown'),
                     'manager_name': jd.reports_to.full_name if jd.reports_to else None
                 }
                 for jd in obj._created_job_descriptions
             ]
         return []
     
-    def get_total_employees_assigned(self, obj):
-        """Return total number of employees assigned"""
+    def get_total_positions_assigned(self, obj):
+        """Return total number of positions assigned (employees + vacancies)"""
         if hasattr(obj, '_created_job_descriptions'):
             return len(obj._created_job_descriptions)
-        return 1
+        return 0
     
-    def get_requires_employee_selection(self, obj):
-        """Return whether employee selection is required"""
-        return getattr(obj, '_requires_employee_selection', False)
+    def get_requires_position_selection(self, obj):
+        """Return whether position selection is required"""
+        return getattr(obj, '_requires_position_selection', False)
     
     def validate_selected_employee_ids(self, value):
-        """Validate selected employee IDs"""
-        if value:
-            # Check if all provided IDs exist and are active
-            existing_count = Employee.objects.filter(
-                id__in=value, 
-                is_deleted=False
-            ).count()
-            
-            if existing_count != len(value):
-                raise serializers.ValidationError("Some employee IDs do not exist or are inactive")
+        """Validate selected position IDs (both employees and vacancies)"""
+        if not value:
+            return value
+        
+        # Check which IDs are employees and which are vacancies
+        valid_employee_ids = list(Employee.objects.filter(
+            id__in=value, 
+            is_deleted=False
+        ).values_list('id', flat=True))
+        
+        valid_vacancy_ids = list(VacantPosition.objects.filter(
+        original_employee_pk__in=value,  # original_employee_pk istifadə edin
+        is_filled=False,
+        
+    ).values_list('original_employee_pk', flat=True))
+        
+        valid_ids = valid_employee_ids + valid_vacancy_ids
+        invalid_ids = [id for id in value if id not in valid_ids]
+        
+        if invalid_ids:
+            raise serializers.ValidationError(
+                f"Some position IDs do not exist or are inactive/filled: {invalid_ids}"
+            )
         
         return value
     
     def create(self, validated_data):
-        """ENHANCED: Create with manual employee selection logic"""
+        """ENHANCED: Create with both employee and vacancy selection logic"""
         
         # Extract nested data
         sections_data = validated_data.pop('sections', [])
@@ -315,11 +332,11 @@ class JobDescriptionCreateUpdateSerializer(serializers.ModelSerializer):
         company_benefits_ids = validated_data.pop('company_benefits_ids', [])
         selected_employee_ids = validated_data.pop('selected_employee_ids', [])
         
-        logger.info(f"Creating job description - Selected employee IDs: {selected_employee_ids}")
+        logger.info(f"Creating job description - Selected position IDs: {selected_employee_ids}")
         
         with transaction.atomic():
             
-            # Get all employees matching criteria
+            # Get eligible employees
             eligible_employees = JobDescription.get_eligible_employees_with_priority(
                 job_title=validated_data['job_title'],
                 business_function_id=validated_data['business_function'].id,
@@ -330,11 +347,24 @@ class JobDescriptionCreateUpdateSerializer(serializers.ModelSerializer):
                 grading_level=validated_data['grading_level']
             )
             
-            logger.info(f"Found {eligible_employees.count()} eligible employees")
+            # Get eligible vacancies
+            eligible_vacancies = self._get_eligible_vacant_positions_for_jd(
+                job_title=validated_data['job_title'],
+                business_function_id=validated_data['business_function'].id,
+                department_id=validated_data['department'].id,
+                unit_id=validated_data['unit'].id if validated_data.get('unit') else None,
+                job_function_id=validated_data['job_function'].id,
+                position_group_id=validated_data['position_group'].id,
+                grading_level=validated_data['grading_level']
+            )
             
-            if not eligible_employees.exists():
+            logger.info(f"Found {eligible_employees.count()} eligible employees, {eligible_vacancies.count()} eligible vacancies")
+            
+            total_eligible = eligible_employees.count() + eligible_vacancies.count()
+            
+            if total_eligible == 0:
                 raise serializers.ValidationError({
-                    'employee_assignment': "No employees found matching the specified criteria",
+                    'position_assignment': "No employees or vacant positions found matching the specified criteria",
                     'criteria': {
                         'job_title': validated_data['job_title'],
                         'business_function': validated_data['business_function'].name,
@@ -346,48 +376,79 @@ class JobDescriptionCreateUpdateSerializer(serializers.ModelSerializer):
                     }
                 })
             
-            # MAIN LOGIC: Determine assignment strategy
-            if eligible_employees.count() == 1:
-                # CASE 1: Only one employee matches - auto assign
-                employees_to_assign = [eligible_employees.first()]
-                logger.info(f"Single employee found - auto-assigning to: {employees_to_assign[0].full_name}")
+            # Determine what positions to assign
+            positions_to_assign = []
+            
+            if total_eligible == 1:
+                # CASE 1: Only one position matches - auto assign
+                if eligible_employees.count() == 1:
+                    positions_to_assign.append(('employee', eligible_employees.first()))
+                else:
+                    positions_to_assign.append(('vacancy', eligible_vacancies.first()))
+                logger.info("Single position found - auto-assigning")
                 
             elif selected_employee_ids:
-                # CASE 2: Multiple employees match but user selected specific ones
+                # CASE 2: Multiple positions match but user selected specific ones
+                # Separate employee and vacancy IDs from the mixed list
                 selected_employees = eligible_employees.filter(id__in=selected_employee_ids)
+                selected_vacancies = eligible_vacancies.filter(id__in=selected_employee_ids)
                 
-                if not selected_employees.exists():
+                for employee in selected_employees:
+                    positions_to_assign.append(('employee', employee))
+                
+                for vacancy in selected_vacancies:
+                    positions_to_assign.append(('vacancy', vacancy))
+                
+                if not positions_to_assign:
                     raise serializers.ValidationError({
-                        'selected_employee_ids': 'None of the selected employees match the job criteria'
+                        'selected_employee_ids': 'None of the selected position IDs match the job criteria'
                     })
                 
-                employees_to_assign = list(selected_employees)
-                logger.info(f"User selected {len(employees_to_assign)} employees from {eligible_employees.count()} eligible")
+                logger.info(f"User selected {len(positions_to_assign)} positions from {total_eligible} eligible")
                 
             else:
-                # CASE 3: Multiple employees match but no selection made - return error with options
+                # CASE 3: Multiple positions match but no selection made - return error with options
+                from .serializers import EmployeeBasicSerializer, VacantPositionListSerializer
+                
                 employees_serializer = EmployeeBasicSerializer(eligible_employees[:20], many=True)
+                vacancies_serializer = VacantPositionListSerializer(eligible_vacancies[:20], many=True)
                 
                 raise serializers.ValidationError({
-                    'requires_employee_selection': True,
-                    'message': f'Found {eligible_employees.count()} employees matching criteria. Please select which employees to assign.',
+                    'requires_position_selection': True,
+                    'message': f'Found {total_eligible} positions matching criteria ({eligible_employees.count()} employees, {eligible_vacancies.count()} vacant positions). Please select which positions to use.',
                     'eligible_employees': employees_serializer.data,
-                    'instruction': 'Use the "selected_employee_ids" field to specify which employees should get job descriptions',
-                    'eligible_count': eligible_employees.count()
+                    'eligible_vacancies': vacancies_serializer.data,
+                    'instruction': 'Use "selected_employee_ids" field with both employee IDs and vacancy IDs to specify which positions should get job descriptions',
+                    'eligible_counts': {
+                        'employees': eligible_employees.count(),
+                        'vacancies': eligible_vacancies.count(),
+                        'total': total_eligible
+                    }
                 })
             
-            # Create job descriptions for selected employees
+            # Create job descriptions for selected positions
             created_job_descriptions = []
             
-            for index, employee in enumerate(employees_to_assign):
-                logger.info(f"Creating job description {index + 1}/{len(employees_to_assign)} for: {employee.full_name}")
+            for index, (position_type, position) in enumerate(positions_to_assign):
+                logger.info(f"Creating job description {index + 1}/{len(positions_to_assign)} for {position_type}: {getattr(position, 'full_name', getattr(position, 'position_id', 'Unknown'))}")
                 
-                # Prepare data for this employee
+                # Prepare data for this position
                 jd_data = validated_data.copy()
-                jd_data['assigned_employee'] = employee
+                
+                if position_type == 'employee':
+                    jd_data['assigned_employee'] = position
+                    # reports_to will be auto-assigned in model save()
+                else:  # vacancy
+                    jd_data['assigned_employee'] = None
+                    jd_data['reports_to'] = position.reporting_to
+                    
                 
                 # Create main job description
                 job_description = JobDescription.objects.create(**jd_data)
+                
+                # Store vacancy info for response if needed
+                if position_type == 'vacancy':
+                    job_description.vacancy_position_id = position.position_id
                 
                 # Create all related objects
                 self._create_job_description_components(
@@ -396,11 +457,11 @@ class JobDescriptionCreateUpdateSerializer(serializers.ModelSerializer):
                 )
                 
                 # Activity logging
-                employee_info = job_description.get_employee_info()
-                description = f"Job description created for {job_description.job_title} - Assigned to {employee_info['name']}"
-                
-                if len(employees_to_assign) > 1:
-                    description += f" (Selected {index + 1}/{len(employees_to_assign)})"
+                if position_type == 'employee':
+                    employee_info = job_description.get_employee_info()
+                    description = f"Job description created for {job_description.job_title} - Assigned to employee {employee_info['name']}"
+                else:
+                    description = f"Job description created for {job_description.job_title} - Assigned to vacant position {position.position_id}"
                 
                 JobDescriptionActivity.objects.create(
                     job_description=job_description,
@@ -411,12 +472,13 @@ class JobDescriptionCreateUpdateSerializer(serializers.ModelSerializer):
                         'sections_count': len(sections_data),
                         'skills_count': len(skills_data),
                         'competencies_count': len(competencies_data),
-                        'employee_info': employee_info,
-                        'assignment_method': 'auto_single' if len(employees_to_assign) == 1 else 'manual_selected',
+                        'position_type': position_type,
+                        'assignment_method': 'auto_single' if len(positions_to_assign) == 1 else 'manual_selected',
                         'selection_info': {
                             'eligible_employees_count': eligible_employees.count(),
-                            'selected_employees_count': len(employees_to_assign),
-                            'was_auto_assigned': len(employees_to_assign) == 1 and not selected_employee_ids,
+                            'eligible_vacancies_count': eligible_vacancies.count(),
+                            'selected_positions_count': len(positions_to_assign),
+                            'was_auto_assigned': len(positions_to_assign) == 1 and not (selected_employee_ids),
                             'was_manually_selected': bool(selected_employee_ids)
                         },
                         'organizational_criteria': {
@@ -427,21 +489,77 @@ class JobDescriptionCreateUpdateSerializer(serializers.ModelSerializer):
                             'job_function': validated_data['job_function'].name,
                             'position_group': validated_data['position_group'].name,
                             'grading_level': validated_data['grading_level']
-                        }
+                        },
+                     
                     }
                 )
                 
                 created_job_descriptions.append(job_description)
-                logger.info(f"Successfully created job description {job_description.id} for {employee.full_name}")
+                logger.info(f"Successfully created job description {job_description.id} for {position_type}")
             
             # Summary logging
-            logger.info(f"Job description creation completed: {len(created_job_descriptions)} job descriptions created")
+            employee_jds = len([jd for jd in created_job_descriptions if jd.assigned_employee])
+            vacancy_jds = len([jd for jd in created_job_descriptions if not jd.assigned_employee])
+            logger.info(f"Job description creation completed: {len(created_job_descriptions)} total ({employee_jds} employees, {vacancy_jds} vacancies)")
             
             # For response, return the first created job description but attach info about all
             primary_job_description = created_job_descriptions[0]
             primary_job_description._created_job_descriptions = created_job_descriptions
             
             return primary_job_description
+    
+    def _get_eligible_vacant_positions_for_jd(self, job_title=None, business_function_id=None, 
+                                             department_id=None, unit_id=None, job_function_id=None, 
+                                             position_group_id=None, grading_level=None):
+        """Get vacant positions matching job description criteria"""
+        from .models import VacantPosition
+        from .job_description_models import normalize_grading_level
+        
+        # Start with unfilled, active vacant positions
+        queryset = VacantPosition.objects.filter(
+            is_filled=False,
+            is_deleted=False,
+            include_in_headcount=True
+        ).select_related(
+            'business_function', 'department', 'unit', 'job_function', 
+            'position_group', 'vacancy_status', 'reporting_to'
+        )
+        
+        # Apply filters similar to employee filtering
+        if job_title:
+            queryset = queryset.filter(job_title__iexact=job_title.strip())
+        
+        if business_function_id:
+            queryset = queryset.filter(business_function_id=business_function_id)
+        
+        if department_id:
+            queryset = queryset.filter(department_id=department_id)
+        
+        if unit_id:
+            queryset = queryset.filter(unit_id=unit_id)
+        
+        if job_function_id:
+            queryset = queryset.filter(job_function_id=job_function_id)
+        
+        if position_group_id:
+            queryset = queryset.filter(position_group_id=position_group_id)
+        
+        if grading_level:
+            # Apply same grading level logic as employees
+            normalized_target = normalize_grading_level(grading_level.strip())
+            all_vacancies = list(queryset)
+            matching_vacancies = []
+            
+            for vacancy in all_vacancies:
+                vac_grade = vacancy.grading_level.strip() if vacancy.grading_level else ""
+                vac_normalized = normalize_grading_level(vac_grade)
+                
+                if vac_normalized == normalized_target:
+                    matching_vacancies.append(vacancy.id)
+            
+            queryset = queryset.filter(id__in=matching_vacancies)
+        
+        return queryset.order_by('position_id')
     
     def _create_job_description_components(self, job_description, sections_data, skills_data, 
                                          competencies_data, business_resources_ids, 

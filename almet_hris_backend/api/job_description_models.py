@@ -63,11 +63,13 @@ class JobDescription(models.Model):
     
     # Employee assignment
     assigned_employee = models.ForeignKey(
-        'Employee',
-        on_delete=models.CASCADE,
-        related_name='assigned_job_descriptions',
-        verbose_name="Assigned Employee"
-    )
+    'Employee',
+    on_delete=models.CASCADE,
+    null=True,  # EKLE
+    blank=True,  # EKLE
+    related_name='assigned_job_descriptions',
+    verbose_name="Assigned Employee"
+)
     
     # Auto-assigned manager
     reports_to = models.ForeignKey(
@@ -596,8 +598,6 @@ class JobDescription(models.Model):
             }
         return None
 
-
-# Keep all other model classes the same...
 class JobDescriptionSection(models.Model):
     """Flexible sections for job descriptions"""
     
@@ -626,7 +626,6 @@ class JobDescriptionSection(models.Model):
     
     def __str__(self):
         return f"{self.job_description.job_title} - {self.get_section_type_display()}"
-
 
 class JobDescriptionSkill(models.Model):
     """Core skills for job descriptions"""
@@ -662,7 +661,6 @@ class JobDescriptionSkill(models.Model):
     def __str__(self):
         return f"{self.skill.name} ({self.get_proficiency_level_display()})"
 
-
 class JobDescriptionBehavioralCompetency(models.Model):
     """Behavioral competencies for job descriptions"""
     
@@ -697,8 +695,6 @@ class JobDescriptionBehavioralCompetency(models.Model):
     def __str__(self):
         return f"{self.competency.name} ({self.get_proficiency_level_display()})"
 
-
-# Extra tables for additional resources
 class JobBusinessResource(models.Model):
     """Business resources for job descriptions"""
     
@@ -714,7 +710,6 @@ class JobBusinessResource(models.Model):
     
     def __str__(self):
         return self.name
-
 
 class AccessMatrix(models.Model):
     """Access rights matrix for job descriptions"""
@@ -733,7 +728,6 @@ class AccessMatrix(models.Model):
     def __str__(self):
         return self.name
 
-
 class CompanyBenefit(models.Model):
     """Company benefits for job descriptions"""
     
@@ -750,8 +744,6 @@ class CompanyBenefit(models.Model):
     def __str__(self):
         return self.name
 
-
-# Junction tables for many-to-many relationships
 class JobDescriptionBusinessResource(models.Model):
     """Link job descriptions to business resources"""
     
@@ -765,7 +757,6 @@ class JobDescriptionBusinessResource(models.Model):
     class Meta:
         db_table = 'job_description_business_resources'
         unique_together = ['job_description', 'resource']
-
 
 class JobDescriptionAccessMatrix(models.Model):
     """Link job descriptions to access rights"""
@@ -781,7 +772,6 @@ class JobDescriptionAccessMatrix(models.Model):
         db_table = 'job_description_access_matrix'
         unique_together = ['job_description', 'access_matrix']
 
-
 class JobDescriptionCompanyBenefit(models.Model):
     """Link job descriptions to company benefits"""
     
@@ -795,7 +785,6 @@ class JobDescriptionCompanyBenefit(models.Model):
     class Meta:
         db_table = 'job_description_company_benefits'
         unique_together = ['job_description', 'benefit']
-
 
 class JobDescriptionActivity(models.Model):
     """Activity log for job descriptions"""

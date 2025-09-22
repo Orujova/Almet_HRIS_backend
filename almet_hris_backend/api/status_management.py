@@ -21,30 +21,30 @@ class EmployeeStatusManager:
     @staticmethod
     def calculate_required_status(employee):
         """
-        Employee üçün olması lazım olan status-u contract configuration əsasında hesabla
+        UPDATED: Sizin yaratdığınız contract configuration-a əsasən status hesabla
         """
         try:
             current_date = date.today()
             
-            # Contract bitib bitməyibini yoxla
+            # Contract bitib bitmədiyini yoxla
             if employee.contract_end_date and employee.contract_end_date <= current_date:
-                inactive_status = EmployeeStatus.objects.filter(status_type__iexact='INACTIVE').first()
+                inactive_status = EmployeeStatus.objects.filter(
+                    status_type='INACTIVE',
+                    is_active=True
+                ).first()
                 return inactive_status, f"Contract ended on {employee.contract_end_date}"
             
-            # Contract configuration al
+            # Contract configuration-u tap
             try:
                 contract_config = ContractTypeConfig.objects.get(
                     contract_type=employee.contract_duration,
                     is_active=True
                 )
             except ContractTypeConfig.DoesNotExist:
-                # Default config yarat əgər yoxdursa
-                configs = ContractTypeConfig.get_or_create_defaults()
-                contract_config = configs.get(employee.contract_duration)
-                if not contract_config:
-                    return employee.status, "No contract configuration found"
+                # Əgər config yoxdursa, mövcud status-u saxla
+                return employee.status, f"No contract configuration found for {employee.contract_duration}"
             
-            # Auto transition aktiv deyilsə, hazırki status-u saxla
+            # Auto transition aktiv deyilsə, mövcud status-u saxla
             if not contract_config.enable_auto_transitions:
                 return employee.status, "Auto transitions disabled for this contract type"
             
@@ -54,24 +54,51 @@ class EmployeeStatusManager:
             # Contract configuration əsasında status təyin et
             if days_since_start <= contract_config.onboarding_days:
                 # Hələ onboarding dövrü
-                onboarding_status = EmployeeStatus.objects.filter(status_type__iexact='ONBOARDING').first()
+                onboarding_status = EmployeeStatus.objects.filter(
+                    status_type='ONBOARDING',
+                    is_active=True
+                ).first()
+                
+                if not onboarding_status:
+                    # Əgər ONBOARDING status yoxdursa, mövcud status saxla
+                    return employee.status, f"ONBOARDING status not found (Days: {days_since_start}/{contract_config.onboarding_days})"
+                
                 return onboarding_status, f"Onboarding period ({days_since_start}/{contract_config.onboarding_days} days)"
             
             elif days_since_start <= (contract_config.onboarding_days + contract_config.probation_days):
                 # Probation dövrü
-                probation_status = EmployeeStatus.objects.filter(status_type__iexact='PROBATION').first()
+                probation_status = EmployeeStatus.objects.filter(
+                    status_type='PROBATION',
+                    is_active=True
+                ).first()
+                
+                if not probation_status:
+                    # Əgər PROBATION yoxdursa, ACTIVE-ə keç
+                    active_status = EmployeeStatus.objects.filter(
+                        status_type='ACTIVE',
+                        is_active=True
+                    ).first()
+                    return active_status or employee.status, f"PROBATION status not found, skipping to active"
+                
                 remaining_days = (contract_config.onboarding_days + contract_config.probation_days) - days_since_start
                 return probation_status, f"Probation period ({remaining_days} days remaining)"
             
             else:
-                # Active olmalıdır
-                active_status = EmployeeStatus.objects.filter(status_type__iexact='ACTIVE').first()
+                # ACTIVE olmalıdır
+                active_status = EmployeeStatus.objects.filter(
+                    status_type='ACTIVE',
+                    is_active=True
+                ).first()
+                
+                if not active_status:
+                    # Əgər ACTIVE status yoxdursa, mövcud status saxla
+                    return employee.status, "ACTIVE status not found, keeping current status"
+                
                 return active_status, "Onboarding and probation completed"
                 
         except Exception as e:
             logger.error(f"Error calculating required status for {employee.employee_id}: {e}")
             return employee.status, f"Error: {str(e)}"
-    
     @staticmethod
     def update_employee_status(employee, force_update=False, user=None):
         """

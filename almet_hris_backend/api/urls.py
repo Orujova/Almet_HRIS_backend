@@ -120,6 +120,9 @@ urlpatterns = [
          views.OrgChartViewSet.as_view({'get': 'get_statistics'}), 
          name='org_chart_statistics'),
     
+    # NEW: Vacation Management System
+    path('vacation/', include('api.vacation_urls')),
+    
     # Include router URLs
     path('', include(router.urls)),
 ]

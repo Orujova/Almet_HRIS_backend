@@ -161,7 +161,31 @@ class PositionCoreAssessmentCreateSerializer(serializers.ModelSerializer):
             )
         
         return position_assessment
-
+    
+    @transaction.atomic
+    def update(self, instance, validated_data):
+        """Update position assessment and its competency ratings"""
+        competency_ratings = validated_data.pop('competency_ratings', None)
+        
+        # Update basic fields
+        instance.position_group = validated_data.get('position_group', instance.position_group)
+        instance.job_title = validated_data.get('job_title', instance.job_title)
+        instance.save()
+        
+        # Update competency ratings if provided
+        if competency_ratings is not None:
+            # Delete existing ratings
+            instance.competency_ratings.all().delete()
+            
+            # Create new ratings
+            for rating_data in competency_ratings:
+                PositionCoreCompetencyRating.objects.create(
+                    position_assessment=instance,
+                    skill_id=rating_data['skill_id'],
+                    required_level=rating_data['required_level']
+                )
+        
+        return instance
 
 class PositionBehavioralCompetencyRatingSerializer(serializers.ModelSerializer):
     competency_name = serializers.CharField(source='behavioral_competency.name', read_only=True)
@@ -239,10 +263,31 @@ class PositionBehavioralAssessmentCreateSerializer(serializers.ModelSerializer):
             )
         
         return position_assessment
-
-
-# EMPLOYEE ASSESSMENT SERIALIZERS
-
+    
+    @transaction.atomic
+    def update(self, instance, validated_data):
+        """Update position assessment and its competency ratings"""
+        competency_ratings = validated_data.pop('competency_ratings', None)
+        
+        # Update basic fields
+        instance.position_group = validated_data.get('position_group', instance.position_group)
+        instance.job_title = validated_data.get('job_title', instance.job_title)
+        instance.save()
+        
+        # Update competency ratings if provided
+        if competency_ratings is not None:
+            # Delete existing ratings
+            instance.competency_ratings.all().delete()
+            
+            # Create new ratings
+            for rating_data in competency_ratings:
+                PositionBehavioralCompetencyRating.objects.create(
+                    position_assessment=instance,
+                    behavioral_competency_id=rating_data['behavioral_competency_id'],
+                    required_level=rating_data['required_level']
+                )
+        
+        return instance
 class EmployeeCoreCompetencyRatingSerializer(serializers.ModelSerializer):
     skill_name = serializers.CharField(source='skill.name', read_only=True)
     skill_group_name = serializers.CharField(source='skill.group.name', read_only=True)

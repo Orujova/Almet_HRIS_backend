@@ -206,6 +206,7 @@ class VacantPositionListSerializer(serializers.ModelSerializer):
     position_group_id = serializers.IntegerField(source='position_group.id', read_only=True)
     position_group_level = serializers.IntegerField(source='position_group.hierarchy_level', read_only=True)
     reporting_to_name = serializers.CharField(source='reporting_to.full_name', read_only=True)
+    reporting_to_id = serializers.CharField(source='reporting_to.id', read_only=True)
     reporting_to_hc_number = serializers.CharField(source='reporting_to.employee_id', read_only=True)
     filled_by_name = serializers.CharField(source='filled_by_employee.full_name', read_only=True)
     
@@ -227,7 +228,7 @@ class VacantPositionListSerializer(serializers.ModelSerializer):
             # Employee-like fields for unified display
             'id', 'employee_id',  'job_title', 'business_function_name', 'business_function_code','business_function_id',
             'department_name', 'department_id','unit_name','unit_id', 'job_function_name','job_function_id', 'position_group_name', 'position_group_level','position_group_id',
-            'grading_level',  'status_name', 'status_color',
+            'grading_level',  'status_name', 'status_color','reporting_to_id',
             'reporting_to_name', 'reporting_to_hc_number', 'is_visible_in_org_chart',
             'is_filled', 'filled_by_name', 'filled_date', 'include_in_headcount',
             'is_vacancy',  'created_at', 'updated_at',

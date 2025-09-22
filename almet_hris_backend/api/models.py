@@ -738,6 +738,7 @@ class EmployeeArchive(models.Model):
     
     # Original employee information
     original_employee_id = models.CharField(max_length=50, db_index=True)
+    original_employee_pk = models.CharField(max_length=50, db_index=True)
     full_name = models.CharField(max_length=300)
     email = models.EmailField()
     job_title = models.CharField(max_length=200)
@@ -797,6 +798,7 @@ class EmployeeArchive(models.Model):
     def get_deletion_summary(self):
         """Enhanced deletion summary"""
         return {
+            'original_employee_pk': self.original_employee_pk,
             'employee_id': self.original_employee_id,
             'name': self.full_name,
             'deleted_by': self.deleted_by.get_full_name() if self.deleted_by else 'System',
@@ -863,6 +865,7 @@ class EmployeeArchive(models.Model):
         verbose_name_plural = "Employee Archives"
         indexes = [
             models.Index(fields=['original_employee_id']),
+            models.Index(fields=['original_employee_pk']),
             models.Index(fields=['deleted_at']),
             models.Index(fields=['employee_still_exists']),
             models.Index(fields=['data_quality']),
@@ -1041,13 +1044,11 @@ class Employee(SoftDeleteModel):
         if not self.employee_id and self.business_function:
             self.employee_id = self.generate_employee_id()
         
-        # Continue with existing save logic...
+        # Auto-generate full name
         if self.user:
             first_name = self.user.first_name or ''
             last_name = self.user.last_name or ''
             self.full_name = f"{first_name} {last_name}".strip()
-    
-    
         
         # Auto-calculate contract end date
         if self.contract_start_date and self.contract_duration != 'PERMANENT':
@@ -1064,7 +1065,7 @@ class Employee(SoftDeleteModel):
                     elif self.contract_duration == '3_YEARS':
                         self.contract_end_date = self.contract_start_date + relativedelta(years=3)
                 else:
-                    # Fallback to approximate calculation
+                    # Fallback calculation
                     days_mapping = {
                         '3_MONTHS': 90,
                         '6_MONTHS': 180,
@@ -1080,13 +1081,19 @@ class Employee(SoftDeleteModel):
         else:
             self.contract_end_date = None
         
-        # Auto-generate grading level based on position group (default to median)
+        # Auto-generate grading level based on position group
         if self.position_group and not self.grading_level:
-            self.grading_level = f"{self.position_group.grading_shorthand}_M"  # Default to median
+            self.grading_level = f"{self.position_group.grading_shorthand}_M"
         
-        # Auto-assign status if not set (during creation)
-        if not self.status_id:
+        # CRITICAL: Status təyini - yalnız yeni işçi yaradılarkən
+        if not self.pk and not self.status_id:  # pk None = yeni object
             self.auto_assign_status()
+        
+        # Contract start date default
+        if not self.contract_start_date:
+            self.contract_start_date = self.start_date
+        
+        
         
         
         
@@ -1102,21 +1109,39 @@ class Employee(SoftDeleteModel):
         super().save(*args, **kwargs)
 
     def auto_assign_status(self):
-        """Auto-assign status based on start date and contract"""
+        """UPDATED: Öz yaratdığınız statuslara əsasən avtomatik status təyin et"""
         try:
-            default_statuses = EmployeeStatus.get_or_create_default_statuses()
+            # Əvvəlcə mövcud aktiv statuslardan uyğun olanı tap
             
-            # Default to onboarding for new employees
-            self.status = default_statuses.get('ONBOARDING', 
-                                             EmployeeStatus.objects.filter(is_default_for_new_employees=True).first())
+            # ONBOARDING status-u tap
+            onboarding_status = EmployeeStatus.objects.filter(
+                status_type='ONBOARDING',
+                is_active=True
+            ).first()
             
-            if not self.status:
-                # Fallback to any active status
-                self.status = EmployeeStatus.objects.filter(is_active=True).first()
+            if not onboarding_status:
+                # Əgər ONBOARDING yoxdursa, ümumi default tap
+                default_status = EmployeeStatus.objects.filter(
+                    is_default_for_new_employees=True,
+                    is_active=True
+                ).first()
+                
+                if not default_status:
+                    # Son variant - ilk aktiv status
+                    default_status = EmployeeStatus.objects.filter(is_active=True).first()
+                
+                self.status = default_status
+            else:
+                self.status = onboarding_status
                 
         except Exception as e:
             logger.error(f"Error auto-assigning status: {e}")
-
+            # Əgər heç nə tapılmasa, mövcud status saxla
+            if not self.status:
+                # Çox kritik hal - ən azı bir status olmalıdır
+                fallback_status = EmployeeStatus.objects.first()
+                if fallback_status:
+                    self.status = fallback_status
     def get_required_status_based_on_contract(self):
         """Get required status based on contract configuration and dates"""
         try:
@@ -1553,6 +1578,7 @@ class Employee(SoftDeleteModel):
             try:
                 # Store info before hard deletion
                 emp_info = {
+                    'original_employee_pk': employee.pk,
                     'employee_id': employee.employee_id,
                     'full_name': employee.full_name,
                     'deleted_at': employee.deleted_at
@@ -1570,6 +1596,7 @@ class Employee(SoftDeleteModel):
                 cleanup_results['successfully_archived'] += 1
                 cleanup_results['archived_employees'].append({
                     'original_employee_id': emp_info['employee_id'],
+                    'original_employee_pk': emp_info['original_employee_pk'],
                     'name': emp_info['full_name'],
                     'originally_deleted': emp_info['deleted_at'],
                     'archive_id': archive.id if archive else None
@@ -1776,6 +1803,7 @@ class Employee(SoftDeleteModel):
             'id': self.id,
             'employee_id': self.employee_id,
             'full_name': self.full_name,
+            'original_employee_pk': self.pk,
             'direct_reports_count': self.direct_reports.filter(is_deleted=False).count()
         }
         
@@ -1836,6 +1864,7 @@ class Employee(SoftDeleteModel):
         FIXED: Create archive record for both soft and hard delete with proper null handling
         """
         try:
+            actual_employee_pk = str(self.pk) 
             # FIXED: Safely handle unit_name with proper null checking
             unit_name = None
             if self.unit and hasattr(self.unit, 'name'):
@@ -1844,6 +1873,7 @@ class Employee(SoftDeleteModel):
             # FIXED: Safely handle all field extraction
             archive_data = {
                 'original_employee_id': self.employee_id or '',
+                'original_employee_pk': actual_employee_pk or '',
                 'full_name': self.full_name or '',
                 'email': self.user.email if self.user else '',
                 'job_title': self.job_title or '',
@@ -1876,7 +1906,9 @@ class Employee(SoftDeleteModel):
             
             # Try to create a minimal archive record as fallback
             try:
+                fallback_pk = str(self.pk) if self.pk else 'UNKNOWN'
                 minimal_archive = EmployeeArchive.objects.create(
+                    original_employee_pk=fallback_pk,
                     original_employee_id=self.employee_id or 'UNKNOWN',
                     full_name=self.full_name or 'Unknown Employee',
                     email=self.user.email if self.user else 'unknown@example.com',
@@ -2206,7 +2238,8 @@ class EmployeeDeletionManager:
                 # Store info before deletion
                 emp_info = {
                     'employee_id': employee.employee_id,
-                    'full_name': employee.full_name
+                    'full_name': employee.full_name,
+                    'original_employee_pk': employee.pk,
                 }
                 
                 archive = employee.hard_delete_with_archive(user)
@@ -2218,6 +2251,7 @@ class EmployeeDeletionManager:
                 results['successful'] += 1
                 results['archives_created'].append({
                     'original_employee_id': emp_info['employee_id'],
+                    'original_employee_pk': emp_info['original_employee_pk'],
                     'employee_name': emp_info['full_name'],
                     'archive_id': archive.id if archive else None,
                     'archive_reference': archive.get_archive_reference() if archive else None

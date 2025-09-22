@@ -17,7 +17,7 @@ import uuid
 from datetime import datetime
 from io import BytesIO
 import traceback
-
+from rest_framework import serializers
 try:
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import letter, A4
@@ -44,7 +44,7 @@ from .job_description_serializers import (
     EligibleEmployeesSerializer, EmployeeBasicSerializer
 )
 from .competency_models import Skill, BehavioralCompetency
-from .models import BusinessFunction, Department, Unit, PositionGroup, Employee, JobFunction
+from .models import BusinessFunction, Department, Unit, PositionGroup, Employee, JobFunction,VacantPosition
 from .job_description_serializers import JobDescriptionExportSerializer
 
 
@@ -233,40 +233,45 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                 raise
     
     @swagger_auto_schema(
-        method='post',
-        operation_description="Preview employees that would be assigned based on criteria",
-        request_body=openapi.Schema(
-            type=openapi.TYPE_OBJECT,
-            required=['job_title', 'business_function', 'department', 'job_function', 'position_group', 'grading_level'],
-            properties={
-                'job_title': openapi.Schema(type=openapi.TYPE_STRING),
-                'business_function': openapi.Schema(type=openapi.TYPE_INTEGER),
-                'department': openapi.Schema(type=openapi.TYPE_INTEGER),
-                'unit': openapi.Schema(type=openapi.TYPE_INTEGER),
-                'job_function': openapi.Schema(type=openapi.TYPE_INTEGER),
-                'position_group': openapi.Schema(type=openapi.TYPE_INTEGER),
-                'grading_level': openapi.Schema(type=openapi.TYPE_STRING),
-                'max_preview': openapi.Schema(type=openapi.TYPE_INTEGER, default=50)
-            }
-        ),
-        responses={
-            200: openapi.Response(
-                description="Eligible employees found",
-                schema=openapi.Schema(
-                    type=openapi.TYPE_OBJECT,
-                    properties={
-                        'eligible_employees_count': openapi.Schema(type=openapi.TYPE_INTEGER),
-                        'employees': openapi.Schema(type=openapi.TYPE_ARRAY, items=openapi.Schema(type=openapi.TYPE_OBJECT)),
-                        'assignment_strategy': openapi.Schema(type=openapi.TYPE_STRING),
-                        'requires_manual_selection': openapi.Schema(type=openapi.TYPE_BOOLEAN)
-                    }
-                )
-            )
+    method='post',
+    operation_description="Preview employees and vacant positions that would be assigned based on criteria",
+    request_body=openapi.Schema(
+        type=openapi.TYPE_OBJECT,
+        required=['job_title', 'business_function', 'department', 'job_function', 'position_group', 'grading_level'],
+        properties={
+            'job_title': openapi.Schema(type=openapi.TYPE_STRING),
+            'business_function': openapi.Schema(type=openapi.TYPE_INTEGER),
+            'department': openapi.Schema(type=openapi.TYPE_INTEGER),
+            'unit': openapi.Schema(type=openapi.TYPE_INTEGER),
+            'job_function': openapi.Schema(type=openapi.TYPE_INTEGER),
+            'position_group': openapi.Schema(type=openapi.TYPE_INTEGER),
+            'grading_level': openapi.Schema(type=openapi.TYPE_STRING),
+            'max_preview': openapi.Schema(type=openapi.TYPE_INTEGER, default=50),
+            'include_vacancies': openapi.Schema(type=openapi.TYPE_BOOLEAN, default=True)
         }
-    )
+    ),
+    responses={
+        200: openapi.Response(
+            description="Eligible employees and vacancies found",
+            schema=openapi.Schema(
+                type=openapi.TYPE_OBJECT,
+                properties={
+                    'eligible_employees_count': openapi.Schema(type=openapi.TYPE_INTEGER),
+                    'eligible_vacancies_count': openapi.Schema(type=openapi.TYPE_INTEGER),
+                    'total_eligible_count': openapi.Schema(type=openapi.TYPE_INTEGER),
+                    'employees': openapi.Schema(type=openapi.TYPE_ARRAY, items=openapi.Schema(type=openapi.TYPE_OBJECT)),
+                    'vacancies': openapi.Schema(type=openapi.TYPE_ARRAY, items=openapi.Schema(type=openapi.TYPE_OBJECT)),
+                    'unified_list': openapi.Schema(type=openapi.TYPE_ARRAY, items=openapi.Schema(type=openapi.TYPE_OBJECT)),
+                    'assignment_strategy': openapi.Schema(type=openapi.TYPE_STRING),
+                    'requires_manual_selection': openapi.Schema(type=openapi.TYPE_BOOLEAN)
+                }
+            )
+        )
+    }
+)
     @action(detail=False, methods=['post'])
     def preview_eligible_employees(self, request):
-        """Preview which employees would be assigned and what strategy would be used"""
+        """ENHANCED: Preview which employees AND vacant positions would be assigned and what strategy would be used"""
         try:
             job_title = request.data.get('job_title')
             business_function_id = request.data.get('business_function')
@@ -276,6 +281,7 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
             position_group_id = request.data.get('position_group')
             grading_level = request.data.get('grading_level')
             max_preview = request.data.get('max_preview', 50)
+            include_vacancies = request.data.get('include_vacancies', True)
             
             # Validate required fields
             required_fields = {
@@ -294,7 +300,7 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_400_BAD_REQUEST
                 )
             
-            # Get eligible employees
+            # Get eligible employees (existing logic)
             eligible_employees = JobDescription.get_eligible_employees_with_priority(
                 job_title=job_title,
                 business_function_id=business_function_id,
@@ -303,25 +309,58 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                 job_function_id=job_function_id,
                 position_group_id=position_group_id,
                 grading_level=grading_level
-            )[:max_preview]
+            )
             
-            # Serialize employee data
-            employees_serializer = EmployeeBasicSerializer(eligible_employees, many=True)
+            # NEW: Get eligible vacant positions
+            eligible_vacancies = self._get_eligible_vacant_positions(
+                job_title=job_title,
+                business_function_id=business_function_id,
+                department_id=department_id,
+                unit_id=unit_id,
+                job_function_id=job_function_id,
+                position_group_id=position_group_id,
+                grading_level=grading_level
+            ) if include_vacancies else VacantPosition.objects.none()
+            
+            # Apply limits
+            limited_employees = eligible_employees[:max_preview//2] if include_vacancies else eligible_employees[:max_preview]
+            limited_vacancies = eligible_vacancies[:max_preview//2] if include_vacancies else eligible_vacancies.none()
+            
+            # Serialize data
+            employees_serializer = EmployeeBasicSerializer(limited_employees, many=True)
+            employees_data = employees_serializer.data
+            
+            vacancies_data = []
+            if include_vacancies:
+                for vacancy in limited_vacancies:
+                    vacancy_data = self._convert_vacancy_to_employee_preview_format(vacancy)
+                    vacancies_data.append(vacancy_data)
+            
+            # Create unified list for frontend
+            unified_list = []
+            unified_list.extend(employees_data)
+            unified_list.extend(vacancies_data)
             
             # Determine assignment strategy
+            total_eligible = eligible_employees.count() + (eligible_vacancies.count() if include_vacancies else 0)
             employee_count = eligible_employees.count()
-            if employee_count == 0:
-                assignment_strategy = "no_employees_found"
+            vacancy_count = eligible_vacancies.count() if include_vacancies else 0
+            
+            if total_eligible == 0:
+                assignment_strategy = "no_matches_found"
                 requires_manual_selection = False
-                strategy_message = "No employees match the criteria"
-            elif employee_count == 1:
+                strategy_message = "No employees or vacant positions match the criteria"
+            elif total_eligible == 1:
                 assignment_strategy = "auto_assign_single"
                 requires_manual_selection = False
-                strategy_message = "Will automatically assign to the single matching employee"
+                if employee_count == 1:
+                    strategy_message = "Will automatically assign to the single matching employee"
+                else:
+                    strategy_message = "Will automatically convert the single matching vacant position"
             else:
                 assignment_strategy = "manual_selection_required"
                 requires_manual_selection = True
-                strategy_message = f"Found {employee_count} matching employees - you must select which ones to assign"
+                strategy_message = f"Found {total_eligible} matching positions ({employee_count} employees, {vacancy_count} vacant positions) - you must select which ones to use"
             
             # Get organizational info for response
             try:
@@ -338,7 +377,11 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
             
             response_data = {
                 'eligible_employees_count': employee_count,
-                'employees': employees_serializer.data,
+                'eligible_vacancies_count': vacancy_count,
+                'total_eligible_count': total_eligible,
+                'employees': employees_data,
+                'vacancies': vacancies_data,
+                'unified_list': unified_list,
                 'assignment_strategy': assignment_strategy,
                 'requires_manual_selection': requires_manual_selection,
                 'strategy_message': strategy_message,
@@ -352,10 +395,12 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                     'grading_level': grading_level
                 },
                 'next_steps': {
-                    'if_single_employee': 'Submit job description - will auto-assign',
-                    'if_multiple_employees': 'Submit job description with "selected_employee_ids" field',
-                    'if_no_employees': 'Adjust criteria to find matching employees'
-                }
+                    'if_single_match': 'Submit job description - will auto-assign',
+                    'if_multiple_matches': 'Submit job description with "selected_employee_ids" and/or "selected_vacancy_ids" fields',
+                    'if_no_matches': 'Adjust criteria to find matching positions',
+                    'mixed_results': f'Found both employees ({employee_count}) and vacant positions ({vacancy_count}) - choose which to use'
+                },
+                'includes_vacancies': include_vacancies
             }
             
             return Response(response_data, status=status.HTTP_200_OK)
@@ -363,9 +408,147 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
         except Exception as e:
             logger.error(f"Error in preview_eligible_employees: {str(e)}")
             return Response(
-                {'error': f'Failed to preview employees: {str(e)}'},
+                {'error': f'Failed to preview positions: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+    
+    def _get_eligible_vacant_positions(self, job_title=None, business_function_id=None, 
+                                     department_id=None, unit_id=None, job_function_id=None, 
+                                     position_group_id=None, grading_level=None):
+        """Get vacant positions matching job description criteria"""
+        from .models import VacantPosition
+        
+        # Start with unfilled, active vacant positions
+        queryset = VacantPosition.objects.filter(
+            is_filled=False,
+            is_deleted=False,
+            include_in_headcount=True
+        ).select_related(
+            'business_function', 'department', 'unit', 'job_function', 
+            'position_group', 'vacancy_status'
+        )
+        
+        logger.info(f"Starting vacant position search with {queryset.count()} unfilled positions")
+        
+        # 1. JOB TITLE FILTER
+        if job_title:
+            job_title_clean = job_title.strip()
+            queryset = queryset.filter(job_title__iexact=job_title_clean)
+            logger.info(f"After job_title '{job_title_clean}' filter: {queryset.count()}")
+        
+        # 2. BUSINESS FUNCTION FILTER
+        if business_function_id:
+            queryset = queryset.filter(business_function_id=business_function_id)
+            logger.info(f"After business_function filter: {queryset.count()}")
+        
+        # 3. DEPARTMENT FILTER
+        if department_id:
+            queryset = queryset.filter(department_id=department_id)
+            logger.info(f"After department filter: {queryset.count()}")
+        
+        # 4. UNIT FILTER (optional)
+        if unit_id:
+            queryset = queryset.filter(unit_id=unit_id)
+            logger.info(f"After unit filter: {queryset.count()}")
+        
+        # 5. JOB FUNCTION FILTER
+        if job_function_id:
+            queryset = queryset.filter(job_function_id=job_function_id)
+            logger.info(f"After job_function filter: {queryset.count()}")
+        
+        # 6. POSITION GROUP FILTER
+        if position_group_id:
+            queryset = queryset.filter(position_group_id=position_group_id)
+            logger.info(f"After position_group filter: {queryset.count()}")
+        
+        # 7. GRADING LEVEL FILTER
+        if grading_level:
+            from .job_description_models import normalize_grading_level
+            grading_level_clean = grading_level.strip()
+            normalized_target = normalize_grading_level(grading_level_clean)
+            
+            logger.info(f"Target grading level: '{grading_level_clean}' (normalized: '{normalized_target}')")
+            
+            # Get all vacancies and filter manually for smart comparison
+            all_vacancies = list(queryset)
+            matching_vacancies = []
+            
+            for vacancy in all_vacancies:
+                vac_grade = vacancy.grading_level.strip() if vacancy.grading_level else ""
+                vac_normalized = normalize_grading_level(vac_grade)
+                
+                if vac_normalized == normalized_target:
+                    matching_vacancies.append(vacancy.id)
+                    logger.info(f"Vacancy match: {vacancy.position_id} - '{vac_grade}' (normalized: '{vac_normalized}')")
+            
+            queryset = queryset.filter(id__in=matching_vacancies)
+            logger.info(f"After grading_level filter: {queryset.count()}")
+        
+        return queryset.order_by('position_id')
+    
+    def _convert_vacancy_to_employee_preview_format(self, vacancy):
+        """Convert vacancy to employee-like format for preview"""
+        return {
+            'id': vacancy.original_employee_pk or f"vacancy_{vacancy.id}",  # Use original PK if available
+            'employee_id': vacancy.position_id,
+            'name': "VACANT POSITION",
+            'full_name': f"[VACANT] {vacancy.job_title}",
+            'email': None,
+            'father_name': None,
+            'date_of_birth': None,
+            'gender': None,
+            'phone': None,
+            'business_function_name': vacancy.business_function.name if vacancy.business_function else 'N/A',
+            'business_function_code': vacancy.business_function.code if vacancy.business_function else 'N/A',
+            'business_function_id': vacancy.business_function.id if vacancy.business_function else None,
+            'department_name': vacancy.department.name if vacancy.department else 'N/A',
+            'department_id': vacancy.department.id if vacancy.department else None,
+            'unit_name': vacancy.unit.name if vacancy.unit else None,
+            'unit_id': vacancy.unit.id if vacancy.unit else None,
+            'job_function_name': vacancy.job_function.name if vacancy.job_function else 'N/A',
+            'job_function_id': vacancy.job_function.id if vacancy.job_function else None,
+            'job_title': vacancy.job_title,
+            'position_group_name': vacancy.position_group.get_name_display() if vacancy.position_group else 'N/A',
+            'position_group_level': vacancy.position_group.hierarchy_level if vacancy.position_group else 0,
+            'position_group_id': vacancy.position_group.id if vacancy.position_group else None,
+            'grading_level': vacancy.grading_level,
+            'line_manager_name': vacancy.reporting_to.full_name if vacancy.reporting_to else None,
+            'line_manager_hc_number': vacancy.reporting_to.employee_id if vacancy.reporting_to else None,
+            'status_name': 'VACANT',
+            'status_color': '#F97316',
+            'organizational_path': self._get_vacancy_organizational_path(vacancy),
+            'matching_score': 100,
+            'has_line_manager': bool(vacancy.reporting_to),
+            'is_vacancy': True,
+            'record_type': 'vacancy',
+            'vacancy_details': {
+                'internal_id': vacancy.id,
+                'position_id': vacancy.position_id,
+                'include_in_headcount': vacancy.include_in_headcount,
+                'is_filled': vacancy.is_filled,
+                'filled_date': vacancy.filled_date,
+                'notes': vacancy.notes,
+                'original_employee_pk': vacancy.original_employee_pk,
+                'can_be_converted': True
+            }
+        }
+    
+    def _get_vacancy_organizational_path(self, vacancy):
+        """Get organizational path for vacancy"""
+        path_parts = []
+        
+        if vacancy.business_function:
+            path_parts.append(vacancy.business_function.name)
+        if vacancy.department:
+            path_parts.append(vacancy.department.name)
+        if vacancy.unit:
+            path_parts.append(vacancy.unit.name)
+        if vacancy.job_function:
+            path_parts.append(f"Function: {vacancy.job_function.name}")
+        if vacancy.position_group:
+            path_parts.append(f"Grade: {vacancy.grading_level}")
+        
+        return " > ".join(path_parts)
     @swagger_auto_schema(
         method='post',
         operation_description="Submit job description for approval workflow",
@@ -959,7 +1142,7 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                 ['Grading Level', job_description.grading_level or 'N/A'],
                 ['Employee', f"{employee_info['name']} ({employee_info['employee_id']})" if employee_info else 'No Employee Assigned'],
                 ['Reports To', manager_info['name'] if manager_info else 'N/A'],
-                ['Version', str(job_description.version)],
+              
                 ['Created Date', job_description.created_at.strftime('%d/%m/%Y') if job_description.created_at else 'N/A']
             ]
             
@@ -1190,7 +1373,7 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
             
             doc_info_data = [
                 ['Document ID', str(job_description.id)[:8] + '...'],
-                ['Version', str(job_description.version)],
+        
                 ['Created By', job_description.created_by.get_full_name() if job_description.created_by else 'System'],
                 ['Created Date', job_description.created_at.strftime('%d/%m/%Y %H:%M') if job_description.created_at else 'N/A'],
                 ['Last Updated', job_description.updated_at.strftime('%d/%m/%Y %H:%M') if job_description.updated_at else 'N/A'],
@@ -1371,7 +1554,7 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
             elif job_description.status == 'DRAFT':
                 status_suffix = "_DRAFT"
             
-            filename = f"JD_{safe_title.replace(' ', '_')}{employee_part}{status_suffix}_v{job_description.version}_{datetime.now().strftime('%Y%m%d')}.pdf"
+            filename = f"JD_{safe_title.replace(' ', '_')}{employee_part}{status_suffix}_{datetime.now().strftime('%Y%m%d')}.pdf"
             
             response = HttpResponse(pdf_data, content_type='application/pdf')
             response['Content-Disposition'] = f'attachment; filename="{filename}"'
