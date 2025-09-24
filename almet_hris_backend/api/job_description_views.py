@@ -1083,6 +1083,15 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                 fontName='Helvetica'
             )
             
+            bullet_style = ParagraphStyle(
+                'BulletStyle',
+                parent=styles['Normal'],
+                fontSize=10,
+                spaceAfter=6,
+                leftIndent=20,
+                fontName='Helvetica'
+            )
+            
             small_text_style = ParagraphStyle(
                 'SmallText',
                 parent=styles['Normal'],
@@ -1142,7 +1151,6 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                 ['Grading Level', job_description.grading_level or 'N/A'],
                 ['Employee', f"{employee_info['name']} ({employee_info['employee_id']})" if employee_info else 'No Employee Assigned'],
                 ['Reports To', manager_info['name'] if manager_info else 'N/A'],
-              
                 ['Created Date', job_description.created_at.strftime('%d/%m/%Y') if job_description.created_at else 'N/A']
             ]
             
@@ -1185,22 +1193,70 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
             # JOB PURPOSE
             if job_description.job_purpose:
                 story.append(Paragraph("JOB PURPOSE", section_header_style))
-                # Handle long text properly
                 formatted_purpose = self._format_long_text(job_description.job_purpose, content_style)
                 story.append(formatted_purpose)
                 story.append(Spacer(1, 0.15*inch))
             
-            # JOB DESCRIPTION SECTIONS
+            # JOB DESCRIPTION SECTIONS (ENHANCED WITH BETTER FORMATTING)
             if hasattr(job_description, 'sections') and job_description.sections.exists():
-                story.append(Paragraph("JOB DESCRIPTION SECTIONS", section_header_style))
+                story.append(Paragraph("JOB DUTIES", section_header_style))
                 
+                # Group sections by type for better organization
+                sections_by_type = {}
                 for section in job_description.sections.all().order_by('order'):
-                    # Section title
-                    story.append(Paragraph(f"{section.get_section_type_display()}: {section.title}", subsection_header_style))
-                    # Section content with proper text wrapping
-                    formatted_content = self._format_long_text(section.content, content_style)
-                    story.append(formatted_content)
-                    story.append(Spacer(1, 0.1*inch))
+                    section_type = section.get_section_type_display()
+                    if section_type not in sections_by_type:
+                        sections_by_type[section_type] = []
+                    sections_by_type[section_type].append(section)
+                
+                # Render grouped sections
+                for section_type, sections in sections_by_type.items():
+                    story.append(Paragraph(section_type.upper(), subsection_header_style))
+                    
+                    for section in sections:
+                        # Parse content into bullet points if it contains bullets
+                        content = section.content.strip()
+                        
+                        # Split by common bullet indicators
+                        import re
+                        bullet_points = re.split(r'[•●▪︎\-]\s*', content)
+                        bullet_points = [bp.strip() for bp in bullet_points if bp.strip()]
+                        
+                        if len(bullet_points) > 1:
+                            # Multiple bullet points found
+                            for point in bullet_points:
+                                if point:
+                                    bullet_text = f"• {point}"
+                                    story.append(Paragraph(bullet_text, bullet_style))
+                        else:
+                            # Single paragraph
+                            formatted_content = self._format_long_text(content, content_style)
+                            story.append(formatted_content)
+                        
+                        story.append(Spacer(1, 0.1*inch))
+            
+            # REQUIREMENTS SECTION (ENHANCED)
+            story.append(Paragraph("REQUIREMENTS", section_header_style))
+            
+            # Create a structured requirements table
+            req_data = []
+            
+            # Educational Requirements
+            if job_description.business_function or job_description.department:
+                story.append(Paragraph("Educational Qualifications", subsection_header_style))
+                
+                # Parse requirements from job description sections
+                requirements_section = job_description.sections.filter(section_type='REQUIREMENTS').first()
+                if requirements_section:
+                    req_content = requirements_section.content.strip()
+                    req_bullets = re.split(r'[•●▪︎\-]\s*', req_content)
+                    req_bullets = [rb.strip() for rb in req_bullets if rb.strip()]
+                    
+                    for req in req_bullets:
+                        if req:
+                            story.append(Paragraph(f"• {req}", bullet_style))
+                
+                story.append(Spacer(1, 0.1*inch))
             
             # REQUIRED SKILLS
             if hasattr(job_description, 'required_skills') and job_description.required_skills.exists():
@@ -1311,10 +1367,9 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                 for section_name, items in resources_sections:
                     story.append(Paragraph(section_name, subsection_header_style))
                     
-                    # Create bullet list
                     for item in items:
                         bullet_text = f"• {item}"
-                        story.append(Paragraph(bullet_text, content_style))
+                        story.append(Paragraph(bullet_text, bullet_style))
                     
                     story.append(Spacer(1, 0.1*inch))
             
@@ -1373,7 +1428,6 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
             
             doc_info_data = [
                 ['Document ID', str(job_description.id)[:8] + '...'],
-        
                 ['Created By', job_description.created_by.get_full_name() if job_description.created_by else 'System'],
                 ['Created Date', job_description.created_at.strftime('%d/%m/%Y %H:%M') if job_description.created_at else 'N/A'],
                 ['Last Updated', job_description.updated_at.strftime('%d/%m/%Y %H:%M') if job_description.updated_at else 'N/A'],
@@ -1452,7 +1506,6 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
         except Exception as e:
             logger.error(f"Error creating enhanced PDF: {str(e)}")
             raise
-
     def _format_long_text(self, text, style, max_line_length=80):
         """Format long text to prevent layout issues"""
         if not text:
