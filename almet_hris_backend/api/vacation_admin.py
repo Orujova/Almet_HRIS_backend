@@ -71,37 +71,25 @@ class VacationSettingAdmin(admin.ModelAdmin):
 class VacationTypeAdmin(admin.ModelAdmin):
     list_display = [
         'name', 
-        'code', 
-        'color_display', 
-        'requires_approval', 
-        'affects_balance',
-        'max_consecutive_days',
         'is_active_display', 
         'created_at'
     ]
-    list_filter = ['is_active', 'requires_approval', 'affects_balance']
-    list_editable = ['requires_approval', 'affects_balance', 'max_consecutive_days']
-    search_fields = ['name', 'code', 'description']
+    list_filter = ['is_active','name']
+  
+    search_fields = ['name',  'description']
     ordering = ['name']
     
     fieldsets = (
         ('Basic Information', {
-            'fields': ('name', 'code', 'description', 'color')
+            'fields': ('name',  'description')
         }),
-        ('Settings', {
-            'fields': ('requires_approval', 'affects_balance', 'max_consecutive_days')
-        }),
+   
         ('Status', {
             'fields': ('is_active',)
         })
     )
     
-    def color_display(self, obj):
-        return format_html(
-            '<span style="background-color: {}; padding: 5px 15px; color: white; border-radius: 3px; font-weight: bold;">{}</span>',
-            obj.color, obj.color
-        )
-    color_display.short_description = 'Color'
+
     
     def is_active_display(self, obj):
         if obj.is_active:

@@ -1,4 +1,4 @@
-# api/vacation_models.py - Enhanced
+# api/vacation_models.py - Enhanced and Fixed
 
 from django.db import models
 from django.contrib.auth.models import User
@@ -11,10 +11,10 @@ import uuid
 class VacationSetting(SoftDeleteModel):
     """Vacation sistem parametrləri"""
     
-    # Production Calendar - qeyri-iş günləri
+    # Production Calendar - qeyri-iş günlərinin siyahısı
     non_working_days = models.JSONField(
         default=list, 
-        help_text="Qeyri-iş günləri JSON formatında: ['2025-01-01', '2025-03-08', ...]"
+        help_text="Qeyri-iş günləri JSON formatında: [{'date': '2025-01-01', 'name': 'New Year'}, ...]"
     )
     
     # Default HR
@@ -50,6 +50,7 @@ class VacationSetting(SoftDeleteModel):
     # System fields
     is_active = models.BooleanField(default=True)
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='vacation_settings_updates')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
@@ -84,7 +85,16 @@ class VacationSetting(SoftDeleteModel):
         """Verilən tarixi iş günü olub-olmadığını yoxlayır"""
         if check_date.weekday() >= 5:  # Həftəsonu (Saturday=5, Sunday=6)
             return False
-        return check_date.strftime('%Y-%m-%d') not in self.non_working_days
+        
+        # Non-working days yoxla
+        date_str = check_date.strftime('%Y-%m-%d')
+        for holiday in self.non_working_days:
+            if isinstance(holiday, dict) and holiday.get('date') == date_str:
+                return False
+            elif isinstance(holiday, str) and holiday == date_str:
+                return False
+        
+        return True
     
     def calculate_working_days(self, start, end):
         """İki tarix arasındakı iş günlərinin sayını hesablayır"""
@@ -111,29 +121,12 @@ class VacationType(SoftDeleteModel):
     """Məzuniyyət növləri - Annual, Sick, Personal"""
     
     name = models.CharField(max_length=100, unique=True, help_text="Məzuniyyət növü adı")
-    code = models.CharField(max_length=20, unique=True, help_text="Qısa kod")
     description = models.TextField(blank=True, help_text="Təsvir")
-    
-    # Approval settings
-    requires_approval = models.BooleanField(default=True, help_text="Təsdiq tələb edirmi")
-    affects_balance = models.BooleanField(default=True, help_text="Balansa təsir edirmi")
-    
-    # Limits
-    max_consecutive_days = models.PositiveIntegerField(
-        null=True, 
-        blank=True, 
-        help_text="Ardıcıl maksimum günlər"
-    )
-    
-    # Display
-    color = models.CharField(
-        max_length=7, 
-        default='#3B82F6',
-        help_text="Hex color kod (məsələn: #FF5733)"
-    )
     
     # System fields
     is_active = models.BooleanField(default=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='vacation_type_updates')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
@@ -144,7 +137,7 @@ class VacationType(SoftDeleteModel):
         ordering = ['name']
     
     def __str__(self):
-        return f"{self.name} ({self.code})"
+        return self.name
 
 
 class EmployeeVacationBalance(SoftDeleteModel):
@@ -259,8 +252,8 @@ class VacationRequest(SoftDeleteModel):
     # Dates
     start_date = models.DateField()
     end_date = models.DateField()
-    return_date = models.DateField(editable=False)
-    number_of_days = models.DecimalField(max_digits=5, decimal_places=1, editable=False)
+    return_date = models.DateField(editable=False, null=True, blank=True)
+    number_of_days = models.DecimalField(max_digits=5, decimal_places=1, editable=False, default=0)
     comment = models.TextField(blank=True, help_text="İşçinin şərhi")
     
     # Approvers
@@ -417,17 +410,16 @@ class VacationRequest(SoftDeleteModel):
     
     def _update_balance(self):
         """Approved olduqda balansı yenilə"""
-        if self.vacation_type.affects_balance:
-            balance, created = EmployeeVacationBalance.objects.get_or_create(
-                employee=self.employee,
-                year=self.start_date.year,
-                defaults={
-                    'yearly_balance': 28,  # Default
-                    'updated_by': self.hr_approved_by or self.line_manager_approved_by
-                }
-            )
-            balance.used_days += self.number_of_days
-            balance.save()
+        balance, created = EmployeeVacationBalance.objects.get_or_create(
+            employee=self.employee,
+            year=self.start_date.year,
+            defaults={
+                'yearly_balance': 28,  # Default
+                'updated_by': self.hr_approved_by or self.line_manager_approved_by
+            }
+        )
+        balance.used_days += self.number_of_days
+        balance.save()
 
 
 class VacationSchedule(SoftDeleteModel):
@@ -448,8 +440,8 @@ class VacationSchedule(SoftDeleteModel):
     # Dates
     start_date = models.DateField()
     end_date = models.DateField()
-    return_date = models.DateField(editable=False)
-    number_of_days = models.DecimalField(max_digits=5, decimal_places=1)
+    return_date = models.DateField(editable=False, null=True, blank=True)
+    number_of_days = models.DecimalField(max_digits=5, decimal_places=1, default=0)
     
     # Status
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='SCHEDULED')
@@ -489,7 +481,7 @@ class VacationSchedule(SoftDeleteModel):
     def save(self, *args, **kwargs):
         # Calculate working days and return date
         settings = VacationSetting.get_active()
-        if settings:
+        if settings and self.start_date and self.end_date:
             self.number_of_days = settings.calculate_working_days(self.start_date, self.end_date)
             self.return_date = settings.calculate_return_date(self.end_date)
         
@@ -524,6 +516,7 @@ class VacationSchedule(SoftDeleteModel):
         if balance:
             balance.used_days += self.number_of_days
             balance.scheduled_days = max(0, balance.scheduled_days - self.number_of_days)
+            balance.updated_by = user
             balance.save()
         
         self.status = 'REGISTERED'
@@ -568,6 +561,8 @@ class NotificationTemplate(SoftDeleteModel):
     is_active = models.BooleanField(default=True)
     
     # System fields
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='notification_template_updates')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     

@@ -909,6 +909,7 @@ class Employee(SoftDeleteModel):
     father_name = models.CharField(max_length=200, blank=True, null=True, help_text="Father's name (optional)")
     address = models.TextField(blank=True, null=True)
     phone = models.CharField(max_length=20, blank=True, null=True)
+    email = models.CharField(max_length=20, blank=True, null=True)
     emergency_contact = models.TextField(blank=True, null=True)
     
     
@@ -919,7 +920,7 @@ class Employee(SoftDeleteModel):
     job_function = models.ForeignKey(JobFunction, on_delete=models.PROTECT, related_name='employees')
     job_title = models.CharField(max_length=200)
     position_group = models.ForeignKey(PositionGroup, on_delete=models.PROTECT, related_name='employees')
-    
+   
     # Enhanced grading system integration
     grading_level = models.CharField(max_length=15, default='', help_text="Specific grading level (e.g., MGR_UQ)")
     
