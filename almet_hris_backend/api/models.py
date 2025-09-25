@@ -909,7 +909,7 @@ class Employee(SoftDeleteModel):
     father_name = models.CharField(max_length=200, blank=True, null=True, help_text="Father's name (optional)")
     address = models.TextField(blank=True, null=True)
     phone = models.CharField(max_length=20, blank=True, null=True)
-    email = models.CharField(max_length=20, blank=True, null=True)
+    email = models.CharField(max_length=60, blank=True, null=True)
     emergency_contact = models.TextField(blank=True, null=True)
     
     
@@ -1050,7 +1050,8 @@ class Employee(SoftDeleteModel):
             first_name = self.user.first_name or ''
             last_name = self.user.last_name or ''
             self.full_name = f"{first_name} {last_name}".strip()
-        
+        if self.user.email and not self.email:
+            self.email = self.user.email
         # Auto-calculate contract end date
         if self.contract_start_date and self.contract_duration != 'PERMANENT':
             try:

@@ -37,6 +37,24 @@ from .competency_assessment_views import (
 
 # Create router for viewsets
 router = DefaultRouter()
+# In the imports section, add:
+from .business_trip_views import (
+    TravelTypeViewSet, TransportTypeViewSet, TripPurposeViewSet,
+    ApprovalWorkflowViewSet, BusinessTripRequestViewSet, 
+    TripNotificationViewSet, TripSettingsViewSet
+)
+
+
+router.register(r'business-trips/travel-types', TravelTypeViewSet, basename='travel-types')
+router.register(r'business-trips/transport-types', TransportTypeViewSet, basename='transport-types')
+router.register(r'business-trips/purposes', TripPurposeViewSet, basename='trip-purposes')
+router.register(r'business-trips/workflows', ApprovalWorkflowViewSet, basename='approval-workflows')
+router.register(r'business-trips/requests', BusinessTripRequestViewSet, basename='trip-requests')
+router.register(r'business-trips/notifications', TripNotificationViewSet, basename='trip-notifications')
+router.register(r'business-trips/settings', TripSettingsViewSet, basename='trip-settings')
+
+
+
 
 # Business Structure URLs
 router.register(r'business-functions', views.BusinessFunctionViewSet, basename='businessfunction')
@@ -122,7 +140,7 @@ urlpatterns = [
     
     # NEW: Vacation Management System
     path('vacation/', include('api.vacation_urls')),
-    
+    path('business-trips/', include('api.business_trip_urls')),
     # Include router URLs
     path('', include(router.urls)),
 ]

@@ -1,4 +1,4 @@
-# api/vacation_urls.py - Enhanced URLs
+# api/vacation_urls.py - Enhanced URLs with PUT endpoints
 
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
@@ -16,22 +16,24 @@ urlpatterns = [
     # ============= DASHBOARD =============
     path('dashboard/', views.vacation_dashboard, name='vacation-dashboard'),
     
-    # ============= SEPARATED SETTINGS ENDPOINTS =============
+    # ============= SETTINGS ENDPOINTS (GET/POST/PUT) =============
     
     # Production Calendar Settings
     path('production-calendar/', views.get_production_calendar, name='vacation-get-production-calendar'),
     path('production-calendar/set/', views.set_production_calendar, name='vacation-set-production-calendar'),
+    path('production-calendar/update/', views.update_production_calendar, name='vacation-update-production-calendar'),
     
     # General Vacation Settings (allow_negative_balance, max_schedule_edits, notifications)
     path('settings/', views.get_general_vacation_settings, name='vacation-get-general-settings'),
     path('settings/set/', views.set_general_vacation_settings, name='vacation-set-general-settings'),
+    path('settings/update/', views.update_general_vacation_settings, name='vacation-update-general-settings'),
     
     # HR Representative Settings
     path('hr-representatives/', views.get_hr_representatives, name='vacation-get-hr-representatives'),
     path('hr-representatives/set-default/', views.set_default_hr_representative, name='vacation-set-default-hr'),
+    path('hr-representatives/update-default/', views.update_default_hr_representative, name='vacation-update-default-hr'),
     
     # ============= REQUEST SUBMISSION =============
-    path('form-data/', views.get_form_data, name='vacation-form-data'),
     path('employees/search/', views.search_employees, name='vacation-search-employees'),
     
     # Request Immediately
@@ -52,11 +54,17 @@ urlpatterns = [
     # ============= MY ALL REQUESTS & SCHEDULES =============
     path('my-all/', views.my_all_requests_schedules, name='vacation-my-all-requests-schedules'),
     path('my-all/export/', views.export_my_vacations, name='vacation-export-my-vacations'),
+    path('all-vacation-records/', views.all_vacation_records, name='all-vacation-records'),
+    path('all-records/export/', views.export_all_vacation_records, name='vacation-export-all-records'),
     
-    # ============= BALANCE MANAGEMENT =============
+    # ============= BALANCE MANAGEMENT (GET/POST/PUT) =============
     path('balances/bulk-upload/', views.bulk_upload_balances, name='vacation-bulk-upload-balances'),
     path('balances/template/', views.download_balance_template, name='vacation-download-balance-template'),
     path('balances/export/', views.export_balances, name='vacation-export-balances'),
+    
+    # NEW: Individual Balance Management
+    path('balances/update/', views.update_individual_balance, name='vacation-update-individual-balance'),
+    path('balances/reset/', views.reset_employee_balance, name='vacation-reset-employee-balance'),
     
     # ============= UTILITIES =============
     path('calculate-working-days/', views.calculate_working_days, name='vacation-calculate-working-days'),
