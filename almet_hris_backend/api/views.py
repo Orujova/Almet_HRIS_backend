@@ -1085,7 +1085,281 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             'tags', 'documents', 'activities'
         ).all()
     
+    @swagger_auto_schema(
+        method='post',
+        operation_description="Create system user account for employee",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['employee_id'],
+            properties={
+                'employee_id': openapi.Schema(type=openapi.TYPE_INTEGER, description='Employee ID'),
+                'create_password': openapi.Schema(
+                    type=openapi.TYPE_BOOLEAN, 
+                    description='Create password for local login (optional)',
+                    default=False
+                ),
+                'password': openapi.Schema(
+                    type=openapi.TYPE_STRING, 
+                    description='Password for local login (required if create_password=true)'
+                )
+            }
+        ),
+        responses={
+            200: openapi.Response(
+                description="User account created successfully",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'success': openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                        'message': openapi.Schema(type=openapi.TYPE_STRING),
+                        'employee_id': openapi.Schema(type=openapi.TYPE_INTEGER),
+                        'user_created': openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                        'username': openapi.Schema(type=openapi.TYPE_STRING),
+                        'can_login_with_microsoft': openapi.Schema(type=openapi.TYPE_BOOLEAN)
+                    }
+                )
+            ),
+            400: "Bad request",
+            404: "Employee not found"
+        }
+    )
+    @action(detail=False, methods=['post'], url_path='create-user-account')
+    def create_user_account_for_employee(self, request):
+        """Create system user account for employee"""
+        try:
+            employee_id = request.data.get('employee_id')
+            create_password = request.data.get('create_password', False)
+            password = request.data.get('password')
+            
+            if not employee_id:
+                return Response(
+                    {'error': 'employee_id is required'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            try:
+                employee = Employee.objects.get(id=employee_id)
+            except Employee.DoesNotExist:
+                return Response(
+                    {'error': 'Employee not found'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            
+            # Check if user account already exists
+            if employee.user:
+                return Response(
+                    {
+                        'success': False,
+                        'message': f'Employee {employee.get_display_name()} already has a user account',
+                        'employee_id': employee.id,
+                        'user_created': False,
+                        'username': employee.user.username,
+                        'can_login_with_microsoft': employee.can_login_with_microsoft()
+                    },
+                    status=status.HTTP_200_OK
+                )
+            
+            # Validate password if creating password
+            if create_password and not password:
+                return Response(
+                    {'error': 'password is required when create_password=true'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Create user account
+            try:
+                user = employee.create_user_account(
+                    create_password=create_password,
+                    password=password
+                )
+                
+                # Log activity
+                EmployeeActivity.objects.create(
+                    employee=employee,
+                    activity_type='UPDATED',
+                    description=f"System user account created for {employee.get_display_name()}",
+                    performed_by=request.user,
+                    metadata={
+                        'user_account_created': True,
+                        'username': user.username,
+                        'has_password': create_password,
+                        'action': 'create_user_account'
+                    }
+                )
+                
+                return Response({
+                    'success': True,
+                    'message': f'User account created successfully for {employee.get_display_name()}',
+                    'employee_id': employee.id,
+                    'user_created': True,
+                    'username': user.username,
+                    'can_login_with_microsoft': employee.can_login_with_microsoft(),
+                    'login_methods': {
+                        'microsoft': True,
+                        'password': create_password
+                    }
+                })
+                
+            except ValueError as e:
+                return Response(
+                    {'error': str(e)},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+                
+        except Exception as e:
+            logger.error(f"Create user account failed: {str(e)}")
+            return Response(
+                {'error': f'Failed to create user account: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
     
+    @swagger_auto_schema(
+        method='post',
+        operation_description="Remove system access from employee",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['employee_id'],
+            properties={
+                'employee_id': openapi.Schema(type=openapi.TYPE_INTEGER, description='Employee ID'),
+                'reason': openapi.Schema(type=openapi.TYPE_STRING, description='Reason for removing access')
+            }
+        ),
+        responses={
+            200: "System access removed successfully",
+            400: "Bad request",
+            404: "Employee not found"
+        }
+    )
+    @action(detail=False, methods=['post'], url_path='remove-system-access')
+    def remove_system_access(self, request):
+        """Remove system access from employee (delete user account)"""
+        try:
+            employee_id = request.data.get('employee_id')
+            reason = request.data.get('reason', 'System access revoked')
+            
+            if not employee_id:
+                return Response(
+                    {'error': 'employee_id is required'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            try:
+                employee = Employee.objects.get(id=employee_id)
+            except Employee.DoesNotExist:
+                return Response(
+                    {'error': 'Employee not found'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            
+            # Check if user account exists
+            if not employee.user:
+                return Response(
+                    {
+                        'success': False,
+                        'message': f'Employee {employee.get_display_name()} does not have system access',
+                        'employee_id': employee.id,
+                        'had_system_access': False
+                    }
+                )
+            
+            # Store user info before deletion
+            username = employee.user.username
+            had_microsoft_access = employee.can_login_with_microsoft()
+            
+            # Remove user account
+            with transaction.atomic():
+                user = employee.user
+                employee.user = None
+                employee.save()
+                user.delete()
+            
+            # Log activity
+            EmployeeActivity.objects.create(
+                employee=employee,
+                activity_type='UPDATED',
+                description=f"System access removed from {employee.get_display_name()}. Reason: {reason}",
+                performed_by=request.user,
+                metadata={
+                    'system_access_removed': True,
+                    'former_username': username,
+                    'had_microsoft_access': had_microsoft_access,
+                    'reason': reason,
+                    'action': 'remove_system_access'
+                }
+            )
+            
+            return Response({
+                'success': True,
+                'message': f'System access removed from {employee.get_display_name()}',
+                'employee_id': employee.id,
+                'employee_name': employee.get_display_name(),
+                'former_username': username,
+                'had_microsoft_access': had_microsoft_access
+            })
+            
+        except Exception as e:
+            logger.error(f"Remove system access failed: {str(e)}")
+            return Response(
+                {'error': f'Failed to remove system access: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    @action(detail=False, methods=['get'], url_path='system-access-report')
+    def get_system_access_report(self, request):
+        """Get report of employees with/without system access"""
+        try:
+            # Get all employees
+            employees = Employee.objects.select_related('user').all()
+            
+            # Categorize employees
+            with_system_access = []
+            without_system_access = []
+            with_microsoft_access = []
+            
+            for employee in employees:
+                employee_info = {
+                    'id': employee.id,
+                    'employee_id': employee.employee_id,
+                    'name': employee.get_display_name(),
+                    'email': employee.get_contact_email(),
+                    'department': employee.department.name if employee.department else 'N/A',
+                    'job_title': employee.job_title,
+                    'status': employee.status.name if employee.status else 'N/A'
+                }
+                
+                if employee.has_system_access():
+                    employee_info['username'] = employee.user.username
+                    employee_info['can_login_with_microsoft'] = employee.can_login_with_microsoft()
+                    with_system_access.append(employee_info)
+                    
+                    if employee.can_login_with_microsoft():
+                        with_microsoft_access.append(employee_info)
+                else:
+                    without_system_access.append(employee_info)
+            
+            # Statistics
+            total_employees = employees.count()
+            
+            return Response({
+                'summary': {
+                    'total_employees': total_employees,
+                    'with_system_access': len(with_system_access),
+                    'without_system_access': len(without_system_access),
+                    'with_microsoft_access': len(with_microsoft_access),
+                    'system_access_percentage': round((len(with_system_access) / total_employees * 100), 2) if total_employees > 0 else 0
+                },
+                'employees_with_system_access': with_system_access,
+                'employees_without_system_access': without_system_access,
+                'employees_with_microsoft_access': with_microsoft_access,
+                'generated_at': timezone.now()
+            })
+            
+        except Exception as e:
+            logger.error(f"System access report failed: {str(e)}")
+            return Response(
+                {'error': f'Failed to generate system access report: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
     def _clean_form_data(self, data):
         """Comprehensive data cleaning for form data"""
         cleaned_data = {}

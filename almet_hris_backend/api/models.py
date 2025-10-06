@@ -885,14 +885,21 @@ class Employee(SoftDeleteModel):
         help_text="Employee profile photo"
     )
 
-   
-  
+    # CHANGED: Make user field optional - only create when employee needs system access
+    user = models.OneToOneField(
+        User, 
+        on_delete=models.CASCADE, 
+        related_name='employee_profile',
+        null=True,
+        blank=True,
+        help_text="Django user account (created when employee needs system access)"
+    )
+
     # Basic Information
-    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='employee_profile')
     employee_id = models.CharField(
         max_length=50, 
         unique=True, 
-        editable=False,  # This makes it read-only in forms
+        editable=False,
         help_text="Auto-generated based on Business Function code"
     )
     original_employee_pk = models.IntegerField(
@@ -900,8 +907,19 @@ class Employee(SoftDeleteModel):
         blank=True,
         help_text="Original employee database ID (pk) that created this vacancy"
     )
+    
     # Auto-generated full name
     full_name = models.CharField(max_length=300, editable=False, default='')
+    
+    # ENHANCED: Add first_name and last_name directly to Employee model
+    first_name = models.CharField(
+        max_length=150, 
+        help_text="Employee's first name"
+    )
+    last_name = models.CharField(
+        max_length=150, 
+        help_text="Employee's last name"
+    )
     
     # Personal Information (ENHANCED with father_name)
     date_of_birth = models.DateField(null=True, blank=True)
@@ -909,7 +927,7 @@ class Employee(SoftDeleteModel):
     father_name = models.CharField(max_length=200, blank=True, null=True, help_text="Father's name (optional)")
     address = models.TextField(blank=True, null=True)
     phone = models.CharField(max_length=20, blank=True, null=True)
-    email = models.CharField(max_length=60, blank=True, null=True)
+    email = models.CharField(max_length=60, blank=True, null=True)  # Primary email for employee
     emergency_contact = models.TextField(blank=True, null=True)
     
     
@@ -1045,12 +1063,15 @@ class Employee(SoftDeleteModel):
         if not self.employee_id and self.business_function:
             self.employee_id = self.generate_employee_id()
         
-        # Auto-generate full name
-        if self.user:
-            first_name = self.user.first_name or ''
-            last_name = self.user.last_name or ''
-            self.full_name = f"{first_name} {last_name}".strip()
-        if self.user.email and not self.email:
+        if self.first_name or self.last_name:
+            # Priority 1: Use employee's own first_name/last_name fields
+            self.full_name = f"{self.first_name} {self.last_name}".strip()
+        elif self.user and (self.user.first_name or self.user.last_name):
+            # Priority 2: Use user's first_name/last_name as fallback
+            self.full_name = f"{self.user.first_name} {self.user.last_name}".strip()
+        
+        # Sync email: if user exists and employee email is empty, use user email
+        if self.user and self.user.email and not self.email:
             self.email = self.user.email
         # Auto-calculate contract end date
         if self.contract_start_date and self.contract_duration != 'PERMANENT':
@@ -1109,7 +1130,82 @@ class Employee(SoftDeleteModel):
                 pass
         
         super().save(*args, **kwargs)
-
+    
+    def link_with_user_account(self, user):
+        """
+        Properly link this employee with a user account
+        Used during Microsoft authentication
+        """
+        if self.user and self.user != user:
+            raise ValueError(f"Employee {self.employee_id} is already linked to a different user account")
+        
+        # Link user to employee
+        self.user = user
+        
+        # Sync information
+        if not self.email and user.email:
+            self.email = user.email
+        if not self.first_name and user.first_name:
+            self.first_name = user.first_name
+        if not self.last_name and user.last_name:
+            self.last_name = user.last_name
+        
+        self.save()
+        logger.info(f"Linked employee {self.employee_id} with user account {user.username}")
+    
+    def create_user_account_for_microsoft_auth(self, email, first_name, last_name, microsoft_id):
+        """
+        Create user account specifically for Microsoft authentication
+        This ensures proper linking during auth process
+        """
+        if self.user:
+            raise ValueError(f"Employee {self.employee_id} already has a user account")
+        
+        from django.db import transaction
+        
+        with transaction.atomic():
+            # Create user
+            user = User.objects.create_user(
+                username=email,
+                email=email,
+                first_name=first_name,
+                last_name=last_name
+            )
+            user.set_unusable_password()  # Microsoft auth only
+            user.save()
+            
+            # Link to employee
+            self.link_with_user_account(user)
+            
+            # Create Microsoft link
+            MicrosoftUser.objects.create(
+                user=user,
+                microsoft_id=microsoft_id
+            )
+            
+            return user
+    def has_system_access(self):
+        """Check if employee has system access (user account)"""
+        return bool(self.user)
+    
+    def can_login_with_microsoft(self):
+        """Check if employee can login with Microsoft"""
+        return bool(self.user and hasattr(self.user, 'microsoft_user'))
+    
+    def get_display_name(self):
+        """Get display name for employee"""
+        return self.full_name or f"{self.first_name} {self.last_name}".strip()
+    def get_display_first_name(self):
+        """Get display name for employee"""
+        return self.first_name or f"{self.first_name} ".strip()
+    def get_display_last_name(self):
+        """Get display name for employee"""
+        return self.last_name or f" {self.last_name}".strip()
+    
+    def get_contact_email(self):
+        """Get primary contact email for employee"""
+        return self.email or (self.user.email if self.user else None)
+    
     def auto_assign_status(self):
         """UPDATED: Öz yaratdığınız statuslara əsasən avtomatik status təyin et"""
         try:
@@ -2186,6 +2282,7 @@ class Employee(SoftDeleteModel):
         indexes = [
             models.Index(fields=['employee_id']),
             models.Index(fields=['start_date']),
+               models.Index(fields=['email']),  # Add index for email lookups
             models.Index(fields=['status']),
             models.Index(fields=['position_group']),
             models.Index(fields=['business_function', 'department']),

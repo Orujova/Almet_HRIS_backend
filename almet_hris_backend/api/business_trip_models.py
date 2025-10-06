@@ -9,7 +9,7 @@ import uuid
 class TravelType(SoftDeleteModel):
     """Travel type configuration (Domestic, Overseas, etc.)"""
     name = models.CharField(max_length=50, unique=True)
-    code = models.CharField(max_length=20, unique=True)
+
     description = models.TextField(blank=True)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -26,7 +26,7 @@ class TravelType(SoftDeleteModel):
 class TransportType(SoftDeleteModel):
     """Transport type configuration (Taxi, Train, Airplane, etc.)"""
     name = models.CharField(max_length=50, unique=True)
-    code = models.CharField(max_length=20, unique=True)
+
     description = models.TextField(blank=True)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -43,7 +43,7 @@ class TransportType(SoftDeleteModel):
 class TripPurpose(SoftDeleteModel):
     """Trip purpose configuration (Conference, Meeting, Training, etc.)"""
     name = models.CharField(max_length=100, unique=True)
-    code = models.CharField(max_length=30, unique=True)
+ 
     description = models.TextField(blank=True)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -218,9 +218,9 @@ class BusinessTripRequest(SoftDeleteModel):
         workflows = ApprovalWorkflow.objects.filter(is_active=True)
         
         # Filter by travel type
-        if self.travel_type.code == 'DOMESTIC':
+        if self.travel_type.name == 'DOMESTIC':
             workflows = workflows.filter(applies_to_domestic=True)
-        elif self.travel_type.code == 'OVERSEAS':
+        elif self.travel_type.name == 'OVERSEAS':
             workflows = workflows.filter(applies_to_overseas=True)
         
         # Filter by amount if estimated
@@ -446,124 +446,3 @@ class TripApproval(SoftDeleteModel):
         verbose_name = "Trip Approval"
         verbose_name_plural = "Trip Approvals"
 
-class TripNotification(SoftDeleteModel):
-    """Notification log for trip requests"""
-    NOTIFICATION_TYPE_CHOICES = [
-        ('EMAIL', 'Email'),
-        ('SMS', 'SMS'),
-        ('SYSTEM', 'System Notification'),
-    ]
-
-    NOTIFICATION_TEMPLATE_CHOICES = [
-        ('TRIP_SUBMITTED', 'Trip Request Submitted'),
-        ('APPROVAL_PENDING', 'Approval Pending'),
-        ('TRIP_APPROVED', 'Trip Request Approved'),
-        ('TRIP_REJECTED', 'Trip Request Rejected'),
-        ('TRIP_REMINDER', 'Trip Reminder'),
-        ('AMOUNT_UPDATED', 'Trip Amount Updated'),
-    ]
-
-    trip_request = models.ForeignKey(BusinessTripRequest, on_delete=models.CASCADE, related_name='notifications')
-    recipient = models.ForeignKey(Employee, on_delete=models.CASCADE)
-    notification_type = models.CharField(max_length=10, choices=NOTIFICATION_TYPE_CHOICES)
-    template = models.CharField(max_length=20, choices=NOTIFICATION_TEMPLATE_CHOICES)
-    
-    subject = models.CharField(max_length=200)
-    message = models.TextField()
-    
-    # Delivery status
-    is_sent = models.BooleanField(default=False)
-    sent_at = models.DateTimeField(null=True, blank=True)
-    error_message = models.TextField(blank=True)
-    
-    # Metadata
-    metadata = models.JSONField(default=dict, blank=True)
-    
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    def __str__(self):
-        return f"{self.trip_request.request_id} - {self.get_template_display()} to {self.recipient.full_name}"
-
-    class Meta:
-        ordering = ['-created_at']
-        verbose_name = "Trip Notification"
-        verbose_name_plural = "Trip Notifications"
-
-# Create default data function
-def create_default_trip_settings():
-    """Create default travel types, transport types, and purposes"""
-    
-    # Travel Types
-    travel_types = [
-        ('DOMESTIC', 'Domestic'),
-        ('OVERSEAS', 'Overseas'),
-    ]
-    
-    for code, name in travel_types:
-        TravelType.objects.get_or_create(
-            code=code,
-            defaults={'name': name, 'is_active': True}
-        )
-    
-    # Transport Types
-    transport_types = [
-        ('TAXI', 'Taxi'),
-        ('PRIVATE_CAR', 'Private Car'),
-        ('CORPORATE_CAR', 'Corporate Car'),
-        ('TRAIN', 'Train'),
-        ('AIRPLANE', 'Airplane'),
-    ]
-    
-    for code, name in transport_types:
-        TransportType.objects.get_or_create(
-            code=code,
-            defaults={'name': name, 'is_active': True}
-        )
-    
-    # Trip Purposes
-    purposes = [
-        ('CONFERENCE', 'Conference'),
-        ('MEETING', 'Meeting'),
-        ('TRAINING', 'Training'),
-        ('SITE_VISIT', 'Site Visit'),
-        ('CLIENT_VISIT', 'Client Visit'),
-        ('OTHER', 'Other'),
-    ]
-    
-    for code, name in purposes:
-        TripPurpose.objects.get_or_create(
-            code=code,
-            defaults={'name': name, 'is_active': True}
-        )
-    
-    # Default Approval Workflow
-    workflow, created = ApprovalWorkflow.objects.get_or_create(
-        name='Standard Approval Process',
-        defaults={
-            'description': 'Standard 3-step approval process for business trips',
-            'is_active': True,
-            'is_default': True,
-            'applies_to_domestic': True,
-            'applies_to_overseas': True
-        }
-    )
-    
-    if created:
-        # Create approval steps
-        steps = [
-            ('LINE_MANAGER', 'Line Manager', 1, False, False),
-            ('FINANCE_PAYROLL', 'Finance/Payroll', 2, True, True),
-            ('HR', 'HR', 3, False, False),
-        ]
-        
-        for step_type, step_name, order, can_edit_amount, requires_amount in steps:
-            ApprovalStep.objects.create(
-                workflow=workflow,
-                step_type=step_type,
-                step_name=step_name,
-                step_order=order,
-                is_required=True,
-                can_edit_amount=can_edit_amount,
-                requires_amount_entry=requires_amount
-            )

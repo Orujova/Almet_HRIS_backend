@@ -33,11 +33,13 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt',
     'drf_yasg',
     'corsheaders',
-    'django_filters',  # Add this for filtering
-    
+    'django_filters',  
+    'django_celery_beat',      # Beat scheduler
+    'django_celery_results',
+
     # Local apps
     'api',
-    'grading',  # ADD GRADING APP HERE
+    'grading',  
 ]
 
 MIDDLEWARE = [
@@ -71,7 +73,7 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'almet_hris_backend.wsgi.application'
 
-# Database - PostgreSQL Configuration
+# Database - Local Configuration
 # DATABASES = {
 #     'default': {
 #         'ENGINE': 'django.db.backends.postgresql',
@@ -83,6 +85,7 @@ WSGI_APPLICATION = 'almet_hris_backend.wsgi.application'
 #         'CONN_MAX_AGE': 60,  # Connection pooling
 #     }
 # }
+# Database - Server Configuration
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
@@ -294,3 +297,34 @@ CORS_ALLOW_HEADERS = [
 
 
 #celery
+
+# ==========================================
+# CELERY CONFIGURATION - PostgreSQL Backend
+# ==========================================
+
+# Use SQLAlchemy database URL format for PostgreSQL
+CELERY_BROKER_URL = 'db+postgresql://postgres:almet2025@localhost:5432/almet_hris'
+
+# Result backend using django-celery-results
+CELERY_RESULT_BACKEND = 'django-db'
+
+# Task execution settings
+CELERY_TASK_ALWAYS_EAGER = False
+CELERY_TASK_EAGER_PROPAGATES = True
+
+# Serialization
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+
+# Timezone
+CELERY_TIMEZONE = 'Asia/Baku'
+CELERY_ENABLE_UTC = True
+
+# Beat scheduler
+CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
+
+# Connection settings
+CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
+CELERY_BROKER_CONNECTION_RETRY = True
+CELERY_BROKER_CONNECTION_MAX_RETRIES = 10

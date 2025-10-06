@@ -193,18 +193,24 @@ class EmployeeVacationBalance(SoftDeleteModel):
     
     @property
     def total_balance(self):
-        """Ümumi balans (başlanğıc + illik)"""
-        return self.start_balance + self.yearly_balance
+        """✅ FIX: Ümumi balans"""
+        return float(self.start_balance) + float(self.yearly_balance)
     
     @property
     def remaining_balance(self):
-        """Qalan balans"""
-        return self.total_balance - self.used_days - self.scheduled_days
+        """✅ FIX: Qalan balans"""
+        total = self.total_balance
+        used = float(self.used_days)
+        scheduled = float(self.scheduled_days)
+        return total - used - scheduled
     
     @property
     def should_be_planned(self):
         """Planlaşdırılmalı olan günlər"""
-        return max(0, self.yearly_balance - self.scheduled_days)
+        # yearly_balance-dən artıq istifadə edilmiş və planlaşdırılmış günləri çıxarırıq
+        planned_and_used = float(self.scheduled_days) + float(self.used_days)
+        remaining_from_yearly = max(0, float(self.yearly_balance) - planned_and_used)
+        return remaining_from_yearly
     
     def clean(self):
         """Validation"""
@@ -413,10 +419,7 @@ class VacationRequest(SoftDeleteModel):
         balance, created = EmployeeVacationBalance.objects.get_or_create(
             employee=self.employee,
             year=self.start_date.year,
-            defaults={
-                'yearly_balance': 28,  # Default
-                'updated_by': self.hr_approved_by or self.line_manager_approved_by
-            }
+          
         )
         balance.used_days += self.number_of_days
         balance.save()
@@ -489,9 +492,50 @@ class VacationSchedule(SoftDeleteModel):
         self.clean()
         super().save(*args, **kwargs)
         
-        # Yeni schedule yaradıldıqda scheduled_days-ı artır
+        # ✅ FIX: Yeni schedule yaradıldıqda scheduled_days artır
         if is_new and self.status == 'SCHEDULED':
             self._update_scheduled_balance(add=True)
+    
+    def register_as_taken(self, user):
+        """Schedule-i registered et"""
+        if self.status != 'SCHEDULED':
+            return
+        
+        # Get or create balance
+        balance, created = EmployeeVacationBalance.objects.get_or_create(
+            employee=self.employee, 
+            year=self.start_date.year,
+            defaults={
+                'start_balance': 0,
+                'yearly_balance': 28,
+                'updated_by': user
+            }
+        )
+        
+        # DÜZƏLTMƏ: Scheduled-dən sil, used-ə əlavə et
+        balance.scheduled_days = max(0, float(balance.scheduled_days) - float(self.number_of_days))
+        balance.used_days = float(balance.used_days) + float(self.number_of_days)
+        balance.updated_by = user
+        balance.save()
+        
+        # Status dəyiş
+        self.status = 'REGISTERED'
+        self.save()
+    
+    def _update_scheduled_balance(self, add=True):
+        """Scheduled balansı yenilə"""
+        balance, created = EmployeeVacationBalance.objects.get_or_create(
+            employee=self.employee,
+            year=self.start_date.year,
+           
+        )
+        
+        if add:
+            balance.scheduled_days += self.number_of_days
+        else:
+            balance.scheduled_days = max(0, balance.scheduled_days - self.number_of_days)
+        
+        balance.save()
     
     def can_edit(self):
         """Edit edilə bilərmi?"""
@@ -501,42 +545,6 @@ class VacationSchedule(SoftDeleteModel):
         settings = VacationSetting.get_active()
         max_edits = settings.max_schedule_edits if settings else 3
         return self.edit_count < max_edits
-    
-    def register_as_taken(self, user):
-        """Schedule-i registered et"""
-        if self.status != 'SCHEDULED':
-            return
-        
-        # Balansı yenilə
-        balance = EmployeeVacationBalance.objects.filter(
-            employee=self.employee, 
-            year=self.start_date.year
-        ).first()
-        
-        if balance:
-            balance.used_days += self.number_of_days
-            balance.scheduled_days = max(0, balance.scheduled_days - self.number_of_days)
-            balance.updated_by = user
-            balance.save()
-        
-        self.status = 'REGISTERED'
-        self.save()
-    
-    def _update_scheduled_balance(self, add=True):
-        """Scheduled balansı yenilə"""
-        balance, created = EmployeeVacationBalance.objects.get_or_create(
-            employee=self.employee,
-            year=self.start_date.year,
-            defaults={'yearly_balance': 28}  # Default
-        )
-        
-        if add:
-            balance.scheduled_days += self.number_of_days
-        else:
-            balance.scheduled_days = max(0, balance.scheduled_days - self.number_of_days)
-        
-        balance.save()
-
 
 class NotificationTemplate(SoftDeleteModel):
     """Email bildiriş şablonları"""

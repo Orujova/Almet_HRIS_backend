@@ -6,7 +6,7 @@ from django.db import transaction
 from .models import Employee
 from .business_trip_models import (
     TravelType, TransportType, TripPurpose, ApprovalWorkflow, ApprovalStep,
-    BusinessTripRequest, TripSchedule, TripHotel, TripApproval, TripNotification
+    BusinessTripRequest, TripSchedule, TripHotel, TripApproval
 )
 
 class TravelTypeSerializer(serializers.ModelSerializer):
@@ -14,21 +14,21 @@ class TravelTypeSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = TravelType
-        fields = ['id', 'name', 'code', 'description', 'is_active']
+        fields = ['id', 'name', 'description', 'is_active']
 
 class TransportTypeSerializer(serializers.ModelSerializer):
     """Serializer for Transport Type configuration"""
     
     class Meta:
         model = TransportType
-        fields = ['id', 'name', 'code', 'description', 'is_active']
+        fields = ['id', 'name',  'description', 'is_active']
 
 class TripPurposeSerializer(serializers.ModelSerializer):
     """Serializer for Trip Purpose configuration"""
     
     class Meta:
         model = TripPurpose
-        fields = ['id', 'name', 'code', 'description', 'is_active']
+        fields = ['id', 'name',  'description', 'is_active']
 
 class ApprovalStepSerializer(serializers.ModelSerializer):
     """Serializer for Approval Steps"""
@@ -119,9 +119,11 @@ class BusinessTripRequestDetailSerializer(serializers.ModelSerializer):
     """Serializer for Business Trip Request detail view"""
     employee_name = serializers.CharField(source='employee.full_name', read_only=True)
     employee_id = serializers.CharField(source='employee.employee_id', read_only=True)
-    employee_function = serializers.CharField(source='employee.job_function.name', read_only=True)
+    employee_job_function = serializers.CharField(source='employee.job_function.name', read_only=True)
     employee_department = serializers.CharField(source='employee.department.name', read_only=True)
-    employee_division = serializers.CharField(source='employee.unit.name', read_only=True)
+    employee_unit = serializers.CharField(source='employee.unit.name', read_only=True)
+   
+    employee_business_function = serializers.CharField(source='employee.business_function.name', read_only=True)
     employee_phone = serializers.CharField(source='employee.phone', read_only=True)
     
     requested_by_name = serializers.CharField(source='requested_by.full_name', read_only=True)
@@ -149,7 +151,7 @@ class BusinessTripRequestDetailSerializer(serializers.ModelSerializer):
         model = BusinessTripRequest
         fields = [
             'id', 'request_id', 'requester_type', 'employee', 'employee_name', 'employee_id',
-            'employee_function', 'employee_department', 'employee_division', 'employee_phone',
+            'employee_job_function', 'employee_department', 'employee_unit', 'employee_phone','employee_business_function',
             'requested_by', 'requested_by_name', 'travel_type', 'travel_type_name',
             'transport_type', 'transport_type_name', 'purpose', 'purpose_name',
             'start_date', 'end_date', 'duration_days', 'status', 'workflow',
@@ -374,7 +376,7 @@ class EmployeeOptionSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Employee
-        fields = ['id', 'employee_id', 'full_name', 'job_title', 'department']
+        fields = ['id', 'employee_id', 'job_function',"phone" ,'full_name', 'job_title', 'department']
         
     department = serializers.CharField(source='department.name', read_only=True)
 
@@ -432,15 +434,3 @@ class PendingApprovalSerializer(serializers.ModelSerializer):
         except Employee.DoesNotExist:
             return False
 
-class TripNotificationSerializer(serializers.ModelSerializer):
-    """Serializer for trip notifications"""
-    recipient_name = serializers.CharField(source='recipient.full_name', read_only=True)
-    trip_request_id = serializers.CharField(source='trip_request.request_id', read_only=True)
-    
-    class Meta:
-        model = TripNotification
-        fields = [
-            'id', 'trip_request', 'trip_request_id', 'recipient', 'recipient_name',
-            'notification_type', 'template', 'subject', 'message', 'is_sent',
-            'sent_at', 'error_message', 'created_at'
-        ]

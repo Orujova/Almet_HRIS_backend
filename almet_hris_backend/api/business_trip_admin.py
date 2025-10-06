@@ -5,41 +5,41 @@ from django.urls import reverse
 from django.utils.safestring import mark_safe
 from .business_trip_models import (
     TravelType, TransportType, TripPurpose, ApprovalWorkflow, ApprovalStep,
-    BusinessTripRequest, TripSchedule, TripHotel, TripApproval, TripNotification
+    BusinessTripRequest, TripSchedule, TripHotel, TripApproval
 )
 
 @admin.register(TravelType)
 class TravelTypeAdmin(admin.ModelAdmin):
-    list_display = ['name', 'code', 'description', 'is_active', 'created_at']
+    list_display = ['name',  'description', 'is_active', 'created_at']
     list_filter = ['is_active', 'created_at']
-    search_fields = ['name', 'code', 'description']
+    search_fields = ['name',  'description']
     ordering = ['name']
     
-    fields = ['name', 'code', 'description', 'is_active']
+    fields = ['name', 'description', 'is_active']
     
     def get_queryset(self, request):
         return super().get_queryset(request).filter(is_deleted=False)
 
 @admin.register(TransportType)
 class TransportTypeAdmin(admin.ModelAdmin):
-    list_display = ['name', 'code', 'description', 'is_active', 'created_at']
+    list_display = ['name',  'description', 'is_active', 'created_at']
     list_filter = ['is_active', 'created_at']
-    search_fields = ['name', 'code', 'description']
+    search_fields = ['name',  'description']
     ordering = ['name']
     
-    fields = ['name', 'code', 'description', 'is_active']
+    fields = ['name', 'description', 'is_active']
     
     def get_queryset(self, request):
         return super().get_queryset(request).filter(is_deleted=False)
 
 @admin.register(TripPurpose)
 class TripPurposeAdmin(admin.ModelAdmin):
-    list_display = ['name', 'code', 'description', 'is_active', 'created_at']
+    list_display = ['name','description', 'is_active', 'created_at']
     list_filter = ['is_active', 'created_at']
-    search_fields = ['name', 'code', 'description']
+    search_fields = ['name',  'description']
     ordering = ['name']
     
-    fields = ['name', 'code', 'description', 'is_active']
+    fields = ['name',  'description', 'is_active']
     
     def get_queryset(self, request):
         return super().get_queryset(request).filter(is_deleted=False)
@@ -243,54 +243,3 @@ class TripApprovalAdmin(admin.ModelAdmin):
             'trip_request', 'approval_step', 'approver'
         )
 
-@admin.register(TripNotification)
-class TripNotificationAdmin(admin.ModelAdmin):
-    list_display = [
-        'trip_request_link', 'recipient_link', 'notification_type',
-        'template', 'sent_status', 'created_at'
-    ]
-    list_filter = [
-        'notification_type', 'template', 'is_sent', 'created_at'
-    ]
-    search_fields = [
-        'trip_request__request_id', 'recipient__full_name', 
-        'subject', 'message'
-    ]
-    ordering = ['-created_at']
-    
-    fields = [
-        'trip_request', 'recipient', 'notification_type', 'template',
-        'subject', 'message', 'is_sent', 'sent_at', 'error_message',
-        'metadata', 'created_at'
-    ]
-    readonly_fields = ['created_at', 'updated_at']
-    
-    def trip_request_link(self, obj):
-        url = reverse('admin:api_businesstriprequest_change', args=[obj.trip_request.pk])
-        return format_html('<a href="{}">{}</a>', url, obj.trip_request.request_id)
-    trip_request_link.short_description = 'Trip Request'
-    
-    def recipient_link(self, obj):
-        url = reverse('admin:api_employee_change', args=[obj.recipient.pk])
-        return format_html('<a href="{}">{}</a>', url, obj.recipient.full_name)
-    recipient_link.short_description = 'Recipient'
-    
-    def sent_status(self, obj):
-        if obj.is_sent:
-            return format_html(
-                '<span style="color: green;">✓ Sent</span>'
-            )
-        elif obj.error_message:
-            return format_html(
-                '<span style="color: red;">✗ Failed</span>'
-            )
-        else:
-            return format_html(
-                '<span style="color: orange;">⏳ Pending</span>'
-            )
-    sent_status.short_description = 'Status'
-    
-    def get_queryset(self, request):
-        return super().get_queryset(request).filter(is_deleted=False).select_related(
-            'trip_request', 'recipient'
-        )

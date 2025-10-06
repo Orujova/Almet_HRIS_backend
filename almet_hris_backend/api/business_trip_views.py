@@ -14,17 +14,12 @@ import logging
 
 from .models import Employee
 from .business_trip_models import (
-    TravelType, TransportType, TripPurpose, ApprovalWorkflow, ApprovalStep,
-    BusinessTripRequest, TripSchedule, TripHotel, TripApproval, TripNotification,
-    create_default_trip_settings
+    TravelType, TransportType, TripPurpose, ApprovalWorkflow,BusinessTripRequest,  TripApproval,
 )
 from .business_trip_serializers import (
-    TravelTypeSerializer, TransportTypeSerializer, TripPurposeSerializer,
-    ApprovalWorkflowSerializer, BusinessTripRequestListSerializer,
-    BusinessTripRequestDetailSerializer, BusinessTripRequestCreateSerializer,
-    BusinessTripRequestUpdateSerializer, TripApprovalActionSerializer,
-    TripStatisticsSerializer, EmployeeOptionSerializer, PendingApprovalSerializer,
-    TripNotificationSerializer
+    TravelTypeSerializer, TransportTypeSerializer, TripPurposeSerializer,ApprovalWorkflowSerializer, BusinessTripRequestListSerializer,BusinessTripRequestDetailSerializer, BusinessTripRequestCreateSerializer,
+    BusinessTripRequestUpdateSerializer, TripApprovalActionSerializer, PendingApprovalSerializer,
+  
 )
 
 logger = logging.getLogger(__name__)
@@ -36,7 +31,7 @@ class TravelTypeViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
     filterset_fields = ['is_active']
-    search_fields = ['name', 'code']
+    search_fields = ['name']
     ordering = ['name']
 
     def get_queryset(self):
@@ -49,7 +44,7 @@ class TransportTypeViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
     filterset_fields = ['is_active']
-    search_fields = ['name', 'code']
+    search_fields = ['name']
     ordering = ['name']
 
     def get_queryset(self):
@@ -62,21 +57,11 @@ class TripPurposeViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
     filterset_fields = ['is_active']
-    search_fields = ['name', 'code']
+    search_fields = ['name']
     ordering = ['name']
 
     def get_queryset(self):
         return self.queryset.filter(is_active=True)
-
-class ApprovalWorkflowViewSet(viewsets.ModelViewSet):
-    """ViewSet for managing approval workflows"""
-    queryset = ApprovalWorkflow.objects.filter(is_deleted=False)
-    serializer_class = ApprovalWorkflowSerializer
-    permission_classes = [IsAuthenticated]
-    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
-    filterset_fields = ['is_active', 'is_default', 'applies_to_domestic', 'applies_to_overseas']
-    search_fields = ['name', 'description']
-    ordering = ['name']
 
 class BusinessTripRequestViewSet(viewsets.ModelViewSet):
     """Main ViewSet for Business Trip Requests"""
@@ -95,7 +80,15 @@ class BusinessTripRequestViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         """Filter queryset based on user permissions"""
+        # Short-circuit for schema generation
+        if getattr(self, 'swagger_fake_view', False):
+            return BusinessTripRequest.objects.none()
+        
         user = self.request.user
+        
+        # Check if user is authenticated
+        if not user.is_authenticated:
+            return BusinessTripRequest.objects.none()
         
         try:
             employee = Employee.objects.get(user=user)
@@ -120,7 +113,6 @@ class BusinessTripRequestViewSet(viewsets.ModelViewSet):
         except Employee.DoesNotExist:
             # Return empty queryset if user has no employee profile
             return BusinessTripRequest.objects.none()
-
     def get_serializer_class(self):
         if self.action == 'list':
             return BusinessTripRequestListSerializer
@@ -471,169 +463,6 @@ class BusinessTripRequestViewSet(viewsets.ModelViewSet):
             'trip_request': serializer.data
         })
 
-    @swagger_auto_schema(
-        method='get',
-        operation_description="Get employee options for approvers",
-        responses={
-            200: openapi.Response(description="Employee options retrieved successfully")
-        }
-    )
-    @action(detail=False, methods=['get'])
-    def employee_options(self, request):
-        """Get employee options for approver selection"""
-        employee_type = request.query_params.get('type', 'all')
-        
-        queryset = Employee.objects.filter(
-            status__affects_headcount=True,
-            is_deleted=False
-        ).select_related('department', 'job_function').order_by('full_name')
-        
-        if employee_type == 'finance':
-            # Filter finance/accounting employees
-            queryset = queryset.filter(
-                Q(job_function__name__icontains='finance') |
-                Q(job_function__name__icontains='accounting') |
-                Q(department__name__icontains='finance') |
-                Q(department__name__icontains='accounting')
-            )
-        elif employee_type == 'hr':
-            # Filter HR employees
-            queryset = queryset.filter(
-                Q(job_function__name__icontains='hr') |
-                Q(job_function__name__icontains='human') |
-                Q(department__name__icontains='hr') |
-                Q(department__name__icontains='human')
-            )
-        elif employee_type == 'managers':
-            # Filter employees who are managers (have direct reports)
-            queryset = queryset.annotate(
-                direct_reports_count=Count('direct_reports')
-            ).filter(direct_reports_count__gt=0)
-        
-        serializer = EmployeeOptionSerializer(queryset, many=True)
-        return Response({
-            'employees': serializer.data
-        })
-
-    @swagger_auto_schema(
-        method='post',
-        operation_description="Initialize default trip settings",
-        responses={
-            200: openapi.Response(description="Default settings created successfully")
-        }
-    )
-    @action(detail=False, methods=['post'])
-    def initialize_defaults(self, request):
-        """Initialize default trip settings (travel types, transport types, etc.)"""
-        try:
-            create_default_trip_settings()
-            return Response({
-                'message': 'Default trip settings initialized successfully'
-            })
-        except Exception as e:
-            logger.error(f"Error initializing default trip settings: {str(e)}")
-            return Response(
-                {'error': f'Failed to initialize default settings: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-
-    def _send_approval_notification(self, trip_request, recipient, final=False):
-        """Send approval notification"""
-        try:
-            if final:
-                subject = f"Trip Request {trip_request.request_id} Approved"
-                message = f"Your trip request to {trip_request.purpose.name} has been approved."
-                template = 'TRIP_APPROVED'
-            else:
-                subject = f"Trip Request {trip_request.request_id} - Approval Required"
-                message = f"Trip request from {trip_request.employee.full_name} requires your approval."
-                template = 'APPROVAL_PENDING'
-            
-            TripNotification.objects.create(
-                trip_request=trip_request,
-                recipient=recipient,
-                notification_type='SYSTEM',
-                template=template,
-                subject=subject,
-                message=message,
-                metadata={
-                    'current_step': trip_request.current_step.step_name if trip_request.current_step else None,
-                    'final_approval': final
-                }
-            )
-            
-        except Exception as e:
-            logger.error(f"Error sending approval notification: {str(e)}")
-
-    def _send_rejection_notification(self, trip_request, recipient, reason):
-        """Send rejection notification"""
-        try:
-            subject = f"Trip Request {trip_request.request_id} Rejected"
-            message = f"Your trip request has been rejected. Reason: {reason}"
-            
-            TripNotification.objects.create(
-                trip_request=trip_request,
-                recipient=recipient,
-                notification_type='SYSTEM',
-                template='TRIP_REJECTED',
-                subject=subject,
-                message=message,
-                metadata={'rejection_reason': reason}
-            )
-            
-        except Exception as e:
-            logger.error(f"Error sending rejection notification: {str(e)}")
-
-    def _send_cancellation_notification(self, trip_request, recipient):
-        """Send cancellation notification"""
-        try:
-            subject = f"Trip Request {trip_request.request_id} Cancelled"
-            message = f"Trip request from {trip_request.employee.full_name} has been cancelled."
-            
-            TripNotification.objects.create(
-                trip_request=trip_request,
-                recipient=recipient,
-                notification_type='SYSTEM',
-                template='TRIP_CANCELLED',
-                subject=subject,
-                message=message,
-                metadata={'cancelled_by': trip_request.requested_by.full_name}
-            )
-            
-        except Exception as e:
-            logger.error(f"Error sending cancellation notification: {str(e)}")
-
-class TripNotificationViewSet(viewsets.ReadOnlyModelViewSet):
-    """ViewSet for trip notifications"""
-    serializer_class = TripNotificationSerializer
-    permission_classes = [IsAuthenticated]
-    filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
-    filterset_fields = ['notification_type', 'template', 'is_sent']
-    ordering = ['-created_at']
-
-    def get_queryset(self):
-        """Filter notifications for current user"""
-        try:
-            employee = Employee.objects.get(user=self.request.user)
-            return TripNotification.objects.filter(
-                recipient=employee
-            ).select_related('trip_request', 'recipient')
-        except Employee.DoesNotExist:
-            return TripNotification.objects.none()
-
-    @action(detail=True, methods=['post'])
-    def mark_as_read(self, request, pk=None):
-        """Mark notification as read"""
-        notification = self.get_object()
-        
-        # Update metadata to mark as read
-        if 'read_at' not in notification.metadata:
-            notification.metadata['read_at'] = timezone.now().isoformat()
-            notification.metadata['read_by'] = request.user.username
-            notification.save()
-        
-        return Response({'message': 'Notification marked as read'})
-
 class TripSettingsViewSet(viewsets.ViewSet):
     """ViewSet for trip management settings and configurations"""
     permission_classes = [IsAuthenticated]
@@ -672,9 +501,10 @@ class TripSettingsViewSet(viewsets.ViewSet):
             
             defaults = {
                 'employee_name': employee.full_name,
-                'function': employee.job_function.name if employee.job_function else '',
+                'job_function': employee.job_function.name if employee.job_function else '',
                 'department': employee.department.name if employee.department else '',
-                'division': employee.unit.name if employee.unit else '',
+                'unit': employee.unit.name if employee.unit else '',
+                'business_function': employee.business_function.name if employee.business_function else '',
                 'phone_number': employee.phone or '',
                 'line_manager': {
                     'id': employee.line_manager.id if employee.line_manager else None,

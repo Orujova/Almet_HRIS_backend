@@ -3,9 +3,9 @@ import logging
 import json
 from django.conf import settings
 from django.contrib.auth.models import User
-from django.utils.crypto import get_random_string
+from django.db import transaction
 from rest_framework.exceptions import AuthenticationFailed
-from .models import MicrosoftUser
+from .models import MicrosoftUser, Employee
 
 logger = logging.getLogger(__name__)
 
@@ -14,50 +14,37 @@ class MicrosoftTokenValidator:
     def validate_token(id_token):
         try:
             logger.info('=== Starting Microsoft token validation ===')
-            logger.info(f'Received token: {id_token[:50]}...')
             
             # Decode token without signature verification for development
             payload = jwt.decode(id_token, options={"verify_signature": False})
-            logger.info(f'=== Token payload ===')
-            logger.info(json.dumps(payload, indent=2, default=str))
-
+            
             # Extract required fields
             aud = payload.get('aud')
             microsoft_id = payload.get('sub')
             
-            logger.info(f'Audience from token: {aud}')
-            logger.info(f'Expected audience: {settings.MICROSOFT_CLIENT_ID}')
-            logger.info(f'Microsoft ID (sub): {microsoft_id}')
-            
             if not microsoft_id:
-                logger.error('Token missing subject identifier (sub)')
                 raise AuthenticationFailed('Invalid token: missing subject identifier')
                 
-            # Validate audience - Microsoft Graph API və ya application audience qəbul edək
+            # Validate audience
             valid_audiences = [
-                settings.MICROSOFT_CLIENT_ID,  # Application client ID
-                "00000003-0000-0000-c000-000000000000"  # Microsoft Graph API
+                settings.MICROSOFT_CLIENT_ID,
+                "00000003-0000-0000-c000-000000000000"
             ]
             
             if aud not in valid_audiences:
-                logger.error(f'Invalid audience in token: {aud}, expected one of: {valid_audiences}')
                 raise AuthenticationFailed(f'Invalid audience: expected one of {valid_audiences}, got {aud}')
             
-            # Extract user information - daha çox field yoxlayaq
+            # Extract email from token
             email = (payload.get('email') or 
                     payload.get('preferred_username') or 
                     payload.get('unique_name') or 
                     payload.get('upn'))
             
             if not email:
-                logger.error('Token missing email information in all possible fields')
-                logger.error(f'Available fields: {list(payload.keys())}')
                 raise AuthenticationFailed('Invalid token: missing email information')
                 
             # Extract name
             name = payload.get('name', '').strip()
-            logger.info(f'Full name from token: {name}')
-            
             if name:
                 name_parts = name.split(' ')
                 first_name = name_parts[0] if name_parts else ''
@@ -66,68 +53,120 @@ class MicrosoftTokenValidator:
                 first_name = payload.get('given_name', '')
                 last_name = payload.get('family_name', '')
             
-            logger.info(f'Extracted user info: email={email}, first_name={first_name}, last_name={last_name}')
+            logger.info(f'Microsoft login attempt: email={email}, first_name={first_name}, last_name={last_name}')
             
-            # Find or create user
+            # STEP 1: Check if this Microsoft ID already exists
             try:
-                microsoft_user = MicrosoftUser.objects.get(microsoft_id=microsoft_id)
+                microsoft_user = MicrosoftUser.objects.select_related('user__employee_profile').get(
+                    microsoft_id=microsoft_id
+                )
                 user = microsoft_user.user
                 logger.info(f'Found existing Microsoft user: {user.username}')
                 
                 # Update user information if changed
-                if (user.email != email or 
-                    user.first_name != first_name or 
-                    user.last_name != last_name):
-                    logger.info(f'Updating user information for: {user.username}')
+                updated = False
+                if user.email != email:
                     user.email = email
+                    user.username = email  # Keep username synced with email
+                    updated = True
+                if user.first_name != first_name:
+                    user.first_name = first_name
+                    updated = True
+                if user.last_name != last_name:
+                    user.last_name = last_name
+                    updated = True
+                
+                if updated:
+                    user.save()
+                    # Also update employee record if linked
+                    if hasattr(user, 'employee_profile'):
+                        employee = user.employee_profile
+                        employee.save()  # This will update full_name
+                
+                return user
+                    
+            except MicrosoftUser.DoesNotExist:
+                pass  # Continue to check for employee
+            
+            # STEP 2: Check if there's an existing employee with this email
+            try:
+                employee = Employee.objects.get(email=email)
+                logger.info(f'Found existing employee with email {email}: {employee.employee_id}')
+                
+                # STEP 3: Check if this employee already has a user account
+                if employee.user:
+                    # Employee has user account - link with Microsoft
+                    user = employee.user
+                    logger.info(f'Employee {employee.employee_id} already has user account: {user.username}')
+                    
+                    # Update user info from Microsoft
+                    user.email = email
+                    user.username = email
                     user.first_name = first_name
                     user.last_name = last_name
                     user.save()
                     
-            except MicrosoftUser.DoesNotExist:
-                logger.info(f'Creating new user for Microsoft ID: {microsoft_id}')
+                    # Link with Microsoft account
+                    MicrosoftUser.objects.create(
+                        user=user,
+                        microsoft_id=microsoft_id
+                    )
+                    
+                    logger.info(f'Linked existing employee {employee.employee_id} user account with Microsoft')
+                    return user
+                else:
+                    # STEP 4: Employee exists but has no user account - create one
+                    with transaction.atomic():
+                        # Create user account for this employee
+                        user = User.objects.create_user(
+                            username=email,
+                            email=email,
+                            first_name=first_name,
+                            last_name=last_name
+                        )
+                        user.set_unusable_password()  # Microsoft auth only
+                        user.save()
+                        
+                        # CRITICAL: Link user to employee
+                        employee.user = user
+                        employee.save()  # This will update full_name from user fields
+                        
+                        # Link with Microsoft account
+                        MicrosoftUser.objects.create(
+                            user=user,
+                            microsoft_id=microsoft_id
+                        )
+                        
+                        logger.info(f'Created user account for existing employee {employee.employee_id} and linked with Microsoft')
+                        return user
+                    
+            except Employee.DoesNotExist:
+                # STEP 5: No employee found with this email - deny access
+                logger.warning(f'Microsoft login denied: No employee record found for {email}')
                 
-                # Create username from email
-                username = email.split('@')[0]
-                base_username = username
-                counter = 1
+                # Check if there are any employees at all (for better error message)
+                total_employees = Employee.objects.count()
+                if total_employees == 0:
+                    error_msg = (
+                        f'System setup incomplete. No employee records found in database. '
+                        f'Please contact system administrator to set up employee data first.'
+                    )
+                else:
+                    error_msg = (
+                        f'Access denied for {email}. '
+                        f'No employee record found with this email address. '
+                        f'Please contact HR department to verify your employee record and email address.'
+                    )
                 
-                # Ensure unique username
-                while User.objects.filter(username=username).exists():
-                    username = f"{base_username}{counter}"
-                    counter += 1
-                
-                logger.info(f'Creating user with username: {username}')
-                
-                # Create user - Django utils istifadə edək
-                user = User.objects.create_user(
-                    username=username,
-                    email=email,
-                    first_name=first_name,
-                    last_name=last_name,
-                )
-                
-                # Unusable password set et (Microsoft auth üçün password lazım deyil)
-                user.set_unusable_password()
-                user.save()
-                
-                # Create Microsoft user link
-                microsoft_user = MicrosoftUser.objects.create(
-                    user=user,
-                    microsoft_id=microsoft_id
-                )
-                
-                logger.info(f'Created new user: {user.username} with Microsoft ID: {microsoft_id}')
-            
-            logger.info(f'=== Token validation successful for user: {user.username} ===')
-            return user
+                raise AuthenticationFailed(error_msg)
             
         except jwt.DecodeError as e:
             logger.error(f'JWT decode error: {str(e)}')
             raise AuthenticationFailed('Invalid token format')
         except Exception as e:
+            if isinstance(e, AuthenticationFailed):
+                raise e  # Re-raise our custom authentication errors
             logger.error(f'Token validation error: {str(e)}')
-            logger.error(f'Exception type: {type(e).__name__}')
             import traceback
             logger.error(f'Traceback: {traceback.format_exc()}')
-            raise AuthenticationFailed(f'Token validation failed: {str(e)}')
+            raise AuthenticationFailed(f'Authentication failed: {str(e)}')

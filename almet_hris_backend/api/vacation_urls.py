@@ -33,12 +33,11 @@ urlpatterns = [
     path('hr-representatives/set-default/', views.set_default_hr_representative, name='vacation-set-default-hr'),
     path('hr-representatives/update-default/', views.update_default_hr_representative, name='vacation-update-default-hr'),
     
-    # ============= REQUEST SUBMISSION =============
-    path('employees/search/', views.search_employees, name='vacation-search-employees'),
+  
     
     # Request Immediately
     path('requests/immediate/', views.create_immediate_request, name='vacation-create-immediate-request'),
-    
+     path('my-permissions/', views.my_vacation_permissions, name='vacation-my-permissions'),
     # Scheduling
     path('schedules/create/', views.create_schedule, name='vacation-create-schedule'),
     path('schedules/tabs/', views.my_schedule_tabs, name='vacation-my-schedule-tabs'),

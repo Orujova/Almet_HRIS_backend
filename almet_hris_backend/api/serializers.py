@@ -679,8 +679,15 @@ class EmployeeActivitySerializer(serializers.ModelSerializer):
         ]
 
 class EmployeeListSerializer(serializers.ModelSerializer):
-    name = serializers.CharField(source='full_name', read_only=True)
-    email = serializers.CharField(source='user.email', read_only=True)
+    
+    name = serializers.CharField(source='get_display_name', read_only=True)
+    email = serializers.CharField(source='get_contact_email', read_only=True)
+    
+    # System access information
+    has_system_access = serializers.BooleanField(read_only=True)
+    can_login_with_microsoft = serializers.BooleanField(read_only=True)
+  
+
     business_function_name = serializers.CharField(source='business_function.name', read_only=True)
     business_function_code = serializers.CharField(source='business_function.code', read_only=True)
     business_function_id = serializers.CharField(source='business_function.id', read_only=True)
@@ -713,16 +720,20 @@ class EmployeeListSerializer(serializers.ModelSerializer):
     class Meta:
         model = Employee
         fields = [
-
-            'id', 'employee_id', 'name', 'email','father_name', 'date_of_birth', 'gender',  'phone',
-            'business_function_name', 'business_function_code','business_function_id', 'department_name', 'unit_name',
-            'job_function_name', 'job_title', 'position_group_name', 'position_group_level','department_id',
-            'grading_level',  'start_date', 'end_date','unit_id','position_group_id',
-            'contract_duration', 'contract_duration_display', 'contract_start_date', 'contract_end_date',
-            'contract_extensions', 'last_extension_date',  'job_function_id',
-            'line_manager_name', 'line_manager_hc_number', 'status_name', 'status_color',
-            'tag_names', 'years_of_service', 'current_status_display', 'is_visible_in_org_chart',
-            'direct_reports_count', 'status_needs_update', 'created_at', 'updated_at','profile_image_url','is_deleted','is_vacancy',
+            'id', 'employee_id', 'name', 'email', 'first_name', 'last_name', 'father_name', 
+            'date_of_birth', 'gender', 'phone',
+            'has_system_access', 'can_login_with_microsoft',  # NEW fields
+            'business_function_name', 'business_function_code', 'business_function_id', 
+            'department_name', 'unit_name', 'job_function_name', 'job_title', 
+            'position_group_name', 'position_group_level', 'department_id',
+            'grading_level', 'start_date', 'end_date', 'unit_id', 'position_group_id',
+            'contract_duration', 'contract_duration_display', 'contract_start_date', 
+            'contract_end_date', 'contract_extensions', 'last_extension_date', 
+            'job_function_id', 'line_manager_name', 'line_manager_hc_number', 
+            'status_name', 'status_color', 'tag_names', 'years_of_service', 
+            'current_status_display', 'is_visible_in_org_chart',
+            'direct_reports_count', 'status_needs_update', 'created_at', 
+            'updated_at', 'profile_image_url', 'is_deleted', 'is_vacancy',
         ]
     
     def get_profile_image_url(self, obj):
@@ -765,9 +776,9 @@ class EmployeeDetailSerializer(serializers.ModelSerializer):
     """UPDATED: Job Description integration əlavə olundu"""
      
     name = serializers.CharField(source='full_name', read_only=True)
-    email = serializers.CharField(source='user.email', read_only=True)
-    first_name = serializers.CharField(source='user.first_name', read_only=True)
-    last_name = serializers.CharField(source='user.last_name', read_only=True)
+    email = serializers.CharField(source='get_contact_email', read_only=True)
+    first_name = serializers.CharField(source='get_display_first_name', read_only=True)
+    last_name = serializers.CharField(source='get_display_last_name', read_only=True)
     
     # Related objects
     business_function_detail = BusinessFunctionSerializer(source='business_function', read_only=True)
@@ -1371,12 +1382,12 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
     """Serializer for creating and updating employees with auto-generated employee_id"""
     
     # User fields (write-only for creation)
-    first_name = serializers.CharField(write_only=True, max_length=150)
-    last_name = serializers.CharField(write_only=True, max_length=150)
-    email = serializers.EmailField(write_only=True)
+    first_name = serializers.CharField(max_length=150)
+    last_name = serializers.CharField(max_length=150)
+    email = serializers.EmailField()
     
     # Optional personal fields
-    father_name = serializers.CharField(write_only=True, required=False, allow_blank=True, max_length=200)
+    father_name = serializers.CharField(required=False, allow_blank=True, max_length=200)
     tag_ids = serializers.ListField(child=serializers.IntegerField(), write_only=True, required=False)
     vacancy_id = serializers.IntegerField(write_only=True, required=False, help_text="Link to vacant position")
     
@@ -1391,17 +1402,24 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
     )
     document_name = serializers.CharField(write_only=True, required=False, max_length=255)
     
-    # Preview field (read-only) - shows what the employee_id will be
+    # System access fields (optional)
+    create_user_account = serializers.BooleanField(
+        write_only=True, 
+        required=False, 
+        default=False,
+        help_text="Create system user account for this employee (for system access)"
+    )
+    
+    # Preview field (read-only)
     employee_id_preview = serializers.SerializerMethodField(read_only=True)
     
     class Meta:
         model = Employee
-        # COMPLETELY EXCLUDE employee_id from all operations
         exclude = [
-            'employee_id',  # This is the key fix - completely exclude from serializer
-            'user', 
-            'full_name', 
-            'tags', 
+            'employee_id',  # Auto-generated
+            'user',        # Managed separately
+            'full_name',   # Auto-generated from first_name + last_name
+            'tags',        # Handled via tag_ids
             'original_vacancy', 
             'status', 
             'created_by', 
@@ -1422,59 +1440,27 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
     def get_employee_id_preview(self, obj):
         """Preview what employee ID will be generated"""
         if hasattr(obj, 'business_function') and obj.business_function:
-            try:
-                business_code = obj.business_function.code
-                
-                # Get next number for this business function
-                last_employee = Employee.all_objects.filter(
-                    employee_id__startswith=business_code
-                ).order_by('-employee_id').first()
-                
-                if last_employee:
-                    try:
-                        last_number = int(last_employee.employee_id[len(business_code):])
-                        next_number = last_number + 1
-                    except (ValueError, IndexError):
-                        next_number = 1
-                else:
-                    next_number = 1
-                
-                return f"{business_code}{next_number}"
-            except:
-                return None
+            return Employee.get_next_employee_id_preview(obj.business_function.id)
         return None
-    
-    def validate(self, data):
-        """Custom validation - ensure business function is provided"""
-        # Business function is required for auto-generating employee_id
-        if not data.get('business_function'):
-            raise serializers.ValidationError({
-                'business_function': 'Business function is required for generating employee ID'
-            })
-        
-        return data
     
     def validate_email(self, value):
         """Validate email uniqueness"""
-        if self.instance and self.instance.user:
+        if self.instance:
             # Updating existing employee
-            if User.objects.filter(email=value).exclude(id=self.instance.user.id).exists():
+            if Employee.objects.filter(email=value).exclude(id=self.instance.id).exists():
                 raise serializers.ValidationError("Email already exists.")
         else:
             # Creating new employee
-            if User.objects.filter(email=value).exists():
+            if Employee.objects.filter(email=value).exists():
                 raise serializers.ValidationError("Email already exists.")
         return value
     
     @transaction.atomic
     def create(self, validated_data):
-        # Extract user data
-        first_name = validated_data.pop('first_name')
-        last_name = validated_data.pop('last_name')
-        email = validated_data.pop('email')
-        father_name = validated_data.pop('father_name', '')
+        # Extract additional fields
         tag_ids = validated_data.pop('tag_ids', [])
         vacancy_id = validated_data.pop('vacancy_id', None)
+        create_user_account = validated_data.pop('create_user_account', False)
         
         # Extract file data
         document = validated_data.pop('document', None)
@@ -1482,16 +1468,7 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
         document_type = validated_data.pop('document_type', 'OTHER')
         document_name = validated_data.pop('document_name', '')
         
-        # Create user
-        user = User.objects.create_user(
-            username=email,  # Use email as username
-            email=email,
-            first_name=first_name,
-            last_name=last_name
-        )
-        
-        # Create employee (employee_id will be auto-generated in model save())
-        validated_data['user'] = user
+        # CHANGED: Don't create user automatically
         validated_data['created_by'] = self.context['request'].user
         
         # Set profile photo if provided
@@ -1513,11 +1490,17 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
             validated_data['notes'] = ''
         if 'grading_level' not in validated_data:
             validated_data['grading_level'] = ''
-        if 'father_name' not in validated_data:
-            validated_data['father_name'] = father_name
         
-        # Create the employee (employee_id auto-generated)
+        # Create the employee (no user account yet)
         employee = super().create(validated_data)
+        
+        # OPTIONAL: Create user account if requested
+        if create_user_account:
+            try:
+                employee.create_user_account()
+            except ValueError as e:
+                # Log error but don't fail employee creation
+                logger.warning(f"Could not create user account for employee {employee.employee_id}: {e}")
         
         # Add tags
         if tag_ids:
@@ -1538,7 +1521,9 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
             )
         
         # Log activity
-        activity_description = f"Employee {employee.full_name} created with auto-generated ID {employee.employee_id}"
+        activity_description = f"Employee {employee.get_display_name()} created with ID {employee.employee_id}"
+        if create_user_account:
+            activity_description += " with system access"
         if document:
             activity_description += f" with document '{doc_name}'"
         if profile_photo:
@@ -1551,6 +1536,7 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
             performed_by=self.context['request'].user,
             metadata={
                 'auto_generated_employee_id': employee.employee_id,
+                'has_user_account': bool(employee.user),
                 'has_document': bool(document),
                 'has_profile_photo': bool(profile_photo),
                 'document_type': document_type if document else None
@@ -1561,13 +1547,10 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
     
     @transaction.atomic
     def update(self, instance, validated_data):
-        # Extract user data
-        first_name = validated_data.pop('first_name', None)
-        last_name = validated_data.pop('last_name', None)
-        email = validated_data.pop('email', None)
-        father_name = validated_data.pop('father_name', None)
+        # Extract additional fields
         tag_ids = validated_data.pop('tag_ids', None)
         vacancy_id = validated_data.pop('vacancy_id', None)
+        create_user_account = validated_data.pop('create_user_account', False)
         
         # Extract file data
         document = validated_data.pop('document', None)
@@ -1578,20 +1561,14 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
         # Track changes for activity log
         changes = []
         
-        # Update user if data provided
-        if any([first_name, last_name, email]):
-            user = instance.user
-            if first_name and user.first_name != first_name:
-                user.first_name = first_name
-                changes.append(f"First name changed to {first_name}")
-            if last_name and user.last_name != last_name:
-                user.last_name = last_name
-                changes.append(f"Last name changed to {last_name}")
-            if email and user.email != email:
-                user.email = email
-                user.username = email  # Update username to match email
-                changes.append(f"Email changed to {email}")
-            user.save()
+        # CHANGED: Update employee fields directly (not user fields)
+        employee_fields = ['first_name', 'last_name', 'email', 'father_name']
+        for field in employee_fields:
+            if field in validated_data:
+                old_value = getattr(instance, field)
+                new_value = validated_data[field]
+                if old_value != new_value:
+                    changes.append(f"{field}: {old_value} → {new_value}")
         
         # Update profile photo if provided
         if profile_photo:
@@ -1608,16 +1585,28 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
             instance.profile_image = profile_photo
             changes.append("Profile photo updated")
         
-        # Update father_name if provided
-        if father_name is not None and instance.father_name != father_name:
-            instance.father_name = father_name
-            changes.append(f"Father name changed to {father_name}")
-        
         # Set updated_by
         validated_data['updated_by'] = self.context['request'].user
         
-        # Update employee (employee_id should NOT be changed)
+        # Update employee
         employee = super().update(instance, validated_data)
+        
+        # OPTIONAL: Create user account if requested and doesn't exist
+        if create_user_account and not employee.user:
+            try:
+                employee.create_user_account()
+                changes.append("System user account created")
+            except ValueError as e:
+                logger.warning(f"Could not create user account for employee {employee.employee_id}: {e}")
+        
+        # Update user account if it exists and employee email changed
+        if employee.user and 'email' in validated_data:
+            user = employee.user
+            if user.email != employee.email:
+                user.email = employee.email
+                user.username = employee.email  # Keep username in sync
+                user.save()
+                changes.append("User account email updated")
         
         # Update tags
         if tag_ids is not None:
@@ -1653,18 +1642,18 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
             EmployeeActivity.objects.create(
                 employee=employee,
                 activity_type='UPDATED',
-                description=f"Employee {employee.full_name} updated: {'; '.join(changes)}",
+                description=f"Employee {employee.get_display_name()} updated: {'; '.join(changes)}",
                 performed_by=self.context['request'].user,
                 metadata={
                     'changes': changes,
+                    'has_user_account': bool(employee.user),
                     'has_new_document': bool(document),
                     'has_new_profile_photo': bool(profile_photo),
-                    'employee_id_unchanged': employee.employee_id  # Log that ID wasn't changed
+                    'employee_id_unchanged': employee.employee_id
                 }
             )
         
         return employee
-
 class BulkEmployeeCreateItemSerializer(serializers.Serializer):
     """Serializer for a single employee in bulk creation"""
     employee_id = serializers.CharField(max_length=50)
