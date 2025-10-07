@@ -11,6 +11,9 @@ router.register(r'transport-types', views.TransportTypeViewSet, basename='transp
 router.register(r'purposes', views.TripPurposeViewSet, basename='trip-purpose')
 
 urlpatterns = [
+    # Permissions
+    path('permissions/my/', views.my_business_trip_permissions, name='trip-my-permissions'),
+    
     # Dashboard
     path('dashboard/', views.trip_dashboard, name='trip-dashboard'),
     
@@ -40,6 +43,9 @@ urlpatterns = [
     path('approval/pending/', views.pending_approvals, name='trip-pending'),
     path('approval/history/', views.approval_history, name='trip-history'),
     path('approval/<int:pk>/action/', views.approve_reject_request, name='trip-approve'),
+    
+    # Cancel Trip
+    path('requests/<int:pk>/cancel/', views.cancel_trip, name='trip-cancel'),
     
     # Include router URLs (this will add travel-types/, transport-types/, purposes/)
     path('', include(router.urls)),

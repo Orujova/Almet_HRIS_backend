@@ -1,4 +1,4 @@
-# api/business_trip_views.py
+# api/business_trip_views.py - Updated with Role-Based Permissions
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -16,6 +16,62 @@ from openpyxl.utils import get_column_letter
 from .business_trip_models import *
 from .business_trip_serializers import *
 from .models import Employee
+from .business_trip_permissions import (
+    has_business_trip_permission,
+    has_any_business_trip_permission,
+    check_business_trip_permission,
+    get_user_business_trip_permissions,
+    is_admin_user
+)
+
+# ==================== MY PERMISSIONS ====================
+@swagger_auto_schema(
+    method='get',
+    operation_description="İstifadəçinin bütün Business Trip icazələrini əldə et",
+    operation_summary="Get My Permissions",
+    tags=['Business Trip'],
+    responses={
+        200: openapi.Response(
+            description='User permissions',
+            examples={
+                'application/json': {
+                    'is_admin': False,
+                    'permissions': [
+                        'business_trips.request.create',
+                        'business_trips.request.view'
+                    ],
+                    'roles': ['Employee - Business Trips']
+                }
+            }
+        )
+    }
+)
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def my_business_trip_permissions(request):
+    """İstifadəçinin Business Trip permissions-larını göstər"""
+    from .role_models import EmployeeRole
+    
+    is_admin = is_admin_user(request.user)
+    permissions = get_user_business_trip_permissions(request.user)
+    
+    # User roles
+    try:
+        emp = Employee.objects.get(user=request.user, is_deleted=False)
+        roles = list(EmployeeRole.objects.filter(
+            employee=emp,
+            is_active=True
+        ).values_list('role__name', flat=True))
+    except Employee.DoesNotExist:
+        roles = []
+    
+    return Response({
+        'is_admin': is_admin,
+        'permissions_count': len(permissions),
+        'permissions': permissions,
+        'roles_count': len(roles),
+        'roles': roles
+    })
 
 # ==================== DASHBOARD ====================
 @swagger_auto_schema(
@@ -28,7 +84,7 @@ from .models import Employee
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def trip_dashboard(request):
-    """Dashboard - statistics"""
+    """Dashboard - statistics (permissions yoxlanmır, hər kəs özünkünü görür)"""
     try:
         emp = Employee.objects.get(user=request.user)
         year = date.today().year
@@ -68,6 +124,7 @@ def trip_dashboard(request):
     responses={200: openapi.Response(description='HR updated')}
 )
 @api_view(['PUT'])
+@has_business_trip_permission('business_trips.settings.update')
 @permission_classes([IsAuthenticated])
 def update_hr_representative(request):
     """Update default HR representative"""
@@ -110,6 +167,7 @@ def update_hr_representative(request):
     responses={200: openapi.Response(description='HR list')}
 )
 @api_view(['GET'])
+@has_business_trip_permission('business_trips.settings.view')
 @permission_classes([IsAuthenticated])
 def get_hr_representatives(request):
     """Get HR representatives list"""
@@ -150,6 +208,7 @@ def get_hr_representatives(request):
     responses={200: openapi.Response(description='Finance updated')}
 )
 @api_view(['PUT'])
+@has_business_trip_permission('business_trips.settings.update')
 @permission_classes([IsAuthenticated])
 def update_finance_approver(request):
     """Update default finance approver"""
@@ -192,6 +251,7 @@ def update_finance_approver(request):
     responses={200: openapi.Response(description='Finance list')}
 )
 @api_view(['GET'])
+@has_business_trip_permission('business_trips.settings.view')
 @permission_classes([IsAuthenticated])
 def get_finance_approvers(request):
     """Get finance approvers list"""
@@ -199,7 +259,6 @@ def get_finance_approvers(request):
         settings = TripSettings.get_active()
         current_default = settings.default_finance_approver if settings else None
         
-        # Get employees from Finance/Payroll department
         finance_employees = Employee.objects.filter(
             Q(department__name__icontains='Finance') | Q(department__name__icontains='Payroll'),
             is_deleted=False
@@ -232,6 +291,7 @@ def get_finance_approvers(request):
     responses={200: openapi.Response(description='Settings updated')}
 )
 @api_view(['PUT'])
+@has_business_trip_permission('business_trips.settings.update')
 @permission_classes([IsAuthenticated])
 def update_general_settings(request):
     """Update general trip settings"""
@@ -267,6 +327,7 @@ def update_general_settings(request):
     responses={200: openapi.Response(description='Settings')}
 )
 @api_view(['GET'])
+@has_business_trip_permission('business_trips.settings.view')
 @permission_classes([IsAuthenticated])
 def get_general_settings(request):
     """Get general trip settings"""
@@ -294,6 +355,7 @@ def get_general_settings(request):
     responses={201: openapi.Response(description='Request created')}
 )
 @api_view(['POST'])
+@has_business_trip_permission('business_trips.request.create')
 @permission_classes([IsAuthenticated])
 def create_trip_request(request):
     """Create business trip request"""
@@ -388,6 +450,7 @@ def create_trip_request(request):
     responses={200: openapi.Response(description='My requests')}
 )
 @api_view(['GET'])
+@has_business_trip_permission('business_trips.request.view')
 @permission_classes([IsAuthenticated])
 def my_trip_requests(request):
     """Get all my trip requests"""
@@ -415,35 +478,54 @@ def my_trip_requests(request):
     responses={200: openapi.Response(description='Pending approvals')}
 )
 @api_view(['GET'])
+@has_business_trip_permission('business_trips.request.view_pending')
 @permission_classes([IsAuthenticated])
 def pending_approvals(request):
     """Get pending approvals"""
     try:
         emp = Employee.objects.get(user=request.user)
         
-        lm_requests = BusinessTripRequest.objects.filter(
-            line_manager=emp,
-            status='PENDING_LINE_MANAGER',
-            is_deleted=False
-        ).order_by('-created_at')
-        
-        finance_requests = BusinessTripRequest.objects.filter(
-            finance_approver=emp,
-            status='PENDING_FINANCE',
-            is_deleted=False
-        ).order_by('-created_at')
-        
-        hr_requests = BusinessTripRequest.objects.filter(
-            hr_representative=emp,
-            status='PENDING_HR',
-            is_deleted=False
-        ).order_by('-created_at')
+        # Admin görür bütün pending-ləri
+        if is_admin_user(request.user):
+            lm_requests = BusinessTripRequest.objects.filter(
+                status='PENDING_LINE_MANAGER',
+                is_deleted=False
+            ).order_by('-created_at')
+            
+            finance_requests = BusinessTripRequest.objects.filter(
+                status='PENDING_FINANCE',
+                is_deleted=False
+            ).order_by('-created_at')
+            
+            hr_requests = BusinessTripRequest.objects.filter(
+                status='PENDING_HR',
+                is_deleted=False
+            ).order_by('-created_at')
+        else:
+            lm_requests = BusinessTripRequest.objects.filter(
+                line_manager=emp,
+                status='PENDING_LINE_MANAGER',
+                is_deleted=False
+            ).order_by('-created_at')
+            
+            finance_requests = BusinessTripRequest.objects.filter(
+                finance_approver=emp,
+                status='PENDING_FINANCE',
+                is_deleted=False
+            ).order_by('-created_at')
+            
+            hr_requests = BusinessTripRequest.objects.filter(
+                hr_representative=emp,
+                status='PENDING_HR',
+                is_deleted=False
+            ).order_by('-created_at')
         
         return Response({
             'line_manager_requests': BusinessTripRequestListSerializer(lm_requests, many=True).data,
             'finance_requests': BusinessTripRequestListSerializer(finance_requests, many=True).data,
             'hr_requests': BusinessTripRequestListSerializer(hr_requests, many=True).data,
-            'total_pending': lm_requests.count() + finance_requests.count() + hr_requests.count()
+            'total_pending': lm_requests.count() + finance_requests.count() + hr_requests.count(),
+            'is_admin': is_admin_user(request.user)
         })
     except Employee.DoesNotExist:
         return Response({'error': 'Employee profile not found'}, status=status.HTTP_404_NOT_FOUND)
@@ -458,9 +540,10 @@ def pending_approvals(request):
     responses={200: openapi.Response(description='Action completed')}
 )
 @api_view(['POST'])
+@has_business_trip_permission('business_trips.request.approve')
 @permission_classes([IsAuthenticated])
 def approve_reject_request(request, pk):
-    """Approve/Reject trip request"""
+    """Approve/Reject trip request - admin və ya approver"""
     serializer = TripApprovalSerializer(data=request.data)
     if not serializer.is_valid():
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -596,6 +679,48 @@ def approval_history(request):
     except Exception as e:
         return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
+# ==================== CANCEL TRIP ====================
+
+@swagger_auto_schema(
+    method='post',
+    operation_description="Cancel approved trip",
+    tags=['Business Trip'],
+    responses={200: openapi.Response(description='Trip cancelled')}
+)
+@api_view(['POST'])
+@has_business_trip_permission('business_trips.request.cancel')
+@permission_classes([IsAuthenticated])
+def cancel_trip(request, pk):
+    """Cancel approved trip"""
+    try:
+        trip_req = BusinessTripRequest.objects.get(pk=pk, is_deleted=False)
+        
+        # Only approved trips can be cancelled
+        if trip_req.status != 'APPROVED':
+            return Response({'error': 'Only approved trips can be cancelled'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Check permission - employee özünü və ya admin
+        emp = Employee.objects.get(user=request.user)
+        if trip_req.employee != emp and not is_admin_user(request.user):
+            return Response({'error': 'You can only cancel your own trips'}, status=status.HTTP_403_FORBIDDEN)
+        
+        trip_req.status = 'CANCELLED'
+        trip_req.cancelled_by = request.user
+        trip_req.cancelled_at = timezone.now()
+        trip_req.save()
+        
+        return Response({
+            'message': 'Trip cancelled successfully',
+            'request': BusinessTripRequestDetailSerializer(trip_req).data
+        })
+        
+    except BusinessTripRequest.DoesNotExist:
+        return Response({'error': 'Request not found'}, status=status.HTTP_404_NOT_FOUND)
+    except Employee.DoesNotExist:
+        return Response({'error': 'Employee profile not found'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
 # ==================== EXPORT ====================
 
 @swagger_auto_schema(
@@ -607,7 +732,7 @@ def approval_history(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def export_my_trips(request):
-    """Export my trips to Excel"""
+    """Export my trips to Excel (hər kəs özünkünü export edə bilər)"""
     try:
         emp = Employee.objects.get(user=request.user)
         requests = BusinessTripRequest.objects.filter(
@@ -699,6 +824,46 @@ class TravelTypeViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         return TravelType.objects.filter(is_deleted=False, is_active=True).order_by('name')
     
+    def list(self, request, *args, **kwargs):
+        # Hər kəs list görə bilər
+        return super().list(request, *args, **kwargs)
+    
+    def create(self, request, *args, **kwargs):
+        has_perm, _ = check_business_trip_permission(request.user, 'business_trips.settings.update')
+        if not has_perm:
+            return Response({
+                'error': 'İcazə yoxdur',
+                'required_permission': 'business_trips.settings.update'
+            }, status=status.HTTP_403_FORBIDDEN)
+        return super().create(request, *args, **kwargs)
+    
+    def update(self, request, *args, **kwargs):
+        has_perm, _ = check_business_trip_permission(request.user, 'business_trips.settings.update')
+        if not has_perm:
+            return Response({
+                'error': 'İcazə yoxdur',
+                'required_permission': 'business_trips.settings.update'
+            }, status=status.HTTP_403_FORBIDDEN)
+        return super().update(request, *args, **kwargs)
+    
+    def partial_update(self, request, *args, **kwargs):
+        has_perm, _ = check_business_trip_permission(request.user, 'business_trips.settings.update')
+        if not has_perm:
+            return Response({
+                'error': 'İcazə yoxdur',
+                'required_permission': 'business_trips.settings.update'
+            }, status=status.HTTP_403_FORBIDDEN)
+        return super().partial_update(request, *args, **kwargs)
+    
+    def destroy(self, request, *args, **kwargs):
+        has_perm, _ = check_business_trip_permission(request.user, 'business_trips.settings.update')
+        if not has_perm:
+            return Response({
+                'error': 'İcazə yoxdur',
+                'required_permission': 'business_trips.settings.update'
+            }, status=status.HTTP_403_FORBIDDEN)
+        return super().destroy(request, *args, **kwargs)
+    
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
     
@@ -770,6 +935,33 @@ class TransportTypeViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         return TransportType.objects.filter(is_deleted=False, is_active=True).order_by('name')
     
+    def list(self, request, *args, **kwargs):
+        return super().list(request, *args, **kwargs)
+    
+    def create(self, request, *args, **kwargs):
+        has_perm, _ = check_business_trip_permission(request.user, 'business_trips.settings.update')
+        if not has_perm:
+            return Response({'error': 'İcazə yoxdur'}, status=status.HTTP_403_FORBIDDEN)
+        return super().create(request, *args, **kwargs)
+    
+    def update(self, request, *args, **kwargs):
+        has_perm, _ = check_business_trip_permission(request.user, 'business_trips.settings.update')
+        if not has_perm:
+            return Response({'error': 'İcazə yoxdur'}, status=status.HTTP_403_FORBIDDEN)
+        return super().update(request, *args, **kwargs)
+    
+    def partial_update(self, request, *args, **kwargs):
+        has_perm, _ = check_business_trip_permission(request.user, 'business_trips.settings.update')
+        if not has_perm:
+            return Response({'error': 'İcazə yoxdur'}, status=status.HTTP_403_FORBIDDEN)
+        return super().partial_update(request, *args, **kwargs)
+    
+    def destroy(self, request, *args, **kwargs):
+        has_perm, _ = check_business_trip_permission(request.user, 'business_trips.settings.update')
+        if not has_perm:
+            return Response({'error': 'İcazə yoxdur'}, status=status.HTTP_403_FORBIDDEN)
+        return super().destroy(request, *args, **kwargs)
+    
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
     
@@ -784,6 +976,33 @@ class TripPurposeViewSet(viewsets.ModelViewSet):
     
     def get_queryset(self):
         return TripPurpose.objects.filter(is_deleted=False, is_active=True).order_by('name')
+    
+    def list(self, request, *args, **kwargs):
+        return super().list(request, *args, **kwargs)
+    
+    def create(self, request, *args, **kwargs):
+        has_perm, _ = check_business_trip_permission(request.user, 'business_trips.settings.update')
+        if not has_perm:
+            return Response({'error': 'İcazə yoxdur'}, status=status.HTTP_403_FORBIDDEN)
+        return super().create(request, *args, **kwargs)
+    
+    def update(self, request, *args, **kwargs):
+        has_perm, _ = check_business_trip_permission(request.user, 'business_trips.settings.update')
+        if not has_perm:
+            return Response({'error': 'İcazə yoxdur'}, status=status.HTTP_403_FORBIDDEN)
+        return super().update(request, *args, **kwargs)
+    
+    def partial_update(self, request, *args, **kwargs):
+        has_perm, _ = check_business_trip_permission(request.user, 'business_trips.settings.update')
+        if not has_perm:
+            return Response({'error': 'İcazə yoxdur'}, status=status.HTTP_403_FORBIDDEN)
+        return super().partial_update(request, *args, **kwargs)
+    
+    def destroy(self, request, *args, **kwargs):
+        has_perm, _ = check_business_trip_permission(request.user, 'business_trips.settings.update')
+        if not has_perm:
+            return Response({'error': 'İcazə yoxdur'}, status=status.HTTP_403_FORBIDDEN)
+        return super().destroy(request, *args, **kwargs)
     
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
@@ -807,6 +1026,7 @@ class TripPurposeViewSet(viewsets.ModelViewSet):
     responses={200: openapi.Response(description='All requests')}
 )
 @api_view(['GET'])
+@has_business_trip_permission('business_trips.request.view_statistics')
 @permission_classes([IsAuthenticated])
 def all_trip_requests(request):
     """Get all trip requests with filters"""
@@ -857,6 +1077,7 @@ def all_trip_requests(request):
     responses={200: openapi.Response(description='Excel file')}
 )
 @api_view(['GET'])
+@has_business_trip_permission('business_trips.request.view_statistics')
 @permission_classes([IsAuthenticated])
 def export_all_trips(request):
     """Export all trips to Excel with enhanced formatting"""
