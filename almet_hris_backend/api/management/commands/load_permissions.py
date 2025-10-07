@@ -63,18 +63,19 @@ class Command(BaseCommand):
             ('assets.category.delete', 'Delete Asset Category', 'Assets'),
             
             # BUSINESS TRIPS
-            ('business_trips.request.view', 'View Business Trip Requests', 'Business Trips'),
-            ('business_trips.request.create', 'Create Business Trip Request', 'Business Trips'),
-            ('business_trips.request.update', 'Update Business Trip Request', 'Business Trips'),
-            ('business_trips.request.delete', 'Delete Business Trip Request', 'Business Trips'),
-            ('business_trips.request.submit', 'Submit Business Trip Request', 'Business Trips'),
-            ('business_trips.request.approve', 'Approve Business Trip Request', 'Business Trips'),
-            ('business_trips.request.cancel', 'Cancel Business Trip', 'Business Trips'),
-            ('business_trips.request.view_pending', 'View Pending Approvals', 'Business Trips'),
-            ('business_trips.request.view_statistics', 'View Trip Statistics', 'Business Trips'),
-            
-            ('business_trips.settings.view', 'View Trip Settings', 'Business Trips'),
-            ('business_trips.settings.update', 'Update Trip Settings', 'Business Trips'),
+            # BUSINESS TRIPS
+('business_trips.request.view', 'View Business Trip Requests', 'Business Trips'),
+('business_trips.request.create', 'Create Business Trip Request', 'Business Trips'),
+('business_trips.request.update', 'Update Business Trip Request', 'Business Trips'),
+('business_trips.request.delete', 'Delete Business Trip Request', 'Business Trips'),
+('business_trips.request.submit', 'Submit Business Trip Request', 'Business Trips'),
+('business_trips.request.approve', 'Approve Business Trip Request', 'Business Trips'),
+('business_trips.request.cancel', 'Cancel Business Trip', 'Business Trips'),
+('business_trips.request.view_pending', 'View Pending Approvals', 'Business Trips'),
+('business_trips.request.view_statistics', 'View Trip Statistics', 'Business Trips'),
+
+('business_trips.settings.view', 'View Trip Settings', 'Business Trips'),
+('business_trips.settings.update', 'Update Trip Settings', 'Business Trips'),
             
             # VACATION
             ('vacation.dashboard.view', 'View Vacation Dashboard', 'Vacation'),

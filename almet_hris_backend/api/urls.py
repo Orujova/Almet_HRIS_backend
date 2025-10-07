@@ -36,11 +36,6 @@ from .competency_assessment_views import (
 )
 
 
-from .business_trip_views import (
-    TravelTypeViewSet, TransportTypeViewSet, 
-    BusinessTripRequestViewSet, 
-  TripSettingsViewSet
-)
 
 from .role_views import RoleViewSet, PermissionViewSet, EmployeeRoleViewSet
 router = DefaultRouter()
@@ -50,10 +45,9 @@ router = DefaultRouter()
 router.register(r'roles', RoleViewSet, basename='role')
 router.register(r'permissions', PermissionViewSet, basename='permission')
 router.register(r'employee-roles', EmployeeRoleViewSet, basename='employee-role')
-router.register(r'business-trips/travel-types', TravelTypeViewSet, basename='travel-types')
-router.register(r'business-trips/transport-types', TransportTypeViewSet, basename='transport-types')
-router.register(r'business-trips/requests', BusinessTripRequestViewSet, basename='trip-requests')
-router.register(r'business-trips/settings', TripSettingsViewSet, basename='trip-settings')
+
+
+
 
 # Business Structure URLs
 router.register(r'business-functions', views.BusinessFunctionViewSet, basename='businessfunction')
@@ -123,6 +117,7 @@ urlpatterns = [
          name='org_chart_statistics'),
     
     path('vacation/', include('api.vacation_urls')),
+    
     
     path('business-trips/', include('api.business_trip_urls')),
 

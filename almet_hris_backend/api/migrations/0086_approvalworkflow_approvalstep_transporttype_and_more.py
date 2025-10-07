@@ -237,27 +237,5 @@ class Migration(migrations.Migration):
                 'ordering': ['trip_request', 'date', 'order'],
             },
         ),
-        migrations.CreateModel(
-            name='TripApproval',
-            fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('is_deleted', models.BooleanField(db_index=True, default=False)),
-                ('deleted_at', models.DateTimeField(blank=True, null=True)),
-                ('decision', models.CharField(choices=[('APPROVED', 'Approved'), ('REJECTED', 'Rejected'), ('PENDING', 'Pending')], default='PENDING', max_length=10)),
-                ('amount', models.DecimalField(blank=True, decimal_places=2, max_digits=10, null=True)),
-                ('notes', models.TextField(blank=True)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('updated_at', models.DateTimeField(auto_now=True)),
-                ('approval_step', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, to='api.approvalstep')),
-                ('approver', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, to='api.employee')),
-                ('deleted_by', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='deleted_%(class)ss', to=settings.AUTH_USER_MODEL)),
-                ('trip_request', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='approvals', to='api.businesstriprequest')),
-            ],
-            options={
-                'verbose_name': 'Trip Approval',
-                'verbose_name_plural': 'Trip Approvals',
-                'ordering': ['trip_request', 'approval_step__step_order'],
-                'unique_together': {('trip_request', 'approval_step')},
-            },
-        ),
+        
     ]

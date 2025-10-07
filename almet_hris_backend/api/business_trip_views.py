@@ -1,522 +1,994 @@
 # api/business_trip_views.py
-from rest_framework import viewsets, status, filters
-from rest_framework.decorators import action
-from rest_framework.response import Response
+from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
-from django_filters.rest_framework import DjangoFilterBackend
-from django.db.models import Q, Count, Sum
-from django.utils import timezone
+from rest_framework.response import Response
+from rest_framework import status, viewsets
 from django.db import transaction
-from datetime import datetime, timedelta, date
+from django.db.models import Q, Count, Sum
+from datetime import date, datetime, timedelta
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
-import logging
+from django.http import HttpResponse
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Border, Side, Alignment
+from openpyxl.utils import get_column_letter
 
+from .business_trip_models import *
+from .business_trip_serializers import *
 from .models import Employee
-from .business_trip_models import (
-    TravelType, TransportType, TripPurpose, ApprovalWorkflow,BusinessTripRequest,  TripApproval,
+
+# ==================== DASHBOARD ====================
+@swagger_auto_schema(
+    method='get',
+    operation_description="Dashboard statistics",
+    operation_summary="Dashboard",
+    tags=['Business Trip'],
+    responses={200: openapi.Response(description='Dashboard data')}
 )
-from .business_trip_serializers import (
-    TravelTypeSerializer, TransportTypeSerializer, TripPurposeSerializer,ApprovalWorkflowSerializer, BusinessTripRequestListSerializer,BusinessTripRequestDetailSerializer, BusinessTripRequestCreateSerializer,
-    BusinessTripRequestUpdateSerializer, TripApprovalActionSerializer, PendingApprovalSerializer,
-  
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def trip_dashboard(request):
+    """Dashboard - statistics"""
+    try:
+        emp = Employee.objects.get(user=request.user)
+        year = date.today().year
+        
+        # My trips
+        my_trips = BusinessTripRequest.objects.filter(employee=emp)
+        
+        stats = {
+            'pending_requests': my_trips.filter(
+                status__in=['SUBMITTED', 'PENDING_LINE_MANAGER', 'PENDING_FINANCE', 'PENDING_HR']
+            ).count(),
+            'approved_trips': my_trips.filter(status='APPROVED').count(),
+            'total_days_this_year': float(my_trips.filter(
+                start_date__year=year,
+                status='APPROVED'
+            ).aggregate(total=Sum('number_of_days'))['total'] or 0),
+            'upcoming_trips': my_trips.filter(
+                status='APPROVED',
+                start_date__gte=date.today()
+            ).count()
+        }
+        
+        return Response(stats)
+    except Employee.DoesNotExist:
+        return Response({'error': 'Employee profile not found'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+# ==================== SETTINGS ====================
+
+@swagger_auto_schema(
+    method='put',
+    operation_description="Update default HR representative",
+    operation_summary="Update HR Representative",
+    tags=['Business Trip'],
+    request_body=HRRepresentativeSerializer,
+    responses={200: openapi.Response(description='HR updated')}
 )
-
-logger = logging.getLogger(__name__)
-
-class TravelTypeViewSet(viewsets.ModelViewSet):
-    """ViewSet for managing travel types (Domestic, Overseas)"""
-    queryset = TravelType.objects.filter(is_deleted=False)
-    serializer_class = TravelTypeSerializer
-    permission_classes = [IsAuthenticated]
-    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
-    filterset_fields = ['is_active']
-    search_fields = ['name']
-    ordering = ['name']
-
-    def get_queryset(self):
-        return self.queryset.filter(is_active=True)
-
-class TransportTypeViewSet(viewsets.ModelViewSet):
-    """ViewSet for managing transport types (Taxi, Train, Airplane, etc.)"""
-    queryset = TransportType.objects.filter(is_deleted=False)
-    serializer_class = TransportTypeSerializer
-    permission_classes = [IsAuthenticated]
-    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
-    filterset_fields = ['is_active']
-    search_fields = ['name']
-    ordering = ['name']
-
-    def get_queryset(self):
-        return self.queryset.filter(is_active=True)
-
-class TripPurposeViewSet(viewsets.ModelViewSet):
-    """ViewSet for managing trip purposes (Conference, Meeting, Training, etc.)"""
-    queryset = TripPurpose.objects.filter(is_deleted=False)
-    serializer_class = TripPurposeSerializer
-    permission_classes = [IsAuthenticated]
-    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
-    filterset_fields = ['is_active']
-    search_fields = ['name']
-    ordering = ['name']
-
-    def get_queryset(self):
-        return self.queryset.filter(is_active=True)
-
-class BusinessTripRequestViewSet(viewsets.ModelViewSet):
-    """Main ViewSet for Business Trip Requests"""
-    permission_classes = [IsAuthenticated]
-    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = [
-        'status', 'travel_type', 'transport_type', 'purpose', 'employee',
-        'requested_by', 'line_manager', 'finance_approver', 'hr_approver'
-    ]
-    search_fields = [
-        'request_id', 'employee__full_name', 'employee__employee_id',
-        'requested_by__full_name', 'notes'
-    ]
-    ordering_fields = ['created_at', 'start_date', 'end_date', 'submitted_at', 'status']
-    ordering = ['-created_at']
-
-    def get_queryset(self):
-        """Filter queryset based on user permissions"""
-        # Short-circuit for schema generation
-        if getattr(self, 'swagger_fake_view', False):
-            return BusinessTripRequest.objects.none()
-        
-        user = self.request.user
-        
-        # Check if user is authenticated
-        if not user.is_authenticated:
-            return BusinessTripRequest.objects.none()
-        
-        try:
-            employee = Employee.objects.get(user=user)
-            
-            # Get requests where user is involved
-            queryset = BusinessTripRequest.objects.filter(
-                Q(employee=employee) |  # User's own requests
-                Q(requested_by=employee) |  # Requests made by user for others
-                Q(line_manager=employee) |  # User is line manager
-                Q(finance_approver=employee) |  # User is finance approver
-                Q(hr_approver=employee)  # User is HR approver
-            ).select_related(
-                'employee', 'requested_by', 'travel_type', 'transport_type',
-                'purpose', 'line_manager', 'finance_approver', 'hr_approver',
-                'workflow', 'current_step'
-            ).prefetch_related(
-                'schedules', 'hotels', 'approvals'
-            ).distinct()
-            
-            return queryset
-            
-        except Employee.DoesNotExist:
-            # Return empty queryset if user has no employee profile
-            return BusinessTripRequest.objects.none()
-    def get_serializer_class(self):
-        if self.action == 'list':
-            return BusinessTripRequestListSerializer
-        elif self.action in ['create']:
-            return BusinessTripRequestCreateSerializer
-        elif self.action in ['update', 'partial_update']:
-            return BusinessTripRequestUpdateSerializer
-        else:
-            return BusinessTripRequestDetailSerializer
-
-    @swagger_auto_schema(
-        method='get',
-        operation_description="Get trip statistics for current user",
-        responses={
-            200: openapi.Response(description="Statistics retrieved successfully")
-        }
-    )
-    @action(detail=False, methods=['get'])
-    def statistics(self, request):
-        """Get trip statistics for the current user"""
-        try:
-            employee = Employee.objects.get(user=request.user)
-            current_year = datetime.now().year
-            
-            # Base queryset for user's trips
-            user_trips = BusinessTripRequest.objects.filter(employee=employee)
-            
-            stats = {
-                'pending_requests': user_trips.filter(
-                    status__in=['SUBMITTED', 'IN_PROGRESS', 'PENDING_LINE_MANAGER', 
-                               'PENDING_FINANCE', 'PENDING_HR', 'PENDING_CHRO']
-                ).count(),
-                
-                'approved_trips': user_trips.filter(status='APPROVED').count(),
-                
-                'total_days_this_year': user_trips.filter(
-                    start_date__year=current_year,
-                    status='APPROVED'
-                ).aggregate(
-                    total=Sum('duration_days')
-                )['total'] or 0,
-                
-                'upcoming_trips': user_trips.filter(
-                    status='APPROVED',
-                    start_date__gte=date.today()
-                ).count(),
-                
-                # Status breakdown
-                'by_status': {},
-                
-                # Travel type breakdown
-                'by_travel_type': {},
-                
-                # Recent activity
-                'recent_submissions': user_trips.filter(
-                    submitted_at__gte=timezone.now() - timedelta(days=30)
-                ).count(),
-                
-                'recent_approvals': user_trips.filter(
-                    completed_at__gte=timezone.now() - timedelta(days=30),
-                    status='APPROVED'
-                ).count(),
-            }
-            
-            # Status breakdown
-            status_counts = user_trips.values('status').annotate(count=Count('id'))
-            for item in status_counts:
-                status_display = dict(BusinessTripRequest.STATUS_CHOICES).get(item['status'], item['status'])
-                stats['by_status'][status_display] = item['count']
-            
-            # Travel type breakdown
-            travel_type_counts = user_trips.select_related('travel_type').values(
-                'travel_type__name'
-            ).annotate(count=Count('id'))
-            for item in travel_type_counts:
-                if item['travel_type__name']:
-                    stats['by_travel_type'][item['travel_type__name']] = item['count']
-            
-            return Response(stats)
-            
-        except Employee.DoesNotExist:
-            return Response(
-                {'error': 'Employee profile not found'},
-                status=status.HTTP_404_NOT_FOUND
-            )
-
-    @swagger_auto_schema(
-        method='post',
-        operation_description="Submit a draft trip request for approval",
-        responses={
-            200: openapi.Response(description="Request submitted successfully"),
-            400: "Bad request - validation errors"
-        }
-    )
-    @action(detail=True, methods=['post'])
-    def submit(self, request, pk=None):
-        """Submit a draft trip request"""
-        trip_request = self.get_object()
-        
-        # Check if user can submit this request
-        try:
-            employee = Employee.objects.get(user=request.user)
-            if trip_request.requested_by != employee:
-                return Response(
-                    {'error': 'You can only submit requests you created'},
-                    status=status.HTTP_403_FORBIDDEN
-                )
-        except Employee.DoesNotExist:
-            return Response(
-                {'error': 'Employee profile not found'},
-                status=status.HTTP_404_NOT_FOUND
-            )
-        
-        if trip_request.status != 'DRAFT':
-            return Response(
-                {'error': f'Only draft requests can be submitted. Current status: {trip_request.get_status_display()}'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        try:
-            trip_request.submit_request()
-            
-            # Send notification to approver
-            current_approver = trip_request.get_current_approver()
-            if current_approver:
-                self._send_approval_notification(trip_request, current_approver)
-            
-            serializer = self.get_serializer(trip_request)
-            return Response({
-                'message': 'Trip request submitted successfully',
-                'trip_request': serializer.data
-            })
-            
-        except ValueError as e:
-            return Response(
-                {'error': str(e)},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-    @swagger_auto_schema(
-        method='post',
-        operation_description="Approve or reject a trip request",
-        request_body=TripApprovalActionSerializer,
-        responses={
-            200: openapi.Response(description="Action completed successfully"),
-            400: "Bad request - validation errors",
-            403: "Forbidden - user cannot approve this request"
-        }
-    )
-    @action(detail=True, methods=['post'])
-    def approve(self, request, pk=None):
-        """Approve or reject a trip request"""
-        trip_request = self.get_object()
-        
-        # Check if user can approve this request
-        try:
-            employee = Employee.objects.get(user=request.user)
-            current_approver = trip_request.get_current_approver()
-            
-            if current_approver != employee:
-                return Response(
-                    {'error': 'You are not authorized to approve this request at this stage'},
-                    status=status.HTTP_403_FORBIDDEN
-                )
-        except Employee.DoesNotExist:
-            return Response(
-                {'error': 'Employee profile not found'},
-                status=status.HTTP_404_NOT_FOUND
-            )
-        
-        serializer = TripApprovalActionSerializer(data=request.data)
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def update_hr_representative(request):
+    """Update default HR representative"""
+    try:
+        serializer = HRRepresentativeSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         
-        action = serializer.validated_data['action']
-        amount = serializer.validated_data.get('amount')
-        notes = serializer.validated_data.get('notes', '')
+        hr_id = serializer.validated_data['default_hr_representative_id']
+        hr_employee = Employee.objects.get(id=hr_id, is_deleted=False)
         
-        try:
-            with transaction.atomic():
-                if action == 'APPROVE':
-                    trip_request.approve_current_step(employee, amount, notes)
-                    
-                    # Send notification to employee
-                    if trip_request.status == 'APPROVED':
-                        # Final approval - notify employee
-                        self._send_approval_notification(trip_request, trip_request.employee, final=True)
-                    else:
-                        # Intermediate approval - notify next approver
-                        next_approver = trip_request.get_current_approver()
-                        if next_approver:
-                            self._send_approval_notification(trip_request, next_approver)
-                    
-                    message = 'Trip request approved successfully'
-                    
-                elif action == 'REJECT':
-                    trip_request.reject_current_step(employee, notes)
-                    
-                    # Send rejection notification to employee
-                    self._send_rejection_notification(trip_request, trip_request.employee, notes)
-                    
-                    message = 'Trip request rejected'
-            
-            serializer = self.get_serializer(trip_request)
-            return Response({
-                'message': message,
-                'trip_request': serializer.data
-            })
-            
-        except ValueError as e:
-            return Response(
-                {'error': str(e)},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-    @swagger_auto_schema(
-        method='get',
-        operation_description="Get pending approvals for current user",
-        responses={
-            200: openapi.Response(description="Pending approvals retrieved successfully")
-        }
-    )
-    @action(detail=False, methods=['get'])
-    def pending_approvals(self, request):
-        """Get trip requests pending approval by current user"""
-        try:
-            employee = Employee.objects.get(user=request.user)
-            
-            # Get requests where current user is the current approver
-            pending_requests = BusinessTripRequest.objects.filter(
-                Q(line_manager=employee, status='PENDING_LINE_MANAGER') |
-                Q(finance_approver=employee, status='PENDING_FINANCE') |
-                Q(hr_approver=employee, status='PENDING_HR')
-            ).select_related(
-                'employee', 'travel_type', 'transport_type', 'purpose', 'workflow'
-            ).order_by('submitted_at')
-            
-            serializer = PendingApprovalSerializer(
-                pending_requests, 
-                many=True, 
-                context={'request': request}
-            )
-            
-            return Response({
-                'count': pending_requests.count(),
-                'pending_approvals': serializer.data
-            })
-            
-        except Employee.DoesNotExist:
-            return Response(
-                {'error': 'Employee profile not found'},
-                status=status.HTTP_404_NOT_FOUND
-            )
-
-    @swagger_auto_schema(
-        method='get',
-        operation_description="Get approval history for current user",
-        responses={
-            200: openapi.Response(description="Approval history retrieved successfully")
-        }
-    )
-    @action(detail=False, methods=['get'])
-    def approval_history(self, request):
-        """Get trip requests previously approved/rejected by current user"""
-        try:
-            employee = Employee.objects.get(user=request.user)
-            
-            # Get completed approvals by current user
-            completed_approvals = TripApproval.objects.filter(
-                approver=employee,
-                decision__in=['APPROVED', 'REJECTED']
-            ).select_related(
-                'trip_request__employee', 'trip_request__travel_type'
-            ).order_by('-created_at')
-            
-            history_data = []
-            for approval in completed_approvals:
-                trip = approval.trip_request
-                history_data.append({
-                    'id': trip.id,
-                    'request_id': trip.request_id,
-                    'employee_name': trip.employee.full_name,
-                    'travel_type': trip.travel_type.name,
-                    'destination': f"{trip.start_date} to {trip.end_date}",
-                    'status': approval.decision,
-                    'amount': approval.amount,
-                    'approved_at': approval.created_at,
-                    'notes': approval.notes
-                })
-            
-            return Response({
-                'count': len(history_data),
-                'approval_history': history_data
-            })
-            
-        except Employee.DoesNotExist:
-            return Response(
-                {'error': 'Employee profile not found'},
-                status=status.HTTP_404_NOT_FOUND
-            )
-
-    @swagger_auto_schema(
-        method='post',
-        operation_description="Cancel a trip request",
-        responses={
-            200: openapi.Response(description="Request cancelled successfully"),
-            400: "Bad request - cannot cancel request"
-        }
-    )
-    @action(detail=True, methods=['post'])
-    def cancel(self, request, pk=None):
-        """Cancel a trip request"""
-        trip_request = self.get_object()
+        settings = TripSettings.get_active()
+        if not settings:
+            settings = TripSettings.objects.create(is_active=True, created_by=request.user)
         
-        # Check if user can cancel this request
-        try:
-            employee = Employee.objects.get(user=request.user)
-            if trip_request.requested_by != employee and trip_request.employee != employee:
-                return Response(
-                    {'error': 'You can only cancel your own requests'},
-                    status=status.HTTP_403_FORBIDDEN
-                )
-        except Employee.DoesNotExist:
-            return Response(
-                {'error': 'Employee profile not found'},
-                status=status.HTTP_404_NOT_FOUND
-            )
+        previous_hr = settings.default_hr_representative
+        settings.default_hr_representative = hr_employee
+        settings.updated_by = request.user
+        settings.save()
         
-        # Only allow cancellation of non-finalized requests
-        if trip_request.status in ['APPROVED', 'REJECTED', 'CANCELLED', 'COMPLETED']:
-            return Response(
-                {'error': f'Cannot cancel request with status: {trip_request.get_status_display()}'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        trip_request.status = 'CANCELLED'
-        trip_request.completed_at = timezone.now()
-        trip_request.save()
-        
-        # Send cancellation notifications to current approver if exists
-        current_approver = trip_request.get_current_approver()
-        if current_approver:
-            self._send_cancellation_notification(trip_request, current_approver)
-        
-        serializer = self.get_serializer(trip_request)
         return Response({
-            'message': 'Trip request cancelled successfully',
-            'trip_request': serializer.data
+            'message': 'Default HR representative updated',
+            'previous_hr': {
+                'id': previous_hr.id,
+                'name': previous_hr.full_name
+            } if previous_hr else None,
+            'current_hr': {
+                'id': hr_employee.id,
+                'name': hr_employee.full_name,
+                'department': hr_employee.department.name if hr_employee.department else ''
+            }
         })
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
-class TripSettingsViewSet(viewsets.ViewSet):
-    """ViewSet for trip management settings and configurations"""
+@swagger_auto_schema(
+    method='get',
+    operation_description="Get HR representatives",
+    tags=['Business Trip'],
+    responses={200: openapi.Response(description='HR list')}
+)
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_hr_representatives(request):
+    """Get HR representatives list"""
+    try:
+        settings = TripSettings.get_active()
+        current_default = settings.default_hr_representative if settings else None
+        
+        hr_employees = Employee.objects.filter(
+            department__name__icontains='HR',
+            is_deleted=False
+        )
+        
+        hr_list = [{
+            'id': emp.id,
+            'name': emp.full_name,
+            'email': emp.user.email if emp.user else '',
+            'phone': emp.phone,
+            'department': emp.department.name if emp.department else '',
+            'is_default': current_default and current_default.id == emp.id
+        } for emp in hr_employees]
+        
+        return Response({
+            'current_default': {
+                'id': current_default.id,
+                'name': current_default.full_name
+            } if current_default else None,
+            'hr_representatives': hr_list
+        })
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+@swagger_auto_schema(
+    method='put',
+    operation_description="Update default finance approver",
+    operation_summary="Update Finance Approver",
+    tags=['Business Trip'],
+    request_body=FinanceApproverSerializer,
+    responses={200: openapi.Response(description='Finance updated')}
+)
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def update_finance_approver(request):
+    """Update default finance approver"""
+    try:
+        serializer = FinanceApproverSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        finance_id = serializer.validated_data['default_finance_approver_id']
+        finance_employee = Employee.objects.get(id=finance_id, is_deleted=False)
+        
+        settings = TripSettings.get_active()
+        if not settings:
+            settings = TripSettings.objects.create(is_active=True, created_by=request.user)
+        
+        previous_finance = settings.default_finance_approver
+        settings.default_finance_approver = finance_employee
+        settings.updated_by = request.user
+        settings.save()
+        
+        return Response({
+            'message': 'Default Finance approver updated',
+            'previous_finance': {
+                'id': previous_finance.id,
+                'name': previous_finance.full_name
+            } if previous_finance else None,
+            'current_finance': {
+                'id': finance_employee.id,
+                'name': finance_employee.full_name,
+                'department': finance_employee.department.name if finance_employee.department else ''
+            }
+        })
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+@swagger_auto_schema(
+    method='get',
+    operation_description="Get finance approvers",
+    tags=['Business Trip'],
+    responses={200: openapi.Response(description='Finance list')}
+)
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_finance_approvers(request):
+    """Get finance approvers list"""
+    try:
+        settings = TripSettings.get_active()
+        current_default = settings.default_finance_approver if settings else None
+        
+        # Get employees from Finance/Payroll department
+        finance_employees = Employee.objects.filter(
+            Q(department__name__icontains='Finance') | Q(department__name__icontains='Payroll'),
+            is_deleted=False
+        )
+        
+        finance_list = [{
+            'id': emp.id,
+            'name': emp.full_name,
+            'email': emp.user.email if emp.user else '',
+            'phone': emp.phone,
+            'department': emp.department.name if emp.department else '',
+            'is_default': current_default and current_default.id == emp.id
+        } for emp in finance_employees]
+        
+        return Response({
+            'current_default': {
+                'id': current_default.id,
+                'name': current_default.full_name
+            } if current_default else None,
+            'finance_approvers': finance_list
+        })
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+@swagger_auto_schema(
+    method='put',
+    operation_description="Update general trip settings (notification days)",
+    tags=['Business Trip'],
+    request_body=GeneralTripSettingsSerializer,
+    responses={200: openapi.Response(description='Settings updated')}
+)
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def update_general_settings(request):
+    """Update general trip settings"""
+    try:
+        serializer = GeneralTripSettingsSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        data = serializer.validated_data
+        settings = TripSettings.get_active()
+        if not settings:
+            settings = TripSettings.objects.create(is_active=True, created_by=request.user)
+        
+        if 'notification_days_before' in data:
+            settings.notification_days_before = data['notification_days_before']
+        
+        settings.updated_by = request.user
+        settings.save()
+        
+        return Response({
+            'message': 'Trip settings updated',
+            'settings': {
+                'notification_days_before': settings.notification_days_before
+            }
+        })
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+@swagger_auto_schema(
+    method='get',
+    operation_description="Get general trip settings",
+    tags=['Business Trip'],
+    responses={200: openapi.Response(description='Settings')}
+)
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_general_settings(request):
+    """Get general trip settings"""
+    try:
+        settings = TripSettings.get_active()
+        if not settings:
+            return Response({
+                'notification_days_before': 7
+            })
+        
+        return Response({
+            'notification_days_before': settings.notification_days_before
+        })
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+# ==================== CREATE REQUEST ====================
+
+@swagger_auto_schema(
+    method='post',
+    operation_description="Create business trip request",
+    operation_summary="Create Trip Request",
+    tags=['Business Trip'],
+    request_body=BusinessTripRequestCreateSerializer,
+    responses={201: openapi.Response(description='Request created')}
+)
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def create_trip_request(request):
+    """Create business trip request"""
+    serializer = BusinessTripRequestCreateSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    data = serializer.validated_data
+    
+    try:
+        requester_emp = Employee.objects.get(user=request.user, is_deleted=False)
+        
+        # Employee selection
+        if data['requester_type'] == 'for_me':
+            employee = requester_emp
+        else:
+            if data.get('employee_id'):
+                employee = Employee.objects.get(id=data['employee_id'])
+                if employee.line_manager != requester_emp:
+                    return Response({
+                        'error': 'This employee is not in your team'
+                    }, status=status.HTTP_403_FORBIDDEN)
+            else:
+                manual_data = data.get('employee_manual', {})
+                if not manual_data.get('name'):
+                    return Response({
+                        'error': 'Employee name is required'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+                
+                employee = Employee.objects.create(
+                    full_name=manual_data.get('name', ''),
+                    phone=manual_data.get('phone', ''),
+                    line_manager=requester_emp,
+                    created_by=request.user
+                )
+        
+        with transaction.atomic():
+            trip_req = BusinessTripRequest.objects.create(
+                employee=employee,
+                requester=request.user,
+                requester_type=data['requester_type'],
+                travel_type_id=data['travel_type_id'],
+                transport_type_id=data['transport_type_id'],
+                purpose_id=data['purpose_id'],
+                start_date=data['start_date'],
+                end_date=data['end_date'],
+                comment=data.get('comment', ''),
+                finance_approver_id=data.get('finance_approver_id'),
+                hr_representative_id=data.get('hr_representative_id')
+            )
+            
+            # Create schedules
+            for i, schedule_data in enumerate(data['schedules']):
+                TripSchedule.objects.create(
+                    trip_request=trip_req,
+                    date=schedule_data['date'],
+                    from_location=schedule_data['from_location'],
+                    to_location=schedule_data['to_location'],
+                    order=i + 1,
+                    notes=schedule_data.get('notes', '')
+                )
+            
+            # Create hotels
+            for hotel_data in data.get('hotels', []):
+                TripHotel.objects.create(
+                    trip_request=trip_req,
+                    hotel_name=hotel_data['hotel_name'],
+                    check_in_date=hotel_data['check_in_date'],
+                    check_out_date=hotel_data['check_out_date'],
+                    location=hotel_data.get('location', ''),
+                    notes=hotel_data.get('notes', '')
+                )
+            
+            trip_req.submit_request(request.user)
+            
+            return Response({
+                'message': 'Trip request created and submitted',
+                'request': BusinessTripRequestDetailSerializer(trip_req).data
+            }, status=status.HTTP_201_CREATED)
+    
+    except Employee.DoesNotExist:
+        return Response({'error': 'Employee not found'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+# ==================== MY REQUESTS ====================
+
+@swagger_auto_schema(
+    method='get',
+    operation_description="Get all my trip requests",
+    tags=['Business Trip'],
+    responses={200: openapi.Response(description='My requests')}
+)
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def my_trip_requests(request):
+    """Get all my trip requests"""
+    try:
+        emp = Employee.objects.get(user=request.user)
+        requests = BusinessTripRequest.objects.filter(
+            employee=emp, 
+            is_deleted=False
+        ).order_by('-created_at')
+        
+        return Response({
+            'requests': BusinessTripRequestListSerializer(requests, many=True).data
+        })
+    except Employee.DoesNotExist:
+        return Response({'error': 'Employee profile not found'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+# ==================== APPROVAL ====================
+
+@swagger_auto_schema(
+    method='get',
+    operation_description="Get pending approvals",
+    tags=['Business Trip'],
+    responses={200: openapi.Response(description='Pending approvals')}
+)
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def pending_approvals(request):
+    """Get pending approvals"""
+    try:
+        emp = Employee.objects.get(user=request.user)
+        
+        lm_requests = BusinessTripRequest.objects.filter(
+            line_manager=emp,
+            status='PENDING_LINE_MANAGER',
+            is_deleted=False
+        ).order_by('-created_at')
+        
+        finance_requests = BusinessTripRequest.objects.filter(
+            finance_approver=emp,
+            status='PENDING_FINANCE',
+            is_deleted=False
+        ).order_by('-created_at')
+        
+        hr_requests = BusinessTripRequest.objects.filter(
+            hr_representative=emp,
+            status='PENDING_HR',
+            is_deleted=False
+        ).order_by('-created_at')
+        
+        return Response({
+            'line_manager_requests': BusinessTripRequestListSerializer(lm_requests, many=True).data,
+            'finance_requests': BusinessTripRequestListSerializer(finance_requests, many=True).data,
+            'hr_requests': BusinessTripRequestListSerializer(hr_requests, many=True).data,
+            'total_pending': lm_requests.count() + finance_requests.count() + hr_requests.count()
+        })
+    except Employee.DoesNotExist:
+        return Response({'error': 'Employee profile not found'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+@swagger_auto_schema(
+    method='post',
+    operation_description="Approve/Reject trip request",
+    tags=['Business Trip'],
+    request_body=TripApprovalSerializer,
+    responses={200: openapi.Response(description='Action completed')}
+)
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def approve_reject_request(request, pk):
+    """Approve/Reject trip request"""
+    serializer = TripApprovalSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    data = serializer.validated_data
+    
+    try:
+        trip_req = BusinessTripRequest.objects.get(pk=pk, is_deleted=False)
+        
+        if trip_req.status == 'PENDING_LINE_MANAGER':
+            if data['action'] == 'approve':
+                trip_req.approve_by_line_manager(request.user, data.get('comment', ''))
+                msg = 'Approved by Line Manager'
+            else:
+                trip_req.reject_by_line_manager(request.user, data.get('reason', ''))
+                msg = 'Rejected by Line Manager'
+        
+        elif trip_req.status == 'PENDING_FINANCE':
+            if data['action'] == 'approve':
+                trip_req.approve_by_finance(request.user, data.get('amount'), data.get('comment', ''))
+                msg = 'Approved by Finance'
+            else:
+                trip_req.reject_by_finance(request.user, data.get('reason', ''))
+                msg = 'Rejected by Finance'
+        
+        elif trip_req.status == 'PENDING_HR':
+            if data['action'] == 'approve':
+                trip_req.approve_by_hr(request.user, data.get('comment', ''))
+                msg = 'Approved by HR'
+            else:
+                trip_req.reject_by_hr(request.user, data.get('reason', ''))
+                msg = 'Rejected by HR'
+        else:
+            return Response({'error': 'Request is not pending approval'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        return Response({
+            'message': msg,
+            'request': BusinessTripRequestDetailSerializer(trip_req).data
+        })
+    
+    except BusinessTripRequest.DoesNotExist:
+        return Response({'error': 'Request not found'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+# ==================== APPROVAL HISTORY ====================
+
+@swagger_auto_schema(
+    method='get',
+    operation_description="Get approval history",
+    tags=['Business Trip'],
+    responses={200: openapi.Response(description='Approval history')}
+)
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def approval_history(request):
+    """Get approval history"""
+    try:
+        lm_approved = BusinessTripRequest.objects.filter(
+            line_manager_approved_by=request.user,
+            is_deleted=False
+        ).order_by('-line_manager_approved_at')[:20]
+        
+        finance_approved = BusinessTripRequest.objects.filter(
+            finance_approved_by=request.user,
+            is_deleted=False
+        ).order_by('-finance_approved_at')[:20]
+        
+        hr_approved = BusinessTripRequest.objects.filter(
+            hr_approved_by=request.user,
+            is_deleted=False
+        ).order_by('-hr_approved_at')[:20]
+        
+        rejected = BusinessTripRequest.objects.filter(
+            rejected_by=request.user,
+            is_deleted=False
+        ).order_by('-rejected_at')[:20]
+        
+        history = []
+        
+        for req in lm_approved:
+            history.append({
+                'request_id': req.request_id,
+                'employee_name': req.employee.full_name,
+                'travel_type': req.travel_type.name,
+                'destination': f"{req.start_date} to {req.end_date}",
+                'status': 'Approved (Line Manager)',
+                'action': 'Approved',
+                'comment': req.line_manager_comment,
+                'date': req.line_manager_approved_at
+            })
+        
+        for req in finance_approved:
+            history.append({
+                'request_id': req.request_id,
+                'employee_name': req.employee.full_name,
+                'travel_type': req.travel_type.name,
+                'destination': f"{req.start_date} to {req.end_date}",
+                'amount': float(req.finance_amount) if req.finance_amount else None,
+                'status': 'Approved (Finance)',
+                'action': 'Approved',
+                'comment': req.finance_comment,
+                'date': req.finance_approved_at
+            })
+        
+        for req in hr_approved:
+            history.append({
+                'request_id': req.request_id,
+                'employee_name': req.employee.full_name,
+                'travel_type': req.travel_type.name,
+                'destination': f"{req.start_date} to {req.end_date}",
+                'status': 'Approved (HR)',
+                'action': 'Approved',
+                'comment': req.hr_comment,
+                'date': req.hr_approved_at
+            })
+        
+        for req in rejected:
+            history.append({
+                'request_id': req.request_id,
+                'employee_name': req.employee.full_name,
+                'travel_type': req.travel_type.name,
+                'destination': f"{req.start_date} to {req.end_date}",
+                'status': req.get_status_display(),
+                'action': 'Rejected',
+                'comment': req.rejection_reason,
+                'date': req.rejected_at
+            })
+        
+        history.sort(key=lambda x: x['date'] if x['date'] else datetime.min, reverse=True)
+        
+        return Response({'history': history[:20]})
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+# ==================== EXPORT ====================
+
+@swagger_auto_schema(
+    method='get',
+    operation_description="Export my trips to Excel",
+    tags=['Business Trip'],
+    responses={200: openapi.Response(description='Excel file')}
+)
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def export_my_trips(request):
+    """Export my trips to Excel"""
+    try:
+        emp = Employee.objects.get(user=request.user)
+        requests = BusinessTripRequest.objects.filter(
+            employee=emp, 
+            is_deleted=False
+        ).order_by('-created_at')
+        
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "My Business Trips"
+        
+        # Styles
+        header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+        header_font = Font(color="FFFFFF", bold=True, size=11)
+        
+        # Title
+        ws['A1'] = f'BUSINESS TRIPS - {emp.full_name}'
+        ws['A1'].font = Font(size=16, bold=True, color="2B4C7E")
+        ws.merge_cells('A1:K1')
+        
+        ws['A2'] = f'Employee ID: {getattr(emp, "employee_id", "N/A")}'
+        ws['A3'] = f'Department: {emp.department.name if emp.department else "N/A"}'
+        ws['A4'] = f'Generated: {datetime.now().strftime("%Y-%m-%d %H:%M")}'
+        
+        # Headers
+        headers = [
+            'Request ID', 'Travel Type', 'Transport', 'Purpose', 
+            'Start Date', 'End Date', 'Days', 'Status', 'Amount', 
+            'Comment', 'Created At'
+        ]
+        
+        for col, header in enumerate(headers, 1):
+            cell = ws.cell(row=6, column=col, value=header)
+            cell.fill = header_fill
+            cell.font = header_font
+        
+        # Data
+        for row, req in enumerate(requests, 7):
+            data = [
+                req.request_id,
+                req.travel_type.name,
+                req.transport_type.name,
+                req.purpose.name,
+                req.start_date.strftime('%Y-%m-%d'),
+                req.end_date.strftime('%Y-%m-%d'),
+                float(req.number_of_days),
+                req.get_status_display(),
+                float(req.finance_amount) if req.finance_amount else '',
+                req.comment,
+                req.created_at.strftime('%Y-%m-%d %H:%M')
+            ]
+            
+            for col, value in enumerate(data, 1):
+                ws.cell(row=row, column=col, value=value)
+        
+        # Auto-adjust columns
+        for column in ws.columns:
+            max_length = 0
+            column_letter = get_column_letter(column[0].column)
+            for cell in column:
+                try:
+                    if len(str(cell.value)) > max_length:
+                        max_length = len(str(cell.value))
+                except:
+                    pass
+            ws.column_dimensions[column_letter].width = min(max_length + 2, 50)
+        
+        filename = f'my_trips_{emp.full_name.replace(" ", "_")}_{date.today().strftime("%Y%m%d")}.xlsx'
+        
+        response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        response['Content-Disposition'] = f'attachment; filename={filename}'
+        wb.save(response)
+        
+        return response
+    
+    except Employee.DoesNotExist:
+        return Response({'error': 'Employee profile not found'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+# ==================== VIEWSETS ====================
+
+class TravelTypeViewSet(viewsets.ModelViewSet):
+    """Travel Type CRUD ViewSet"""
+    queryset = TravelType.objects.filter(is_deleted=False, is_active=True)
+    serializer_class = TravelTypeSerializer
     permission_classes = [IsAuthenticated]
+    
+    def get_queryset(self):
+        return TravelType.objects.filter(is_deleted=False, is_active=True).order_by('name')
+    
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user)
+    
+    def perform_update(self, serializer):
+        serializer.save(updated_by=self.request.user)
 
-    @action(detail=False, methods=['get'])
-    def all_options(self, request):
-        """Get all configuration options for trip forms"""
+# ==================== CONFIGURATION OPTIONS ====================
+
+@swagger_auto_schema(
+    method='get',
+    operation_description="Get all configuration options for form dropdowns",
+    operation_summary="Get All Options",
+    tags=['Business Trip'],
+    responses={200: openapi.Response(description='All configuration options')}
+)
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_all_options(request):
+    """Get all configuration options for trip forms"""
+    try:
         travel_types = TravelTypeSerializer(
-            TravelType.objects.filter(is_active=True), many=True
+            TravelType.objects.filter(is_active=True, is_deleted=False).order_by('name'), 
+            many=True
         ).data
         
         transport_types = TransportTypeSerializer(
-            TransportType.objects.filter(is_active=True), many=True
+            TransportType.objects.filter(is_active=True, is_deleted=False).order_by('name'), 
+            many=True
         ).data
         
         trip_purposes = TripPurposeSerializer(
-            TripPurpose.objects.filter(is_active=True), many=True
+            TripPurpose.objects.filter(is_active=True, is_deleted=False).order_by('name'), 
+            many=True
         ).data
         
-        workflows = ApprovalWorkflowSerializer(
-            ApprovalWorkflow.objects.filter(is_active=True), many=True
-        ).data
+        # Get user's employee info for defaults
+        try:
+            emp = Employee.objects.get(user=request.user)
+            user_defaults = {
+                'employee_name': emp.full_name,
+                'job_function': emp.job_function.name if emp.job_function else '',
+                'department': emp.department.name if emp.department else '',
+                'unit': emp.unit.name if emp.unit else '',
+                'business_function': emp.business_function.name if emp.business_function else '',
+                'phone_number': emp.phone or '',
+                'line_manager': {
+                    'id': emp.line_manager.id if emp.line_manager else None,
+                    'name': emp.line_manager.full_name if emp.line_manager else '',
+                }
+            }
+        except Employee.DoesNotExist:
+            user_defaults = {}
         
         return Response({
             'travel_types': travel_types,
             'transport_types': transport_types,
             'trip_purposes': trip_purposes,
-            'approval_workflows': workflows
+            'user_defaults': user_defaults
         })
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
-    @action(detail=False, methods=['get'])
-    def user_defaults(self, request):
-        """Get default values for current user"""
-        try:
-            employee = Employee.objects.get(user=request.user)
-            
-            defaults = {
-                'employee_name': employee.full_name,
-                'job_function': employee.job_function.name if employee.job_function else '',
-                'department': employee.department.name if employee.department else '',
-                'unit': employee.unit.name if employee.unit else '',
-                'business_function': employee.business_function.name if employee.business_function else '',
-                'phone_number': employee.phone or '',
-                'line_manager': {
-                    'id': employee.line_manager.id if employee.line_manager else None,
-                    'name': employee.line_manager.full_name if employee.line_manager else '',
-                    'employee_id': employee.line_manager.employee_id if employee.line_manager else ''
-                }
-            }
-            
-            return Response(defaults)
-            
-        except Employee.DoesNotExist:
-            return Response(
-                {'error': 'Employee profile not found'},
-                status=status.HTTP_404_NOT_FOUND
+class TransportTypeViewSet(viewsets.ModelViewSet):
+    """Transport Type CRUD ViewSet"""
+    queryset = TransportType.objects.filter(is_deleted=False, is_active=True)
+    serializer_class = TransportTypeSerializer
+    permission_classes = [IsAuthenticated]
+    
+    def get_queryset(self):
+        return TransportType.objects.filter(is_deleted=False, is_active=True).order_by('name')
+    
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user)
+    
+    def perform_update(self, serializer):
+        serializer.save(updated_by=self.request.user)
+
+class TripPurposeViewSet(viewsets.ModelViewSet):
+    """Trip Purpose CRUD ViewSet"""
+    queryset = TripPurpose.objects.filter(is_deleted=False, is_active=True)
+    serializer_class = TripPurposeSerializer
+    permission_classes = [IsAuthenticated]
+    
+    def get_queryset(self):
+        return TripPurpose.objects.filter(is_deleted=False, is_active=True).order_by('name')
+    
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user)
+    
+    def perform_update(self, serializer):
+        serializer.save(updated_by=self.request.user)
+
+# ==================== ALL REQUESTS (ADMIN VIEW) ====================
+
+@swagger_auto_schema(
+    method='get',
+    operation_description="Get all trip requests (admin view with filters)",
+    tags=['Business Trip'],
+    manual_parameters=[
+        openapi.Parameter('status', openapi.IN_QUERY, type=openapi.TYPE_STRING),
+        openapi.Parameter('travel_type_id', openapi.IN_QUERY, type=openapi.TYPE_INTEGER),
+        openapi.Parameter('department_id', openapi.IN_QUERY, type=openapi.TYPE_INTEGER),
+        openapi.Parameter('start_date', openapi.IN_QUERY, type=openapi.TYPE_STRING),
+        openapi.Parameter('end_date', openapi.IN_QUERY, type=openapi.TYPE_STRING),
+    ],
+    responses={200: openapi.Response(description='All requests')}
+)
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def all_trip_requests(request):
+    """Get all trip requests with filters"""
+    try:
+        requests_qs = BusinessTripRequest.objects.filter(is_deleted=False).select_related(
+            'employee', 'employee__department', 'travel_type', 'transport_type', 'purpose'
+        )
+        
+        # Apply filters
+        status = request.GET.get('status')
+        if status:
+            requests_qs = requests_qs.filter(status=status)
+        
+        travel_type_id = request.GET.get('travel_type_id')
+        if travel_type_id:
+            requests_qs = requests_qs.filter(travel_type_id=travel_type_id)
+        
+        department_id = request.GET.get('department_id')
+        if department_id:
+            requests_qs = requests_qs.filter(employee__department_id=department_id)
+        
+        start_date = request.GET.get('start_date')
+        if start_date:
+            requests_qs = requests_qs.filter(start_date__gte=start_date)
+        
+        end_date = request.GET.get('end_date')
+        if end_date:
+            requests_qs = requests_qs.filter(end_date__lte=end_date)
+        
+        requests_qs = requests_qs.order_by('-created_at')
+        
+        return Response({
+            'count': requests_qs.count(),
+            'requests': BusinessTripRequestListSerializer(requests_qs, many=True).data
+        })
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+@swagger_auto_schema(
+    method='get',
+    operation_description="Export all trips to Excel with enhanced formatting",
+    tags=['Business Trip'],
+    manual_parameters=[
+        openapi.Parameter('status', openapi.IN_QUERY, type=openapi.TYPE_STRING),
+        openapi.Parameter('year', openapi.IN_QUERY, type=openapi.TYPE_INTEGER),
+        openapi.Parameter('department_id', openapi.IN_QUERY, type=openapi.TYPE_INTEGER),
+    ],
+    responses={200: openapi.Response(description='Excel file')}
+)
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def export_all_trips(request):
+    """Export all trips to Excel with enhanced formatting"""
+    try:
+        requests_qs = BusinessTripRequest.objects.filter(is_deleted=False).select_related(
+            'employee', 'employee__department', 'employee__business_function',
+            'travel_type', 'transport_type', 'purpose',
+            'line_manager', 'finance_approver', 'hr_representative'
+        )
+        
+        # Apply filters
+        status_filter = request.GET.get('status')
+        if status_filter:
+            requests_qs = requests_qs.filter(status=status_filter)
+        
+        year = request.GET.get('year')
+        if year:
+            requests_qs = requests_qs.filter(start_date__year=year)
+        
+        department_id = request.GET.get('department_id')
+        if department_id:
+            requests_qs = requests_qs.filter(employee__department_id=department_id)
+        
+        requests_qs = requests_qs.order_by('-created_at')
+        
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Business Trips"
+        
+        # Styles
+        title_font = Font(size=18, bold=True, color="1F4E79")
+        header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+        header_font = Font(color="FFFFFF", bold=True, size=11)
+        
+        # Title
+        ws['A1'] = 'BUSINESS TRIPS EXPORT'
+        ws['A1'].font = title_font
+        ws.merge_cells('A1:N1')
+        
+        ws['A2'] = f'Generated: {datetime.now().strftime("%Y-%m-%d %H:%M")}'
+        ws['A2'].font = Font(size=10)
+        
+        # Applied filters
+        filters = []
+        if status_filter:
+            filters.append(f"Status: {status_filter}")
+        if year:
+            filters.append(f"Year: {year}")
+        if department_id:
+            filters.append(f"Department ID: {department_id}")
+        
+        if filters:
+            ws['A3'] = f'Filters: {", ".join(filters)}'
+            ws['A3'].font = Font(size=10, italic=True)
+        
+        # Headers
+        headers = [
+            'Request ID', 'Employee Name', 'Employee ID', 'Department', 'Business Function',
+            'Travel Type', 'Transport', 'Purpose', 'Start Date', 'End Date', 'Days',
+            'Status', 'Amount', 'Created At'
+        ]
+        
+        header_row = 5
+        for col, header in enumerate(headers, 1):
+            cell = ws.cell(row=header_row, column=col, value=header)
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.border = Border(
+                left=Side(style='thin'), right=Side(style='thin'),
+                top=Side(style='thin'), bottom=Side(style='thin')
             )
+        
+        # Status colors
+        status_colors = {
+            'APPROVED': PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid"),
+            'PENDING_LINE_MANAGER': PatternFill(start_color="FFEB9C", end_color="FFEB9C", fill_type="solid"),
+            'PENDING_FINANCE': PatternFill(start_color="E6E6FA", end_color="E6E6FA", fill_type="solid"),
+            'PENDING_HR': PatternFill(start_color="FFE6E6", end_color="FFE6E6", fill_type="solid"),
+            'REJECTED_LINE_MANAGER': PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid"),
+            'REJECTED_FINANCE': PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid"),
+            'REJECTED_HR': PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid"),
+        }
+        
+        # Data
+        for row, req in enumerate(requests_qs, header_row + 1):
+            data = [
+                req.request_id,
+                req.employee.full_name,
+                getattr(req.employee, 'employee_id', ''),
+                req.employee.department.name if req.employee.department else '',
+                req.employee.business_function.name if req.employee.business_function else '',
+                req.travel_type.name,
+                req.transport_type.name,
+                req.purpose.name,
+                req.start_date.strftime('%Y-%m-%d'),
+                req.end_date.strftime('%Y-%m-%d'),
+                float(req.number_of_days),
+                req.get_status_display(),
+                float(req.finance_amount) if req.finance_amount else '',
+                req.created_at.strftime('%Y-%m-%d %H:%M')
+            ]
+            
+            for col, value in enumerate(data, 1):
+                cell = ws.cell(row=row, column=col, value=value)
+                
+                # Apply status color
+                if col == 12:  # Status column
+                    cell.fill = status_colors.get(req.status, PatternFill())
+                
+                # Alignment
+                if col in [11, 13]:  # Numbers
+                    cell.alignment = Alignment(horizontal='right')
+        
+        # Auto-adjust columns
+        for column in ws.columns:
+            max_length = 0
+            column_letter = get_column_letter(column[0].column)
+            for cell in column:
+                try:
+                    if len(str(cell.value)) > max_length:
+                        max_length = len(str(cell.value))
+                except:
+                    pass
+            ws.column_dimensions[column_letter].width = min(max_length + 2, 50)
+        
+        filename = f'business_trips_export_{date.today().strftime("%Y%m%d")}.xlsx'
+        
+        response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        response['Content-Disposition'] = f'attachment; filename={filename}'
+        wb.save(response)
+        
+        return response
+    
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)

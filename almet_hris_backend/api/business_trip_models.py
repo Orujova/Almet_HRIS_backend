@@ -3,15 +3,17 @@ from django.db import models
 from django.contrib.auth.models import User
 from django.utils import timezone
 from django.core.validators import MinValueValidator
+from django.core.exceptions import ValidationError
 from .models import Employee, SoftDeleteModel
-import uuid
+from datetime import date, timedelta
 
 class TravelType(SoftDeleteModel):
-    """Travel type configuration (Domestic, Overseas, etc.)"""
+    """Travel type configuration (Domestic, Overseas)"""
     name = models.CharField(max_length=50, unique=True)
-
     description = models.TextField(blank=True)
     is_active = models.BooleanField(default=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='travel_type_updates')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -22,13 +24,15 @@ class TravelType(SoftDeleteModel):
         ordering = ['name']
         verbose_name = "Travel Type"
         verbose_name_plural = "Travel Types"
+        db_table = 'travel_types'
 
 class TransportType(SoftDeleteModel):
     """Transport type configuration (Taxi, Train, Airplane, etc.)"""
     name = models.CharField(max_length=50, unique=True)
-
     description = models.TextField(blank=True)
     is_active = models.BooleanField(default=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='transport_type_updates')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -39,13 +43,15 @@ class TransportType(SoftDeleteModel):
         ordering = ['name']
         verbose_name = "Transport Type"
         verbose_name_plural = "Transport Types"
+        db_table = 'transport_types'
 
 class TripPurpose(SoftDeleteModel):
     """Trip purpose configuration (Conference, Meeting, Training, etc.)"""
     name = models.CharField(max_length=100, unique=True)
- 
     description = models.TextField(blank=True)
     is_active = models.BooleanField(default=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='trip_purpose_updates')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -56,94 +62,96 @@ class TripPurpose(SoftDeleteModel):
         ordering = ['name']
         verbose_name = "Trip Purpose"
         verbose_name_plural = "Trip Purposes"
+        db_table = 'trip_purposes'
 
-class ApprovalWorkflow(SoftDeleteModel):
-    """Approval workflow configuration"""
-    APPROVAL_STEP_CHOICES = [
-        ('LINE_MANAGER', 'Line Manager'),
-        ('FINANCE_PAYROLL', 'Finance/Payroll'),
-        ('HR', 'HR'),
-        ('CHRO', 'CHRO'),
-        ('CEO', 'CEO'),
-        ('CUSTOM', 'Custom')
-    ]
-
-    name = models.CharField(max_length=100, unique=True)
-    description = models.TextField(blank=True)
+class TripSettings(SoftDeleteModel):
+    """Business trip system settings"""
+    
+    # Default Approvers
+    default_hr_representative = models.ForeignKey(
+        Employee, 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True, 
+        related_name='trip_hr_settings',
+        help_text="Default HR representative"
+    )
+    default_finance_approver = models.ForeignKey(
+        Employee,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='trip_finance_settings',
+        help_text="Default Finance/Payroll approver"
+    )
+    
+    # Notifications
+    notification_days_before = models.PositiveIntegerField(
+        default=7,
+        help_text="Send notification X days before trip starts"
+    )
+    
+    # System fields
     is_active = models.BooleanField(default=True)
-    is_default = models.BooleanField(default=False)
-    
-    # Workflow conditions
-    applies_to_domestic = models.BooleanField(default=True)
-    applies_to_overseas = models.BooleanField(default=True)
-    min_amount = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
-    max_amount = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
-    
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='trip_settings_updates')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-
-    def __str__(self):
-        return self.name
-
-    class Meta:
-        ordering = ['name']
-        verbose_name = "Approval Workflow"
-        verbose_name_plural = "Approval Workflows"
-
-class ApprovalStep(SoftDeleteModel):
-    """Individual steps in approval workflow"""
-    workflow = models.ForeignKey(ApprovalWorkflow, on_delete=models.CASCADE, related_name='steps')
-    step_type = models.CharField(max_length=20, choices=ApprovalWorkflow.APPROVAL_STEP_CHOICES)
-    step_order = models.PositiveIntegerField()
-    step_name = models.CharField(max_length=100)
-    is_required = models.BooleanField(default=True)
-    can_edit_amount = models.BooleanField(default=False)
-    requires_amount_entry = models.BooleanField(default=False)
     
-    # Auto-assignment rules
-    auto_assign_to_line_manager = models.BooleanField(default=False)
-    specific_approver = models.ForeignKey(Employee, on_delete=models.SET_NULL, null=True, blank=True)
-    
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    def __str__(self):
-        return f"{self.workflow.name} - Step {self.step_order}: {self.step_name}"
-
     class Meta:
-        ordering = ['workflow', 'step_order']
-        unique_together = ['workflow', 'step_order']
-        verbose_name = "Approval Step"
-        verbose_name_plural = "Approval Steps"
+        verbose_name = "Trip Setting"
+        verbose_name_plural = "Trip Settings"
+        db_table = 'trip_settings'
+    
+    def __str__(self):
+        return f"Trip Settings - Active: {self.is_active}"
+    
+    @classmethod
+    def get_active(cls):
+        """Get active settings"""
+        return cls.objects.filter(is_active=True, is_deleted=False).first()
+    
+    def clean(self):
+        """Validation - only one active setting"""
+        if self.is_active:
+            existing = TripSettings.objects.filter(
+                is_active=True, 
+                is_deleted=False
+            ).exclude(pk=self.pk)
+            if existing.exists():
+                raise ValidationError("Only one active trip setting allowed")
+    
+    def save(self, *args, **kwargs):
+        self.clean()
+        super().save(*args, **kwargs)
 
 class BusinessTripRequest(SoftDeleteModel):
     """Main business trip request model"""
     STATUS_CHOICES = [
         ('DRAFT', 'Draft'),
         ('SUBMITTED', 'Submitted'),
-        ('IN_PROGRESS', 'In Progress'),
         ('PENDING_LINE_MANAGER', 'Pending Line Manager'),
         ('PENDING_FINANCE', 'Pending Finance/Payroll'),
         ('PENDING_HR', 'Pending HR'),
-        ('PENDING_CHRO', 'Pending CHRO'),
         ('APPROVED', 'Approved'),
-        ('REJECTED', 'Rejected'),
+        ('REJECTED_LINE_MANAGER', 'Rejected by Line Manager'),
+        ('REJECTED_FINANCE', 'Rejected by Finance'),
+        ('REJECTED_HR', 'Rejected by HR'),
         ('CANCELLED', 'Cancelled'),
-        ('COMPLETED', 'Completed'),
     ]
 
     REQUESTER_TYPE_CHOICES = [
-        ('FOR_ME', 'For Me'),
-        ('FOR_EMPLOYEE', 'For My Employee'),
+        ('for_me', 'For Me'),
+        ('for_my_employee', 'For My Employee'),
     ]
 
     # Request identification
     request_id = models.CharField(max_length=20, unique=True, editable=False)
     
     # Requester information
-    requester_type = models.CharField(max_length=15, choices=REQUESTER_TYPE_CHOICES, default='FOR_ME')
-    requested_by = models.ForeignKey(Employee, on_delete=models.PROTECT, related_name='trip_requests_made')
-    employee = models.ForeignKey(Employee, on_delete=models.PROTECT, related_name='trip_requests')
+    requester_type = models.CharField(max_length=20, choices=REQUESTER_TYPE_CHOICES, default='for_me')
+    requester = models.ForeignKey(User, on_delete=models.CASCADE,null=True, related_name='created_trip_requests')
+    employee = models.ForeignKey(Employee, on_delete=models.CASCADE, related_name='trip_requests')
     
     # Travel details
     travel_type = models.ForeignKey(TravelType, on_delete=models.PROTECT)
@@ -153,222 +161,188 @@ class BusinessTripRequest(SoftDeleteModel):
     # Dates
     start_date = models.DateField()
     end_date = models.DateField()
+    return_date = models.DateField(editable=False, null=True, blank=True)
+    number_of_days = models.DecimalField(max_digits=5, decimal_places=1, editable=False, default=0)
     
-    # Status and workflow
-    status = models.CharField(max_length=25, choices=STATUS_CHOICES, default='DRAFT')
-    workflow = models.ForeignKey(ApprovalWorkflow, on_delete=models.PROTECT, null=True, blank=True)
-    current_step = models.ForeignKey(ApprovalStep, on_delete=models.SET_NULL, null=True, blank=True)
-    
-    # Financial information
-    estimated_amount = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
-    approved_amount = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    comment = models.TextField(blank=True, help_text="Employee comment")
     
     # Approvers
-    line_manager = models.ForeignKey(Employee, on_delete=models.SET_NULL, null=True, blank=True, related_name='trip_requests_as_line_manager')
-    finance_approver = models.ForeignKey(Employee, on_delete=models.SET_NULL, null=True, blank=True, related_name='trip_requests_as_finance')
-    hr_approver = models.ForeignKey(Employee, on_delete=models.SET_NULL, null=True, blank=True, related_name='trip_requests_as_hr')
+    line_manager = models.ForeignKey(
+        Employee, 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True, 
+        related_name='trips_to_approve'
+    )
+    finance_approver = models.ForeignKey(
+        Employee,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='trips_finance'
+    )
+    hr_representative = models.ForeignKey(
+        Employee, 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True, 
+        related_name='trips_hr'
+    )
     
-    # Additional information
-    notes = models.TextField(blank=True)
+    # Status
+    status = models.CharField(max_length=30, choices=STATUS_CHOICES, default='DRAFT')
+    
+    # Line Manager Approval
+    line_manager_approved_at = models.DateTimeField(null=True, blank=True)
+    line_manager_approved_by = models.ForeignKey(
+        User, 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True, 
+        related_name='trip_lm_approvals'
+    )
+    line_manager_comment = models.TextField(blank=True)
+    
+    # Finance Approval
+    finance_approved_at = models.DateTimeField(null=True, blank=True)
+    finance_approved_by = models.ForeignKey(
+        User, 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True, 
+        related_name='trip_finance_approvals'
+    )
+    finance_amount = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    finance_comment = models.TextField(blank=True)
+    
+    # HR Approval
+    hr_approved_at = models.DateTimeField(null=True, blank=True)
+    hr_approved_by = models.ForeignKey(
+        User, 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True, 
+        related_name='trip_hr_approvals'
+    )
+    hr_comment = models.TextField(blank=True)
+    
+    # Rejection
+    rejected_at = models.DateTimeField(null=True, blank=True)
+    rejected_by = models.ForeignKey(
+        User, 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True, 
+        related_name='trip_rejections'
+    )
     rejection_reason = models.TextField(blank=True)
     
-    # Notification settings
-    phone_number = models.CharField(max_length=20, blank=True)  # For SMS notifications
-    send_sms_reminders = models.BooleanField(default=True)
-    
-    # Timestamps
-    submitted_at = models.DateTimeField(null=True, blank=True)
-    completed_at = models.DateTimeField(null=True, blank=True)
+    # System fields
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-
-    def save(self, *args, **kwargs):
-        if not self.request_id:
-            self.request_id = self.generate_request_id()
-        
-        # Auto-assign workflow if not set
-        if not self.workflow:
-            self.workflow = self.get_applicable_workflow()
-        
-        # Auto-assign line manager if not set and requester_type is FOR_ME
-        if self.requester_type == 'FOR_ME' and not self.line_manager:
-            self.line_manager = self.employee.line_manager
-        
-        # Auto-assign phone number from employee if not set
-        if not self.phone_number and self.employee.phone:
-            self.phone_number = self.employee.phone
-        
-        super().save(*args, **kwargs)
-
-    def generate_request_id(self):
-        """Generate unique request ID"""
-        year = timezone.now().year
-        month = timezone.now().month
-        
-        # Get count of requests this month
-        count = BusinessTripRequest.objects.filter(
-            created_at__year=year,
-            created_at__month=month
-        ).count() + 1
-        
-        return f"BT{year}{month:02d}{count:04d}"
-
-    def get_applicable_workflow(self):
-        """Get applicable workflow based on travel type and amount"""
-        workflows = ApprovalWorkflow.objects.filter(is_active=True)
-        
-        # Filter by travel type
-        if self.travel_type.name == 'DOMESTIC':
-            workflows = workflows.filter(applies_to_domestic=True)
-        elif self.travel_type.name == 'OVERSEAS':
-            workflows = workflows.filter(applies_to_overseas=True)
-        
-        # Filter by amount if estimated
-        if self.estimated_amount:
-            workflows = workflows.filter(
-                models.Q(min_amount__isnull=True) | models.Q(min_amount__lte=self.estimated_amount),
-                models.Q(max_amount__isnull=True) | models.Q(max_amount__gte=self.estimated_amount)
-            )
-        
-        # Return first matching workflow or default
-        workflow = workflows.first()
-        if not workflow:
-            workflow = ApprovalWorkflow.objects.filter(is_default=True, is_active=True).first()
-        
-        return workflow
-
-    def submit_request(self):
-        """Submit the request and start approval workflow"""
-        if self.status != 'DRAFT':
-            raise ValueError("Only draft requests can be submitted")
-        
-        self.status = 'SUBMITTED'
-        self.submitted_at = timezone.now()
-        
-        # Start workflow
-        if self.workflow:
-            first_step = self.workflow.steps.filter(is_active=True).order_by('step_order').first()
-            if first_step:
-                self.current_step = first_step
-                self.status = self.get_status_for_step(first_step)
-        
-        self.save()
-
-    def get_status_for_step(self, step):
-        """Get status based on approval step"""
-        status_mapping = {
-            'LINE_MANAGER': 'PENDING_LINE_MANAGER',
-            'FINANCE_PAYROLL': 'PENDING_FINANCE',
-            'HR': 'PENDING_HR',
-            'CHRO': 'PENDING_CHRO',
-        }
-        return status_mapping.get(step.step_type, 'IN_PROGRESS')
-
-    def get_current_approver(self):
-        """Get current approver based on current step"""
-        if not self.current_step:
-            return None
-        
-        if self.current_step.step_type == 'LINE_MANAGER':
-            return self.line_manager
-        elif self.current_step.step_type == 'FINANCE_PAYROLL':
-            return self.finance_approver
-        elif self.current_step.step_type == 'HR':
-            return self.hr_approver
-        elif self.current_step.specific_approver:
-            return self.current_step.specific_approver
-        
-        return None
-
-    def approve_current_step(self, approver, amount=None, notes=None):
-        """Approve current step and move to next"""
-        if self.status in ['APPROVED', 'REJECTED', 'CANCELLED']:
-            raise ValueError("Request is already finalized")
-        
-        # Create approval record
-        TripApproval.objects.create(
-            trip_request=self,
-            approval_step=self.current_step,
-            approver=approver,
-            decision='APPROVED',
-            amount=amount,
-            notes=notes or ''
-        )
-        
-        # Update approved amount if provided
-        if amount is not None:
-            self.approved_amount = amount
-        
-        # Move to next step
-        next_step = self.workflow.steps.filter(
-            step_order__gt=self.current_step.step_order,
-            is_active=True
-        ).order_by('step_order').first()
-        
-        if next_step:
-            self.current_step = next_step
-            self.status = self.get_status_for_step(next_step)
-        else:
-            # All steps completed
-            self.current_step = None
-            self.status = 'APPROVED'
-            self.completed_at = timezone.now()
-        
-        self.save()
-
-    def reject_current_step(self, approver, reason):
-        """Reject current step"""
-        if self.status in ['APPROVED', 'REJECTED', 'CANCELLED']:
-            raise ValueError("Request is already finalized")
-        
-        # Create approval record
-        TripApproval.objects.create(
-            trip_request=self,
-            approval_step=self.current_step,
-            approver=approver,
-            decision='REJECTED',
-            notes=reason
-        )
-        
-        self.status = 'REJECTED'
-        self.rejection_reason = reason
-        self.completed_at = timezone.now()
-        self.save()
-
-    def get_timeline(self):
-        """Get approval timeline for display"""
-        timeline = []
-        approvals = self.approvals.select_related('approval_step', 'approver').order_by('created_at')
-        
-        for step in self.workflow.steps.filter(is_active=True).order_by('step_order'):
-            approval = approvals.filter(approval_step=step).first()
-            timeline.append({
-                'step_name': step.step_name,
-                'step_type': step.step_type,
-                'is_current': self.current_step == step if self.current_step else False,
-                'is_completed': approval is not None,
-                'approval': approval,
-                'approver_name': approval.approver.full_name if approval else None,
-                'decision': approval.decision if approval else None,
-                'approved_at': approval.created_at if approval else None,
-            })
-        
-        return timeline
-
-    @property
-    def duration_days(self):
-        """Calculate trip duration in days"""
-        if self.start_date and self.end_date:
-            return (self.end_date - self.start_date).days + 1
-        return 0
-
-    def __str__(self):
-        return f"{self.request_id} - {self.employee.full_name} ({self.get_status_display()})"
-
+    
     class Meta:
-        ordering = ['-created_at']
         verbose_name = "Business Trip Request"
         verbose_name_plural = "Business Trip Requests"
+        db_table = 'business_trip_requests'
+        ordering = ['-created_at']
+    
+    def __str__(self):
+        return f"{self.request_id} - {self.employee.full_name} - {self.travel_type.name}"
+    
+    def clean(self):
+        """Validation"""
+        if self.start_date and self.end_date and self.start_date >= self.end_date:
+            raise ValidationError("End date must be after start date")
+    
+    def save(self, *args, **kwargs):
+        # Generate request ID
+        if not self.request_id:
+            year = timezone.now().year
+            last = BusinessTripRequest.objects.filter(
+                request_id__startswith=f'BT{year}'
+            ).order_by('-request_id').first()
+            num = int(last.request_id[6:]) + 1 if last else 1
+            self.request_id = f'BT{year}{num:04d}'
+        
+        # Calculate days
+        if self.start_date and self.end_date:
+            self.number_of_days = (self.end_date - self.start_date).days + 1
+            self.return_date = self.end_date + timedelta(days=1)
+        
+        # Auto-assign approvers
+        if not self.line_manager and self.employee.line_manager:
+            requester_emp = getattr(self.requester, 'employee', None)
+            if not (requester_emp and self.employee.line_manager == requester_emp):
+                self.line_manager = self.employee.line_manager
+        
+        settings = TripSettings.get_active()
+        if not self.hr_representative and settings:
+            self.hr_representative = settings.default_hr_representative
+        
+        self.clean()
+        super().save(*args, **kwargs)
+    
+    def submit_request(self, user):
+        """Submit for approval"""
+        requester_emp = getattr(user, 'employee', None)
+        is_manager_request = requester_emp and self.employee.line_manager == requester_emp
+        
+        if is_manager_request:
+            self.status = 'PENDING_FINANCE' if self.finance_approver else ('PENDING_HR' if self.hr_representative else 'APPROVED')
+        else:
+            self.status = 'PENDING_LINE_MANAGER' if self.line_manager else ('PENDING_FINANCE' if self.finance_approver else ('PENDING_HR' if self.hr_representative else 'APPROVED'))
+        
+        self.save()
+    
+    def approve_by_line_manager(self, user, comment=''):
+        """Line Manager approval"""
+        self.line_manager_approved_at = timezone.now()
+        self.line_manager_approved_by = user
+        self.line_manager_comment = comment
+        self.status = 'PENDING_FINANCE' if self.finance_approver else ('PENDING_HR' if self.hr_representative else 'APPROVED')
+        self.save()
+    
+    def reject_by_line_manager(self, user, reason):
+        """Line Manager rejection"""
+        self.status = 'REJECTED_LINE_MANAGER'
+        self.rejected_at = timezone.now()
+        self.rejected_by = user
+        self.rejection_reason = reason
+        self.save()
+    
+    def approve_by_finance(self, user, amount=None, comment=''):
+        """Finance approval"""
+        self.finance_approved_at = timezone.now()
+        self.finance_approved_by = user
+        self.finance_amount = amount
+        self.finance_comment = comment
+        self.status = 'PENDING_HR' if self.hr_representative else 'APPROVED'
+        self.save()
+    
+    def reject_by_finance(self, user, reason):
+        """Finance rejection"""
+        self.status = 'REJECTED_FINANCE'
+        self.rejected_at = timezone.now()
+        self.rejected_by = user
+        self.rejection_reason = reason
+        self.save()
+    
+    def approve_by_hr(self, user, comment=''):
+        """HR approval"""
+        self.hr_approved_at = timezone.now()
+        self.hr_approved_by = user
+        self.hr_comment = comment
+        self.status = 'APPROVED'
+        self.save()
+    
+    def reject_by_hr(self, user, reason):
+        """HR rejection"""
+        self.status = 'REJECTED_HR'
+        self.rejected_at = timezone.now()
+        self.rejected_by = user
+        self.rejection_reason = reason
+        self.save()
 
 class TripSchedule(SoftDeleteModel):
     """Trip schedule/itinerary details"""
@@ -389,6 +363,7 @@ class TripSchedule(SoftDeleteModel):
         ordering = ['trip_request', 'date', 'order']
         verbose_name = "Trip Schedule"
         verbose_name_plural = "Trip Schedules"
+        db_table = 'trip_schedules'
 
 class TripHotel(SoftDeleteModel):
     """Hotel accommodation details"""
@@ -397,7 +372,6 @@ class TripHotel(SoftDeleteModel):
     check_in_date = models.DateField()
     check_out_date = models.DateField()
     location = models.CharField(max_length=200, blank=True)
-    contact_info = models.TextField(blank=True)
     notes = models.TextField(blank=True)
     
     created_at = models.DateTimeField(auto_now_add=True)
@@ -417,32 +391,4 @@ class TripHotel(SoftDeleteModel):
         ordering = ['trip_request', 'check_in_date']
         verbose_name = "Trip Hotel"
         verbose_name_plural = "Trip Hotels"
-
-class TripApproval(SoftDeleteModel):
-    """Approval records for each step"""
-    DECISION_CHOICES = [
-        ('APPROVED', 'Approved'),
-        ('REJECTED', 'Rejected'),
-        ('PENDING', 'Pending'),
-    ]
-
-    trip_request = models.ForeignKey(BusinessTripRequest, on_delete=models.CASCADE, related_name='approvals')
-    approval_step = models.ForeignKey(ApprovalStep, on_delete=models.PROTECT)
-    approver = models.ForeignKey(Employee, on_delete=models.PROTECT)
-    decision = models.CharField(max_length=10, choices=DECISION_CHOICES, default='PENDING')
-    amount = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
-    notes = models.TextField(blank=True)
-    
-    # Timestamps
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    def __str__(self):
-        return f"{self.trip_request.request_id} - {self.approval_step.step_name}: {self.get_decision_display()}"
-
-    class Meta:
-        ordering = ['trip_request', 'approval_step__step_order']
-        unique_together = ['trip_request', 'approval_step']
-        verbose_name = "Trip Approval"
-        verbose_name_plural = "Trip Approvals"
-
+        db_table = 'trip_hotels'
