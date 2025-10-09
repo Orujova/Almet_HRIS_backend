@@ -116,11 +116,7 @@ class VacationTypeSerializer(serializers.ModelSerializer):
         read_only_fields = ['created_by', 'updated_by']
 
 
-class NotificationTemplateSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = NotificationTemplate
-        fields = ['id', 'request_type', 'stage', 'subject', 'body', 'is_active']
-        read_only_fields = ['created_by', 'updated_by']
+
 
 
 # ============= BALANCE =============

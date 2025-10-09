@@ -3805,55 +3805,6 @@ class VacationTypeViewSet(viewsets.ModelViewSet):
             }, status=status.HTTP_403_FORBIDDEN)
         return super().destroy(request, *args, **kwargs)
 
-class NotificationTemplateViewSet(viewsets.ModelViewSet):
-    queryset = NotificationTemplate.objects.filter(is_deleted=False)
-    serializer_class = NotificationTemplateSerializer
-    permission_classes = [IsAuthenticated]
-    
-    def list(self, request, *args, **kwargs):
-        has_perm, _ = check_vacation_permission(request.user, 'vacation.notification.view')
-        if not has_perm:
-            return Response({
-                'error': 'İcazə yoxdur',
-                'required_permission': 'vacation.notification.view'
-            }, status=status.HTTP_403_FORBIDDEN)
-        return super().list(request, *args, **kwargs)
-    
-    def create(self, request, *args, **kwargs):
-        has_perm, _ = check_vacation_permission(request.user, 'vacation.notification.update')
-        if not has_perm:
-            return Response({
-                'error': 'İcazə yoxdur',
-                'required_permission': 'vacation.notification.update'
-            }, status=status.HTTP_403_FORBIDDEN)
-        return super().create(request, *args, **kwargs)
-    
-    def update(self, request, *args, **kwargs):
-        has_perm, _ = check_vacation_permission(request.user, 'vacation.notification.update')
-        if not has_perm:
-            return Response({
-                'error': 'İcazə yoxdur',
-                'required_permission': 'vacation.notification.update'
-            }, status=status.HTTP_403_FORBIDDEN)
-        return super().update(request, *args, **kwargs)
-    
-    def partial_update(self, request, *args, **kwargs):
-        has_perm, _ = check_vacation_permission(request.user, 'vacation.notification.update')
-        if not has_perm:
-            return Response({
-                'error': 'İcazə yoxdur',
-                'required_permission': 'vacation.notification.update'
-            }, status=status.HTTP_403_FORBIDDEN)
-        return super().partial_update(request, *args, **kwargs)
-    
-    def destroy(self, request, *args, **kwargs):
-        has_perm, _ = check_vacation_permission(request.user, 'vacation.notification.update')
-        if not has_perm:
-            return Response({
-                'error': 'İcazə yoxdur',
-                'required_permission': 'vacation.notification.update'
-            }, status=status.HTTP_403_FORBIDDEN)
-        return super().destroy(request, *args, **kwargs)
 
 # ==================== UTILITIES ====================
 @swagger_auto_schema(

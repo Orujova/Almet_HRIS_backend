@@ -73,7 +73,7 @@ class Command(BaseCommand):
 ('business_trips.request.cancel', 'Cancel Business Trip', 'Business Trips'),
 ('business_trips.request.view_pending', 'View Pending Approvals', 'Business Trips'),
 ('business_trips.request.view_statistics', 'View Trip Statistics', 'Business Trips'),
-
+('business_trips.export_all', 'Export All Business Trip Records', 'Business Trips'),
 ('business_trips.settings.view', 'View Trip Settings', 'Business Trips'),
 ('business_trips.settings.update', 'Update Trip Settings', 'Business Trips'),
             
@@ -134,9 +134,7 @@ class Command(BaseCommand):
 ('vacation.type.update', 'Update Vacation Type', 'Vacation'),
 ('vacation.type.delete', 'Delete Vacation Type', 'Vacation'),
 
-# Notification Templates
-('vacation.notification.view', 'View Notification Templates', 'Vacation'),
-('vacation.notification.update', 'Update Notification Templates', 'Vacation'),
+
             
             # JOB DESCRIPTIONS
             ('job_description.template.view', 'View JD Templates', 'Job Descriptions'),

@@ -7,7 +7,7 @@ from . import vacation_views as views
 # Router for ViewSets
 router = DefaultRouter()
 router.register(r'types', views.VacationTypeViewSet, basename='vacation-types')
-router.register(r'notification-templates', views.NotificationTemplateViewSet, basename='notification-templates')
+
 
 urlpatterns = [
     # Router URLs (Vacation Types & Notification Templates)

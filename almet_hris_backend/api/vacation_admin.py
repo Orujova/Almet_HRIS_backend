@@ -475,46 +475,6 @@ class VacationScheduleAdmin(admin.ModelAdmin):
     register_schedules.short_description = "Register selected schedules as taken"
 
 
-@admin.register(NotificationTemplate)
-class NotificationTemplateAdmin(admin.ModelAdmin):
-    list_display = [
-        'request_type',
-        'stage',
-        'subject_preview',
-        'is_active_display',
-        'updated_at'
-    ]
-    list_filter = ['request_type', 'stage', 'is_active']
-    search_fields = ['subject', 'body']
-    ordering = ['request_type', 'stage']
-    
-    fieldsets = (
-        ('Template Information', {
-            'fields': ('request_type', 'stage', 'is_active')
-        }),
-        ('Email Content', {
-            'fields': ('subject', 'body'),
-            'description': 'Use variables like {employee_name}, {start_date}, {end_date}, {approver_name}, etc.'
-        })
-    )
-    
-    formfield_overrides = {
-        models.TextField: {'widget': Textarea(attrs={'rows': 10, 'cols': 80})},
-        models.CharField: {'widget': TextInput(attrs={'size': 80})},
-    }
-    
-    def subject_preview(self, obj):
-        if len(obj.subject) > 50:
-            return f"{obj.subject[:50]}..."
-        return obj.subject
-    subject_preview.short_description = 'Subject'
-    
-    def is_active_display(self, obj):
-        if obj.is_active:
-            return format_html('<span style="color: green;">✅ Active</span>')
-        return format_html('<span style="color: red;">❌ Inactive</span>')
-    is_active_display.short_description = 'Status'
-
 
 # Custom admin site configuration
 admin.site.site_header = "Vacation Management System"

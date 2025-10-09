@@ -1,4 +1,4 @@
-# api/job_description_urls.py
+# job_description_urls.py - UPDATE
 
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
@@ -26,7 +26,7 @@ router.register(r'job-description-stats', JobDescriptionStatsViewSet, basename='
 urlpatterns = [
     path('', include(router.urls)),
     
-    # Additional specific endpoints if needed
+    # PDF Download endpoints
     path('job-descriptions/<uuid:pk>/download-pdf/', 
          JobDescriptionViewSet.as_view({'get': 'download_pdf'}), 
          name='job-description-download-pdf'),
@@ -34,4 +34,6 @@ urlpatterns = [
     path('job-descriptions/<uuid:pk>/download-signed/', 
          JobDescriptionViewSet.as_view({'get': 'download_signed'}), 
          name='job-description-download-signed'),
+    
+    
 ]

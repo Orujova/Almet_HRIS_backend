@@ -47,8 +47,6 @@ router.register(r'permissions', PermissionViewSet, basename='permission')
 router.register(r'employee-roles', EmployeeRoleViewSet, basename='employee-role')
 
 
-
-
 # Business Structure URLs
 router.register(r'business-functions', views.BusinessFunctionViewSet, basename='businessfunction')
 router.register(r'departments', views.DepartmentViewSet, basename='department')
@@ -120,6 +118,7 @@ urlpatterns = [
     
     
     path('business-trips/', include('api.business_trip_urls')),
+path('notifications/', include('api.notification_urls')),
 
     path('', include(router.urls)),
 ]

@@ -1294,6 +1294,72 @@ class JobDescriptionSubmissionSerializer(serializers.Serializer):
     submit_to_line_manager = serializers.BooleanField(default=True)
     comments = serializers.CharField(required=False, allow_blank=True)
 
+# job_description_serializers.py-ə əlavə edin
+
+class JobDescriptionBulkUploadSerializer(serializers.Serializer):
+    """Serializer for bulk uploading job descriptions from Excel"""
+    
+    file = serializers.FileField(
+        required=True,
+        help_text="Excel file (.xlsx or .xls) containing job descriptions"
+    )
+    
+    validate_only = serializers.BooleanField(
+        default=False,
+        help_text="If true, only validates data without creating records"
+    )
+    
+    auto_assign_employees = serializers.BooleanField(
+        default=True,
+        help_text="Automatically assign employees matching all criteria"
+    )
+    
+    skip_duplicates = serializers.BooleanField(
+        default=True,
+        help_text="Skip job descriptions that already exist (based on job_title + employee_id)"
+    )
+    
+    def validate_file(self, value):
+        """Validate uploaded file"""
+        if not value.name.endswith(('.xlsx', '.xls')):
+            raise serializers.ValidationError(
+                "Invalid file format. Please upload an Excel file (.xlsx or .xls)"
+            )
+        
+        # Check file size (max 10MB)
+        if value.size > 10 * 1024 * 1024:
+            raise serializers.ValidationError(
+                "File size too large. Maximum size is 10MB."
+            )
+        
+        return value
+
+
+class JobDescriptionBulkUploadResultSerializer(serializers.Serializer):
+    """Serializer for bulk upload results"""
+    
+    total_rows = serializers.IntegerField()
+    successful = serializers.IntegerField()
+    failed = serializers.IntegerField()
+    skipped = serializers.IntegerField()
+    
+    created_job_descriptions = serializers.ListField(
+        child=serializers.DictField(),
+        required=False
+    )
+    
+    errors = serializers.ListField(
+        child=serializers.DictField(),
+        required=False
+    )
+    
+    warnings = serializers.ListField(
+        child=serializers.DictField(),
+        required=False
+    )
+    
+    validation_summary = serializers.DictField(required=False)
+
 class JobDescriptionExportSerializer(serializers.Serializer):
     """Serializer for export functionality with proper UUID handling"""
     

@@ -1,5 +1,7 @@
 # api/job_description_views.py - UPDATED: Smart employee selection based on organizational hierarchy
 
+# api/job_description_views.py - IMPORT SECTION UPDATE
+
 from rest_framework import viewsets, status, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -18,6 +20,8 @@ from datetime import datetime
 from io import BytesIO
 import traceback
 from rest_framework import serializers
+
+# Reportlab imports
 try:
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import letter, A4
@@ -29,24 +33,73 @@ try:
 except ImportError:
     HAS_REPORTLAB = False
 
+# Openpyxl imports for Excel operations
+try:
+    from openpyxl import load_workbook, Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+    HAS_OPENPYXL = True
+except ImportError:
+    HAS_OPENPYXL = False
+
 logger = logging.getLogger(__name__)
 
+# Job Description Models - CRITICAL IMPORTS
 from .job_description_models import (
-    JobDescription, JobBusinessResource, AccessMatrix,
-    CompanyBenefit, JobDescriptionActivity
+    JobDescription, 
+    JobDescriptionSection, 
+    JobDescriptionSkill,
+    JobDescriptionBehavioralCompetency, 
+    JobBusinessResource, 
+    AccessMatrix,
+    CompanyBenefit, 
+    JobDescriptionBusinessResource, 
+    JobDescriptionAccessMatrix,
+    JobDescriptionCompanyBenefit, 
+    JobDescriptionActivity
 )
+
+# Job Description Serializers - ALL SERIALIZERS
 from .job_description_serializers import (
-    JobDescriptionListSerializer, JobDescriptionDetailSerializer,
-    JobDescriptionCreateUpdateSerializer, JobDescriptionApprovalSerializer,
-    JobDescriptionRejectionSerializer, JobDescriptionSubmissionSerializer,
-    JobBusinessResourceSerializer, AccessMatrixSerializer, 
-    CompanyBenefitSerializer, JobDescriptionActivitySerializer,
-    EligibleEmployeesSerializer, EmployeeBasicSerializer
+    JobDescriptionListSerializer, 
+    JobDescriptionDetailSerializer,
+    JobDescriptionCreateUpdateSerializer, 
+    JobDescriptionApprovalSerializer,
+    JobDescriptionRejectionSerializer, 
+    JobDescriptionSubmissionSerializer,
+    JobBusinessResourceSerializer, 
+    AccessMatrixSerializer, 
+    CompanyBenefitSerializer, 
+    JobDescriptionActivitySerializer,
+    EligibleEmployeesSerializer, 
+    EmployeeBasicSerializer,
+    JobDescriptionExportSerializer,
+    JobDescriptionBulkUploadSerializer,  # NEW - Bulk Upload
+    JobDescriptionBulkUploadResultSerializer  # NEW - Bulk Upload Result
+)
+
+# Competency and Skill Models
+from .competency_models import Skill, BehavioralCompetency
+
+# Core Models
+from .models import (
+    BusinessFunction, 
+    Department, 
+    Unit, 
+    PositionGroup, 
+    Employee, 
+    JobFunction,
+    VacantPosition
 )
 from .competency_models import Skill, BehavioralCompetency
 from .models import BusinessFunction, Department, Unit, PositionGroup, Employee, JobFunction,VacantPosition
 from .job_description_serializers import JobDescriptionExportSerializer
 
+from openpyxl import load_workbook, Workbook
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.utils import get_column_letter
+from django.core.files.base import ContentFile
+import io
 
 class JobDescriptionFilter:
     """Advanced filtering for job descriptions"""
@@ -164,15 +217,48 @@ class JobDescriptionFilter:
         return queryset
 
 
+from drf_yasg.utils import swagger_auto_schema, no_body
+from drf_yasg import openapi
+
+# At the top of your ViewSet, override the schema
+from rest_framework.schemas.openapi import AutoSchema
+
+class FileUploadAutoSchema(AutoSchema):
+    """Custom schema for file upload endpoints - prevents ModelSerializer fields from appearing"""
+    
+    def get_serializer(self, path, method):
+        """Don't use ModelSerializer for schema generation in file upload actions"""
+        view = self.view
+        
+        # For these actions, don't auto-generate schema from serializer
+        if hasattr(view, 'action') and view.action in ['bulk_upload', 'download_template', 'export_to_excel']:
+            return None
+        
+        return super().get_serializer(path, method)
+    
+    def get_request_serializer(self, path, method):
+        """Override to prevent request body schema for file upload actions"""
+        view = self.view
+        
+        if hasattr(view, 'action') and view.action in ['bulk_upload', 'download_template', 'export_to_excel']:
+            return None
+        
+        return super().get_request_serializer(path, method)
+
 class JobDescriptionViewSet(viewsets.ModelViewSet):
-    """IMPROVED: ViewSet with enhanced employee selection logic"""
+    """ViewSet with enhanced employee selection logic"""
     
     permission_classes = [IsAuthenticated]
-    parser_classes = [JSONParser, MultiPartParser, FormParser]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['job_title', 'job_purpose', 'business_function__name', 'department__name']
     ordering_fields = ['job_title', 'created_at', 'status', 'business_function__name']
     ordering = ['-created_at']
+    
+    # IMPORTANT: Set default parser classes at class level
+    parser_classes = [JSONParser, MultiPartParser, FormParser]
+    
+    # Use custom schema
+    schema = FileUploadAutoSchema()
     
     def get_queryset(self):
         return JobDescription.objects.select_related(
@@ -186,13 +272,16 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
         ).all()
     
     def get_serializer_class(self):
-        if self.action == 'list':
+        """Return appropriate serializer for each action"""
+        action = getattr(self, 'action', None)
+        
+        if action == 'list':
             return JobDescriptionListSerializer
-        elif self.action in ['create', 'update', 'partial_update']:
+        elif action in ['create', 'update', 'partial_update']:
             return JobDescriptionCreateUpdateSerializer
         else:
             return JobDescriptionDetailSerializer
-    
+        
     def create(self, request, *args, **kwargs):
         """ENHANCED: Create with employee selection workflow"""
         
@@ -935,7 +1024,1120 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
     
-  
+    @swagger_auto_schema(
+    method='post',
+    operation_description="Bulk upload job descriptions from Excel file",
+    request_body=no_body,  # CRITICAL: Prevent automatic body schema generation
+    manual_parameters=[
+        openapi.Parameter(
+            'file',
+            openapi.IN_FORM,
+            description="Excel file (.xlsx or .xls)",
+            type=openapi.TYPE_FILE,
+            required=True
+        ),
+        openapi.Parameter(
+            'validate_only',
+            openapi.IN_FORM,
+            description="Dry run - validate without creating",
+            type=openapi.TYPE_BOOLEAN,
+            default=False,
+            required=False
+        ),
+        openapi.Parameter(
+            'auto_assign_employees',
+            openapi.IN_FORM,
+            description="Auto-assign to all matching positions",
+            type=openapi.TYPE_BOOLEAN,
+            default=True,
+            required=False
+        ),
+        openapi.Parameter(
+            'skip_duplicates',
+            openapi.IN_FORM,
+            description="Skip existing job descriptions",
+            type=openapi.TYPE_BOOLEAN,
+            default=True,
+            required=False
+        ),
+    ],
+    responses={
+        200: openapi.Response(
+            description="Bulk upload completed successfully",
+            schema=openapi.Schema(
+                type=openapi.TYPE_OBJECT,
+                properties={
+                    'total_rows': openapi.Schema(
+                        type=openapi.TYPE_INTEGER,
+                        description='Total number of rows processed'
+                    ),
+                    'successful': openapi.Schema(
+                        type=openapi.TYPE_INTEGER,
+                        description='Number of successfully created job descriptions'
+                    ),
+                    'failed': openapi.Schema(
+                        type=openapi.TYPE_INTEGER,
+                        description='Number of failed rows'
+                    ),
+                    'skipped': openapi.Schema(
+                        type=openapi.TYPE_INTEGER,
+                        description='Number of skipped rows (duplicates)'
+                    ),
+                    'created_job_descriptions': openapi.Schema(
+                        type=openapi.TYPE_ARRAY,
+                        items=openapi.Schema(type=openapi.TYPE_OBJECT)
+                    ),
+                    'errors': openapi.Schema(
+                        type=openapi.TYPE_ARRAY,
+                        items=openapi.Schema(type=openapi.TYPE_OBJECT)
+                    ),
+                    'warnings': openapi.Schema(
+                        type=openapi.TYPE_ARRAY,
+                        items=openapi.Schema(type=openapi.TYPE_OBJECT)
+                    ),
+                }
+            )
+        ),
+        400: openapi.Response(description="Bad request - invalid file or parameters"),
+        500: openapi.Response(description="Server error during processing")
+    },
+    consumes=['multipart/form-data']
+)
+    @action(
+        detail=False,
+        methods=['post'],
+        parser_classes=[MultiPartParser, FormParser],
+        url_path='bulk-upload',
+        url_name='bulk-upload'
+    )
+    def bulk_upload(self, request):
+        """Bulk upload job descriptions from Excel"""
+        try:
+            # Direct file access from request.FILES
+            excel_file = request.FILES.get('file')
+            if not excel_file:
+                return Response(
+                    {'error': 'No file provided. Please upload an Excel file using the "file" parameter.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Validate file extension
+            if not excel_file.name.endswith(('.xlsx', '.xls')):
+                return Response(
+                    {'error': 'Invalid file format. Please upload an Excel file (.xlsx or .xls)'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Get boolean parameters from request.data
+            # Handle string values from form data ('true'/'false' strings)
+            validate_only_param = request.data.get('validate_only', 'false')
+            validate_only = str(validate_only_param).lower() in ['true', '1', 'yes']
+            
+            auto_assign_param = request.data.get('auto_assign_employees', 'true')
+            auto_assign = str(auto_assign_param).lower() in ['true', '1', 'yes']
+            
+            skip_duplicates_param = request.data.get('skip_duplicates', 'true')
+            skip_duplicates = str(skip_duplicates_param).lower() in ['true', '1', 'yes']
+            
+            logger.info(f"Bulk upload started by {request.user.username}")
+            logger.info(f"File: {excel_file.name}, Size: {excel_file.size} bytes")
+            logger.info(f"Parameters: validate_only={validate_only}, auto_assign={auto_assign}, skip_duplicates={skip_duplicates}")
+            
+            # Check if openpyxl is available
+            if not HAS_OPENPYXL:
+                return Response(
+                    {'error': 'Excel library (openpyxl) is not installed. Please contact administrator.'},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+            
+            # Load workbook
+            try:
+                wb = load_workbook(excel_file, data_only=True)
+                ws = wb.active
+                logger.info(f"Workbook loaded successfully. Active sheet: {ws.title}")
+            except Exception as e:
+                logger.error(f"Failed to read Excel file: {str(e)}")
+                return Response(
+                    {'error': f'Failed to read Excel file: {str(e)}. Please ensure it is a valid Excel file.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Process the rows
+            results = self._process_bulk_upload_rows(
+                ws,
+                validate_only=validate_only,
+                auto_assign=auto_assign,
+                skip_duplicates=skip_duplicates,
+                user=request.user
+            )
+            
+            logger.info(f"Bulk upload completed: {results['successful']} successful, {results['failed']} failed, {results['skipped']} skipped")
+            
+            return Response(results, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            logger.error(f"Bulk upload error: {str(e)}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return Response(
+                {'error': f'Bulk upload failed: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    
+    def _process_bulk_upload_rows(self, worksheet, validate_only=False, auto_assign=True, 
+                                  skip_duplicates=True, user=None):
+        """Process Excel rows and create job descriptions"""
+        
+        results = {
+            'total_rows': 0,
+            'successful': 0,
+            'failed': 0,
+            'skipped': 0,
+            'created_job_descriptions': [],
+            'errors': [],
+            'warnings': [],
+            'validation_summary': {}
+        }
+        
+        # Expected column mapping
+        COLUMNS = {
+            'A': 'job_title',
+            'B': 'business_function_code',
+            'C': 'department_code',
+            'D': 'unit_code',
+            'E': 'job_function_code',
+            'F': 'position_group_code',
+            'G': 'grading_level',
+            'H': 'employee_id',
+            'I': 'job_purpose',
+            'J': 'critical_duties',
+            'K': 'main_kpis',
+            'L': 'job_duties',
+            'M': 'requirements',
+            'N': 'skills',
+            'O': 'competencies',
+            'P': 'business_resources',
+            'Q': 'access_rights',
+            'R': 'company_benefits'
+        }
+        
+        # Skip header row
+        rows = list(worksheet.iter_rows(min_row=2, values_only=True))
+        results['total_rows'] = len(rows)
+        
+        for row_num, row in enumerate(rows, start=2):
+            try:
+                # Extract data from row
+                row_data = {}
+                for col_idx, col_letter in enumerate(COLUMNS.keys()):
+                    field_name = COLUMNS[col_letter]
+                    cell_value = row[col_idx] if col_idx < len(row) else None
+                    row_data[field_name] = str(cell_value).strip() if cell_value else None
+                
+                logger.info(f"Processing row {row_num}: {row_data.get('job_title')}")
+                
+                # Validate required fields
+                required_fields = ['job_title', 'business_function_code', 'department_code', 
+                                 'job_function_code', 'position_group_code', 'grading_level', 'job_purpose']
+                
+                missing_fields = [f for f in required_fields if not row_data.get(f)]
+                if missing_fields:
+                    results['failed'] += 1
+                    results['errors'].append({
+                        'row': row_num,
+                        'job_title': row_data.get('job_title', 'N/A'),
+                        'error': f"Missing required fields: {', '.join(missing_fields)}"
+                    })
+                    continue
+                
+                # Check for duplicates
+                if skip_duplicates and row_data.get('employee_id'):
+                    existing = JobDescription.objects.filter(
+                        job_title__iexact=row_data['job_title'],
+                        assigned_employee__employee_id=row_data['employee_id']
+                    ).exists()
+                    
+                    if existing:
+                        results['skipped'] += 1
+                        results['warnings'].append({
+                            'row': row_num,
+                            'job_title': row_data['job_title'],
+                            'message': f"Skipped - already exists for employee {row_data['employee_id']}"
+                        })
+                        continue
+                
+                # Resolve organizational structure
+                try:
+                    org_data = self._resolve_organizational_structure(row_data)
+                except Exception as e:
+                    results['failed'] += 1
+                    results['errors'].append({
+                        'row': row_num,
+                        'job_title': row_data['job_title'],
+                        'error': f"Organizational structure error: {str(e)}"
+                    })
+                    continue
+                
+                # Find employee (if auto_assign or employee_id provided)
+                assigned_employee = None
+                if row_data.get('employee_id'):
+                    try:
+                        assigned_employee = Employee.objects.get(
+                            employee_id=row_data['employee_id'],
+                            is_deleted=False
+                        )
+                    except Employee.DoesNotExist:
+                        results['warnings'].append({
+                            'row': row_num,
+                            'job_title': row_data['job_title'],
+                            'message': f"Employee {row_data['employee_id']} not found"
+                        })
+                
+                elif auto_assign:
+                    # Try to find matching employee
+                    eligible_employees = JobDescription.get_eligible_employees_with_priority(
+                        job_title=row_data['job_title'],
+                        business_function_id=org_data['business_function'].id,
+                        department_id=org_data['department'].id,
+                        unit_id=org_data['unit'].id if org_data.get('unit') else None,
+                        job_function_id=org_data['job_function'].id,
+                        position_group_id=org_data['position_group'].id,
+                        grading_level=row_data['grading_level']
+                    )
+                    
+                    if eligible_employees.count() == 1:
+                        assigned_employee = eligible_employees.first()
+                        logger.info(f"Auto-assigned employee: {assigned_employee.full_name}")
+                    elif eligible_employees.count() > 1:
+                        results['warnings'].append({
+                            'row': row_num,
+                            'job_title': row_data['job_title'],
+                            'message': f"Multiple employees match criteria ({eligible_employees.count()}). Skipping auto-assignment."
+                        })
+                
+                if validate_only:
+                    results['successful'] += 1
+                    results['created_job_descriptions'].append({
+                        'row': row_num,
+                        'job_title': row_data['job_title'],
+                        'status': 'validated',
+                        'employee': assigned_employee.full_name if assigned_employee else 'No assignment'
+                    })
+                    continue
+                
+                # Create job description
+                with transaction.atomic():
+                    jd = JobDescription.objects.create(
+                        job_title=row_data['job_title'],
+                        business_function=org_data['business_function'],
+                        department=org_data['department'],
+                        unit=org_data.get('unit'),
+                        job_function=org_data['job_function'],
+                        position_group=org_data['position_group'],
+                        grading_level=row_data['grading_level'],
+                        assigned_employee=assigned_employee,
+                        job_purpose=row_data['job_purpose'],
+                        status='DRAFT',
+                        created_by=user
+                    )
+                    
+                    # Create sections
+                    section_order = 1
+                    section_mappings = [
+                        ('critical_duties', 'CRITICAL_DUTIES', 'Critical Duties'),
+                        ('main_kpis', 'MAIN_KPIS', 'Main KPIs'),
+                        ('job_duties', 'JOB_DUTIES', 'Job Duties'),
+                        ('requirements', 'REQUIREMENTS', 'Requirements')
+                    ]
+                    
+                    for field_name, section_type, section_title in section_mappings:
+                        content = row_data.get(field_name)
+                        if content:
+                            # Split by pipe separator and format
+                            items = [item.strip() for item in content.split('|') if item.strip()]
+                            formatted_content = '\n'.join([f"• {item}" for item in items])
+                            
+                            JobDescriptionSection.objects.create(
+                                job_description=jd,
+                                section_type=section_type,
+                                title=section_title,
+                                content=formatted_content,
+                                order=section_order
+                            )
+                            section_order += 1
+                    
+                    # Add skills
+                    if row_data.get('skills'):
+                        self._add_skills_from_string(jd, row_data['skills'])
+                    
+                    # Add competencies
+                    if row_data.get('competencies'):
+                        self._add_competencies_from_string(jd, row_data['competencies'])
+                    
+                    # Add business resources
+                    if row_data.get('business_resources'):
+                        self._add_resources_from_string(jd, row_data['business_resources'], 'business')
+                    
+                    # Add access rights
+                    if row_data.get('access_rights'):
+                        self._add_resources_from_string(jd, row_data['access_rights'], 'access')
+                    
+                    # Add company benefits
+                    if row_data.get('company_benefits'):
+                        self._add_resources_from_string(jd, row_data['company_benefits'], 'benefits')
+                    
+                    # Log activity
+                    JobDescriptionActivity.objects.create(
+                        job_description=jd,
+                        activity_type='CREATED',
+                        description=f"Job description created via bulk upload (Row {row_num})",
+                        performed_by=user,
+                        metadata={
+                            'source': 'bulk_upload',
+                            'row_number': row_num,
+                            'auto_assigned': bool(assigned_employee)
+                        }
+                    )
+                    
+                    results['successful'] += 1
+                    results['created_job_descriptions'].append({
+                        'row': row_num,
+                        'job_description_id': str(jd.id),
+                        'job_title': jd.job_title,
+                        'employee': assigned_employee.full_name if assigned_employee else 'Not assigned',
+                        'status': jd.get_status_display()
+                    })
+                    
+                    logger.info(f"Successfully created JD from row {row_num}: {jd.job_title}")
+            
+            except Exception as e:
+                results['failed'] += 1
+                results['errors'].append({
+                    'row': row_num,
+                    'job_title': row_data.get('job_title', 'N/A'),
+                    'error': str(e)
+                })
+                logger.error(f"Error processing row {row_num}: {str(e)}")
+                logger.error(traceback.format_exc())
+        
+        # Validation summary
+        results['validation_summary'] = {
+            'total_processed': results['total_rows'],
+            'success_rate': f"{(results['successful'] / results['total_rows'] * 100):.1f}%" if results['total_rows'] > 0 else "0%",
+            'mode': 'validation_only' if validate_only else 'creation',
+            'auto_assignment_enabled': auto_assign,
+            'skip_duplicates_enabled': skip_duplicates
+        }
+        
+        return results
+    
+    def _resolve_organizational_structure(self, row_data):
+        """Resolve organizational structure from codes/names - FLEXIBLE matching"""
+        result = {}
+        
+        # Business Function - try CODE first, then NAME
+        try:
+            try:
+                result['business_function'] = BusinessFunction.objects.get(
+                    code=row_data['business_function_code'],
+                    is_active=True
+                )
+            except BusinessFunction.DoesNotExist:
+                # Try by name if code doesn't work
+                result['business_function'] = BusinessFunction.objects.get(
+                    name__iexact=row_data['business_function_code'],
+                    is_active=True
+                )
+        except BusinessFunction.DoesNotExist:
+            raise ValueError(f"Business Function not found with code or name: '{row_data['business_function_code']}'")
+        
+        # Department - SMART matching with debug info
+        dept_search_value = row_data['department_code'].strip()
+        logger.info(f"Searching for department: '{dept_search_value}' in business function: {result['business_function'].name}")
+        
+        try:
+            result['department'] = Department.objects.get(
+                business_function=result['business_function'],
+                name__iexact=dept_search_value,
+                is_active=True
+            )
+            logger.info(f"✅ Department found: {result['department'].name} (ID: {result['department'].id})")
+        except Department.DoesNotExist:
+            # Show available departments for debugging
+            available_depts = list(Department.objects.filter(
+                business_function=result['business_function'],
+                is_active=True
+            ).values('id', 'name'))
+            
+            logger.error(f"❌ Department '{dept_search_value}' not found. Available: {available_depts}")
+            raise ValueError(
+                f"Department not found: '{dept_search_value}'. "
+                f"Available departments in {result['business_function'].name}: "
+                f"{[d['name'] for d in available_depts]}"
+            )
+        
+        # Unit (optional) - SMART matching with detailed debugging
+        if row_data.get('unit_code'):
+            unit_search_value = row_data['unit_code'].strip()
+            logger.info(f"Searching for unit: '{unit_search_value}' in department: {result['department'].name} (ID: {result['department'].id})")
+            
+            try:
+                result['unit'] = Unit.objects.get(
+                    department=result['department'],
+                    name__iexact=unit_search_value,
+                    is_active=True
+                )
+                logger.info(f"✅ Unit found: {result['unit'].name} (ID: {result['unit'].id}, Dept ID: {result['unit'].department_id})")
+            except Unit.DoesNotExist:
+                # Show ALL units with this name across all departments for debugging
+                all_matching_units = Unit.objects.filter(
+                    name__iexact=unit_search_value,
+                    is_active=True
+                ).select_related('department', 'department__business_function')
+                
+                if all_matching_units.exists():
+                    unit_details = []
+                    for u in all_matching_units:
+                        unit_details.append({
+                            'unit_id': u.id,
+                            'unit_name': u.name,
+                            'department_id': u.department_id,
+                            'department_name': u.department.name,
+                            'business_function': u.department.business_function.name
+                        })
+                    
+                    logger.error(f"❌ Unit '{unit_search_value}' found in other departments: {unit_details}")
+                    logger.error(f"Looking for department_id={result['department'].id}, but units belong to: {[u['department_id'] for u in unit_details]}")
+                    
+                    raise ValueError(
+                        f"Unit '{unit_search_value}' exists but not in department '{result['department'].name}'. "
+                        # f"Found in: {[f\"{u['department_name']} (ID: {u['department_id']})\" for u in unit_details]}. "
+                        f"Expected department ID: {result['department'].id}"
+                    )
+                else:
+                    # Show available units in the correct department
+                    available_units = list(Unit.objects.filter(
+                        department=result['department'],
+                        is_active=True
+                    ).values('id', 'name'))
+                    
+                    logger.error(f"❌ Unit '{unit_search_value}' not found at all. Available units in {result['department'].name}: {available_units}")
+                    
+                    raise ValueError(
+                        f"Unit not found: '{unit_search_value}'. "
+                        f"Available units in {result['department'].name}: "
+                        f"{[u['name'] for u in available_units]}"
+                    )
+        else:
+            result['unit'] = None
+            logger.info("No unit specified - continuing without unit")
+        
+        # Job Function - try NAME or CODE
+        try:
+            result['job_function'] = JobFunction.objects.get(
+                name__iexact=row_data['job_function_code'],
+                is_active=True
+            )
+        except JobFunction.DoesNotExist:
+            # Show available job functions
+            available_jfs = JobFunction.objects.filter(is_active=True).values_list('name', flat=True)
+            raise ValueError(f"Job Function not found: '{row_data['job_function_code']}'. Available: {list(available_jfs)}")
+        
+        # Position Group - try NAME
+        try:
+            result['position_group'] = PositionGroup.objects.get(
+                name__iexact=row_data['position_group_code'],
+                is_active=True
+            )
+        except PositionGroup.DoesNotExist:
+            # Show available position groups
+            available_pgs = PositionGroup.objects.filter(is_active=True).values_list('name', flat=True)
+            raise ValueError(f"Position Group not found: '{row_data['position_group_code']}'. Available: {list(available_pgs)}")
+        
+        return result
+    def _add_skills_from_string(self, job_description, skills_string):
+        """Add skills from formatted string: SkillCode:ProfLevel:Mandatory|SkillCode2:..."""
+        try:
+            skill_items = skills_string.split('|')
+            for item in skill_items:
+                parts = item.split(':')
+                if len(parts) >= 2:
+                    skill_code = parts[0].strip()
+                    prof_level = parts[1].strip().upper()
+                    is_mandatory = parts[2].strip().lower() == 'true' if len(parts) > 2 else True
+                    
+                    try:
+                        skill = Skill.objects.get(name__iexact=skill_code, is_active=True)
+                        JobDescriptionSkill.objects.create(
+                            job_description=job_description,
+                            skill=skill,
+                            proficiency_level=prof_level if prof_level in ['BASIC', 'INTERMEDIATE', 'ADVANCED', 'EXPERT'] else 'INTERMEDIATE',
+                            is_mandatory=is_mandatory
+                        )
+                    except Skill.DoesNotExist:
+                        logger.warning(f"Skill not found: {skill_code}")
+        except Exception as e:
+            logger.error(f"Error adding skills: {str(e)}")
+    
+    def _add_competencies_from_string(self, job_description, competencies_string):
+        """Add competencies from formatted string"""
+        try:
+            comp_items = competencies_string.split('|')
+            for item in comp_items:
+                parts = item.split(':')
+                if len(parts) >= 2:
+                    comp_code = parts[0].strip()
+                    prof_level = parts[1].strip().upper()
+                    is_mandatory = parts[2].strip().lower() == 'true' if len(parts) > 2 else True
+                    
+                    try:
+                        competency = BehavioralCompetency.objects.get(name__iexact=comp_code, is_active=True)
+                        JobDescriptionBehavioralCompetency.objects.create(
+                            job_description=job_description,
+                            competency=competency,
+                            proficiency_level=prof_level if prof_level in ['BASIC', 'INTERMEDIATE', 'ADVANCED', 'EXPERT'] else 'INTERMEDIATE',
+                            is_mandatory=is_mandatory
+                        )
+                    except BehavioralCompetency.DoesNotExist:
+                        logger.warning(f"Competency not found: {comp_code}")
+        except Exception as e:
+            logger.error(f"Error adding competencies: {str(e)}")
+    
+    def _add_resources_from_string(self, job_description, resources_string, resource_type):
+        """Add resources from comma-separated string"""
+        try:
+            resource_names = [name.strip() for name in resources_string.split(',') if name.strip()]
+            
+            for name in resource_names:
+                try:
+                    if resource_type == 'business':
+                        resource = JobBusinessResource.objects.get(name__iexact=name, is_active=True)
+                        JobDescriptionBusinessResource.objects.create(
+                            job_description=job_description,
+                            resource=resource
+                        )
+                    elif resource_type == 'access':
+                        access = AccessMatrix.objects.get(name__iexact=name, is_active=True)
+                        JobDescriptionAccessMatrix.objects.create(
+                            job_description=job_description,
+                            access_matrix=access
+                        )
+                    elif resource_type == 'benefits':
+                        benefit = CompanyBenefit.objects.get(name__iexact=name, is_active=True)
+                        JobDescriptionCompanyBenefit.objects.create(
+                            job_description=job_description,
+                            benefit=benefit
+                        )
+                except Exception as e:
+                    logger.warning(f"{resource_type} not found: {name}")
+        except Exception as e:
+            logger.error(f"Error adding {resource_type}: {str(e)}")
+    
+    @swagger_auto_schema(
+    method='get',
+    operation_description="""
+    Download Excel template for bulk job description upload
+    
+    """,
+    responses={
+        200: openapi.Response(
+            description="Excel template file",
+            schema=openapi.Schema(
+                type=openapi.TYPE_FILE,
+                format='binary'
+            )
+        ),
+        500: "Server error"
+    }
+)
+    @action(detail=False, methods=['get'])
+    def download_template(self, request):
+        """Download Excel template for bulk upload"""
+        try:
+            # Check if openpyxl is available
+            if not HAS_OPENPYXL:
+                return Response(
+                    {'error': 'Excel library (openpyxl) is not installed. Please contact administrator.'},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+            
+            buffer = io.BytesIO()
+            wb = Workbook()
+            ws = wb.active
+            ws.title = "Job Descriptions"
+            
+            # Define headers
+            headers = [
+                'Job Title*',
+                'Business Function Code*',
+                'Department Code*',
+                'Unit Code',
+                'Job Function Code*',
+                'Position Group Code*',
+                'Grading Level*',
+                'Employee ID',
+                'Job Purpose*',
+                'Critical Duties (pipe | separated)',
+                'Main KPIs (pipe | separated)',
+                'Job Duties (pipe | separated)',
+                'Requirements (pipe | separated)',
+                'Skills (Code:Level:Mandatory|Code2:...)',
+                'Competencies (Code:Level:Mandatory|Code2:...)',
+                'Business Resources (comma separated)',
+                'Access Rights (comma separated)',
+                'Company Benefits (comma separated)'
+            ]
+            
+            # Style the header row
+            header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+            header_font = Font(bold=True, color="FFFFFF", size=11)
+            header_alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+            border = Border(
+                left=Side(style='thin'),
+                right=Side(style='thin'),
+                top=Side(style='thin'),
+                bottom=Side(style='thin')
+            )
+            
+            # Write and style headers
+            for col_num, header in enumerate(headers, 1):
+                cell = ws.cell(row=1, column=col_num)
+                cell.value = header
+                cell.fill = header_fill
+                cell.font = header_font
+                cell.alignment = header_alignment
+                cell.border = border
+            
+            # Add sample data row
+            sample_data = [
+                'Senior Software Engineer',
+                'IT',
+                'Software Development',
+                'Backend Team',
+                'Engineering',
+                'Senior',
+                'G7',
+                '',  # Empty Employee ID = auto-assign to all matching
+                'Lead backend development and architecture decisions for enterprise applications',
+                'Design system architecture|Lead code reviews|Mentor junior developers|Define technical standards',
+                'Code quality > 90%|Sprint completion rate > 95%|Technical debt reduction by 20%',
+                'Develop REST APIs|Database optimization|Unit testing|CI/CD pipeline management',
+                "Bachelor's in CS|5+ years experience|Strong Python skills|Cloud experience required",
+                'Python:EXPERT:true|SQL:ADVANCED:true|Docker:INTERMEDIATE:false|AWS:ADVANCED:true',
+                'Leadership:ADVANCED:true|Communication:ADVANCED:true|Problem Solving:EXPERT:true',
+                'Laptop,IDE License,Cloud Access',
+                'GitHub Admin,AWS Console,Database Write',
+                'Health Insurance,Annual Leave,Learning Budget,Remote Work'
+            ]
+            
+            for col_num, value in enumerate(sample_data, 1):
+                cell = ws.cell(row=2, column=col_num)
+                cell.value = value
+                cell.border = border
+                cell.alignment = Alignment(wrap_text=True, vertical="top")
+            
+            # Set column widths
+            column_widths = [25, 20, 20, 15, 20, 20, 12, 12, 40, 40, 40, 40, 40, 40, 40, 30, 30, 30]
+            for col_num, width in enumerate(column_widths, 1):
+                ws.column_dimensions[get_column_letter(col_num)].width = width
+            
+            # Set row heights
+            ws.row_dimensions[1].height = 40
+            ws.row_dimensions[2].height = 120
+            
+            # Add Instructions sheet
+            ws_instructions = wb.create_sheet("Instructions")
+            
+            # FIXED: All rows must have exactly 2 columns
+            instructions = [
+                ["JOB DESCRIPTION BULK UPLOAD INSTRUCTIONS", ""],
+                ["", ""],
+                ["OVERVIEW", ""],
+                ["", "This template allows you to create multiple job descriptions at once."],
+                ["", "The system will automatically find and assign matching employees and vacant positions."],
+                ["", ""],
+                ["REQUIRED FIELDS (marked with *)", ""],
+                ["Job Title", "The official job title (must match employee records exactly)"],
+                ["Business Function Code", "Code of business function (e.g., IT, HR, FIN, OPS)"],
+                ["Department Code", "Department name that exists in the system"],
+                ["Job Function Code", "Job function name (e.g., Engineering, Management, Support)"],
+                ["Position Group Code", "Position group/hierarchy name (e.g., Senior, Junior, Manager)"],
+                ["Grading Level", "Grading level code (e.g., G1, G2, M, S, E)"],
+                ["Job Purpose", "Main purpose and objectives of the role (minimum 5 characters)"],
+                ["", ""],
+                ["OPTIONAL FIELDS", ""],
+                ["Unit Code", "Unit name if applicable (can be left empty)"],
+                ["Employee ID", "IMPORTANT: If empty, creates JD for ALL matching employees + vacant positions!"],
+                ["", "If filled, creates JD only for this specific employee"],
+                ["Critical Duties", "Pipe-separated list: Duty1|Duty2|Duty3"],
+                ["Main KPIs", "Pipe-separated list of key performance indicators"],
+                ["Job Duties", "Pipe-separated list of daily duties"],
+                ["Requirements", "Pipe-separated list: Bachelor's degree|5 years experience|Certification"],
+                ["Skills", "Format: SkillName:Level:Mandatory|Skill2:Level:Mandatory"],
+                ["", "Levels: BASIC, INTERMEDIATE, ADVANCED, EXPERT"],
+                ["", "Mandatory: true or false"],
+                ["", "Example: Python:EXPERT:true|SQL:ADVANCED:true"],
+                ["Competencies", "Same format as Skills"],
+                ["", "Example: Leadership:ADVANCED:true|Communication:EXPERT:true"],
+                ["Business Resources", "Comma-separated: Laptop,Software License,Mobile Phone"],
+                ["Access Rights", "Comma-separated: System Admin,Database Access,Report Viewer"],
+                ["Company Benefits", "Comma-separated: Health Insurance,Bonus,Car Allowance"],
+                ["", ""],
+                ["AUTO-ASSIGNMENT LOGIC", ""],
+                ["", "When Employee ID is EMPTY, the system will:"],
+                ["1.", "Find ALL employees matching these criteria:"],
+                ["", "  - Job Title (exact match, case-insensitive)"],
+                ["", "  - Business Function"],
+                ["", "  - Department"],
+                ["", "  - Unit (if provided)"],
+                ["", "  - Job Function"],
+                ["", "  - Position Group"],
+                ["", "  - Grading Level"],
+                ["2.", "Find ALL vacant positions matching the same criteria"],
+                ["3.", "Create one job description for EACH matching position"],
+                ["", ""],
+                ["Example:", "If 5 employees + 2 vacant positions match"],
+                ["", "System creates 7 job descriptions from one row!"],
+                ["", ""],
+                ["IMPORTANT NOTES", ""],
+                ["1.", "All codes must match existing records in the system exactly"],
+                ["2.", "Job Title must match employee records exactly (case-insensitive)"],
+                ["3.", "Leave Employee ID empty to auto-assign to all matching positions"],
+                ["4.", "Fill Employee ID to assign to a specific employee only"],
+                ["5.", "Delete the sample data row before uploading"],
+                ["6.", "Upload options available:"],
+                ["", "  - validate_only: Check data without creating (dry run)"],
+                ["", "  - auto_assign_employees: Enable/disable auto-assignment"],
+                ["", "  - skip_duplicates: Skip job descriptions that already exist"],
+                ["", ""],
+                ["UPLOAD PROCESS", ""],
+                ["1.", "Fill in your data (one job description per row)"],
+                ["2.", "Save the file"],
+                ["3.", "Use POST /job-descriptions/bulk-upload/"],
+                ["4.", "Select your file and set options"],
+                ["5.", "Click Execute"],
+                ["6.", "Review the results - success/failed/skipped counts"],
+                ["", ""],
+                ["TROUBLESHOOTING", ""],
+                ["Department not found", "Check department name spelling"],
+                ["No employees match", "Verify all criteria (job title, function, etc.)"],
+                ["Multiple employees match", "This is OK! JDs created for all"],
+                ["Skill not found", "Check skill names in system"],
+                ["", ""],
+                ["SUPPORT", ""],
+                ["", "For questions, contact your HRIS administrator."],
+            ]
+            
+            # Style instructions
+            title_font = Font(bold=True, size=14, color="366092")
+            section_font = Font(bold=True, size=11, color="2E7D32")
+            
+            for row_num, row_data in enumerate(instructions, 1):
+                # Ensure we have exactly 2 columns
+                col1 = row_data[0] if len(row_data) > 0 else ""
+                col2 = row_data[1] if len(row_data) > 1 else ""
+                
+                ws_instructions.cell(row=row_num, column=1).value = col1
+                ws_instructions.cell(row=row_num, column=2).value = col2
+                
+                # Apply formatting
+                if row_num == 1:
+                    ws_instructions.cell(row=row_num, column=1).font = title_font
+                elif col1 in ["OVERVIEW", "REQUIRED FIELDS (marked with *)", "OPTIONAL FIELDS", 
+                             "AUTO-ASSIGNMENT LOGIC", "IMPORTANT NOTES", "UPLOAD PROCESS", 
+                             "TROUBLESHOOTING", "SUPPORT"]:
+                    ws_instructions.cell(row=row_num, column=1).font = section_font
+            
+            ws_instructions.column_dimensions['A'].width = 30
+            ws_instructions.column_dimensions['B'].width = 70
+            
+            # Save workbook
+            wb.save(buffer)
+            buffer.seek(0)
+            
+            # Create response
+            response = HttpResponse(
+                buffer.getvalue(),
+                content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            )
+            filename = f"Job_Description_Bulk_Upload_Template_{datetime.now().strftime('%Y%m%d')}.xlsx"
+            response['Content-Disposition'] = f'attachment; filename="{filename}"'
+            
+            logger.info(f"Template downloaded by {request.user.username}: {filename}")
+            return response
+            
+        except Exception as e:
+            logger.error(f"Error generating template: {str(e)}")
+            logger.error(traceback.format_exc())
+            return Response(
+                {'error': f'Failed to generate template: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    @swagger_auto_schema(
+        method='post',
+        operation_description="Export job descriptions to Excel",
+        request_body=JobDescriptionExportSerializer,
+        responses={
+            200: openapi.Response(
+                description="Excel file with job descriptions",
+                schema=openapi.Schema(type=openapi.TYPE_FILE)
+            )
+        }
+    )
+    @action(detail=False, methods=['post'])
+    def export_to_excel(self, request):
+        """Export job descriptions to Excel"""
+        try:
+            serializer = JobDescriptionExportSerializer(data=request.data)
+            if not serializer.is_valid():
+                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            
+            job_description_ids = serializer.validated_data.get('job_description_ids', [])
+            include_details = serializer.validated_data.get('include_signatures', True)
+            
+            # Get queryset
+            if job_description_ids:
+                queryset = JobDescription.objects.filter(id__in=job_description_ids)
+            else:
+                queryset = self.filter_queryset(self.get_queryset())
+            
+            queryset = queryset.select_related(
+                'business_function', 'department', 'unit', 'job_function', 
+                'position_group', 'assigned_employee', 'reports_to',
+                'created_by', 'line_manager_approved_by', 'employee_approved_by'
+            ).prefetch_related(
+                'sections', 'required_skills__skill', 
+                'behavioral_competencies__competency',
+                'business_resources__resource', 
+                'access_rights__access_matrix',
+                'company_benefits__benefit'
+            )
+            
+            logger.info(f"Exporting {queryset.count()} job descriptions to Excel")
+            
+            # Create workbook
+            buffer = io.BytesIO()
+            wb = Workbook()
+            
+            # Summary sheet
+            ws_summary = wb.active
+            ws_summary.title = "Summary"
+            self._create_summary_sheet(ws_summary, queryset)
+            
+            # Job Descriptions sheet
+            ws_jd = wb.create_sheet("Job Descriptions")
+            self._create_job_descriptions_sheet(ws_jd, queryset, include_details)
+            
+            # Skills sheet
+            ws_skills = wb.create_sheet("Skills")
+            self._create_skills_sheet(ws_skills, queryset)
+            
+            # Competencies sheet
+            ws_comp = wb.create_sheet("Competencies")
+            self._create_competencies_sheet(ws_comp, queryset)
+            
+            # Approval Status sheet
+            if include_details:
+                ws_approval = wb.create_sheet("Approval Status")
+                self._create_approval_sheet(ws_approval, queryset)
+            
+            # Save workbook
+            wb.save(buffer)
+            buffer.seek(0)
+            
+            # Create response
+            response = HttpResponse(
+                buffer.getvalue(),
+                content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            )
+            filename = f"Job_Descriptions_Export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+            response['Content-Disposition'] = f'attachment; filename="{filename}"'
+            
+            logger.info(f"Export completed: {filename}")
+            return response
+            
+        except Exception as e:
+            logger.error(f"Export error: {str(e)}")
+            logger.error(traceback.format_exc())
+            return Response(
+                {'error': f'Export failed: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    def _create_summary_sheet(self, worksheet, queryset):
+        """Create summary sheet with statistics"""
+        # Title
+        worksheet['A1'] = "JOB DESCRIPTIONS EXPORT SUMMARY"
+        worksheet['A1'].font = Font(bold=True, size=14, color="366092")
+        worksheet.merge_cells('A1:B1')
+        
+        # Statistics
+        stats = [
+            ["Export Date", datetime.now().strftime('%Y-%m-%d %H:%M:%S')],
+            ["Total Job Descriptions", queryset.count()],
+            ["", ""],
+            ["By Status:", ""],
+            ["Draft", queryset.filter(status='DRAFT').count()],
+            ["Pending Line Manager", queryset.filter(status='PENDING_LINE_MANAGER').count()],
+            ["Pending Employee", queryset.filter(status='PENDING_EMPLOYEE').count()],
+            ["Approved", queryset.filter(status='APPROVED').count()],
+            ["Rejected", queryset.filter(status='REJECTED').count()],
+            ["Revision Required", queryset.filter(status='REVISION_REQUIRED').count()],
+            ["", ""],
+            ["By Assignment:", ""],
+            ["With Employee", queryset.filter(assigned_employee__isnull=False).count()],
+            ["Without Employee", queryset.filter(assigned_employee__isnull=True).count()],
+        ]
+        
+        for row_num, (label, value) in enumerate(stats, 3):
+            worksheet.cell(row=row_num, column=1).value = label
+            worksheet.cell(row=row_num, column=2).value = value
+            
+            if label and not value:  # Section headers
+                worksheet.cell(row=row_num, column=1).font = Font(bold=True)
+        
+        worksheet.column_dimensions['A'].width = 30
+        worksheet.column_dimensions['B'].width = 20
+    
+    def _create_job_descriptions_sheet(self, worksheet, queryset, include_details):
+        """Create main job descriptions sheet"""
+        headers = [
+            'Job Title', 'Business Function', 'Department', 'Unit', 
+            'Job Function', 'Position Group', 'Grading Level',
+            'Employee ID', 'Employee Name', 'Reports To',
+            'Status', 'Job Purpose', 'Created Date', 'Created By'
+        ]
+        
+        # Style header
+        header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+        header_font = Font(bold=True, color="FFFFFF")
+        
+        for col_num, header in enumerate(headers, 1):
+            cell = worksheet.cell(row=1, column=col_num)
+            cell.value = header
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+        
+        # Data rows
+        for row_num, jd in enumerate(queryset, 2):
+            data = [
+                jd.job_title,
+                jd.business_function.name if jd.business_function else '',
+                jd.department.name if jd.department else '',
+                jd.unit.name if jd.unit else '',
+                jd.job_function.name if jd.job_function else '',
+                jd.position_group.name if jd.position_group else '',
+                jd.grading_level or '',
+                jd.assigned_employee.employee_id if jd.assigned_employee else '',
+                jd.assigned_employee.full_name if jd.assigned_employee else '',
+                jd.reports_to.full_name if jd.reports_to else '',
+                jd.get_status_display(),
+                jd.job_purpose[:200] + '...' if len(jd.job_purpose) > 200 else jd.job_purpose,
+                jd.created_at.strftime('%Y-%m-%d') if jd.created_at else '',
+                jd.created_by.get_full_name() if jd.created_by else ''
+            ]
+            
+            for col_num, value in enumerate(data, 1):
+                worksheet.cell(row=row_num, column=col_num).value = value
+        
+        # Auto-adjust column widths
+        for col_num in range(1, len(headers) + 1):
+            worksheet.column_dimensions[get_column_letter(col_num)].width = 20
+    
+    def _create_skills_sheet(self, worksheet, queryset):
+        """Create skills sheet"""
+        headers = ['Job Title', 'Employee', 'Skill Name', 'Skill Group', 
+                   'Proficiency Level', 'Mandatory']
+        
+        # Style header
+        header_fill = PatternFill(start_color="2E7D32", end_color="2E7D32", fill_type="solid")
+        header_font = Font(bold=True, color="FFFFFF")
+        
+        for col_num, header in enumerate(headers, 1):
+            cell = worksheet.cell(row=1, column=col_num)
+            cell.value = header
+            cell.fill = header_fill
+            cell.font = header_font
+        
+        # Data rows
+        row_num = 2
+        for jd in queryset:
+            for skill_req in jd.required_skills.select_related('skill', 'skill__group').all():
+                worksheet.cell(row=row_num, column=1).value = jd.job_title
+                worksheet.cell(row=row_num, column=2).value = jd.assigned_employee.full_name if jd.assigned_employee else 'N/A'
+                worksheet.cell(row=row_num, column=3).value = skill_req.skill.name
+                worksheet.cell(row=row_num, column=4).value = skill_req.skill.group.name if skill_req.skill.group else 'N/A'
+                worksheet.cell(row=row_num, column=5).value = skill_req.get_proficiency_level_display()
+                worksheet.cell(row=row_num, column=6).value = 'Yes' if skill_req.is_mandatory else 'No'
+                row_num += 1
+        
+        for col_num in range(1, len(headers) + 1):
+            worksheet.column_dimensions[get_column_letter(col_num)].width = 20
+    
+    def _create_competencies_sheet(self, worksheet, queryset):
+        """Create competencies sheet"""
+        headers = ['Job Title', 'Employee', 'Competency Name', 'Competency Group', 
+                   'Proficiency Level', 'Mandatory']
+        
+        # Style header
+        header_fill = PatternFill(start_color="6A1B9A", end_color="6A1B9A", fill_type="solid")
+        header_font = Font(bold=True, color="FFFFFF")
+        
+        for col_num, header in enumerate(headers, 1):
+            cell = worksheet.cell(row=1, column=col_num)
+            cell.value = header
+            cell.fill = header_fill
+            cell.font = header_font
+        
+        # Data rows
+        row_num = 2
+        for jd in queryset:
+            for comp_req in jd.behavioral_competencies.select_related('competency', 'competency__group').all():
+                worksheet.cell(row=row_num, column=1).value = jd.job_title
+                worksheet.cell(row=row_num, column=2).value = jd.assigned_employee.full_name if jd.assigned_employee else 'N/A'
+                worksheet.cell(row=row_num, column=3).value = comp_req.competency.name
+                worksheet.cell(row=row_num, column=4).value = comp_req.competency.group.name if comp_req.competency.group else 'N/A'
+                worksheet.cell(row=row_num, column=5).value = comp_req.get_proficiency_level_display()
+                worksheet.cell(row=row_num, column=6).value = 'Yes' if comp_req.is_mandatory else 'No'
+                row_num += 1
+        
+        for col_num in range(1, len(headers) + 1):
+            worksheet.column_dimensions[get_column_letter(col_num)].width = 20
+    
+    def _create_approval_sheet(self, worksheet, queryset):
+        """Create approval status sheet"""
+        headers = ['Job Title', 'Employee', 'Status', 
+                   'Line Manager Approved', 'LM Approved By', 'LM Approved Date',
+                   'Employee Approved', 'Emp Approved By', 'Emp Approved Date']
+        
+        # Style header
+        header_fill = PatternFill(start_color="1565C0", end_color="1565C0", fill_type="solid")
+        header_font = Font(bold=True, color="FFFFFF")
+        
+        for col_num, header in enumerate(headers, 1):
+            cell = worksheet.cell(row=1, column=col_num)
+            cell.value = header
+            cell.fill = header_fill
+            cell.font = header_font
+        
+        # Data rows
+        for row_num, jd in enumerate(queryset, 2):
+            worksheet.cell(row=row_num, column=1).value = jd.job_title
+            worksheet.cell(row=row_num, column=2).value = jd.assigned_employee.full_name if jd.assigned_employee else 'N/A'
+            worksheet.cell(row=row_num, column=3).value = jd.get_status_display()
+            worksheet.cell(row=row_num, column=4).value = 'Yes' if jd.line_manager_approved_at else 'No'
+            worksheet.cell(row=row_num, column=5).value = jd.line_manager_approved_by.get_full_name() if jd.line_manager_approved_by else ''
+            worksheet.cell(row=row_num, column=6).value = jd.line_manager_approved_at.strftime('%Y-%m-%d') if jd.line_manager_approved_at else ''
+            worksheet.cell(row=row_num, column=7).value = 'Yes' if jd.employee_approved_at else 'No'
+            worksheet.cell(row=row_num, column=8).value = jd.employee_approved_by.get_full_name() if jd.employee_approved_by else ''
+            worksheet.cell(row=row_num, column=9).value = jd.employee_approved_at.strftime('%Y-%m-%d') if jd.employee_approved_at else ''
+        
+        for col_num in range(1, len(headers) + 1):
+            worksheet.column_dimensions[get_column_letter(col_num)].width = 20
+    
     @action(detail=False, methods=['get'])
     def pending_approvals(self, request):
         """Get job descriptions pending approval for current user"""

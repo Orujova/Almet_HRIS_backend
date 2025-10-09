@@ -20,7 +20,79 @@ except ImportError:
     relativedelta = None
 
 logger = logging.getLogger(__name__)
+from django.db import models
+from django.contrib.auth.models import User
+from django.utils import timezone
+from datetime import timedelta
 
+class UserGraphToken(models.Model):
+    """Store Microsoft Graph access tokens for users"""
+    
+    user = models.OneToOneField(
+        User, 
+        on_delete=models.CASCADE,
+        related_name='graph_token'
+    )
+    access_token = models.TextField()
+    expires_at = models.DateTimeField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        db_table = 'user_graph_tokens'
+        verbose_name = 'User Graph Token'
+        verbose_name_plural = 'User Graph Tokens'
+    
+    def __str__(self):
+        return f"Graph Token for {self.user.username}"
+    
+    def is_expired(self):
+        """Check if token is expired"""
+        return timezone.now() >= self.expires_at
+    
+    def is_valid(self):
+        """Check if token is still valid (with 5 min buffer)"""
+        buffer = timedelta(minutes=5)
+        return timezone.now() < (self.expires_at - buffer)
+    
+    @classmethod
+    def store_token(cls, user, access_token, expires_in=3600):
+        """
+        Store or update Graph token for user
+        
+        Args:
+            user: Django User object
+            access_token: Microsoft Graph access token
+            expires_in: Token lifetime in seconds (default: 3600 = 1 hour)
+        """
+        expires_at = timezone.now() + timedelta(seconds=expires_in)
+        
+        token, created = cls.objects.update_or_create(
+            user=user,
+            defaults={
+                'access_token': access_token,
+                'expires_at': expires_at
+            }
+        )
+        
+        return token
+    
+    @classmethod
+    def get_valid_token(cls, user):
+        """
+        Get valid Graph token for user
+        
+        Returns:
+            str: Access token if valid, None otherwise
+        """
+        try:
+            token = cls.objects.get(user=user)
+            if token.is_valid():
+                return token.access_token
+            else:
+                return None
+        except cls.DoesNotExist:
+            return None
 class MicrosoftUser(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='microsoft_user')
     microsoft_id = models.CharField(max_length=255, unique=True)
