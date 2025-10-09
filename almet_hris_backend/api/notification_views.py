@@ -14,8 +14,7 @@ from .notification_models import NotificationSettings, EmailTemplate, Notificati
 from .notification_serializers import (
     NotificationSettingsSerializer,
     EmailTemplateSerializer,
-    NotificationLogSerializer,
-
+    NotificationLogSerializer
 )
 from .notification_service import notification_service
 from .business_trip_permissions import is_admin_user
@@ -201,7 +200,6 @@ def get_business_trip_notifications(request):
     except Exception as e:
         return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
-
 # ==================== OUTLOOK INTEGRATION ====================
 
 @swagger_auto_schema(
@@ -216,20 +214,26 @@ def get_business_trip_notifications(request):
 def get_outlook_business_trip_emails(request):
     """Get Business Trip emails from user's Outlook mailbox"""
     try:
-        # Get access token
-        access_token = get_user_access_token(request)
-        if not access_token:
-            return Response(
-                {'error': 'Access token not found in request'},
-                status=status.HTTP_401_UNAUTHORIZED
-            )
+        from .models import UserGraphToken
+        
+        # Get Graph token from database
+        graph_token = UserGraphToken.get_valid_token(request.user)
+        
+        if not graph_token:
+            return Response({
+                'error': 'Microsoft Graph token not available. Please login again.',
+                'count': 0,
+                'emails': []
+            }, status=status.HTTP_401_UNAUTHORIZED)
         
         # Get Business Trip emails
         settings = NotificationSettings.get_active()
         subject_filter = settings.business_trip_subject_prefix
         
+        logger.info(f"Searching emails with filter: {subject_filter}")
+        
         emails = notification_service.get_emails_by_subject(
-            access_token=access_token,
+            access_token=graph_token,
             subject_filter=subject_filter,
             top=50
         )
@@ -246,6 +250,8 @@ def get_outlook_business_trip_emails(request):
                 'preview': email.get('bodyPreview', '')[:200]
             })
         
+        logger.info(f"Found {len(formatted_emails)} emails")
+        
         return Response({
             'count': len(formatted_emails),
             'emails': formatted_emails
@@ -253,4 +259,8 @@ def get_outlook_business_trip_emails(request):
         
     except Exception as e:
         logger.error(f"Error getting Outlook emails: {e}")
-        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({
+            'error': str(e),
+            'count': 0,
+            'emails': []
+        }, status=status.HTTP_400_BAD_REQUEST)
