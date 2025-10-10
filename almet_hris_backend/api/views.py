@@ -38,7 +38,16 @@ from .asset_serializers import (
     AssetAcceptanceSerializer, AssetClarificationRequestSerializer,
     AssetCancellationSerializer, AssetClarificationProvisionSerializer
 )
+from rest_framework.exceptions import AuthenticationFailed  # For 401 errors
 
+from .models import (
+    Employee, BusinessFunction, Department, Unit, JobFunction, 
+    PositionGroup, EmployeeTag, EmployeeStatus,
+    EmployeeActivity, VacantPosition, ContractTypeConfig,
+    ContractStatusManager, EmployeeArchive,
+    UserGraphToken,  # ⭐ ADD THIS - Graph token model
+    MicrosoftUser,   # ⭐ ADD THIS if you use it elsewhere
+)
 
 from .serializers import (
     EmployeeListSerializer, EmployeeDetailSerializer,
@@ -186,73 +195,80 @@ class FileUploadAutoSchema(SwaggerAutoSchema):
 def authenticate_microsoft(request):
     """Authenticate user with Microsoft Azure AD"""
     logger.info('=== Microsoft authentication request received ===')
-    logger.info(f'Request method: {request.method}')
-    logger.info(f'Request headers: {dict(request.headers)}')
-    logger.info(f'Request data keys: {list(request.data.keys())}')
     
     try:
         id_token = request.data.get('id_token')
-        graph_access_token = request.data.get('graph_access_token')  # ⭐ NEW
+        graph_access_token = request.data.get('graph_access_token')
         
         if not id_token:
-            logger.error('No id_token provided in request')
+            logger.error('No id_token provided')
             return Response(
                 {'error': 'id_token is required'},
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        logger.info('Microsoft authentication attempt - validating token')
-        logger.info(f'Token length: {len(id_token)}')
-        logger.info(f'Graph token provided: {bool(graph_access_token)}')
+        logger.info(f'Token length: {len(id_token)}, Graph token: {bool(graph_access_token)}')
         
         # Validate Microsoft token and get/create user
         user = MicrosoftTokenValidator.validate_token(id_token)
-        logger.info(f'Token validated successfully for user: {user.username}')
+        logger.info(f'✅ Token validated for user: {user.username}')
         
-        # ⭐ STORE GRAPH ACCESS TOKEN
+        # ⭐ ENHANCED: Store Graph token with proper expiry
         if graph_access_token:
-            from .models import UserGraphToken
-            UserGraphToken.store_token(
-                user=user,
-                access_token=graph_access_token,
-                expires_in=3600  # 1 hour
-            )
-            logger.info(f'✅ Graph token stored for user: {user.username}')
+            try:
+                # Store token (default 3600 seconds = 1 hour)
+                UserGraphToken.store_token(
+                    user=user,
+                    access_token=graph_access_token,
+                    expires_in=3600
+                )
+                logger.info(f'✅ Graph token stored for {user.username}')
+            except Exception as token_error:
+                logger.error(f'❌ Graph token storage failed: {token_error}')
+                # Don't fail authentication, just log the error
         else:
-            logger.warning(f'⚠️ No graph token provided for user: {user.username}')
+            logger.warning(f'⚠️ No graph token provided for {user.username}')
         
         # Generate JWT tokens
+        from rest_framework_simplejwt.tokens import RefreshToken
         refresh = RefreshToken.for_user(user)
         access = str(refresh.access_token)
-        logger.info(f'JWT tokens generated for user: {user.username}')
         
-        # Get user data
+        # ⭐ ENHANCED: Add more user context
         user_data = {
             'id': user.id,
             'username': user.username,
             'email': user.email,
             'first_name': user.first_name,
             'last_name': user.last_name,
+            'has_graph_token': bool(graph_access_token),
         }
         
-        logger.info(f'Returning successful response for user: {user.username}')
+        logger.info(f'✅ Authentication successful for {user.username}')
         
         return Response({
             'success': True,
             'access': access,
             'refresh': str(refresh),
-            'user': user_data
+            'user': user_data,
+            'graph_token_stored': bool(graph_access_token),
         })
         
+    except AuthenticationFailed as e:
+        logger.error(f'❌ Authentication failed: {str(e)}')
+        return Response(
+            {'error': str(e)},
+            status=status.HTTP_401_UNAUTHORIZED
+        )
     except Exception as e:
-        logger.error(f'Unexpected error during authentication: {str(e)}')
-        logger.error(f'Error type: {type(e).__name__}')
+        logger.error(f'❌ Unexpected error: {str(e)}')
         import traceback
         logger.error(f'Traceback: {traceback.format_exc()}')
         return Response(
-            {'error': 'Authentication failed: ' + str(e)},
+            {'error': f'Authentication failed: {str(e)}'},
             status=status.HTTP_400_BAD_REQUEST
         )
+
 @swagger_auto_schema(
     method='get',
     operation_description="Get current user information",
