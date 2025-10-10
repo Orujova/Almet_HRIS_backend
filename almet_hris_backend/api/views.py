@@ -156,6 +156,7 @@ class FileUploadAutoSchema(SwaggerAutoSchema):
             return None  # Don't generate request body schema, use manual parameters
         return super().get_request_body_schema(serializer)
 
+# views.py - authenticate_microsoft function
 @swagger_auto_schema(
     method='post',
     operation_description="Authenticate with Microsoft Azure AD",
@@ -164,36 +165,20 @@ class FileUploadAutoSchema(SwaggerAutoSchema):
         required=['id_token'],
         properties={
             'id_token': openapi.Schema(type=openapi.TYPE_STRING, description='Microsoft ID Token'),
-            'graph_access_token': openapi.Schema(type=openapi.TYPE_STRING, description='Microsoft Graph Access Token (optional)'),
+            'graph_access_token': openapi.Schema(type=openapi.TYPE_STRING, description='Microsoft Graph Access Token'),
         },
     ),
     responses={
-        200: openapi.Response(
-            description='Successful authentication',
-            examples={
-                'application/json': {
-                    'success': True,
-                    'access': 'jwt_access_token',
-                    'refresh': 'jwt_refresh_token',
-                    'user': {
-                        'id': 1,
-                        'username': 'user@example.com',
-                        'email': 'user@example.com',
-                        'first_name': 'John',
-                        'last_name': 'Doe'
-                    }
-                }
-            }
-        ),
-        400: 'Bad Request - Invalid token',
-        401: 'Unauthorized - Authentication failed'
+        200: openapi.Response(description='Successful authentication'),
+        400: 'Bad Request',
+        401: 'Unauthorized'
     },
     tags=['Authentication']
 )
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def authenticate_microsoft(request):
-    """Authenticate user with Microsoft Azure AD"""
+    """✅ FIXED: Authenticate with Graph token storage"""
     logger.info('=== Microsoft authentication request received ===')
     
     try:
@@ -209,32 +194,24 @@ def authenticate_microsoft(request):
         
         logger.info(f'Token length: {len(id_token)}, Graph token: {bool(graph_access_token)}')
         
-        # Validate Microsoft token and get/create user
-        user = MicrosoftTokenValidator.validate_token(id_token)
+        # ✅ Validate token AND store Graph token
+        user = MicrosoftTokenValidator.validate_token(id_token, graph_access_token)
         logger.info(f'✅ Token validated for user: {user.username}')
         
-        # ⭐ ENHANCED: Store Graph token with proper expiry
+        # ✅ Verify Graph token was stored
         if graph_access_token:
-            try:
-                # Store token (default 3600 seconds = 1 hour)
-                UserGraphToken.store_token(
-                    user=user,
-                    access_token=graph_access_token,
-                    expires_in=3600
-                )
-                logger.info(f'✅ Graph token stored for {user.username}')
-            except Exception as token_error:
-                logger.error(f'❌ Graph token storage failed: {token_error}')
-                # Don't fail authentication, just log the error
-        else:
-            logger.warning(f'⚠️ No graph token provided for {user.username}')
+            stored_token = UserGraphToken.get_valid_token(user)
+            if stored_token:
+                logger.info(f'✅ Graph token verified in database for {user.username}')
+            else:
+                logger.warning(f'⚠️ Graph token not found in database for {user.username}')
         
         # Generate JWT tokens
         from rest_framework_simplejwt.tokens import RefreshToken
         refresh = RefreshToken.for_user(user)
         access = str(refresh.access_token)
         
-        # ⭐ ENHANCED: Add more user context
+        # ✅ Enhanced user data
         user_data = {
             'id': user.id,
             'username': user.username,
@@ -268,7 +245,6 @@ def authenticate_microsoft(request):
             {'error': f'Authentication failed: {str(e)}'},
             status=status.HTTP_400_BAD_REQUEST
         )
-
 @swagger_auto_schema(
     method='get',
     operation_description="Get current user information",
