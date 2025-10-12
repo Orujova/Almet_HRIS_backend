@@ -1,4 +1,5 @@
-# api/business_trip_views.py - Updated with Role-Based Permissions
+# api/business_trip_views.py - FIXED TOKEN HANDLING
+
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -15,7 +16,7 @@ from openpyxl.utils import get_column_letter
 
 from .business_trip_models import *
 from .business_trip_serializers import *
-from .models import Employee
+from .models import Employee, UserGraphToken
 from .business_trip_permissions import (
     has_business_trip_permission,
     has_any_business_trip_permission,
@@ -25,17 +26,16 @@ from .business_trip_permissions import (
 )
 import logging
 
-
 logger = logging.getLogger(__name__)
 from .business_trip_notifications import notification_manager
 
-from .business_trip_notifications import notification_manager
-from .models import UserGraphToken  # ⭐ ADD THIS
-
-# Helper function to get Microsoft Graph token
+# ✅ FIXED: Helper function to get Microsoft Graph token
 def get_graph_access_token(user):
     """
     Get Microsoft Graph access token for the authenticated user
+    
+    This is the Microsoft Graph token, NOT the JWT token!
+    Used for sending emails via Microsoft Graph API.
     
     Args:
         user: Django User object
@@ -43,11 +43,43 @@ def get_graph_access_token(user):
     Returns:
         str: Graph access token or None
     """
-    token = UserGraphToken.get_valid_token(user)
-    if not token:
-        logger.warning(f"⚠️ No valid Graph token found for user {user.username}")
-        logger.warning("Email notifications will be skipped")
-    return token
+    try:
+        token = UserGraphToken.get_valid_token(user)
+        if token:
+            logger.info(f"✅ Valid Graph token found for user {user.username}")
+            return token
+        else:
+            logger.warning(f"⚠️ No valid Graph token found for user {user.username}")
+            logger.warning("   Email notifications will be skipped")
+            logger.warning("   User needs to login again to refresh Graph token")
+            return None
+    except Exception as e:
+        logger.error(f"❌ Error getting Graph token: {e}")
+        return None
+
+
+# ✅ NEW: Helper to get notification context
+def get_notification_context(request):
+    """
+    Get notification context with Graph token status
+    
+    Returns:
+        dict: {
+            'can_send_emails': bool,
+            'graph_token': str or None,
+            'reason': str,
+            'user': User object
+        }
+    """
+    graph_token = get_graph_access_token(request.user)
+    
+    return {
+        'can_send_emails': bool(graph_token),
+        'graph_token': graph_token,
+        'reason': 'Graph token available' if graph_token else 'No Microsoft Graph token. Login again to enable email notifications.',
+        'user': request.user
+    }
+
 # ==================== MY PERMISSIONS ====================
 @swagger_auto_schema(
     method='get',
@@ -371,9 +403,93 @@ def get_general_settings(request):
 # ==================== CREATE REQUEST ====================
 
 
+# api/business_trip_views.py - FIXED TOKEN HANDLING
+
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework import status, viewsets
+from django.db import transaction
+from django.db.models import Q, Count, Sum
+from datetime import date, datetime, timedelta
+from drf_yasg.utils import swagger_auto_schema
+from drf_yasg import openapi
+from django.http import HttpResponse
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Border, Side, Alignment
+from openpyxl.utils import get_column_letter
+
+from .business_trip_models import *
+from .business_trip_serializers import *
+from .models import Employee, UserGraphToken
+from .business_trip_permissions import (
+    has_business_trip_permission,
+    has_any_business_trip_permission,
+    check_business_trip_permission,
+    get_user_business_trip_permissions,
+    is_admin_user
+)
+import logging
+
+logger = logging.getLogger(__name__)
+from .business_trip_notifications import notification_manager
+
+# ✅ FIXED: Helper function to get Microsoft Graph token
+def get_graph_access_token(user):
+    """
+    Get Microsoft Graph access token for the authenticated user
+    
+    This is the Microsoft Graph token, NOT the JWT token!
+    Used for sending emails via Microsoft Graph API.
+    
+    Args:
+        user: Django User object
+    
+    Returns:
+        str: Graph access token or None
+    """
+    try:
+        token = UserGraphToken.get_valid_token(user)
+        if token:
+            logger.info(f"✅ Valid Graph token found for user {user.username}")
+            return token
+        else:
+            logger.warning(f"⚠️ No valid Graph token found for user {user.username}")
+            logger.warning("   Email notifications will be skipped")
+            logger.warning("   User needs to login again to refresh Graph token")
+            return None
+    except Exception as e:
+        logger.error(f"❌ Error getting Graph token: {e}")
+        return None
+
+
+# ✅ NEW: Helper to get notification context
+def get_notification_context(request):
+    """
+    Get notification context with Graph token status
+    
+    Returns:
+        dict: {
+            'can_send_emails': bool,
+            'graph_token': str or None,
+            'reason': str,
+            'user': User object
+        }
+    """
+    graph_token = get_graph_access_token(request.user)
+    
+    return {
+        'can_send_emails': bool(graph_token),
+        'graph_token': graph_token,
+        'reason': 'Graph token available' if graph_token else 'No Microsoft Graph token. Login again to enable email notifications.',
+        'user': request.user
+    }
+
+
+# ==================== CREATE REQUEST ====================
 @swagger_auto_schema(
     method='post',
-    operation_description="Create business trip request",
+    operation_description="Create business trip request with email notification",
     operation_summary="Create Trip Request",
     tags=['Business Trip'],
     request_body=BusinessTripRequestCreateSerializer,
@@ -383,7 +499,7 @@ def get_general_settings(request):
 @has_business_trip_permission('business_trips.request.create')
 @permission_classes([IsAuthenticated])
 def create_trip_request(request):
-    """Create business trip request"""
+    """Create business trip request with email notification"""
     serializer = BusinessTripRequestCreateSerializer(data=request.data)
     if not serializer.is_valid():
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -393,7 +509,7 @@ def create_trip_request(request):
     try:
         requester_emp = Employee.objects.get(user=request.user, is_deleted=False)
         
-        # Employee selection
+        # Employee selection logic
         if data['requester_type'] == 'for_me':
             employee = requester_emp
         else:
@@ -418,6 +534,7 @@ def create_trip_request(request):
                 )
         
         with transaction.atomic():
+            # Create trip request
             trip_req = BusinessTripRequest.objects.create(
                 employee=employee,
                 requester=request.user,
@@ -454,27 +571,41 @@ def create_trip_request(request):
                     notes=hotel_data.get('notes', '')
                 )
             
+            # Submit request
             trip_req.submit_request(request.user)
             
-            graph_token = get_graph_access_token(request.user)
-            if graph_token:
-                notification_manager.notify_request_created(trip_req, graph_token)
-                logger.info("✅ Notification sent to Line Manager")
+            # ✅ FIXED: Get notification context with Graph token
+            notification_ctx = get_notification_context(request)
+            
+            if notification_ctx['can_send_emails']:
+                try:
+                    success = notification_manager.notify_request_created(
+                        trip_request=trip_req,
+                        access_token=notification_ctx['graph_token']
+                    )
+                    if success:
+                        logger.info("✅ Notification email sent to Line Manager")
+                    else:
+                        logger.warning("⚠️ Notification failed to send")
+                except Exception as e:
+                    logger.error(f"❌ Error sending notification: {e}")
+                    # Don't fail the request creation if notification fails
             else:
-                logger.warning("⚠️ Graph token not available - notification skipped")
+                logger.warning(f"⚠️ Email not sent: {notification_ctx['reason']}")
             
             return Response({
                 'message': 'Trip request created and submitted.',
-                'notification_sent': bool(graph_token),
+                'notification_sent': notification_ctx['can_send_emails'],
+                'notification_reason': notification_ctx['reason'],
                 'request': BusinessTripRequestDetailSerializer(trip_req).data
             }, status=status.HTTP_201_CREATED)
-            
-            
     
     except Employee.DoesNotExist:
         return Response({'error': 'Employee not found'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
+        logger.error(f"Error creating trip request: {e}")
         return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
 # ==================== MY REQUESTS ====================
 
 @swagger_auto_schema(
@@ -568,7 +699,7 @@ def pending_approvals(request):
 
 @swagger_auto_schema(
     method='post',
-    operation_description="Approve/Reject trip request",
+    operation_description="Approve/Reject trip request with email notifications",
     tags=['Business Trip'],
     request_body=TripApprovalSerializer,
     responses={200: openapi.Response(description='Action completed')}
@@ -577,85 +708,138 @@ def pending_approvals(request):
 @has_business_trip_permission('business_trips.request.approve')
 @permission_classes([IsAuthenticated])
 def approve_reject_request(request, pk):
-    """Approve/Reject trip request - admin və ya approver"""
+    """Approve/Reject trip request with email notifications"""
     serializer = TripApprovalSerializer(data=request.data)
     if not serializer.is_valid():
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
     data = serializer.validated_data
-    graph_token = get_graph_access_token(request.user)
-
+    
+    # ✅ FIXED: Get notification context ONCE at the beginning
+    notification_ctx = get_notification_context(request)
+    graph_token = notification_ctx['graph_token']
+    
     try:
         trip_req = BusinessTripRequest.objects.get(pk=pk, is_deleted=False)
+        notification_sent = False
         
+        # LINE MANAGER APPROVAL/REJECTION
         if trip_req.status == 'PENDING_LINE_MANAGER':
             if data['action'] == 'approve':
                 trip_req.approve_by_line_manager(request.user, data.get('comment', ''))
                 msg = 'Approved by Line Manager'
                 
-                # ✅ SEND NOTIFICATION TO FINANCE
+                # ✅ Send notification to Finance
                 if graph_token:
-                    notification_manager.notify_line_manager_approved(trip_req, graph_token)
-                    logger.info("✅ Notification sent to Finance")
+                    try:
+                        notification_sent = notification_manager.notify_line_manager_approved(
+                            trip_request=trip_req,
+                            access_token=graph_token
+                        )
+                        if notification_sent:
+                            logger.info("✅ Notification sent to Finance")
+                    except Exception as e:
+                        logger.error(f"❌ Notification error: {e}")
             else:
                 trip_req.reject_by_line_manager(request.user, data.get('reason', ''))
                 msg = 'Rejected by Line Manager'
                 
-                # ✅ SEND REJECTION NOTIFICATION TO EMPLOYEE
+                # ✅ Send rejection notification to Employee
                 if graph_token:
-                    notification_manager.notify_request_rejected(trip_req, graph_token)
-                    logger.info("✅ Rejection notification sent to Employee")
+                    try:
+                        notification_sent = notification_manager.notify_request_rejected(
+                            trip_request=trip_req,
+                            access_token=graph_token
+                        )
+                        if notification_sent:
+                            logger.info("✅ Rejection notification sent to Employee")
+                    except Exception as e:
+                        logger.error(f"❌ Notification error: {e}")
         
+        # FINANCE APPROVAL/REJECTION
         elif trip_req.status == 'PENDING_FINANCE':
             if data['action'] == 'approve':
                 trip_req.approve_by_finance(request.user, data.get('amount'), data.get('comment', ''))
                 msg = 'Approved by Finance'
                 
-                # ✅ SEND NOTIFICATION TO HR
+                # ✅ Send notification to HR
                 if graph_token:
-                    notification_manager.notify_finance_approved(trip_req, graph_token)
-                    logger.info("✅ Notification sent to HR")
+                    try:
+                        notification_sent = notification_manager.notify_finance_approved(
+                            trip_request=trip_req,
+                            access_token=graph_token
+                        )
+                        if notification_sent:
+                            logger.info("✅ Notification sent to HR")
+                    except Exception as e:
+                        logger.error(f"❌ Notification error: {e}")
             else:
                 trip_req.reject_by_finance(request.user, data.get('reason', ''))
                 msg = 'Rejected by Finance'
                 
-                # ✅ SEND REJECTION NOTIFICATION TO EMPLOYEE
+                # ✅ Send rejection notification to Employee
                 if graph_token:
-                    notification_manager.notify_request_rejected(trip_req, graph_token)
-                    logger.info("✅ Rejection notification sent to Employee")
+                    try:
+                        notification_sent = notification_manager.notify_request_rejected(
+                            trip_request=trip_req,
+                            access_token=graph_token
+                        )
+                        if notification_sent:
+                            logger.info("✅ Rejection notification sent to Employee")
+                    except Exception as e:
+                        logger.error(f"❌ Notification error: {e}")
         
+        # HR APPROVAL/REJECTION
         elif trip_req.status == 'PENDING_HR':
             if data['action'] == 'approve':
                 trip_req.approve_by_hr(request.user, data.get('comment', ''))
                 msg = 'Approved by HR - Request is now APPROVED'
                 
-                # ✅ SEND FINAL APPROVAL NOTIFICATION TO EMPLOYEE
+                # ✅ Send final approval notification to Employee
                 if graph_token:
-                    notification_manager.notify_hr_approved(trip_req, graph_token)
-                    logger.info("✅ Final approval notification sent to Employee")
+                    try:
+                        notification_sent = notification_manager.notify_hr_approved(
+                            trip_request=trip_req,
+                            access_token=graph_token
+                        )
+                        if notification_sent:
+                            logger.info("✅ Final approval notification sent to Employee")
+                    except Exception as e:
+                        logger.error(f"❌ Notification error: {e}")
             else:
                 trip_req.reject_by_hr(request.user, data.get('reason', ''))
                 msg = 'Rejected by HR'
                 
-                # ✅ SEND REJECTION NOTIFICATION TO EMPLOYEE
+                # ✅ Send rejection notification to Employee
                 if graph_token:
-                    notification_manager.notify_request_rejected(trip_req, graph_token)
-                    logger.info("✅ Rejection notification sent to Employee")
+                    try:
+                        notification_sent = notification_manager.notify_request_rejected(
+                            trip_request=trip_req,
+                            access_token=graph_token
+                        )
+                        if notification_sent:
+                            logger.info("✅ Rejection notification sent to Employee")
+                    except Exception as e:
+                        logger.error(f"❌ Notification error: {e}")
         else:
-            return Response({'error': 'Request is not pending approval'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({
+                'error': 'Request is not pending approval'
+            }, status=status.HTTP_400_BAD_REQUEST)
         
         return Response({
             'message': msg,
-            'notification_sent': bool(graph_token),
+            'notification_sent': notification_sent,
+            'notification_available': notification_ctx['can_send_emails'],
+            'notification_reason': notification_ctx['reason'],
             'request': BusinessTripRequestDetailSerializer(trip_req).data
         })
-        
-    
     
     except BusinessTripRequest.DoesNotExist:
         return Response({'error': 'Request not found'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
+        logger.error(f"Error in approve/reject: {e}")
         return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
 # ==================== APPROVAL HISTORY ====================
 
 @swagger_auto_schema(
@@ -747,11 +931,9 @@ def approval_history(request):
         return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 # ==================== CANCEL TRIP ====================
-
-
 @swagger_auto_schema(
     method='post',
-    operation_description="Cancel approved trip",
+    operation_description="Cancel approved trip with notifications to all approvers",
     tags=['Business Trip'],
     responses={200: openapi.Response(description='Trip cancelled')}
 )
@@ -759,47 +941,60 @@ def approval_history(request):
 @has_business_trip_permission('business_trips.request.cancel')
 @permission_classes([IsAuthenticated])
 def cancel_trip(request, pk):
-    """Cancel approved trip"""
+    """Cancel approved trip with notifications"""
     try:
         trip_req = BusinessTripRequest.objects.get(pk=pk, is_deleted=False)
         
         # Only approved trips can be cancelled
         if trip_req.status != 'APPROVED':
-            return Response({'error': 'Only approved trips can be cancelled'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({
+                'error': 'Only approved trips can be cancelled'
+            }, status=status.HTTP_400_BAD_REQUEST)
         
-        # Check permission - employee özünü və ya admin
+        # Check permission
         emp = Employee.objects.get(user=request.user)
         if trip_req.employee != emp and not is_admin_user(request.user):
-            return Response({'error': 'You can only cancel your own trips'}, status=status.HTTP_403_FORBIDDEN)
+            return Response({
+                'error': 'You can only cancel your own trips'
+            }, status=status.HTTP_403_FORBIDDEN)
         
-      
+        # ✅ FIXED: Get notification context
+        notification_ctx = get_notification_context(request)
         
-        # ✅ SEND CANCELLATION NOTIFICATION TO ALL APPROVERS
-        graph_token = get_graph_access_token(request.user)
-
+        # Cancel trip
         trip_req.status = 'CANCELLED'
         trip_req.cancelled_by = request.user
         trip_req.cancelled_at = timezone.now()
         trip_req.save()
         
-        # ✅ SEND CANCELLATION NOTIFICATION TO ALL APPROVERS
-        if graph_token:
-            notification_manager.notify_trip_cancelled(trip_req, graph_token)
-            logger.info("✅ Cancellation notifications sent to all approvers")
+        # ✅ Send cancellation notifications to all approvers
+        notification_sent = False
+        if notification_ctx['can_send_emails']:
+            try:
+                notification_sent = notification_manager.notify_trip_cancelled(
+                    trip_request=trip_req,
+                    access_token=notification_ctx['graph_token']
+                )
+                if notification_sent:
+                    logger.info("✅ Cancellation notifications sent to all approvers")
+            except Exception as e:
+                logger.error(f"❌ Error sending cancellation notifications: {e}")
         
         return Response({
             'message': 'Trip cancelled successfully.',
-            'notification_sent': bool(graph_token),
+            'notification_sent': notification_sent,
+            'notification_available': notification_ctx['can_send_emails'],
+            'notification_reason': notification_ctx['reason'],
             'request': BusinessTripRequestDetailSerializer(trip_req).data
         })
-        
+    
     except BusinessTripRequest.DoesNotExist:
         return Response({'error': 'Request not found'}, status=status.HTTP_404_NOT_FOUND)
     except Employee.DoesNotExist:
         return Response({'error': 'Employee profile not found'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
+        logger.error(f"Error cancelling trip: {e}")
         return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
-
 # ==================== EXPORT ====================
 
 @swagger_auto_schema(

@@ -1,10 +1,11 @@
-# api/auth.py - COMPLETELY FIXED
+# api/auth.py - COMPLETELY FIXED WITH PROPER TOKEN HANDLING
 import jwt
 import logging
 from django.conf import settings
 from django.contrib.auth.models import User
 from django.db import transaction
 from rest_framework.exceptions import AuthenticationFailed
+from rest_framework_simplejwt.tokens import RefreshToken
 from .models import MicrosoftUser, Employee, UserGraphToken
 from datetime import datetime, timedelta
 from django.utils import timezone
@@ -13,9 +14,12 @@ logger = logging.getLogger(__name__)
 
 class MicrosoftTokenValidator:
     @staticmethod
-    def validate_token(id_token, graph_access_token=None):
+    def validate_token_and_create_jwt(id_token, graph_access_token=None):
         """
-        ✅ FIXED: Validate Microsoft ID token AND store Graph token
+        ✅ FIXED: Validate Microsoft ID token, store Graph token, 
+        and CREATE YOUR OWN JWT for API access
+        
+        Returns: (user, your_jwt_access_token, your_jwt_refresh_token)
         """
         try:
             logger.info('=== Starting Microsoft token validation ===')
@@ -91,7 +95,7 @@ class MicrosoftTokenValidator:
                 
                 if updated:
                     user.save()
-                    logger.info(f'📝 Updated user info for {user.username}')
+                    logger.info(f'🔄 Updated user info for {user.username}')
                 
             except MicrosoftUser.DoesNotExist:
                 logger.info('Microsoft user not found, checking employee by email...')
@@ -155,7 +159,7 @@ class MicrosoftTokenValidator:
                     logger.error(f'Error finding employee: {e}')
                     raise
             
-            # ✅ CRITICAL: Store Graph Access Token
+            # ✅ CRITICAL: Store Graph Access Token (for Microsoft Graph API calls)
             if graph_access_token and user:
                 try:
                     # Store Graph token with 1 hour expiry (default Microsoft token lifetime)
@@ -172,7 +176,16 @@ class MicrosoftTokenValidator:
                 if not graph_access_token:
                     logger.warning(f'⚠️ No Graph token provided for {user.username if user else email}')
             
-            return user
+            # ✅ STEP 2: Generate YOUR OWN JWT tokens for API access
+            refresh = RefreshToken.for_user(user)
+            access_token = str(refresh.access_token)
+            refresh_token = str(refresh)
+            
+            logger.info(f'✅ Generated JWT tokens for {user.username}')
+            logger.info(f'   - Access token length: {len(access_token)}')
+            logger.info(f'   - Refresh token length: {len(refresh_token)}')
+            
+            return user, access_token, refresh_token
             
         except jwt.DecodeError as e:
             logger.error(f'JWT decode error: {str(e)}')
@@ -184,3 +197,15 @@ class MicrosoftTokenValidator:
             import traceback
             logger.error(f'Traceback: {traceback.format_exc()}')
             raise AuthenticationFailed(f'Authentication failed: {str(e)}')
+    
+    @staticmethod
+    def validate_token(id_token, graph_access_token=None):
+        """
+        Legacy method - returns only user
+        Use validate_token_and_create_jwt instead
+        """
+        user, _, _ = MicrosoftTokenValidator.validate_token_and_create_jwt(
+            id_token, 
+            graph_access_token
+        )
+        return user

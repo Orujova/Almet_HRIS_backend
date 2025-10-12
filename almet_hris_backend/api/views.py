@@ -156,7 +156,6 @@ class FileUploadAutoSchema(SwaggerAutoSchema):
             return None  # Don't generate request body schema, use manual parameters
         return super().get_request_body_schema(serializer)
 
-# views.py - authenticate_microsoft function
 @swagger_auto_schema(
     method='post',
     operation_description="Authenticate with Microsoft Azure AD",
@@ -178,7 +177,15 @@ class FileUploadAutoSchema(SwaggerAutoSchema):
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def authenticate_microsoft(request):
-    """✅ FIXED: Authenticate with Graph token storage"""
+    """
+    ✅ FIXED: Authenticate with Microsoft and return YOUR JWT tokens
+    
+    Flow:
+    1. Validate Microsoft ID token
+    2. Store Microsoft Graph token (for Graph API calls)
+    3. Generate YOUR OWN JWT tokens (for YOUR API access)
+    4. Return YOUR JWT tokens to frontend
+    """
     logger.info('=== Microsoft authentication request received ===')
     
     try:
@@ -194,9 +201,13 @@ def authenticate_microsoft(request):
         
         logger.info(f'Token length: {len(id_token)}, Graph token: {bool(graph_access_token)}')
         
-        # ✅ Validate token AND store Graph token
-        user = MicrosoftTokenValidator.validate_token(id_token, graph_access_token)
-        logger.info(f'✅ Token validated for user: {user.username}')
+        # ✅ Validate Microsoft token AND get YOUR JWT tokens
+        user, access_token, refresh_token = MicrosoftTokenValidator.validate_token_and_create_jwt(
+            id_token, 
+            graph_access_token
+        )
+        
+        logger.info(f'✅ Authentication successful for user: {user.username}')
         
         # ✅ Verify Graph token was stored
         if graph_access_token:
@@ -205,11 +216,6 @@ def authenticate_microsoft(request):
                 logger.info(f'✅ Graph token verified in database for {user.username}')
             else:
                 logger.warning(f'⚠️ Graph token not found in database for {user.username}')
-        
-        # Generate JWT tokens
-        from rest_framework_simplejwt.tokens import RefreshToken
-        refresh = RefreshToken.for_user(user)
-        access = str(refresh.access_token)
         
         # ✅ Enhanced user data
         user_data = {
@@ -221,14 +227,21 @@ def authenticate_microsoft(request):
             'has_graph_token': bool(graph_access_token),
         }
         
-        logger.info(f'✅ Authentication successful for {user.username}')
+        # ✅ CRITICAL: Return YOUR JWT tokens, not Microsoft tokens
+        logger.info(f'✅ Returning JWT tokens for {user.username}')
         
         return Response({
             'success': True,
-            'access': access,
-            'refresh': str(refresh),
+            'access': access_token,      # ← YOUR JWT access token for API calls
+            'refresh': refresh_token,     # ← YOUR JWT refresh token
             'user': user_data,
             'graph_token_stored': bool(graph_access_token),
+            'token_info': {
+                'type': 'JWT',
+                'access_token_length': len(access_token),
+                'use_for_api_calls': True,
+                'microsoft_graph_available': bool(graph_access_token)
+            }
         })
         
     except AuthenticationFailed as e:
