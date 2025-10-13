@@ -1,4 +1,4 @@
-# api/notification_service.py - UPDATED
+# api/notification_service.py - COMPLETE WITH GET_EMAILS_BY_SUBJECT
 """
 Notification Service - FIXED
 Uses Microsoft Graph Token for sending emails
@@ -35,6 +35,149 @@ class NotificationService:
                     business_trip_subject_prefix='[BUSINESS TRIP]'
                 )
         return self._settings
+    
+    def get_emails_by_subject(self, access_token, subject_filter, top=50):
+        """
+        Get emails from user's mailbox filtered by subject
+        
+        Args:
+            access_token: Microsoft Graph access token
+            subject_filter: Subject text to filter by (e.g., '[BUSINESS TRIP]')
+            top: Number of emails to retrieve (max 50)
+        
+        Returns:
+            list: List of email objects from Graph API
+        """
+        try:
+            # Method 1: Try with OData filter first
+            # Escape special characters for OData filter
+            escaped_filter = subject_filter.replace("'", "''")
+            filter_query = f"contains(subject, '{escaped_filter}')"
+            
+            # Query parameters
+            params = {
+                '$filter': filter_query,
+                '$top': min(top, 50),  # Graph API limits to 50
+                '$orderby': 'receivedDateTime desc',
+                '$select': 'id,subject,from,receivedDateTime,isRead,hasAttachments,importance,bodyPreview'
+            }
+            
+            headers = {
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json"
+            }
+            
+            logger.info(f"📧 Fetching emails with subject filter: {subject_filter}")
+            logger.info(f"   Filter query: {filter_query}")
+            
+            # Get emails from mailbox
+            response = requests.get(
+                f"{self.graph_endpoint}/me/messages",
+                headers=headers,
+                params=params,
+                timeout=30
+            )
+            
+            logger.info(f"Graph API response: {response.status_code}")
+            
+            if response.status_code == 200:
+                data = response.json()
+                emails = data.get('value', [])
+                logger.info(f"✅ Retrieved {len(emails)} emails with filter")
+                
+                # If no emails found with filter, try without filter and filter client-side
+                if len(emails) == 0:
+                    logger.info("No emails found with server filter, trying client-side filter...")
+                    return self._get_emails_client_side_filter(access_token, subject_filter, top)
+                
+                return emails
+            else:
+                error_msg = f"Failed to get emails: {response.status_code}"
+                if response.text:
+                    error_msg += f" - {response.text[:500]}"
+                    logger.error(f"Response body: {response.text}")
+                
+                logger.error(error_msg)
+                
+                # Check for specific errors
+                if response.status_code == 401:
+                    logger.error("❌ 401 Unauthorized: Graph token is invalid or expired")
+                elif response.status_code == 403:
+                    logger.error("❌ 403 Forbidden: Graph token lacks Mail.Read permission")
+                elif response.status_code == 400:
+                    # Bad filter query, try client-side filtering
+                    logger.warning("❌ 400 Bad Request: Filter query failed, trying client-side filter...")
+                    return self._get_emails_client_side_filter(access_token, subject_filter, top)
+                
+                return []
+                
+        except requests.exceptions.Timeout:
+            logger.error("Email retrieval timeout after 30 seconds")
+            return []
+        except Exception as e:
+            logger.error(f"Error getting emails: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return []
+    
+    def _get_emails_client_side_filter(self, access_token, subject_filter, top=50):
+        """
+        Fallback method: Get all recent emails and filter client-side
+        
+        Args:
+            access_token: Microsoft Graph access token
+            subject_filter: Subject text to filter by
+            top: Number of emails to retrieve
+        
+        Returns:
+            list: Filtered email objects
+        """
+        try:
+            # Get recent emails without server-side filter
+            params = {
+                '$top': min(top * 3, 100),  # Get more emails to filter from
+                '$orderby': 'receivedDateTime desc',
+                '$select': 'id,subject,from,receivedDateTime,isRead,hasAttachments,importance,bodyPreview'
+            }
+            
+            headers = {
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json"
+            }
+            
+            logger.info(f"📧 Fetching recent emails for client-side filtering...")
+            
+            response = requests.get(
+                f"{self.graph_endpoint}/me/messages",
+                headers=headers,
+                params=params,
+                timeout=30
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                all_emails = data.get('value', [])
+                
+                # Filter client-side (case-insensitive)
+                subject_filter_lower = subject_filter.lower()
+                filtered_emails = [
+                    email for email in all_emails 
+                    if subject_filter_lower in email.get('subject', '').lower()
+                ]
+                
+                # Limit to requested top count
+                filtered_emails = filtered_emails[:top]
+                
+                logger.info(f"✅ Client-side filter: Found {len(filtered_emails)} matching emails out of {len(all_emails)} total")
+                
+                return filtered_emails
+            else:
+                logger.error(f"Failed to get emails for client-side filter: {response.status_code}")
+                return []
+                
+        except Exception as e:
+            logger.error(f"Client-side filter failed: {str(e)}")
+            return []
     
     def send_email(self, recipient_email, subject, body_html, body_text=None, 
                    sender_email=None, access_token=None, related_model=None, 

@@ -1,4 +1,4 @@
-# api/notification_views.py
+# api/notification_views.py - FIXED with proper token extraction
 import logging
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
@@ -18,16 +18,36 @@ from .notification_serializers import (
 )
 from .notification_service import notification_service
 from .business_trip_permissions import is_admin_user
+from .models import UserGraphToken  # ✅ ADD THIS
+from .token_helpers import extract_graph_token_from_request  # ✅ ADD THIS
 
 logger = logging.getLogger(__name__)
 
 
-def get_user_access_token(request):
-    """Extract access token from request"""
-    # Get token from Authorization header
-    auth_header = request.META.get('HTTP_AUTHORIZATION', '')
-    if auth_header.startswith('Bearer '):
-        return auth_header.split(' ')[1]
+def get_graph_token_from_request(request):
+    """
+    ✅ FIXED: Extract Microsoft Graph token from request
+    Tries multiple sources in priority order
+    """
+    # 1. Try custom header
+    graph_token = request.META.get('HTTP_X_GRAPH_TOKEN')
+    if graph_token:
+        logger.info("✅ Graph token found in X-Graph-Token header")
+        return graph_token
+    
+    # 2. Try database (stored during login)
+    if request.user and request.user.is_authenticated:
+        try:
+            graph_token = UserGraphToken.get_valid_token(request.user)
+            if graph_token:
+                logger.info(f"✅ Graph token found in database for {request.user.username}")
+                return graph_token
+            else:
+                logger.warning(f"⚠️ Graph token in database is expired for {request.user.username}")
+        except Exception as e:
+            logger.error(f"❌ Error retrieving Graph token from database: {e}")
+    
+    logger.warning("❌ No valid Graph token found")
     return None
 
 
@@ -200,6 +220,73 @@ def get_business_trip_notifications(request):
     except Exception as e:
         return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
+
+# ==================== GRAPH TOKEN STATUS ====================
+
+@swagger_auto_schema(
+    method='get',
+    operation_description="Check Microsoft Graph token status",
+    operation_summary="Graph Token Status",
+    tags=['Notifications'],
+    responses={
+        200: openapi.Response(
+            description='Token status',
+            examples={
+                'application/json': {
+                    'has_graph_token': True,
+                    'token_valid': True,
+                    'expires_at': '2025-01-15T10:30:00Z',
+                    'can_send_emails': True
+                }
+            }
+        )
+    }
+)
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_graph_token_status(request):
+    """Check if user has valid Graph token for sending emails"""
+    try:
+        graph_token = get_graph_token_from_request(request)
+        
+        if graph_token:
+            # Check expiry
+            try:
+                token_obj = UserGraphToken.objects.get(user=request.user)
+                
+                return Response({
+                    'has_graph_token': True,
+                    'token_valid': token_obj.is_valid(),
+                    'token_expired': token_obj.is_expired(),
+                    'expires_at': token_obj.expires_at.isoformat(),
+                    'can_send_emails': token_obj.is_valid(),
+                    'message': 'Graph token is valid' if token_obj.is_valid() else 'Token expired'
+                })
+            except UserGraphToken.DoesNotExist:
+                return Response({
+                    'has_graph_token': True,
+                    'token_valid': True,
+                    'can_send_emails': True,
+                    'message': 'Graph token available (no expiry info)'
+                })
+        else:
+            return Response({
+                'has_graph_token': False,
+                'token_valid': False,
+                'can_send_emails': False,
+                'message': 'No Graph token. Please login again.'
+            })
+            
+    except Exception as e:
+        logger.error(f"Error checking Graph token status: {e}")
+        return Response({
+            'has_graph_token': False,
+            'token_valid': False,
+            'can_send_emails': False,
+            'message': f'Error: {str(e)}'
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+
 # ==================== OUTLOOK INTEGRATION ====================
 
 @swagger_auto_schema(
@@ -212,19 +299,26 @@ def get_business_trip_notifications(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_outlook_business_trip_emails(request):
-    """Get Business Trip emails from user's Outlook mailbox"""
+    """
+    ✅ FIXED: Get Business Trip emails from user's Outlook mailbox
+    Properly extracts Graph token from request
+    """
     try:
-        from .models import UserGraphToken
-        
-        # Get Graph token from database
-        graph_token = UserGraphToken.get_valid_token(request.user)
+        # ✅ Get Graph token using helper function
+        graph_token = get_graph_token_from_request(request)
         
         if not graph_token:
+            logger.warning(f"No Graph token for user {request.user.username}")
+            
             return Response({
-                'error': 'Microsoft Graph token not available. Please login again.',
+                'error': 'Microsoft Graph token not available',
+                'message': 'Please login again to refresh your Graph token',
                 'count': 0,
-                'emails': []
+                'emails': [],
+                'graph_token_status': 'missing'
             }, status=status.HTTP_401_UNAUTHORIZED)
+        
+        logger.info(f"✅ Graph token retrieved for {request.user.username}")
         
         # Get Business Trip emails
         settings = NotificationSettings.get_active()
@@ -245,22 +339,33 @@ def get_outlook_business_trip_emails(request):
                 'id': email.get('id'),
                 'subject': email.get('subject'),
                 'from': email.get('from', {}).get('emailAddress', {}).get('address'),
+                'from_name': email.get('from', {}).get('emailAddress', {}).get('name'),
                 'received_at': email.get('receivedDateTime'),
                 'is_read': email.get('isRead'),
+                'has_attachments': email.get('hasAttachments', False),
+                'importance': email.get('importance'),
                 'preview': email.get('bodyPreview', '')[:200]
             })
         
-        logger.info(f"Found {len(formatted_emails)} emails")
+        logger.info(f"✅ Found {len(formatted_emails)} emails for {request.user.username}")
         
         return Response({
+            'success': True,
             'count': len(formatted_emails),
-            'emails': formatted_emails
+            'emails': formatted_emails,
+            'subject_filter': subject_filter,
+            'graph_token_status': 'valid'
         })
         
     except Exception as e:
         logger.error(f"Error getting Outlook emails: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        
         return Response({
             'error': str(e),
             'count': 0,
-            'emails': []
+            'emails': [],
+            'graph_token_status': 'error'
         }, status=status.HTTP_400_BAD_REQUEST)
+
