@@ -66,7 +66,7 @@ urlpatterns = [
     path('balances/template/', views.download_balance_template, name='vacation-download-balance-template'),
     path('balances/export/', views.export_balances, name='vacation-export-balances'),
     path('balances/update/', views.update_individual_balance, name='vacation-update-individual-balance'),
-    path('balances/reset/', views.reset_employee_balance, name='vacation-reset-employee-balance'),
+
     
     path(
     'vacation-requests/<str:request_id>/attachments/',

@@ -39,13 +39,11 @@ from django.shortcuts import get_object_or_404
 logger = logging.getLogger(__name__)
 good_fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
 warning_fill = PatternFill(start_color="FFEB9C", end_color="FFEB9C", fill_type="solid")
-
-# ✅ Add these imports at the top of vacation_views.py
+from rest_framework import status as rest_status
 from .vacation_notifications import notification_manager
 from .models import UserGraphToken
 from .token_helpers import get_user_tokens
 
-# ✅ Add helper function after imports
 def get_graph_access_token(user):
     """
     Get Microsoft Graph access token for the authenticated user
@@ -147,7 +145,6 @@ def my_vacation_permissions(request):
         )
     }
 )
-
 @api_view(['GET'])
 @has_vacation_permission('vacation.dashboard.view_own')
 @permission_classes([IsAuthenticated])
@@ -979,116 +976,6 @@ def update_individual_balance(request):
         return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 
-# ==================== RESET BALANCE - PUT ====================
-@swagger_auto_schema(
-    method='put',
-    operation_description="Employee balansını sıfırla (used_days və scheduled_days-ı 0 et)",
-    operation_summary="Reset Employee Balance",
-    tags=['Vacation - Settings'],
-    request_body=openapi.Schema(
-        type=openapi.TYPE_OBJECT,
-        required=['employee_id', 'year'],
-        properties={
-            'employee_id': openapi.Schema(
-                type=openapi.TYPE_INTEGER,
-                description='Employee ID',
-                example=15
-            ),
-            'year': openapi.Schema(
-                type=openapi.TYPE_INTEGER,
-                description='İl (məsələn: 2025)',
-                example=2025
-            ),
-            'reset_type': openapi.Schema(
-                type=openapi.TYPE_STRING,
-                enum=['used_only', 'scheduled_only', 'both'],
-                description='Nəyi sıfırlamaq: used_only, scheduled_only, both',
-                example='both'
-            ),
-        }
-    ),
-    responses={
-        200: openapi.Response(
-            description='Balans sıfırlandı',
-            examples={
-                'application/json': {
-                    'message': 'Employee balansı sıfırlandı',
-                    'employee': {
-                        'id': 15,
-                        'name': 'John Doe'
-                    },
-                    'reset_details': {
-                        'previous_used_days': 10.0,
-                        'previous_scheduled_days': 5.0,
-                        'current_used_days': 0.0,
-                        'current_scheduled_days': 0.0,
-                        'reset_type': 'both'
-                    }
-                }
-            }
-        )
-    }
-)
-@api_view(['PUT'])
-@has_vacation_permission('vacation.balance.reset')
-@permission_classes([IsAuthenticated])
-def reset_employee_balance(request):
-    """Employee balansını sıfırla"""
-    try:
-        employee_id = request.data.get('employee_id')
-        year = request.data.get('year')
-        reset_type = request.data.get('reset_type', 'both')
-        
-        if not employee_id or not year:
-            return Response({'error': 'employee_id və year mütləqdir'}, status=status.HTTP_400_BAD_REQUEST)
-        
-        # Employee və balance tap
-        try:
-            employee = Employee.objects.get(id=employee_id, is_deleted=False)
-            balance = EmployeeVacationBalance.objects.get(employee=employee, year=year)
-        except Employee.DoesNotExist:
-            return Response({'error': 'Employee tapılmadı'}, status=status.HTTP_404_NOT_FOUND)
-        except EmployeeVacationBalance.DoesNotExist:
-            return Response({'error': f'{year} ili üçün balans tapılmadı'}, status=status.HTTP_404_NOT_FOUND)
-        
-        # Əvvəlki məlumatları saxla
-        previous_used = float(balance.used_days)
-        previous_scheduled = float(balance.scheduled_days)
-        
-        # Reset et
-        if reset_type in ['used_only', 'both']:
-            balance.used_days = 0
-        
-        if reset_type in ['scheduled_only', 'both']:
-            balance.scheduled_days = 0
-        
-        balance.updated_by = request.user
-        balance.save()
-        
-        return Response({
-            'message': f'Employee balansı sıfırlandı ({reset_type})',
-            'employee': {
-                'id': employee.id,
-                'name': employee.full_name,
-                'employee_id': getattr(employee, 'employee_id', '')
-            },
-            'reset_details': {
-                'previous_used_days': previous_used,
-                'previous_scheduled_days': previous_scheduled,
-                'current_used_days': float(balance.used_days),
-                'current_scheduled_days': float(balance.scheduled_days),
-                'reset_type': reset_type
-            },
-            'current_balance': {
-                'total_balance': float(balance.total_balance),
-                'remaining_balance': float(balance.remaining_balance)
-            },
-            'updated_at': balance.updated_at,
-            'updated_by': request.user.get_full_name() or request.user.username
-        })
-        
-    except Exception as e:
-        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 # ==================== BALANCE MANAGEMENT ====================
 @swagger_auto_schema(
@@ -2544,6 +2431,8 @@ def approve_reject_request(request, pk):
                             'end_date': '2025-10-20',
                             'days': 4.0,
                             'status': 'Approved',
+                            'attachments_count': 2,  # ✅ Added to example
+                            'has_attachments': True,  # ✅ Added to example
                             'created_at': '2025-09-01T10:00:00Z'
                         }
                     ]
@@ -2557,19 +2446,41 @@ def approve_reject_request(request, pk):
 @permission_classes([IsAuthenticated])
 def my_all_requests_schedules(request):
     """My All Requests & Schedules"""
+    from rest_framework import status as http_status
+    
     try:
-        emp = Employee.objects.get(user=request.user)
+        emp = Employee.objects.get(user=request.user, is_deleted=False)
         
-        # All requests
-        requests = VacationRequest.objects.filter(employee=emp, is_deleted=False).order_by('-created_at')
+        # All requests - ✅ Add prefetch for attachments
+        requests = VacationRequest.objects.filter(
+            employee=emp, 
+            is_deleted=False
+        ).select_related(
+            'vacation_type',
+            'line_manager',
+            'hr_representative',
+            'line_manager_approved_by',
+            'hr_approved_by',
+            'rejected_by'
+        ).prefetch_related('attachments').order_by('-created_at')  # ✅ Added prefetch
         
         # All schedules
-        schedules = VacationSchedule.objects.filter(employee=emp, is_deleted=False).order_by('-start_date')
+        schedules = VacationSchedule.objects.filter(
+            employee=emp, 
+            is_deleted=False
+        ).select_related(
+            'vacation_type',
+            'created_by',
+            'last_edited_by'
+        ).order_by('-start_date')
         
         # Combine
         combined = []
         
         for req in requests:
+            # ✅ Count attachments
+            attachments_count = req.attachments.filter(is_deleted=False).count()
+            
             combined.append({
                 'id': req.id,
                 'type': 'request',
@@ -2580,8 +2491,16 @@ def my_all_requests_schedules(request):
                 'return_date': req.return_date.strftime('%Y-%m-%d') if req.return_date else '',
                 'days': float(req.number_of_days),
                 'status': req.get_status_display(),
+                'status_code': req.status,
                 'comment': req.comment,
-                'created_at': req.created_at
+                'attachments_count': attachments_count,  # ✅ Added
+                'has_attachments': attachments_count > 0,  # ✅ Added
+                'line_manager': req.line_manager.full_name if req.line_manager else '',
+                'hr_representative': req.hr_representative.full_name if req.hr_representative else '',
+                'line_manager_comment': req.line_manager_comment,
+                'hr_comment': req.hr_comment,
+                'rejection_reason': req.rejection_reason,
+                'created_at': req.created_at.isoformat() if req.created_at else None
             })
         
         for sch in schedules:
@@ -2595,20 +2514,36 @@ def my_all_requests_schedules(request):
                 'return_date': sch.return_date.strftime('%Y-%m-%d') if sch.return_date else '',
                 'days': float(sch.number_of_days),
                 'status': sch.get_status_display(),
+                'status_code': sch.status,
                 'comment': sch.comment,
-                'created_at': sch.created_at,
+                'attachments_count': 0,  # ✅ Schedules don't have attachments
+                'has_attachments': False,  # ✅ Added
+                'created_at': sch.created_at.isoformat() if sch.created_at else None,
                 'can_edit': sch.can_edit(),
-                'edit_count': sch.edit_count
+                'edit_count': sch.edit_count,
+                'created_by': sch.created_by.get_full_name() if sch.created_by else '',
+                'last_edited_by': sch.last_edited_by.get_full_name() if sch.last_edited_by else '',
+                'last_edited_at': sch.last_edited_at.isoformat() if sch.last_edited_at else None
             })
         
-        combined.sort(key=lambda x: x['created_at'], reverse=True)
+        combined.sort(key=lambda x: x['created_at'] if x['created_at'] else '', reverse=True)
         
-        return Response({'records': combined})
+        return Response({
+            'records': combined,
+            'total_count': len(combined),
+            'requests_count': requests.count(),
+            'schedules_count': schedules.count()
+        })
+        
     except Employee.DoesNotExist:
-        return Response({'error': 'Employee profili tapılmadı'}, status=status.HTTP_404_NOT_FOUND)
+        return Response({
+            'error': 'Employee profili tapılmadı'
+        }, status=http_status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
-
+        logger.error(f"Error in my_all_requests_schedules: {e}")
+        return Response({
+            'error': str(e)
+        }, status=http_status.HTTP_400_BAD_REQUEST)
 @swagger_auto_schema(
     method='get',
     operation_description="Get detailed information of a vacation request including attachments and approval history",
@@ -2825,6 +2760,13 @@ def get_vacation_request_detail(request, pk):
             description="Employee adı filteri",
             type=openapi.TYPE_STRING,
             required=False
+        ),
+        openapi.Parameter(
+            'year',
+            openapi.IN_QUERY,
+            description="İl filteri (məsələn: 2025)",
+            type=openapi.TYPE_INTEGER,
+            required=False
         )
     ],
     responses={
@@ -2860,25 +2802,25 @@ def get_vacation_request_detail(request, pk):
 @has_vacation_permission('vacation.request.view_all')
 @permission_classes([IsAuthenticated])
 def all_vacation_records(request):
-    """Bütün vacation records-u enhanced formatda export et"""
+    """Bütün vacation records-u JSON formatında list qaytarır"""
+    from rest_framework import status as http_status
+    
     try:
         # Filter parameters
-        status = request.GET.get('status')
+        status_filter = request.GET.get('status')
         vacation_type_id = request.GET.get('vacation_type_id')
         department_id = request.GET.get('department_id')
         start_date = request.GET.get('start_date')
         end_date = request.GET.get('end_date')
         employee_name = request.GET.get('employee_name')
         year = request.GET.get('year')
-        export_format = request.GET.get('format', 'dashboard')
-        include_charts = request.GET.get('include_charts', 'true').lower() == 'true'
         
-        # All requests
+        # All requests - ✅ Add prefetch for attachments
         requests_qs = VacationRequest.objects.filter(is_deleted=False).select_related(
             'employee', 'employee__department', 'employee__business_function', 
             'vacation_type', 'line_manager', 'hr_representative',
             'line_manager_approved_by', 'hr_approved_by', 'rejected_by'
-        )
+        ).prefetch_related('attachments')  # ✅ Added
         
         # All schedules  
         schedules_qs = VacationSchedule.objects.filter(is_deleted=False).select_related(
@@ -2886,10 +2828,10 @@ def all_vacation_records(request):
             'vacation_type', 'created_by', 'last_edited_by'
         )
         
-        # Apply filters
-        if status:
-            requests_qs = requests_qs.filter(status=status)
-            schedules_qs = schedules_qs.filter(status=status)
+        # Apply filters (same as before)
+        if status_filter:
+            requests_qs = requests_qs.filter(status=status_filter)
+            schedules_qs = schedules_qs.filter(status=status_filter)
         
         if vacation_type_id:
             requests_qs = requests_qs.filter(vacation_type_id=vacation_type_id)
@@ -2919,233 +2861,18 @@ def all_vacation_records(request):
         requests = requests_qs.order_by('-created_at')
         schedules = schedules_qs.order_by('-created_at')
         
-        wb = Workbook()
-        
-        # Define enhanced styles
-        title_font = Font(size=18, bold=True, color="1F4E79")
-        subtitle_font = Font(size=14, bold=True, color="2B4C7E")
-        header_fill = PatternFill(start_color="1F4E79", end_color="1F4E79", fill_type="solid")
-        header_font = Font(color="FFFFFF", bold=True, size=11)
-        
-        # Status colors
-        status_colors = {
-            'APPROVED': PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid"),
-            'PENDING_LINE_MANAGER': PatternFill(start_color="FFEB9C", end_color="FFEB9C", fill_type="solid"),
-            'PENDING_HR': PatternFill(start_color="E6E6FA", end_color="E6E6FA", fill_type="solid"),
-            'REJECTED_LINE_MANAGER': PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid"),
-            'REJECTED_HR': PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid"),
-            'SCHEDULED': PatternFill(start_color="DAEEF3", end_color="DAEEF3", fill_type="solid"),
-            'REGISTERED': PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid"),
-        }
-        
-        if export_format == 'dashboard':
-            # DASHBOARD SHEET
-            ws_dashboard = wb.active
-            ws_dashboard.title = "Dashboard"
-            
-            # Main title
-            ws_dashboard['A1'] = 'VACATION MANAGEMENT DASHBOARD'
-            ws_dashboard['A1'].font = title_font
-            ws_dashboard.merge_cells('A1:H1')
-            ws_dashboard['A1'].alignment = Alignment(horizontal='center')
-            
-            # Applied filters info
-            filter_info = []
-            if status: filter_info.append(f"Status: {status}")
-            if department_id: filter_info.append(f"Department ID: {department_id}")
-            if year: filter_info.append(f"Year: {year}")
-            if vacation_type_id: filter_info.append(f"Vacation Type ID: {vacation_type_id}")
-            
-            if filter_info:
-                ws_dashboard['A2'] = f'Applied Filters: {", ".join(filter_info)}'
-                ws_dashboard['A2'].font = Font(size=10, italic=True)
-                ws_dashboard.merge_cells('A2:H2')
-            
-            ws_dashboard['A3'] = f'Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}'
-            ws_dashboard['A3'].font = Font(size=10)
-            
-            # Key Statistics
-            ws_dashboard['A5'] = 'KEY STATISTICS'
-            ws_dashboard['A5'].font = subtitle_font
-            
-            # Calculate statistics
-            total_requests = requests.count()
-            total_schedules = schedules.count()
-            approved_requests = requests.filter(status='APPROVED').count()
-            pending_requests = requests.exclude(status__in=['APPROVED', 'REJECTED_LINE_MANAGER', 'REJECTED_HR']).count()
-            rejected_requests = requests.filter(status__in=['REJECTED_LINE_MANAGER', 'REJECTED_HR']).count()
-            
-            total_vacation_days = sum(float(req.number_of_days) for req in requests) + sum(float(sch.number_of_days) for sch in schedules)
-            
-            # Unique employees
-            unique_employees = set()
-            for req in requests:
-                unique_employees.add(req.employee.id)
-            for sch in schedules:
-                unique_employees.add(sch.employee.id)
-            
-            stats_data = [
-                ['Metric', 'Value', 'Percentage'],
-                ['Total Requests', total_requests, ''],
-                ['Approved Requests', approved_requests, f'{(approved_requests/total_requests*100):.1f}%' if total_requests > 0 else '0%'],
-                ['Pending Requests', pending_requests, f'{(pending_requests/total_requests*100):.1f}%' if total_requests > 0 else '0%'],
-                ['Rejected Requests', rejected_requests, f'{(rejected_requests/total_requests*100):.1f}%' if total_requests > 0 else '0%'],
-                ['Total Schedules', total_schedules, ''],
-                ['Total Records', total_requests + total_schedules, ''],
-                ['Unique Employees', len(unique_employees), ''],
-                ['Total Vacation Days', f'{total_vacation_days:.1f}', ''],
-                ['Avg Days per Request', f'{total_vacation_days/(total_requests+total_schedules):.1f}' if (total_requests+total_schedules) > 0 else '0', '']
-            ]
-            
-            for row, (metric, value, percentage) in enumerate(stats_data, 7):
-                ws_dashboard[f'A{row}'] = metric
-                ws_dashboard[f'B{row}'] = value
-                ws_dashboard[f'C{row}'] = percentage
-                
-                if row == 7:  # Header
-                    for col in ['A', 'B', 'C']:
-                        cell = ws_dashboard[f'{col}{row}']
-                        cell.fill = header_fill
-                        cell.font = header_font
-                        cell.border = Border(
-                            left=Side(style='thin'), right=Side(style='thin'),
-                            top=Side(style='thin'), bottom=Side(style='thin')
-                        )
-                else:
-                    # Color code certain rows
-                    if 'Approved' in metric:
-                        fill = status_colors.get('APPROVED')
-                    elif 'Rejected' in metric:
-                        fill = status_colors.get('REJECTED_LINE_MANAGER')
-                    elif 'Pending' in metric:
-                        fill = status_colors.get('PENDING_LINE_MANAGER')
-                    else:
-                        fill = PatternFill(start_color="F8F9FA", end_color="F8F9FA", fill_type="solid")
-                    
-                    for col in ['A', 'B', 'C']:
-                        ws_dashboard[f'{col}{row}'].fill = fill
-            
-            # Department Breakdown
-            ws_dashboard['E5'] = 'DEPARTMENT BREAKDOWN'
-            ws_dashboard['E5'].font = subtitle_font
-            
-            # Get department statistics
-            from django.db.models import Count, Sum
-            dept_requests = requests.values('employee__department__name').annotate(
-                count=Count('id'),
-                total_days=Sum('number_of_days')
-            ).order_by('-count')[:10]
-            
-            dept_headers = ['Department', 'Requests', 'Total Days']
-            for col, header in enumerate(dept_headers, 5):  # Column E, F, G
-                cell = ws_dashboard.cell(row=7, column=col, value=header)
-                cell.fill = header_fill
-                cell.font = header_font
-            
-            for row, dept in enumerate(dept_requests, 8):
-                ws_dashboard[f'E{row}'] = dept['employee__department__name'] or 'No Department'
-                ws_dashboard[f'F{row}'] = dept['count']
-                ws_dashboard[f'G{row}'] = float(dept['total_days'] or 0)
-            
-            if year:
-                ws_dashboard['A18'] = 'MONTHLY TREND'
-                ws_dashboard['A18'].font = subtitle_font
-                
-                # ✅ Yalnız data olan ayları tap
-                monthly_data = []
-                for month in range(1, 13):
-                    month_requests = requests.filter(start_date__year=year, start_date__month=month).count()
-                    month_schedules = schedules.filter(start_date__year=year, start_date__month=month).count()
-                    
-                    # ✅ Yalnız data varsa əlavə et
-                    if month_requests > 0 or month_schedules > 0:
-                        monthly_data.append([
-                            datetime(int(year), month, 1).strftime('%B'),
-                            month_requests,
-                            month_schedules,
-                            month_requests + month_schedules
-                        ])
-                
-                # ✅ Əgər data varsa göstər
-                if monthly_data:
-                    monthly_headers = ['Month', 'Requests', 'Schedules', 'Total']
-                    for col, header in enumerate(monthly_headers, 1):
-                        cell = ws_dashboard.cell(row=20, column=col, value=header)
-                        cell.fill = header_fill
-                        cell.font = header_font
-                    
-                    for row, data in enumerate(monthly_data, 21):
-                        for col, value in enumerate(data, 1):
-                            ws_dashboard.cell(row=row, column=col, value=value)
-                    # COMBINED DATA SHEET (always include)
-                    ws_combined = wb.create_sheet("All Records") if export_format == 'dashboard' else wb.active
-                    if export_format != 'dashboard':
-                        ws_combined.title = "All Records"
-        
-        # Enhanced headers with more details
-        combined_headers = [
-            'Type', 'ID', 'Employee Name', 'Employee ID', 'Department', 'Business Function',
-            'Vacation Type', 'Start Date', 'End Date', 'Return Date', 'Working Days',
-            'Status', 'Comment', 'Approval Chain', 'Timeline', 'Performance Score',
-            'Created At', 'Updated At'
-        ]
-        
-        # Apply header styling
-        for col, header in enumerate(combined_headers, 1):
-            cell = ws_combined.cell(row=1, column=col, value=header)
-            cell.fill = header_fill
-            cell.font = header_font
-            cell.border = Border(
-                left=Side(style='thin'), right=Side(style='thin'),
-                top=Side(style='thin'), bottom=Side(style='thin')
-            )
-        
-        # Combine and process all records
+        # Combine all records
         all_records = []
         
-        # Add requests with enhanced data
+        # Add requests
         for req in requests:
-            # Create approval chain
-            approval_chain = []
-            if req.line_manager_approved_at:
-                approval_chain.append('LM ✓')
-            elif req.status == 'PENDING_LINE_MANAGER':
-                approval_chain.append('LM ⏳')
-            elif req.status == 'REJECTED_LINE_MANAGER':
-                approval_chain.append('LM ✗')
-            
-            if req.hr_approved_at:
-                approval_chain.append('HR ✓')
-            elif req.status == 'PENDING_HR':
-                approval_chain.append('HR ⏳')
-            elif req.status == 'REJECTED_HR':
-                approval_chain.append('HR ✗')
-            
-            # Create timeline
-            timeline = f"Created: {req.created_at.strftime('%m/%d')}"
-            if req.line_manager_approved_at:
-                timeline += f" → LM: {req.line_manager_approved_at.strftime('%m/%d')}"
-            if req.hr_approved_at:
-                timeline += f" → HR: {req.hr_approved_at.strftime('%m/%d')}"
-            if req.rejected_at:
-                timeline += f" → Rejected: {req.rejected_at.strftime('%m/%d')}"
-            
-            # Performance score (days from creation to approval)
-            perf_score = 'N/A'
-            if req.status == 'APPROVED' and req.hr_approved_at:
-                days_to_approve = (req.hr_approved_at.date() - req.created_at.date()).days
-                if days_to_approve <= 3:
-                    perf_score = 'Excellent'
-                elif days_to_approve <= 7:
-                    perf_score = 'Good'
-                elif days_to_approve <= 14:
-                    perf_score = 'Fair'
-                else:
-                    perf_score = 'Slow'
+            # ✅ Count attachments (only non-deleted)
+            attachments_count = req.attachments.filter(is_deleted=False).count()
             
             all_records.append({
-                'type': 'Request',
-                'id': req.request_id,
+                'id': req.id,
+                'type': 'request',
+                'request_id': req.request_id,
                 'employee_name': req.employee.full_name,
                 'employee_id': getattr(req.employee, 'employee_id', ''),
                 'department': req.employee.department.name if req.employee.department else '',
@@ -3154,26 +2881,24 @@ def all_vacation_records(request):
                 'start_date': req.start_date.strftime('%Y-%m-%d'),
                 'end_date': req.end_date.strftime('%Y-%m-%d'),
                 'return_date': req.return_date.strftime('%Y-%m-%d') if req.return_date else '',
-                'working_days': float(req.number_of_days),
+                'days': float(req.number_of_days),
                 'status': req.get_status_display(),
+                'status_code': req.status,
                 'comment': req.comment,
-                'approval_chain': ' | '.join(approval_chain),
-                'timeline': timeline,
-                'performance_score': perf_score,
-                'created_at': req.created_at,
-                'updated_at': req.updated_at,
-                'status_raw': req.status
+                'line_manager': req.line_manager.full_name if req.line_manager else '',
+                'hr_representative': req.hr_representative.full_name if req.hr_representative else '',
+                'attachments_count': attachments_count,  # ✅ Added
+                'has_attachments': attachments_count > 0,  # ✅ Added - helper boolean
+                'created_at': req.created_at.isoformat() if req.created_at else None,
+                'updated_at': req.updated_at.isoformat() if req.updated_at else None
             })
         
-        # Add schedules with enhanced data
+        # Add schedules
         for sch in schedules:
-            timeline = f"Created: {sch.created_at.strftime('%m/%d')}"
-            if sch.last_edited_at:
-                timeline += f" → Edited: {sch.last_edited_at.strftime('%m/%d')}"
-            
             all_records.append({
-                'type': 'Schedule',
-                'id': f'SCH{sch.id}',
+                'id': sch.id,
+                'type': 'schedule',
+                'request_id': f'SCH{sch.id}',
                 'employee_name': sch.employee.full_name,
                 'employee_id': getattr(sch.employee, 'employee_id', ''),
                 'department': sch.employee.department.name if sch.employee.department else '',
@@ -3182,142 +2907,43 @@ def all_vacation_records(request):
                 'start_date': sch.start_date.strftime('%Y-%m-%d'),
                 'end_date': sch.end_date.strftime('%Y-%m-%d'),
                 'return_date': sch.return_date.strftime('%Y-%m-%d') if sch.return_date else '',
-                'working_days': float(sch.number_of_days),
+                'days': float(sch.number_of_days),
                 'status': sch.get_status_display(),
+                'status_code': sch.status,
                 'comment': sch.comment,
-                'approval_chain': 'No Approval Required',
-                'timeline': timeline,
-                'performance_score': f'Edits: {sch.edit_count}',
-                'created_at': sch.created_at,
-                'updated_at': sch.updated_at,
-                'status_raw': sch.status
+                'can_edit': sch.can_edit(),
+                'edit_count': sch.edit_count,
+                'created_by': sch.created_by.get_full_name() if sch.created_by else '',
+                'attachments_count': 0,  # ✅ Schedules don't have attachments
+                'has_attachments': False,  # ✅ Added
+                'created_at': sch.created_at.isoformat() if sch.created_at else None,
+                'updated_at': sch.updated_at.isoformat() if sch.updated_at else None
             })
         
         # Sort by created_at desc
-        all_records.sort(key=lambda x: x['created_at'] if x['created_at'] else datetime.min, reverse=True)
+        all_records.sort(key=lambda x: x['created_at'] if x['created_at'] else '', reverse=True)
         
-        # Add enhanced data to combined sheet
-        for row, record in enumerate(all_records, 2):
-            data_row = [
-                record['type'],
-                record['id'],
-                record['employee_name'],
-                record['employee_id'],
-                record['department'],
-                record['business_function'],
-                record['vacation_type'],
-                record['start_date'],
-                record['end_date'],
-                record['return_date'],
-                record['working_days'],
-                record['status'],
-                record['comment'],
-                record['approval_chain'],
-                record['timeline'],
-                record['performance_score'],
-                record['created_at'].strftime('%Y-%m-%d %H:%M') if record['created_at'] else '',
-                record['updated_at'].strftime('%Y-%m-%d %H:%M') if record['updated_at'] else ''
-            ]
-            
-            for col, value in enumerate(data_row, 1):
-                cell = ws_combined.cell(row=row, column=col, value=value)
-                
-                # Apply status color coding
-                if col == 12:  # Status column
-                    cell.fill = status_colors.get(record['status_raw'], PatternFill())
-                
-                # Apply conditional formatting
-                if col == 16:  # Performance score
-                    if value == 'Excellent':
-                        cell.fill = status_colors.get('APPROVED')
-                    elif value == 'Slow':
-                        cell.fill = status_colors.get('REJECTED_LINE_MANAGER')
-                
-                # Center align certain columns
-                if col in [1, 11, 12, 16]:
-                    cell.alignment = Alignment(horizontal='center')
-                elif col in [11]:  # Working days - right align
-                    cell.alignment = Alignment(horizontal='right')
-        
-        # Create table for better formatting
-        if len(all_records) > 0:
-            table_range = f"A1:{get_column_letter(len(combined_headers))}{len(all_records) + 1}"
-            table = Table(displayName="VacationRecords", ref=table_range)
-            style = TableStyleInfo(
-                name="TableStyleMedium9", 
-                showFirstColumn=False,
-                showLastColumn=False, 
-                showRowStripes=True, 
-                showColumnStripes=False
-            )
-            table.tableStyleInfo = style
-            ws_combined.add_table(table)
-        
-        # Add charts if requested
-        if include_charts and len(all_records) > 0 and export_format == 'dashboard':
-            # Status distribution chart on dashboard
-            ws_chart = wb.create_sheet("Analytics")
-            
-            # Status distribution data
-            status_counts = {}
-            for record in all_records:
-                status = record['status_raw']
-                status_counts[status] = status_counts.get(status, 0) + 1
-            
-            # Create status chart data
-            chart_headers = ['Status', 'Count']
-            ws_chart.cell(row=1, column=1, value=chart_headers[0]).font = header_font
-            ws_chart.cell(row=1, column=2, value=chart_headers[1]).font = header_font
-            
-            for row, (status, count) in enumerate(status_counts.items(), 2):
-                ws_chart.cell(row=row, column=1, value=status)
-                ws_chart.cell(row=row, column=2, value=count)
-            
-            # Create chart
-            from openpyxl.chart import PieChart
-            chart = PieChart()
-            chart.title = "Status Distribution"
-            chart.style = 26
-            
-            data = Reference(ws_chart, min_col=2, min_row=1, max_row=len(status_counts) + 1)
-            cats = Reference(ws_chart, min_col=1, min_row=2, max_row=len(status_counts) + 1)
-            chart.add_data(data, titles_from_data=True)
-            chart.set_categories(cats)
-            
-            ws_chart.add_chart(chart, "D2")
-        
-        # Auto-adjust column widths for all sheets
-        for ws_current in wb.worksheets:
-            for column in ws_current.columns:
-                max_length = 0
-                column_letter = get_column_letter(column[0].column)
-                for cell in column:
-                    try:
-                        if len(str(cell.value)) > max_length:
-                            max_length = len(str(cell.value))
-                    except:
-                        pass
-                adjusted_width = min(max_length + 2, 60)
-                ws_current.column_dimensions[column_letter].width = adjusted_width
-        
-        # Generate enhanced filename
-        filter_parts = []
-        if status: filter_parts.append(f"status_{status}")
-        if department_id: filter_parts.append(f"dept_{department_id}")
-        if year: filter_parts.append(f"year_{year}")
-        if vacation_type_id: filter_parts.append(f"type_{vacation_type_id}")
-        
-        filter_str = "_".join(filter_parts) if filter_parts else "all"
-        filename = f'vacation_records_enhanced_{filter_str}_{export_format}_{date.today().strftime("%Y%m%d")}.xlsx'
-        
-        response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-        response['Content-Disposition'] = f'attachment; filename={filename}'
-        wb.save(response)
-        
-        return response
+        return Response({
+            'records': all_records,
+            'total_count': len(all_records),
+            'requests_count': requests.count(),
+            'schedules_count': schedules.count(),
+            'filters_applied': {
+                'status': status_filter,
+                'vacation_type_id': vacation_type_id,
+                'department_id': department_id,
+                'start_date': start_date,
+                'end_date': end_date,
+                'employee_name': employee_name,
+                'year': year
+            }
+        })
         
     except Exception as e:
-        return Response({'error': f'Export error: {str(e)}'}, status=status.HTTP_400_BAD_REQUEST)
+        logger.error(f"Error in all_vacation_records: {e}")
+        return Response({
+            'error': f'Error retrieving records: {str(e)}'
+        }, status=http_status.HTTP_400_BAD_REQUEST)
 
 @swagger_auto_schema(
     method='get',
@@ -3402,7 +3028,7 @@ def export_all_vacation_records(request):
     
     try:
         # Filter parameters
-        status = request.GET.get('status')
+        status_filter = request.GET.get('status')
         vacation_type_id = request.GET.get('vacation_type_id')
         department_id = request.GET.get('department_id')
         start_date = request.GET.get('start_date')
@@ -3461,9 +3087,9 @@ def export_all_vacation_records(request):
             schedules_qs = schedules_qs.filter(employee__user=request.user)
         
         # Apply other filters (existing code)
-        if status:
-            requests_qs = requests_qs.filter(status=status)
-            schedules_qs = schedules_qs.filter(status=status)
+        if status_filter:  # ✅ Changed from 'status'
+            requests_qs = requests_qs.filter(status=status_filter)
+            schedules_qs = schedules_qs.filter(status=status_filter)
         
         if vacation_type_id:
             requests_qs = requests_qs.filter(vacation_type_id=vacation_type_id)
@@ -3703,8 +3329,8 @@ def export_all_vacation_records(request):
         
         # Generate filename
         filter_parts = []
-        if status:
-            filter_parts.append(f"status_{status}")
+        if status_filter:
+            filter_parts.append(f"status_{status_filter}")
         if department_id:
             filter_parts.append(f"dept_{department_id}")
         if year:

@@ -3561,20 +3561,23 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                         notes = safe_get('notes')
                         
                         # Create user
-                        user_obj = User.objects.create_user(
-                            username=email,
-                            email=email,
-                            first_name=first_name,
-                            last_name=last_name
-                        )
+                        # user_obj = User.objects.create_user(
+                        #     username=email,
+                        #     email=email,
+                        #     first_name=first_name,
+                        #     last_name=last_name
+                        # )
                         
                         # Create employee
                         employee = Employee.objects.create(
-                            user=user_obj,
+                            # user=user_obj,
+                            first_name=first_name,  # 🆕 ƏLAVƏ ET
+                            last_name=last_name,    
                             employee_id=employee_id,
                             date_of_birth=date_of_birth,
                             gender=gender,
                             father_name=father_name,
+                            email=email, 
                             address=address,
                             phone=phone,
                             emergency_contact=emergency_contact,

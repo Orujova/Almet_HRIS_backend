@@ -265,9 +265,6 @@ class TripApprovalSerializer(serializers.Serializer):
             raise serializers.ValidationError("Rejection reason is required")
         return data
 
-# ============= EMPLOYEE SEARCH =============
-
-class EmployeeSearchSerializer(serializers.ModelSerializer):
     department_name = serializers.CharField(source='department.name', read_only=True)
     business_function_name = serializers.CharField(source='business_function.name', read_only=True)
     unit_name = serializers.CharField(source='unit.name', read_only=True)
