@@ -46,7 +46,6 @@ from .models import (
     EmployeeActivity, VacantPosition, ContractTypeConfig,
     ContractStatusManager, EmployeeArchive,
     UserGraphToken,  # ⭐ ADD THIS - Graph token model
-    MicrosoftUser,   # ⭐ ADD THIS if you use it elsewhere
 )
 
 from .serializers import (
@@ -841,7 +840,7 @@ class DepartmentViewSet(viewsets.ModelViewSet):
     ordering = ['business_function__code']
 
 class UnitViewSet(viewsets.ModelViewSet):
-    queryset = Unit.objects.select_related('department__business_function', 'unit_head').all()
+    queryset = Unit.objects.select_related('department__business_function').all()
     serializer_class = UnitSerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]

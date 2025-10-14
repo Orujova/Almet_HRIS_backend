@@ -1,4 +1,4 @@
-# api/vacation_serializers.py - Enhanced Serializers
+# api/vacation_serializers.py - COMPLETE FINAL VERSION
 
 from rest_framework import serializers
 from .vacation_models import *
@@ -116,10 +116,34 @@ class VacationTypeSerializer(serializers.ModelSerializer):
         read_only_fields = ['created_by', 'updated_by']
 
 
+# ============= ATTACHMENT SERIALIZERS =============
 
+class VacationAttachmentSerializer(serializers.ModelSerializer):
+    """Vacation attachment serializer with file URLs"""
+    file_url = serializers.SerializerMethodField()
+    file_size_display = serializers.ReadOnlyField()
+    uploaded_by_name = serializers.CharField(source='uploaded_by.get_full_name', read_only=True)
+    
+    class Meta:
+        model = VacationAttachment
+        fields = [
+            'id', 'file', 'file_url', 'original_filename', 
+            'file_size', 'file_size_display', 'file_type', 
+            'uploaded_by_name', 'uploaded_at'
+        ]
+        read_only_fields = ['file_size', 'uploaded_by', 'uploaded_at']
+    
+    def get_file_url(self, obj):
+        request = self.context.get('request')
+        if obj.file and hasattr(obj.file, 'url'):
+            if request:
+                return request.build_absolute_uri(obj.file.url)
+            return obj.file.url
+        return None
 
 
 # ============= BALANCE =============
+
 class EmployeeVacationBalanceSerializer(serializers.ModelSerializer):
     employee_name = serializers.CharField(source='employee.full_name', read_only=True)
     employee_id = serializers.CharField(source='employee.employee_id', read_only=True)
@@ -135,35 +159,49 @@ class EmployeeVacationBalanceSerializer(serializers.ModelSerializer):
                   'remaining_balance', 'should_be_planned', 'updated_at']
 
 
-# ============= REQUEST =============
+# ============= REQUEST SERIALIZERS =============
+
 class VacationRequestListSerializer(serializers.ModelSerializer):
+    """List serializer for vacation requests"""
     employee_name = serializers.CharField(source='employee.full_name', read_only=True)
     employee_id = serializers.CharField(source='employee.employee_id', read_only=True)
     department_name = serializers.CharField(source='employee.department.name', read_only=True)
     vacation_type_name = serializers.CharField(source='vacation_type.name', read_only=True)
     status_display = serializers.CharField(source='get_status_display', read_only=True)
+    attachments_count = serializers.SerializerMethodField()
     
     class Meta:
         model = VacationRequest
-        fields = ['id', 'request_id', 'employee_name', 'employee_id', 'department_name', 
-                  'vacation_type_name', 'start_date', 'end_date', 'return_date', 'number_of_days', 
-                  'status', 'status_display', 'comment', 'created_at']
+        fields = [
+            'id', 'request_id', 'employee_name', 'employee_id', 'department_name', 
+            'vacation_type_name', 'start_date', 'end_date', 'return_date', 'number_of_days', 
+            'status', 'status_display', 'comment', 'attachments_count', 'created_at'
+        ]
+    
+    def get_attachments_count(self, obj):
+        return obj.attachments.filter(is_deleted=False).count()
 
 
 class VacationRequestDetailSerializer(serializers.ModelSerializer):
+    """Detailed serializer for vacation requests with all information"""
     employee_info = serializers.SerializerMethodField()
     vacation_type_detail = VacationTypeSerializer(source='vacation_type', read_only=True)
     status_display = serializers.CharField(source='get_status_display', read_only=True)
     line_manager_name = serializers.CharField(source='line_manager.full_name', read_only=True)
     hr_representative_name = serializers.CharField(source='hr_representative.full_name', read_only=True)
+    attachments = serializers.SerializerMethodField()
     
     class Meta:
         model = VacationRequest
-        fields = ['id', 'request_id', 'employee_info', 'vacation_type_detail', 'start_date', 'end_date', 
-                  'return_date', 'number_of_days', 'comment', 'status', 'status_display',
-                  'line_manager_name', 'line_manager_comment', 'line_manager_approved_at',
-                  'hr_representative_name', 'hr_comment', 'hr_approved_at',
-                  'rejection_reason', 'rejected_at', 'created_at']
+        fields = [
+            'id', 'request_id', 'employee_info', 'vacation_type_detail', 
+            'start_date', 'end_date', 'return_date', 'number_of_days', 
+            'comment', 'status', 'status_display',
+            'line_manager_name', 'line_manager_comment', 'line_manager_approved_at',
+            'hr_representative_name', 'hr_comment', 'hr_approved_at',
+            'rejection_reason', 'rejected_at', 
+            'attachments', 'created_at', 'updated_at'
+        ]
     
     def get_employee_info(self, obj):
         return {
@@ -172,8 +210,18 @@ class VacationRequestDetailSerializer(serializers.ModelSerializer):
             'employee_id': getattr(obj.employee, 'employee_id', ''),
             'department': obj.employee.department.name if obj.employee.department else None,
             'business_function': obj.employee.business_function.name if obj.employee.business_function else None,
+            'unit': obj.employee.unit.name if obj.employee.unit else None,
+            'job_function': obj.employee.job_function.name if obj.employee.job_function else None,
             'phone': obj.employee.phone
         }
+    
+    def get_attachments(self, obj):
+        attachments = obj.attachments.filter(is_deleted=False).order_by('-uploaded_at')
+        return VacationAttachmentSerializer(
+            attachments,
+            many=True,
+            context=self.context
+        ).data
 
 
 class EmployeeManualSerializer(serializers.Serializer):
@@ -187,6 +235,7 @@ class EmployeeManualSerializer(serializers.Serializer):
 
 
 class VacationRequestCreateSerializer(serializers.Serializer):
+    """Serializer for creating vacation requests"""
     requester_type = serializers.ChoiceField(choices=['for_me', 'for_my_employee'])
     employee_id = serializers.IntegerField(required=False)
     employee_manual = EmployeeManualSerializer(required=False)
@@ -218,6 +267,7 @@ class VacationRequestCreateSerializer(serializers.Serializer):
 
 
 class VacationApprovalSerializer(serializers.Serializer):
+    """Serializer for approval/rejection actions"""
     action = serializers.ChoiceField(choices=['approve', 'reject'])
     comment = serializers.CharField(required=False, allow_blank=True)
     reason = serializers.CharField(required=False, allow_blank=True)
@@ -228,26 +278,91 @@ class VacationApprovalSerializer(serializers.Serializer):
         return data
 
 
-# ============= SCHEDULE =============
+# ============= SCHEDULE SERIALIZERS =============
+
 class VacationScheduleSerializer(serializers.ModelSerializer):
+    """List serializer for vacation schedules"""
     employee_name = serializers.CharField(source='employee.full_name', read_only=True)
     employee_id = serializers.CharField(source='employee.employee_id', read_only=True)
     department_name = serializers.CharField(source='employee.department.name', read_only=True)
     vacation_type_name = serializers.CharField(source='vacation_type.name', read_only=True)
+    vacation_type_detail = VacationTypeSerializer(source='vacation_type', read_only=True)
     status_display = serializers.CharField(source='get_status_display', read_only=True)
     can_edit = serializers.SerializerMethodField()
+    created_by_name = serializers.CharField(source='created_by.get_full_name', read_only=True)
+    last_edited_by_name = serializers.CharField(source='last_edited_by.get_full_name', read_only=True)
     
     class Meta:
         model = VacationSchedule
-        fields = ['id', 'employee_name', 'employee_id', 'department_name', 'vacation_type_name', 
-                  'start_date', 'end_date', 'return_date', 'number_of_days', 'status', 'status_display',
-                  'edit_count', 'can_edit', 'comment', 'created_at']
+        fields = [
+            'id', 'employee_name', 'employee_id', 'department_name', 
+            'vacation_type_name', 'vacation_type_detail',
+            'start_date', 'end_date', 'return_date', 'number_of_days', 
+            'status', 'status_display',
+            'edit_count', 'can_edit', 
+            'created_by_name', 'last_edited_by_name',
+            'last_edited_at',
+            'comment', 'created_at', 'updated_at'
+        ]
     
     def get_can_edit(self, obj):
         return obj.can_edit()
 
 
+class VacationScheduleDetailSerializer(serializers.ModelSerializer):
+    """Detailed serializer for vacation schedule with all information"""
+    employee_info = serializers.SerializerMethodField()
+    vacation_type_detail = VacationTypeSerializer(source='vacation_type', read_only=True)
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    can_edit = serializers.SerializerMethodField()
+    created_by_name = serializers.CharField(source='created_by.get_full_name', read_only=True)
+    created_by_email = serializers.CharField(source='created_by.email', read_only=True)
+    last_edited_by_name = serializers.CharField(source='last_edited_by.get_full_name', read_only=True)
+    edit_history = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = VacationSchedule
+        fields = [
+            'id', 'employee_info', 'vacation_type_detail', 
+            'start_date', 'end_date', 'return_date', 'number_of_days',
+            'status', 'status_display', 'comment',
+            'edit_count', 'can_edit', 'edit_history',
+            'created_by_name', 'created_by_email',
+            'last_edited_by_name', 'last_edited_at',
+            'created_at', 'updated_at'
+        ]
+    
+    def get_employee_info(self, obj):
+        return {
+            'id': obj.employee.id,
+            'name': obj.employee.full_name,
+            'employee_id': getattr(obj.employee, 'employee_id', ''),
+            'department': obj.employee.department.name if obj.employee.department else None,
+            'business_function': obj.employee.business_function.name if obj.employee.business_function else None,
+            'unit': obj.employee.unit.name if obj.employee.unit else None,
+            'job_function': obj.employee.job_function.name if obj.employee.job_function else None,
+            'phone': obj.employee.phone
+        }
+    
+    def get_can_edit(self, obj):
+        return obj.can_edit()
+    
+    def get_edit_history(self, obj):
+        settings = VacationSetting.get_active()
+        max_edits = settings.max_schedule_edits if settings else 3
+        
+        return {
+            'current_edits': obj.edit_count,
+            'max_edits_allowed': max_edits,
+            'remaining_edits': max(0, max_edits - obj.edit_count),
+            'can_still_edit': obj.can_edit(),
+            'last_edited_by': obj.last_edited_by.get_full_name() if obj.last_edited_by else None,
+            'last_edited_at': obj.last_edited_at
+        }
+
+
 class VacationScheduleCreateSerializer(serializers.Serializer):
+    """Serializer for creating vacation schedules"""
     requester_type = serializers.ChoiceField(choices=['for_me', 'for_my_employee'])
     employee_id = serializers.IntegerField(required=False)
     employee_manual = EmployeeManualSerializer(required=False)
@@ -278,6 +393,7 @@ class VacationScheduleCreateSerializer(serializers.Serializer):
 
 
 class VacationScheduleEditSerializer(serializers.ModelSerializer):
+    """Serializer for editing vacation schedules"""
     class Meta:
         model = VacationSchedule
         fields = ['vacation_type', 'start_date', 'end_date', 'comment']
@@ -290,7 +406,9 @@ class VacationScheduleEditSerializer(serializers.ModelSerializer):
 
 
 # ============= EMPLOYEE SEARCH =============
+
 class EmployeeSearchSerializer(serializers.ModelSerializer):
+    """Serializer for employee search results"""
     department_name = serializers.CharField(source='department.name', read_only=True)
     business_function_name = serializers.CharField(source='business_function.name', read_only=True)
     unit_name = serializers.CharField(source='unit.name', read_only=True)
@@ -298,175 +416,14 @@ class EmployeeSearchSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Employee
-        fields = ['id', 'full_name', 'employee_id', 'phone', 'department_name', 
-                  'business_function_name', 'unit_name', 'job_function_name']
-
-class VacationAttachmentSerializer(serializers.ModelSerializer):
-    """
-    Serializer for VacationAttachment model
-    Displays file information for vacation requests
-    """
-    
-    # Read-only fields with custom display
-    uploaded_by_name = serializers.SerializerMethodField()
-    uploaded_by_email = serializers.SerializerMethodField()
-    file_url = serializers.SerializerMethodField()
-    file_size_display = serializers.SerializerMethodField()
-    
-    class Meta:
-        model = VacationAttachment
         fields = [
-            'id',
-            'vacation_request',
-            'file',
-            'file_url',
-            'original_filename',
-            'file_size',
-            'file_size_display',
-            'file_type',
-            'uploaded_by',
-            'uploaded_by_name',
-            'uploaded_by_email',
-            'uploaded_at',
-            'is_deleted'
+            'id', 'full_name', 'employee_id', 'phone', 'department_name', 
+            'business_function_name', 'unit_name', 'job_function_name'
         ]
-        read_only_fields = [
-            'id',
-            'uploaded_at',
-            'uploaded_by',
-            'file_size',
-            'file_type'
-        ]
-    
-    def get_uploaded_by_name(self, obj):
-        """Get full name of uploader"""
-        if obj.uploaded_by:
-            return obj.uploaded_by.get_full_name() or obj.uploaded_by.username
-        return None
-    
-    def get_uploaded_by_email(self, obj):
-        """Get email of uploader"""
-        if obj.uploaded_by:
-            return obj.uploaded_by.email
-        return None
-    
-    def get_file_url(self, obj):
-        """Get full URL for file download"""
-        if obj.file:
-            request = self.context.get('request')
-            if request:
-                return request.build_absolute_uri(obj.file.url)
-            return obj.file.url
-        return None
-    
-    def get_file_size_display(self, obj):
-        """Convert file size to human-readable format"""
-        if not obj.file_size:
-            return "0 B"
-        
-        size = obj.file_size
-        for unit in ['B', 'KB', 'MB', 'GB']:
-            if size < 1024.0:
-                return f"{size:.2f} {unit}"
-            size /= 1024.0
-        return f"{size:.2f} TB"
 
 
-class VacationAttachmentUploadSerializer(serializers.Serializer):
-    """
-    Serializer for uploading files to vacation requests
-    Validates file type, size, and other constraints
-    """
-    
-    file = serializers.FileField(required=True)
-    
-    # Allowed file types
-    ALLOWED_EXTENSIONS = ['pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx', 'xls', 'xlsx']
-    ALLOWED_CONTENT_TYPES = [
-        'application/pdf',
-        'image/jpeg',
-        'image/jpg',
-        'image/png',
-        'application/msword',
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        'application/vnd.ms-excel',
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-    ]
-    
-    # Maximum file size: 10MB
-    MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB in bytes
-    
-    def validate_file(self, value):
-        """
-        Validate uploaded file
-        - Check file extension
-        - Check file size
-        - Check content type
-        """
-        
-        # Check file extension
-        file_extension = value.name.split('.')[-1].lower()
-        if file_extension not in self.ALLOWED_EXTENSIONS:
-            raise serializers.ValidationError(
-                f"File type '.{file_extension}' is not allowed. "
-                f"Allowed types: {', '.join(self.ALLOWED_EXTENSIONS)}"
-            )
-        
-        # Check file size
-        if value.size > self.MAX_FILE_SIZE:
-            max_size_mb = self.MAX_FILE_SIZE / (1024 * 1024)
-            actual_size_mb = value.size / (1024 * 1024)
-            raise serializers.ValidationError(
-                f"File size ({actual_size_mb:.2f}MB) exceeds maximum allowed size ({max_size_mb}MB)"
-            )
-        
-        # Check content type
-        if value.content_type not in self.ALLOWED_CONTENT_TYPES:
-            raise serializers.ValidationError(
-                f"File content type '{value.content_type}' is not allowed"
-            )
-        
-        return value
-
-
-class VacationAttachmentListSerializer(serializers.ModelSerializer):
-    """
-    Simplified serializer for listing attachments
-    Used in vacation request list views
-    """
-    
-    uploaded_by_name = serializers.SerializerMethodField()
-    file_size_display = serializers.SerializerMethodField()
-    
-    class Meta:
-        model = VacationAttachment
-        fields = [
-            'id',
-            'original_filename',
-            'file_size_display',
-            'file_type',
-            'uploaded_by_name',
-            'uploaded_at'
-        ]
-    
-    def get_uploaded_by_name(self, obj):
-        """Get name of uploader"""
-        if obj.uploaded_by:
-            return obj.uploaded_by.get_full_name() or obj.uploaded_by.username
-        return "Unknown"
-    
-    def get_file_size_display(self, obj):
-        """Convert file size to human-readable format"""
-        if not obj.file_size:
-            return "0 B"
-        
-        size = obj.file_size
-        for unit in ['B', 'KB', 'MB', 'GB']:
-            if size < 1024.0:
-                return f"{size:.2f} {unit}"
-            size /= 1024.0
-        return f"{size:.2f} TB"
 # ============= COMBINED RECORDS =============
+
 class VacationRecordSerializer(serializers.Serializer):
     """Unified serializer for both requests and schedules"""
     id = serializers.IntegerField()
@@ -484,3 +441,6 @@ class VacationRecordSerializer(serializers.Serializer):
     # Schedule specific fields
     can_edit = serializers.BooleanField(required=False)
     edit_count = serializers.IntegerField(required=False)
+    
+    # Request specific fields
+    attachments_count = serializers.IntegerField(required=False)

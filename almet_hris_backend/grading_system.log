@@ -1,0 +1,28 @@
+INFO 2025-10-14 12:02:40,681 views 7980 44772 === Microsoft authentication request received ===
+INFO 2025-10-14 12:02:40,683 views 7980 44772 Token length: 1274, Graph token: True
+INFO 2025-10-14 12:02:40,684 auth 7980 44772 === Starting Microsoft token validation ===
+INFO 2025-10-14 12:02:41,842 auth 7980 44772    - Access token length: 228
+INFO 2025-10-14 12:02:41,844 auth 7980 44772    - Refresh token length: 229
+INFO 2025-10-14 12:02:48,126 views 7980 44772 User info request for user: n.orujova
+INFO 2025-10-14 12:02:48,398 views 7980 44772 [n.orujova] Employee profile found: HLD29
+INFO 2025-10-14 12:02:48,403 views 7980 44772 [n.orujova] User info response prepared successfully
+INFO 2025-10-14 12:17:48,278 views 7980 39572 User info request for user: n.orujova
+INFO 2025-10-14 12:17:48,443 views 7980 39572 [n.orujova] Employee profile found: HLD29
+INFO 2025-10-14 12:17:48,445 views 7980 39572 [n.orujova] User info response prepared successfully
+INFO 2025-10-14 12:19:05,878 views 7980 33028 User info request for user: n.orujova
+INFO 2025-10-14 12:19:06,036 views 7980 33028 [n.orujova] Employee profile found: HLD29
+INFO 2025-10-14 12:19:06,039 views 7980 33028 [n.orujova] User info response prepared successfully
+INFO 2025-10-14 12:38:17,741 views 7980 34560 User info request for user: n.orujova
+INFO 2025-10-14 12:38:17,999 views 7980 34560 [n.orujova] Employee profile found: HLD29
+INFO 2025-10-14 12:38:18,005 views 7980 34560 [n.orujova] User info response prepared successfully
+INFO 2025-10-14 14:08:50,531 views 7980 2796 === Microsoft authentication request received ===
+INFO 2025-10-14 14:08:50,532 views 7980 2796 Token length: 1274, Graph token: True
+INFO 2025-10-14 14:08:50,532 auth 7980 2796 === Starting Microsoft token validation ===
+INFO 2025-10-14 14:08:50,572 auth 7980 2796    - Access token length: 228
+INFO 2025-10-14 14:08:50,573 auth 7980 2796    - Refresh token length: 229
+INFO 2025-10-14 14:55:26,728 views 14060 28972 User info request for user: n.orujova
+INFO 2025-10-14 14:55:26,870 views 14060 28972 [n.orujova] Employee profile found: HLD29
+INFO 2025-10-14 14:55:26,872 views 14060 28972 [n.orujova] User info response prepared successfully
+INFO 2025-10-14 15:05:02,391 views 35136 25924 User info request for user: n.orujova
+INFO 2025-10-14 15:05:02,519 views 35136 25924 [n.orujova] Employee profile found: HLD29
+INFO 2025-10-14 15:05:02,521 views 35136 25924 [n.orujova] User info response prepared successfully

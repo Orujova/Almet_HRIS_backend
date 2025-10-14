@@ -159,7 +159,7 @@ class BusinessFunction(SoftDeleteModel):
 class Department(SoftDeleteModel):
     name = models.CharField(max_length=100)
     business_function = models.ForeignKey(BusinessFunction, on_delete=models.CASCADE, related_name='departments')
-    head_of_department = models.ForeignKey('Employee', on_delete=models.SET_NULL, null=True, blank=True, related_name='departments_headed')
+
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -174,7 +174,7 @@ class Department(SoftDeleteModel):
 class Unit(SoftDeleteModel):
     name = models.CharField(max_length=100)
     department = models.ForeignKey(Department, on_delete=models.CASCADE, related_name='units')
-    unit_head = models.ForeignKey('Employee', on_delete=models.SET_NULL, null=True, blank=True, related_name='units_headed')
+ 
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

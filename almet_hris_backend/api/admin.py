@@ -287,7 +287,7 @@ class UnitAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
     list_filter = ('department__business_function', 'department', 'is_active', 'is_deleted', 'created_at')
     search_fields = ('name', 'department__name', 'department__business_function__name')
     ordering = ('department__business_function__code', 'department__name', 'name')
-    autocomplete_fields = ['unit_head']
+
     readonly_fields = ('created_at', 'updated_at')
     
     def is_deleted_display(self, obj):
