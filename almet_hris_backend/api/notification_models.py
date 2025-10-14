@@ -18,10 +18,6 @@ class NotificationSettings(models.Model):
     Only one active instance should exist at a time
     """
     
-  
-    
-
-    
     # Notification preferences
     enable_email_notifications = models.BooleanField(
         default=True,
@@ -41,6 +37,13 @@ class NotificationSettings(models.Model):
         max_length=50, 
         default='[BUSINESS TRIP]',
         help_text="Subject prefix for business trip emails (used for filtering in Outlook)"
+    )
+    
+    # ✅ NEW: Vacation specific settings
+    vacation_subject_prefix = models.CharField(
+        max_length=50, 
+        default='[VACATION]',
+        help_text="Subject prefix for vacation emails (used for filtering in Outlook)"
     )
     
     # System fields
@@ -72,7 +75,7 @@ class NotificationSettings(models.Model):
         ordering = ['-created_at']
     
     def __str__(self):
-        return f"Notification Settings "
+        return f"Notification Settings"
     
     @classmethod
     def get_active(cls):
@@ -87,6 +90,7 @@ class NotificationSettings(models.Model):
                 'email_retry_attempts': 3,
                 'email_retry_delay_minutes': 5,
                 'business_trip_subject_prefix': '[BUSINESS TRIP]',
+                'vacation_subject_prefix': '[VACATION]',  # ✅ NEW
             }
         )
         return settings
@@ -97,6 +101,7 @@ class NotificationSettings(models.Model):
             # Deactivate all other settings
             NotificationSettings.objects.filter(is_active=True).exclude(pk=self.pk).update(is_active=False)
         super().save(*args, **kwargs)
+
 
 
 class EmailTemplate(models.Model):
@@ -406,6 +411,58 @@ class NotificationLog(models.Model):
             status='FAILED',
             created_at__gte=date_from
         ).order_by('-created_at')
+    
+    @classmethod
+    def get_vacation_notifications(cls, request_id=None):
+        """
+        Get all Vacation related notifications
+        
+        Args:
+            request_id (str, optional): Filter by specific request ID
+        
+        Returns:
+            QuerySet: Filtered notification logs
+        """
+        qs = cls.objects.filter(related_model='VacationRequest')
+        
+        if request_id:
+            qs = qs.filter(related_object_id=request_id)
+        
+        return qs.order_by('-created_at')
+    
+    @classmethod
+    def get_statistics_by_module(cls, days=30):
+        """
+        Get notification statistics grouped by module (Business Trip vs Vacation)
+        
+        Args:
+            days (int): Number of days to analyze
+        
+        Returns:
+            dict: Statistics by module
+        """
+        from django.db.models import Count, Q
+        from datetime import timedelta
+        
+        date_from = timezone.now() - timedelta(days=days)
+        
+        qs = cls.objects.filter(created_at__gte=date_from)
+        
+        stats = {
+            'business_trip': qs.filter(related_model='BusinessTripRequest').aggregate(
+                total=Count('id'),
+                sent=Count('id', filter=Q(status='SENT')),
+                failed=Count('id', filter=Q(status='FAILED'))
+            ),
+            'vacation': qs.filter(related_model='VacationRequest').aggregate(
+                total=Count('id'),
+                sent=Count('id', filter=Q(status='SENT')),
+                failed=Count('id', filter=Q(status='FAILED'))
+            )
+        }
+        
+        return stats
+
     
     @classmethod
     def get_statistics(cls, days=30):

@@ -34,9 +34,46 @@ from .vacation_permissions import (
     get_user_vacation_permissions
 )
 
-
+import logging
+from django.shortcuts import get_object_or_404
+logger = logging.getLogger(__name__)
 good_fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
 warning_fill = PatternFill(start_color="FFEB9C", end_color="FFEB9C", fill_type="solid")
+
+# ✅ Add these imports at the top of vacation_views.py
+from .vacation_notifications import notification_manager
+from .models import UserGraphToken
+from .token_helpers import get_user_tokens
+
+# ✅ Add helper function after imports
+def get_graph_access_token(user):
+    """
+    Get Microsoft Graph access token for the authenticated user
+    Used for sending emails via Microsoft Graph API.
+    """
+    try:
+        token = UserGraphToken.get_valid_token(user)
+        if token:
+            logger.info(f"✅ Valid Graph token found for user {user.username}")
+            return token
+        else:
+            logger.warning(f"⚠️ No valid Graph token found for user {user.username}")
+            logger.warning("   Email notifications will be skipped")
+            return None
+    except Exception as e:
+        logger.error(f"❌ Error getting Graph token: {e}")
+        return None
+
+def get_notification_context(request):
+    """Get notification context with Graph token status"""
+    graph_token = get_graph_access_token(request.user)
+    
+    return {
+        'can_send_emails': bool(graph_token),
+        'graph_token': graph_token,
+        'reason': 'Graph token available' if graph_token else 'No Microsoft Graph token. Login again to enable email notifications.',
+        'user': request.user
+    }
 
 @swagger_auto_schema(
     method='get',
@@ -311,7 +348,6 @@ def set_production_calendar(request):
         
     except Exception as e:
         return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
-
 
 @swagger_auto_schema(
     method='get',
@@ -1535,116 +1571,75 @@ def export_balances(request):
 # ==================== REQUEST IMMEDIATE ====================
 @swagger_auto_schema(
     method='post',
-    operation_description="Request Immediately yaratmaq",
-    operation_summary="Create Immediate Request",
+    operation_description="Create vacation request immediately with optional file attachments",
+    operation_summary="Create Immediate Request with Files",
     tags=['Vacation'],
-    request_body=openapi.Schema(
-        type=openapi.TYPE_OBJECT,
-        required=['requester_type', 'vacation_type_id', 'start_date', 'end_date'],
-        properties={
-            'requester_type': openapi.Schema(
-                type=openapi.TYPE_STRING,
-                enum=['for_me', 'for_my_employee'],
-                description='Kimə görə request yaradırsan'
-            ),
-            'employee_id': openapi.Schema(
-                type=openapi.TYPE_INTEGER,
-                description='İşçi ID (yalnız for_my_employee üçün)',
-                example=123
-            ),
-            'employee_manual': openapi.Schema(
-                type=openapi.TYPE_OBJECT,
-                description='Manual employee məlumatları (əgər sistemdə yoxdursa)',
-                properties={
-                    'name': openapi.Schema(type=openapi.TYPE_STRING, example='John Doe'),
-                    'phone': openapi.Schema(type=openapi.TYPE_STRING, example='+994501234567'),
-                    'department': openapi.Schema(type=openapi.TYPE_STRING, example='IT'),
-                    'business_function': openapi.Schema(type=openapi.TYPE_STRING, example='Development'),
-                    'unit': openapi.Schema(type=openapi.TYPE_STRING, example='Frontend'),
-                    'job_function': openapi.Schema(type=openapi.TYPE_STRING, example='Developer')
-                }
-            ),
-            'vacation_type_id': openapi.Schema(
-                type=openapi.TYPE_INTEGER,
-                description='Vacation növü ID',
-                example=1
-            ),
-            'start_date': openapi.Schema(
-                type=openapi.TYPE_STRING,
-                format='date',
-                description='Başlama tarixi (YYYY-MM-DD)',
-                example='2025-10-15'
-            ),
-            'end_date': openapi.Schema(
-                type=openapi.TYPE_STRING,
-                format='date',
-                description='Bitmə tarixi (YYYY-MM-DD)',
-                example='2025-10-20'
-            ),
-            'comment': openapi.Schema(
-                type=openapi.TYPE_STRING,
-                description='Şərh (optional)',
-                example='Ailə səbəbi'
-            ),
-            'hr_representative_id': openapi.Schema(
-                type=openapi.TYPE_INTEGER,
-                description='HR nümayəndəsi ID (optional)',
-                example=5
-            ),
-        }
-    ),
-    responses={
-        201: openapi.Response(
-            description='Request yaradıldı',
-            examples={
-                'application/json': {
-                    'message': 'Request yaradıldı və təsdiqə göndərildi',
-                    'request': {
-                        'id': 1,
-                        'request_id': 'VR20250001',
-                        'status': 'PENDING_LINE_MANAGER'
-                    }
-                }
-            }
-        )
-    }
+    manual_parameters=[
+        openapi.Parameter('requester_type', openapi.IN_FORM, type=openapi.TYPE_STRING, required=True),
+        openapi.Parameter('employee_id', openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=False),
+        openapi.Parameter('vacation_type_id', openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=True),
+        openapi.Parameter('start_date', openapi.IN_FORM, type=openapi.TYPE_STRING, format='date', required=True),
+        openapi.Parameter('end_date', openapi.IN_FORM, type=openapi.TYPE_STRING, format='date', required=True),
+        openapi.Parameter('comment', openapi.IN_FORM, type=openapi.TYPE_STRING, required=False),
+        openapi.Parameter('hr_representative_id', openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=False),
+        openapi.Parameter('files', openapi.IN_FORM, type=openapi.TYPE_ARRAY, 
+                         items=openapi.Items(type=openapi.TYPE_FILE), required=False,
+                         description='Multiple files (Max 10MB each, PDF/JPG/PNG/DOC/DOCX/XLS/XLSX)'),
+    ],
+    responses={201: openapi.Response(description='Request created')}
 )
 @api_view(['POST'])
 @has_vacation_permission('vacation.request.create_own')
 @permission_classes([IsAuthenticated])
+@parser_classes([MultiPartParser, FormParser])
 def create_immediate_request(request):
-    """Request Immediately yarat"""
-    serializer = VacationRequestCreateSerializer(data=request.data)
-    if not serializer.is_valid():
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
-    data = serializer.validated_data
+    """Create vacation request immediately with file attachments"""
+    import json
     
     try:
-        requester_emp = Employee.objects.get(
-            user__email=request.user.email, 
-            is_deleted=False
-        )
-       
-        # Balance yoxla
+        # Parse JSON fields from form data
+        data = request.data.dict()
+        
+        # Parse employee_manual if exists
+        if 'employee_manual' in data:
+            try:
+                data['employee_manual'] = json.loads(data['employee_manual'])
+            except json.JSONDecodeError:
+                return Response({
+                    'error': 'Invalid employee_manual format. Must be valid JSON object.'
+                }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Get uploaded files
+        uploaded_files = request.FILES.getlist('files')
+        
+        # Validate request data
+        serializer = VacationRequestCreateSerializer(data=data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        validated_data = serializer.validated_data
+        
+        requester_emp = Employee.objects.get(user=request.user, is_deleted=False)
+        
+        # Balance check
         settings = VacationSetting.get_active()
         year = date.today().year
         
-        # Employee seç
-        if data['requester_type'] == 'for_me':
+        # Determine employee
+        if validated_data['requester_type'] == 'for_me':
             employee = requester_emp
         else:
-            if data.get('employee_id'):
-                employee = Employee.objects.get(id=data['employee_id'])
+            if validated_data.get('employee_id'):
+                employee = Employee.objects.get(id=validated_data['employee_id'])
                 if employee.line_manager != requester_emp:
                     return Response({
-                        'error': 'Bu işçi sizin tabeliyinizdə deyil'
+                        'error': 'This employee is not in your team'
                     }, status=status.HTTP_403_FORBIDDEN)
             else:
-                manual_data = data.get('employee_manual', {})
+                manual_data = validated_data.get('employee_manual', {})
                 if not manual_data.get('name'):
                     return Response({
-                        'error': 'Employee adı mütləqdir'
+                        'error': 'Employee name is required'
                     }, status=status.HTTP_400_BAD_REQUEST)
                 
                 employee = Employee.objects.create(
@@ -1654,7 +1649,7 @@ def create_immediate_request(request):
                     created_by=request.user
                 )
         
-        # Balance tap və ya yarat
+        # Get or create balance
         balance, created = EmployeeVacationBalance.objects.get_or_create(
             employee=employee,
             year=year,
@@ -1669,39 +1664,91 @@ def create_immediate_request(request):
         working_days = 0
         if settings:
             working_days = settings.calculate_working_days(
-                data['start_date'], 
-                data['end_date']
+                validated_data['start_date'], 
+                validated_data['end_date']
             )
         
-        # Negative balance yoxla
+        # Check negative balance
         if settings and not settings.allow_negative_balance:
             if working_days > balance.remaining_balance:
                 return Response({
-                    'error': f'Qeyri-kafi balans. Sizin {balance.remaining_balance} gün qalıb. Mənfi balansa icazə yoxdur.',
+                    'error': f'Insufficient balance. You have {balance.remaining_balance} days remaining. Negative balance not allowed.',
                     'available_balance': float(balance.remaining_balance),
                     'requested_days': working_days
                 }, status=status.HTTP_400_BAD_REQUEST)
         
         with transaction.atomic():
+            # Create vacation request
             vac_req = VacationRequest.objects.create(
                 employee=employee,
                 requester=request.user,
                 request_type='IMMEDIATE',
-                vacation_type_id=data['vacation_type_id'],
-                start_date=data['start_date'],
-                end_date=data['end_date'],
-                comment=data.get('comment', ''),
-                hr_representative_id=data.get('hr_representative_id')
+                vacation_type_id=validated_data['vacation_type_id'],
+                start_date=validated_data['start_date'],
+                end_date=validated_data['end_date'],
+                comment=validated_data.get('comment', ''),
+                hr_representative_id=validated_data.get('hr_representative_id')
             )
             
+            # Upload files if provided
+            uploaded_attachments = []
+            file_errors = []
+            
+            for file in uploaded_files:
+                try:
+                    # Validate file
+                    from .business_trip_serializers import TripAttachmentUploadSerializer
+                    upload_serializer = TripAttachmentUploadSerializer(data={'file': file})
+                    if not upload_serializer.is_valid():
+                        file_errors.append({
+                            'filename': file.name,
+                            'errors': upload_serializer.errors
+                        })
+                        continue
+                    
+                    # Create attachment using VacationAttachment model
+                    from .vacation_models import VacationAttachment
+                    attachment = VacationAttachment.objects.create(
+                        vacation_request=vac_req,
+                        file=file,
+                        original_filename=file.name,
+                        file_size=file.size,
+                        file_type=file.content_type,
+                        uploaded_by=request.user
+                    )
+                    uploaded_attachments.append(attachment)
+                    
+                except Exception as e:
+                    file_errors.append({
+                        'filename': file.name,
+                        'error': str(e)
+                    })
+            
+            # Submit request
             vac_req.submit_request(request.user)
             
-            # Refresh balance to get updated values
+            # ✅ Send notification
+            graph_token = get_graph_access_token(request.user)
+            notification_sent = False
+            if graph_token:
+                notification_sent = notification_manager.notify_request_created(vac_req, graph_token)
+                if notification_sent:
+                    logger.info("✅ Notification sent to Line Manager")
+                else:
+                    logger.warning("⚠️ Failed to send notification")
+            else:
+                logger.warning("⚠️ Graph token not available - notification skipped")
+            
+            # Refresh balance
             balance.refresh_from_db()
             
-            return Response({
-                'message': 'Request yaradıldı və təsdiqə göndərildi',
+            # Prepare response
+            response_data = {
+                'message': 'Vacation request created and submitted successfully.',
+                'notification_sent': notification_sent,
                 'request': VacationRequestDetailSerializer(vac_req).data,
+                'files_uploaded': len(uploaded_attachments),
+                'files_failed': len(file_errors),
                 'balance': {
                     'total_balance': float(balance.total_balance),
                     'yearly_balance': float(balance.yearly_balance),
@@ -1710,17 +1757,26 @@ def create_immediate_request(request):
                     'scheduled_days': float(balance.scheduled_days),
                     'should_be_planned': float(balance.should_be_planned)
                 }
-            }, status=status.HTTP_201_CREATED)
+            }
+            
+            if uploaded_attachments:
+                from .vacation_serializers import VacationAttachmentSerializer
+                response_data['attachments'] = VacationAttachmentSerializer(
+                    uploaded_attachments,
+                    many=True,
+                    context={'request': request}
+                ).data
+            
+            if file_errors:
+                response_data['file_errors'] = file_errors
+            
+            return Response(response_data, status=status.HTTP_201_CREATED)
     
     except Employee.DoesNotExist:
-        return Response({
-            'error': 'Employee tapılmadı'
-        }, status=status.HTTP_404_NOT_FOUND)
+        return Response({'error': 'Employee not found'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        return Response({
-            'error': str(e)
-        }, status=status.HTTP_400_BAD_REQUEST)
-
+        logger.error(f"Error creating vacation request: {e}")
+        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 # ==================== CREATE SCHEDULE ====================
 @swagger_auto_schema(
     method='post',
@@ -1975,55 +2031,39 @@ def my_schedule_tabs(request):
 # ==================== REGISTER SCHEDULE ====================
 @swagger_auto_schema(
     method='post',
-    operation_description="Schedule-i registered et",
+    operation_description="Register schedule as taken with notification",
     operation_summary="Register Schedule",
     tags=['Vacation'],
-    manual_parameters=[
-        openapi.Parameter(
-            'id',
-            openapi.IN_PATH,
-            description="Schedule ID",
-            type=openapi.TYPE_INTEGER,
-            required=True
-        )
-    ],
-    responses={
-        200: openapi.Response(
-            description='Schedule registered edildi',
-            examples={
-                'application/json': {
-                    'message': 'Schedule registered edildi',
-                    'schedule': {},
-                    'updated_balance': {
-                        'total_balance': 50.0,
-                        'used_days': 30.0,
-                        'scheduled_days': 0.0,
-                        'remaining_balance': 20.0
-                    }
-                }
-            }
-        )
-    }
+    responses={200: openapi.Response(description='Schedule registered')}
 )
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @has_vacation_permission('vacation.schedule.register')
 def register_schedule(request, pk):
-    """Schedule-i registered et"""
+    """Register schedule as taken with notification"""
     try:
         schedule = VacationSchedule.objects.get(pk=pk, is_deleted=False)
         
-        # Register et
+        # Register schedule
         schedule.register_as_taken(request.user)
         
-        # Balance-ı yenidən yüklə
+        # ✅ Send notification
+        graph_token = get_graph_access_token(request.user)
+        notification_sent = False
+        if graph_token:
+            notification_sent = notification_manager.notify_schedule_registered(schedule, graph_token)
+            if notification_sent:
+                logger.info("✅ Schedule registered notification sent")
+        
+        # Refresh balance
         balance = EmployeeVacationBalance.objects.get(
             employee=schedule.employee,
             year=schedule.start_date.year
         )
         
         return Response({
-            'message': 'Schedule registered edildi',
+            'message': 'Schedule registered successfully',
+            'notification_sent': notification_sent,
             'schedule': VacationScheduleSerializer(schedule).data,
             'updated_balance': {
                 'total_balance': float(balance.total_balance),
@@ -2035,10 +2075,9 @@ def register_schedule(request, pk):
             }
         })
     except VacationSchedule.DoesNotExist:
-        return Response({'error': 'Schedule tapılmadı'}, status=status.HTTP_404_NOT_FOUND)
+        return Response({'error': 'Schedule not found'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
         return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
-
 # ==================== EDIT SCHEDULE ====================
 @swagger_auto_schema(
     method='put',
@@ -2373,51 +2412,10 @@ def approval_history(request):
 # ==================== APPROVE/REJECT REQUEST ====================
 @swagger_auto_schema(
     method='post',
-    operation_description="Request-ə approve və ya reject ver",
-    operation_summary="Approve/Reject Request",
+    operation_description="Approve/Reject vacation request with email notifications",
     tags=['Vacation'],
-    manual_parameters=[
-        openapi.Parameter(
-            'id',
-            openapi.IN_PATH,
-            description="Request ID",
-            type=openapi.TYPE_INTEGER,
-            required=True
-        )
-    ],
-    request_body=openapi.Schema(
-        type=openapi.TYPE_OBJECT,
-        required=['action'],
-        properties={
-            'action': openapi.Schema(
-                type=openapi.TYPE_STRING,
-                enum=['approve', 'reject'],
-                description='approve və ya reject',
-                example='approve'
-            ),
-            'comment': openapi.Schema(
-                type=openapi.TYPE_STRING,
-                description='Şərh (approve üçün optional)',
-                example='Razıyam'
-            ),
-            'reason': openapi.Schema(
-                type=openapi.TYPE_STRING,
-                description='İmtina səbəbi (reject üçün MÜTLƏQ)',
-                example='Bu tarixdə başqa işçilər məzuniyyətdədir'
-            ),
-        }
-    ),
-    responses={
-        200: openapi.Response(
-            description='Uğurlu',
-            examples={
-                'application/json': {
-                    'message': 'Line Manager tərəfindən təsdiq edildi',
-                    'request': {}
-                }
-            }
-        )
-    }
+    request_body=VacationApprovalSerializer,
+    responses={200: openapi.Response(description='Action completed')}
 )
 @api_view(['POST'])
 @has_any_vacation_permission([
@@ -2426,46 +2424,104 @@ def approval_history(request):
 ])
 @permission_classes([IsAuthenticated])
 def approve_reject_request(request, pk):
-    """Request-ə approve/reject ver (employee yoxlaması olmadan)"""
+    """Approve/Reject vacation request with email notifications"""
     serializer = VacationApprovalSerializer(data=request.data)
     if not serializer.is_valid():
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
     data = serializer.validated_data
     
+    # ✅ Get notification context
+    notification_ctx = get_notification_context(request)
+    graph_token = notification_ctx['graph_token']
+    
     try:
         vac_req = VacationRequest.objects.get(pk=pk, is_deleted=False)
+        notification_sent = False
         
-        # Employee yoxlaması ləğv edildi - hamı approve/reject edə bilər
-        
+        # LINE MANAGER APPROVAL/REJECTION
         if vac_req.status == 'PENDING_LINE_MANAGER':
             if data['action'] == 'approve':
                 vac_req.approve_by_line_manager(request.user, data.get('comment', ''))
-                msg = 'Line Manager tərəfindən təsdiq edildi'
+                msg = 'Approved by Line Manager'
+                
+                # ✅ Send notification to HR
+                if graph_token:
+                    try:
+                        notification_sent = notification_manager.notify_line_manager_approved(
+                            vacation_request=vac_req,
+                            access_token=graph_token
+                        )
+                        if notification_sent:
+                            logger.info("✅ Notification sent to HR")
+                    except Exception as e:
+                        logger.error(f"❌ Notification error: {e}")
             else:
                 vac_req.reject_by_line_manager(request.user, data.get('reason', ''))
-                msg = 'Line Manager tərəfindən reject edildi'
+                msg = 'Rejected by Line Manager'
+                
+                # ✅ Send rejection notification to Employee
+                if graph_token:
+                    try:
+                        notification_sent = notification_manager.notify_request_rejected(
+                            vacation_request=vac_req,
+                            access_token=graph_token
+                        )
+                        if notification_sent:
+                            logger.info("✅ Rejection notification sent to Employee")
+                    except Exception as e:
+                        logger.error(f"❌ Notification error: {e}")
         
+        # HR APPROVAL/REJECTION
         elif vac_req.status == 'PENDING_HR':
             if data['action'] == 'approve':
                 vac_req.approve_by_hr(request.user, data.get('comment', ''))
-                msg = 'HR tərəfindən təsdiq edildi'
+                msg = 'Approved by HR - Request is now APPROVED'
+                
+                # ✅ Send final approval notification to Employee
+                if graph_token:
+                    try:
+                        notification_sent = notification_manager.notify_hr_approved(
+                            vacation_request=vac_req,
+                            access_token=graph_token
+                        )
+                        if notification_sent:
+                            logger.info("✅ Final approval notification sent to Employee")
+                    except Exception as e:
+                        logger.error(f"❌ Notification error: {e}")
             else:
                 vac_req.reject_by_hr(request.user, data.get('reason', ''))
-                msg = 'HR tərəfindən reject edildi'
+                msg = 'Rejected by HR'
+                
+                # ✅ Send rejection notification to Employee
+                if graph_token:
+                    try:
+                        notification_sent = notification_manager.notify_request_rejected(
+                            vacation_request=vac_req,
+                            access_token=graph_token
+                        )
+                        if notification_sent:
+                            logger.info("✅ Rejection notification sent to Employee")
+                    except Exception as e:
+                        logger.error(f"❌ Notification error: {e}")
         else:
-            return Response({'error': 'Bu request təsdiq statusunda deyil'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({
+                'error': 'Request is not pending approval'
+            }, status=status.HTTP_400_BAD_REQUEST)
         
         return Response({
             'message': msg,
+            'notification_sent': notification_sent,
+            'notification_available': notification_ctx['can_send_emails'],
+            'notification_reason': notification_ctx['reason'],
             'request': VacationRequestDetailSerializer(vac_req).data
         })
     
     except VacationRequest.DoesNotExist:
-        return Response({'error': 'Request tapılmadı'}, status=status.HTTP_404_NOT_FOUND)
+        return Response({'error': 'Request not found'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
+        logger.error(f"Error in approve/reject: {e}")
         return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
-
 
 # ==================== MY ALL REQUESTS & SCHEDULES ====================
 @swagger_auto_schema(
@@ -2553,6 +2609,174 @@ def my_all_requests_schedules(request):
     except Exception as e:
         return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
+@swagger_auto_schema(
+    method='get',
+    operation_description="Get detailed information of a vacation request including attachments and approval history",
+    operation_summary="Get Vacation Request Detail",
+    tags=['Vacation'],
+    responses={
+        200: openapi.Response(
+            description='Vacation request details',
+            schema=VacationRequestDetailSerializer
+        ),
+        403: 'Permission denied',
+        404: 'Request not found'
+    }
+)
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_vacation_request_detail(request, pk):
+    """
+    Get detailed information of a vacation request
+    
+    Shows:
+    - Basic vacation information
+    - Employee details
+    - Vacation configuration (type)
+    - File attachments
+    - Approval workflow status
+    - Comments from all approvers
+    - Rejection reasons (if applicable)
+    """
+    try:
+        from .vacation_permissions import is_admin_user
+        
+        # Get the vacation request
+        vac_req = VacationRequest.objects.select_related(
+            'employee', 
+            'employee__department',
+            'employee__business_function',
+            'employee__unit',
+            'employee__job_function',
+            'vacation_type',
+            'line_manager',
+            'hr_representative',
+            'requester'
+        ).prefetch_related(
+            'attachments'
+        ).get(pk=pk, is_deleted=False)
+        
+        # Check access permission
+        emp = None
+        try:
+            emp = Employee.objects.get(user=request.user, is_deleted=False)
+        except Employee.DoesNotExist:
+            pass
+        
+        # Determine if user can view this request
+        can_view = False
+        
+        # Admin can view all
+        if is_admin_user(request.user):
+            can_view = True
+        
+        # Employee can view their own requests
+        elif emp and vac_req.employee == emp:
+            can_view = True
+        
+        # Requester can view requests they created
+        elif vac_req.requester == request.user:
+            can_view = True
+        
+        # Approvers can view requests assigned to them
+        elif emp and (
+            vac_req.line_manager == emp or 
+            vac_req.hr_representative == emp
+        ):
+            can_view = True
+        
+        # Check if user has view_all permission
+        elif check_vacation_permission(request.user, 'vacation.request.view_all')[0]:
+            can_view = True
+        
+        if not can_view:
+            return Response({
+                'error': 'Permission denied',
+                'detail': 'You do not have permission to view this vacation request'
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        # Serialize the data
+        serializer = VacationRequestDetailSerializer(
+            vac_req, 
+            context={'request': request}
+        )
+        
+        # Add extra context information
+        response_data = serializer.data
+        
+        # Add approval workflow status
+        response_data['workflow'] = {
+            'current_step': vac_req.status,
+            'steps': [
+                {
+                    'name': 'Line Manager Approval',
+                    'status': 'completed' if vac_req.line_manager_approved_at else (
+                        'rejected' if vac_req.status == 'REJECTED_LINE_MANAGER' else (
+                            'pending' if vac_req.status == 'PENDING_LINE_MANAGER' else 'not_started'
+                        )
+                    ),
+                    'approver': vac_req.line_manager.full_name if vac_req.line_manager else None,
+                    'approved_at': vac_req.line_manager_approved_at,
+                    'comment': vac_req.line_manager_comment
+                },
+                {
+                    'name': 'HR Processing',
+                    'status': 'completed' if vac_req.hr_approved_at else (
+                        'rejected' if vac_req.status == 'REJECTED_HR' else (
+                            'pending' if vac_req.status == 'PENDING_HR' else 'not_started'
+                        )
+                    ),
+                    'approver': vac_req.hr_representative.full_name if vac_req.hr_representative else None,
+                    'approved_at': vac_req.hr_approved_at,
+                    'comment': vac_req.hr_comment
+                }
+            ]
+        }
+        
+        # Add requester information
+        response_data['requester_info'] = {
+            'type': vac_req.get_request_type_display(),
+            'name': vac_req.requester.get_full_name() if vac_req.requester else None,
+            'email': vac_req.requester.email if vac_req.requester else None
+        }
+        
+        # Add permission flags for frontend
+        response_data['permissions'] = {
+            'can_approve': (
+                (vac_req.status == 'PENDING_LINE_MANAGER' and emp and vac_req.line_manager == emp) or
+                (vac_req.status == 'PENDING_HR' and emp and vac_req.hr_representative == emp) or
+                is_admin_user(request.user)
+            ),
+            'is_admin': is_admin_user(request.user)
+        }
+        
+        # Add attachments
+        from .vacation_models import VacationAttachment
+        from .vacation_serializers import VacationAttachmentSerializer
+        attachments = vac_req.attachments.filter(is_deleted=False).order_by('-uploaded_at')
+        response_data['attachments'] = VacationAttachmentSerializer(
+            attachments,
+            many=True,
+            context={'request': request}
+        ).data
+        
+        # Add summary statistics
+        response_data['summary'] = {
+            'total_attachments': attachments.count(),
+        }
+        
+        return Response(response_data)
+        
+    except VacationRequest.DoesNotExist:
+        return Response({
+            'error': 'Vacation request not found'
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Error fetching vacation request detail: {e}")
+        return Response({
+            'error': str(e)
+        }, status=status.HTTP_400_BAD_REQUEST)
+                
 
 @swagger_auto_schema(
     method='get',
@@ -3805,7 +4029,422 @@ class VacationTypeViewSet(viewsets.ModelViewSet):
             }, status=status.HTTP_403_FORBIDDEN)
         return super().destroy(request, *args, **kwargs)
 
+# ==================== FILE UPLOAD ENDPOINTS ====================
 
+@swagger_auto_schema(
+    method='get',
+    operation_description="Get all attachments for a vacation request",
+    operation_summary="List Vacation Request Attachments",
+    tags=['Vacation - Files'],
+    responses={
+        200: openapi.Response(
+            description='List of attachments',
+            schema=VacationAttachmentSerializer(many=True)
+        )
+    }
+)
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def list_vacation_request_attachments(request, request_id):
+    """Get all attachments for a vacation request"""
+    try:
+        vacation_request = get_object_or_404(
+            VacationRequest, 
+            request_id=request_id, 
+            is_deleted=False
+        )
+        
+        # Check access permission
+        from .vacation_permissions import is_admin_user
+        emp = None
+        try:
+            emp = Employee.objects.get(user=request.user, is_deleted=False)
+        except Employee.DoesNotExist:
+            pass
+        
+        can_view = False
+        if is_admin_user(request.user):
+            can_view = True
+        elif emp and vacation_request.employee == emp:
+            can_view = True
+        elif vacation_request.requester == request.user:
+            can_view = True
+        elif emp and (vacation_request.line_manager == emp or vacation_request.hr_representative == emp):
+            can_view = True
+        
+        if not can_view:
+            return Response({
+                'error': 'Permission denied'
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        attachments = vacation_request.attachments.filter(is_deleted=False).order_by('-uploaded_at')
+        
+        return Response({
+            'request_id': request_id,
+            'count': attachments.count(),
+            'attachments': VacationAttachmentSerializer(
+                attachments, 
+                many=True, 
+                context={'request': request}
+            ).data
+        })
+        
+    except VacationRequest.DoesNotExist:
+        return Response({
+            'error': 'Vacation request not found'
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        return Response({
+            'error': str(e)
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+
+
+@swagger_auto_schema(
+    method='delete',
+    operation_description="Delete a file attachment (Only uploader can delete)",
+    operation_summary="Delete Vacation Attachment",
+    tags=['Vacation - Files'],
+    responses={
+        200: 'File deleted successfully',
+        403: 'Permission denied',
+        404: 'Attachment not found'
+    }
+)
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def delete_vacation_attachment(request, attachment_id):
+    """Delete a file attachment"""
+    try:
+        from .vacation_permissions import is_admin_user
+        from .vacation_models import VacationAttachment
+        
+        attachment = get_object_or_404(
+            VacationAttachment, 
+            id=attachment_id, 
+            is_deleted=False
+        )
+        
+        # Check permission - only uploader or admin can delete
+        if attachment.uploaded_by != request.user and not is_admin_user(request.user):
+            return Response({
+                'error': 'You can only delete files you uploaded'
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        # Soft delete
+        attachment.is_deleted = True
+        attachment.save()
+        
+        logger.info(f"🗑️ File deleted: {attachment.original_filename} by {request.user.username}")
+        
+        return Response({
+            'message': 'File deleted successfully',
+            'filename': attachment.original_filename
+        })
+        
+    except Exception as e:
+        logger.error(f"Error deleting file: {e}")
+        return Response({
+            'error': str(e)
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+
+@swagger_auto_schema(
+    method='post',
+    operation_description="Upload multiple files at once to vacation request",
+    operation_summary="Bulk Upload Vacation Attachments",
+    tags=['Vacation - Files'],
+    manual_parameters=[
+        openapi.Parameter(
+            'files',
+            openapi.IN_FORM,
+            type=openapi.TYPE_ARRAY,
+            items=openapi.Items(type=openapi.TYPE_FILE),
+            required=True,
+            description='Multiple files to upload'
+        )
+    ],
+    responses={
+        201: 'Files uploaded successfully',
+        400: 'Bad request'
+    }
+)
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@parser_classes([MultiPartParser, FormParser])
+def bulk_upload_vacation_attachments(request, request_id):
+    """Upload multiple files at once"""
+    try:
+        vacation_request = get_object_or_404(
+            VacationRequest, 
+            request_id=request_id, 
+            is_deleted=False
+        )
+        
+        # Check permission
+        emp = None
+        try:
+            emp = Employee.objects.get(user=request.user, is_deleted=False)
+        except Employee.DoesNotExist:
+            pass
+        
+        can_upload = False
+        if emp and vacation_request.employee == emp:
+            can_upload = True
+        elif vacation_request.requester == request.user:
+            can_upload = True
+        
+        if not can_upload:
+            return Response({
+                'error': 'Permission denied'
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        files = request.FILES.getlist('files')
+        if not files:
+            return Response({
+                'error': 'No files provided'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        uploaded_attachments = []
+        errors = []
+        
+        for file in files:
+            try:
+                # Validate each file
+                from .business_trip_serializers import TripAttachmentUploadSerializer
+                upload_serializer = TripAttachmentUploadSerializer(data={'file': file})
+                if not upload_serializer.is_valid():
+                    errors.append({
+                        'filename': file.name,
+                        'errors': upload_serializer.errors
+                    })
+                    continue
+                
+                # Create attachment
+                from .vacation_models import VacationAttachment
+                attachment = VacationAttachment.objects.create(
+                    vacation_request=vacation_request,
+                    file=file,
+                    original_filename=file.name,
+                    file_size=file.size,
+                    file_type=file.content_type,
+                    uploaded_by=request.user
+                )
+                uploaded_attachments.append(attachment)
+                
+            except Exception as e:
+                errors.append({
+                    'filename': file.name,
+                    'error': str(e)
+                })
+        
+        logger.info(f"✅ Bulk upload: {len(uploaded_attachments)} files to {request_id}")
+        
+        return Response({
+            'message': f'{len(uploaded_attachments)} files uploaded successfully',
+            'uploaded': VacationAttachmentSerializer(
+                uploaded_attachments, 
+                many=True, 
+                context={'request': request}
+            ).data,
+            'errors': errors,
+            'success_count': len(uploaded_attachments),
+            'error_count': len(errors)
+        }, status=status.HTTP_201_CREATED)
+        
+    except VacationRequest.DoesNotExist:
+        return Response({
+            'error': 'Vacation request not found'
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Error in bulk upload: {e}")
+        return Response({
+            'error': str(e)
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+
+@swagger_auto_schema(
+    method='get',
+    operation_description="Get attachment details",
+    operation_summary="Get Attachment Details",
+    tags=['Vacation - Files'],
+    responses={
+        200: openapi.Response(
+            description='Attachment details',
+            schema=VacationAttachmentSerializer
+        )
+    }
+)
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_vacation_attachment_details(request, attachment_id):
+    """Get details of a specific attachment"""
+    try:
+        from .vacation_models import VacationAttachment
+        
+        attachment = get_object_or_404(
+            VacationAttachment, 
+            id=attachment_id, 
+            is_deleted=False
+        )
+        
+        return Response({
+            'attachment': VacationAttachmentSerializer(
+                attachment, 
+                context={'request': request}
+            ).data
+        })
+        
+    except Exception as e:
+        return Response({
+            'error': str(e)
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+
+# ==================== SCHEDULE DETAIL ====================
+
+@swagger_auto_schema(
+    method='get',
+    operation_description="Get detailed information of a vacation schedule",
+    operation_summary="Get Vacation Schedule Detail",
+    tags=['Vacation'],
+    responses={
+        200: openapi.Response(
+            description='Vacation schedule details',
+            schema=VacationScheduleSerializer
+        ),
+        403: 'Permission denied',
+        404: 'Schedule not found'
+    }
+)
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_vacation_schedule_detail(request, pk):
+    """
+    Get detailed information of a vacation schedule
+    
+    Shows:
+    - Basic schedule information
+    - Employee details
+    - Vacation configuration (type)
+    - Edit history
+    - Current status
+    """
+    try:
+        from .vacation_permissions import is_admin_user
+        
+        # Get the vacation schedule
+        schedule = VacationSchedule.objects.select_related(
+            'employee', 
+            'employee__department',
+            'employee__business_function',
+            'employee__unit',
+            'employee__job_function',
+            'vacation_type',
+            'created_by',
+            'last_edited_by'
+        ).get(pk=pk, is_deleted=False)
+        
+        # Check access permission
+        emp = None
+        try:
+            emp = Employee.objects.get(user=request.user, is_deleted=False)
+        except Employee.DoesNotExist:
+            pass
+        
+        # Determine if user can view this schedule
+        can_view = False
+        
+        # Admin can view all
+        if is_admin_user(request.user):
+            can_view = True
+        
+        # Employee can view their own schedules
+        elif emp and schedule.employee == emp:
+            can_view = True
+        
+        # Creator can view schedules they created
+        elif schedule.created_by == request.user:
+            can_view = True
+        
+        # Line manager can view team schedules
+        elif emp and schedule.employee.line_manager == emp:
+            can_view = True
+        
+        # Check if user has view_all permission
+        elif check_vacation_permission(request.user, 'vacation.schedule.view_all')[0]:
+            can_view = True
+        
+        if not can_view:
+            return Response({
+                'error': 'Permission denied',
+                'detail': 'You do not have permission to view this vacation schedule'
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        # Serialize the data
+        serializer = VacationScheduleSerializer(
+            schedule, 
+            context={'request': request}
+        )
+        
+        # Add extra context information
+        response_data = serializer.data
+        
+        # Add employee information
+        response_data['employee_info'] = {
+            'id': schedule.employee.id,
+            'name': schedule.employee.full_name,
+            'employee_id': getattr(schedule.employee, 'employee_id', ''),
+            'department': schedule.employee.department.name if schedule.employee.department else None,
+            'business_function': schedule.employee.business_function.name if schedule.employee.business_function else None,
+            'phone': schedule.employee.phone
+        }
+        
+        # Add edit history
+        response_data['edit_history'] = {
+            'edit_count': schedule.edit_count,
+            'can_edit': schedule.can_edit(),
+            'last_edited_by': schedule.last_edited_by.get_full_name() if schedule.last_edited_by else None,
+            'last_edited_at': schedule.last_edited_at,
+            'max_edits_allowed': VacationSetting.get_active().max_schedule_edits if VacationSetting.get_active() else 3
+        }
+        
+        # Add creator information
+        response_data['creator_info'] = {
+            'name': schedule.created_by.get_full_name() if schedule.created_by else None,
+            'email': schedule.created_by.email if schedule.created_by else None
+        }
+        
+        # Add permission flags for frontend
+        response_data['permissions'] = {
+            'can_edit': (
+                schedule.status == 'SCHEDULED' and
+                emp and schedule.employee == emp and
+                schedule.can_edit()
+            ),
+            'can_delete': (
+                schedule.status == 'SCHEDULED' and
+                (emp and schedule.employee == emp or 
+                 (emp and schedule.employee.line_manager == emp))
+            ),
+            'can_register': (
+                schedule.status == 'SCHEDULED' and
+                check_vacation_permission(request.user, 'vacation.schedule.register')[0]
+            ),
+            'is_admin': is_admin_user(request.user)
+        }
+        
+        return Response(response_data)
+        
+    except VacationSchedule.DoesNotExist:
+        return Response({
+            'error': 'Vacation schedule not found'
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Error fetching vacation schedule detail: {e}")
+        return Response({
+            'error': str(e)
+        }, status=status.HTTP_400_BAD_REQUEST)
 # ==================== UTILITIES ====================
 @swagger_auto_schema(
     method='post',

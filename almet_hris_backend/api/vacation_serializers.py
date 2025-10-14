@@ -301,7 +301,171 @@ class EmployeeSearchSerializer(serializers.ModelSerializer):
         fields = ['id', 'full_name', 'employee_id', 'phone', 'department_name', 
                   'business_function_name', 'unit_name', 'job_function_name']
 
+class VacationAttachmentSerializer(serializers.ModelSerializer):
+    """
+    Serializer for VacationAttachment model
+    Displays file information for vacation requests
+    """
+    
+    # Read-only fields with custom display
+    uploaded_by_name = serializers.SerializerMethodField()
+    uploaded_by_email = serializers.SerializerMethodField()
+    file_url = serializers.SerializerMethodField()
+    file_size_display = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = VacationAttachment
+        fields = [
+            'id',
+            'vacation_request',
+            'file',
+            'file_url',
+            'original_filename',
+            'file_size',
+            'file_size_display',
+            'file_type',
+            'uploaded_by',
+            'uploaded_by_name',
+            'uploaded_by_email',
+            'uploaded_at',
+            'is_deleted'
+        ]
+        read_only_fields = [
+            'id',
+            'uploaded_at',
+            'uploaded_by',
+            'file_size',
+            'file_type'
+        ]
+    
+    def get_uploaded_by_name(self, obj):
+        """Get full name of uploader"""
+        if obj.uploaded_by:
+            return obj.uploaded_by.get_full_name() or obj.uploaded_by.username
+        return None
+    
+    def get_uploaded_by_email(self, obj):
+        """Get email of uploader"""
+        if obj.uploaded_by:
+            return obj.uploaded_by.email
+        return None
+    
+    def get_file_url(self, obj):
+        """Get full URL for file download"""
+        if obj.file:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.file.url)
+            return obj.file.url
+        return None
+    
+    def get_file_size_display(self, obj):
+        """Convert file size to human-readable format"""
+        if not obj.file_size:
+            return "0 B"
+        
+        size = obj.file_size
+        for unit in ['B', 'KB', 'MB', 'GB']:
+            if size < 1024.0:
+                return f"{size:.2f} {unit}"
+            size /= 1024.0
+        return f"{size:.2f} TB"
 
+
+class VacationAttachmentUploadSerializer(serializers.Serializer):
+    """
+    Serializer for uploading files to vacation requests
+    Validates file type, size, and other constraints
+    """
+    
+    file = serializers.FileField(required=True)
+    
+    # Allowed file types
+    ALLOWED_EXTENSIONS = ['pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx', 'xls', 'xlsx']
+    ALLOWED_CONTENT_TYPES = [
+        'application/pdf',
+        'image/jpeg',
+        'image/jpg',
+        'image/png',
+        'application/msword',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'application/vnd.ms-excel',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    ]
+    
+    # Maximum file size: 10MB
+    MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB in bytes
+    
+    def validate_file(self, value):
+        """
+        Validate uploaded file
+        - Check file extension
+        - Check file size
+        - Check content type
+        """
+        
+        # Check file extension
+        file_extension = value.name.split('.')[-1].lower()
+        if file_extension not in self.ALLOWED_EXTENSIONS:
+            raise serializers.ValidationError(
+                f"File type '.{file_extension}' is not allowed. "
+                f"Allowed types: {', '.join(self.ALLOWED_EXTENSIONS)}"
+            )
+        
+        # Check file size
+        if value.size > self.MAX_FILE_SIZE:
+            max_size_mb = self.MAX_FILE_SIZE / (1024 * 1024)
+            actual_size_mb = value.size / (1024 * 1024)
+            raise serializers.ValidationError(
+                f"File size ({actual_size_mb:.2f}MB) exceeds maximum allowed size ({max_size_mb}MB)"
+            )
+        
+        # Check content type
+        if value.content_type not in self.ALLOWED_CONTENT_TYPES:
+            raise serializers.ValidationError(
+                f"File content type '{value.content_type}' is not allowed"
+            )
+        
+        return value
+
+
+class VacationAttachmentListSerializer(serializers.ModelSerializer):
+    """
+    Simplified serializer for listing attachments
+    Used in vacation request list views
+    """
+    
+    uploaded_by_name = serializers.SerializerMethodField()
+    file_size_display = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = VacationAttachment
+        fields = [
+            'id',
+            'original_filename',
+            'file_size_display',
+            'file_type',
+            'uploaded_by_name',
+            'uploaded_at'
+        ]
+    
+    def get_uploaded_by_name(self, obj):
+        """Get name of uploader"""
+        if obj.uploaded_by:
+            return obj.uploaded_by.get_full_name() or obj.uploaded_by.username
+        return "Unknown"
+    
+    def get_file_size_display(self, obj):
+        """Convert file size to human-readable format"""
+        if not obj.file_size:
+            return "0 B"
+        
+        size = obj.file_size
+        for unit in ['B', 'KB', 'MB', 'GB']:
+            if size < 1024.0:
+                return f"{size:.2f} {unit}"
+            size /= 1024.0
+        return f"{size:.2f} TB"
 # ============= COMBINED RECORDS =============
 class VacationRecordSerializer(serializers.Serializer):
     """Unified serializer for both requests and schedules"""

@@ -13,7 +13,7 @@ class NotificationSettingsSerializer(serializers.ModelSerializer):
            
             'enable_email_notifications', 'email_retry_attempts',
             'email_retry_delay_minutes', 'business_trip_subject_prefix',
-            'is_active', 'created_at', 'updated_at'
+            'is_active', 'created_at', 'updated_at','vacation_subject_prefix'
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
 

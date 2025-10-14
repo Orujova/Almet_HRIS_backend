@@ -1,4 +1,4 @@
-# api/vacation_urls.py - Enhanced URLs with PUT endpoints
+# api/vacation_urls.py - Enhanced URLs with detail endpoint
 
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
@@ -10,7 +10,7 @@ router.register(r'types', views.VacationTypeViewSet, basename='vacation-types')
 
 
 urlpatterns = [
-    # Router URLs (Vacation Types & Notification Templates)
+    # Router URLs (Vacation Types)
     path('', include(router.urls)),
     
     # ============= DASHBOARD =============
@@ -23,7 +23,7 @@ urlpatterns = [
     path('production-calendar/set/', views.set_production_calendar, name='vacation-set-production-calendar'),
     path('production-calendar/update/', views.update_production_calendar, name='vacation-update-production-calendar'),
     
-    # General Vacation Settings (allow_negative_balance, max_schedule_edits, notifications)
+    # General Vacation Settings
     path('settings/', views.get_general_vacation_settings, name='vacation-get-general-settings'),
     path('settings/set/', views.set_general_vacation_settings, name='vacation-set-general-settings'),
     path('settings/update/', views.update_general_vacation_settings, name='vacation-update-general-settings'),
@@ -33,11 +33,16 @@ urlpatterns = [
     path('hr-representatives/set-default/', views.set_default_hr_representative, name='vacation-set-default-hr'),
     path('hr-representatives/update-default/', views.update_default_hr_representative, name='vacation-update-default-hr'),
     
-  
+    # ============= MY PERMISSIONS =============
+    path('my-permissions/', views.my_vacation_permissions, name='vacation-my-permissions'),
     
-    # Request Immediately
+    # ============= REQUEST MANAGEMENT =============
+    # Request Immediately (with file upload support)
     path('requests/immediate/', views.create_immediate_request, name='vacation-create-immediate-request'),
-     path('my-permissions/', views.my_vacation_permissions, name='vacation-my-permissions'),
+    
+    # ✅ NEW: Get request detail
+    path('requests/<int:pk>/', views.get_vacation_request_detail, name='vacation-request-detail'),
+    
     # Scheduling
     path('schedules/create/', views.create_schedule, name='vacation-create-schedule'),
     path('schedules/tabs/', views.my_schedule_tabs, name='vacation-my-schedule-tabs'),
@@ -60,10 +65,45 @@ urlpatterns = [
     path('balances/bulk-upload/', views.bulk_upload_balances, name='vacation-bulk-upload-balances'),
     path('balances/template/', views.download_balance_template, name='vacation-download-balance-template'),
     path('balances/export/', views.export_balances, name='vacation-export-balances'),
-    
-    # NEW: Individual Balance Management
     path('balances/update/', views.update_individual_balance, name='vacation-update-individual-balance'),
     path('balances/reset/', views.reset_employee_balance, name='vacation-reset-employee-balance'),
+    
+     path(
+        'vacation-requests/<uuid:request_id>/attachments/',
+        views.list_vacation_request_attachments,
+        name='vacation-request-attachments-list'
+    ),
+    
+
+    # Bulk upload files to vacation request
+    path(
+        'vacation-requests/<uuid:request_id>/attachments/bulk-upload/',
+        views.bulk_upload_vacation_attachments,
+        name='vacation-request-attachments-bulk-upload'
+    ),
+    
+    # Get attachment details
+    path(
+        'vacation-attachments/<int:attachment_id>/',
+        views.get_vacation_attachment_details,
+        name='vacation-attachment-detail'
+    ),
+    
+    # Delete attachment
+    path(
+        'vacation-attachments/<int:attachment_id>/delete/',
+        views.delete_vacation_attachment,
+        name='vacation-attachment-delete'
+    ),
+    
+    # ==================== VACATION SCHEDULE DETAIL ====================
+    
+    # Get vacation schedule detail
+    path(
+        'vacation-schedules/<int:pk>/detail/',
+       views.get_vacation_schedule_detail,
+        name='vacation-schedule-detail'
+    ),
     
     # ============= UTILITIES =============
     path('calculate-working-days/', views.calculate_working_days, name='vacation-calculate-working-days'),

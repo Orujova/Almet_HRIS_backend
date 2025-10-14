@@ -40,7 +40,7 @@ class BusinessFunctionSerializer(serializers.ModelSerializer):
 class DepartmentSerializer(serializers.ModelSerializer):
     business_function_name = serializers.CharField(source='business_function.name', read_only=True)
     business_function_code = serializers.CharField(source='business_function.code', read_only=True)
-    head_name = serializers.CharField(source='head_of_department.full_name', read_only=True)
+  
     employee_count = serializers.SerializerMethodField()
     unit_count = serializers.SerializerMethodField()
     
@@ -48,7 +48,7 @@ class DepartmentSerializer(serializers.ModelSerializer):
         model = Department
         fields = [
             'id', 'name', 'business_function', 'business_function_name', 
-            'business_function_code', 'head_of_department', 'head_name', 
+            'business_function_code',
             'is_active', 'employee_count', 'unit_count', 'created_at'
         ]
     
@@ -61,14 +61,14 @@ class DepartmentSerializer(serializers.ModelSerializer):
 class UnitSerializer(serializers.ModelSerializer):
     department_name = serializers.CharField(source='department.name', read_only=True)
     business_function_name = serializers.CharField(source='department.business_function.name', read_only=True)
-    unit_head_name = serializers.CharField(source='unit_head.full_name', read_only=True)
+
     employee_count = serializers.SerializerMethodField()
     
     class Meta:
         model = Unit
         fields = [
             'id', 'name', 'department', 'department_name',
-            'business_function_name', 'unit_head', 'unit_head_name',
+            'business_function_name',
             'is_active', 'employee_count', 'created_at'
         ]
     

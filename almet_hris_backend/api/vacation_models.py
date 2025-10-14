@@ -546,3 +546,52 @@ class VacationSchedule(SoftDeleteModel):
         max_edits = settings.max_schedule_edits if settings else 3
         return self.edit_count < max_edits
 
+def vacation_attachment_path(instance, filename):
+    """Generate upload path for vacation attachments"""
+    # vacation/2025/VR202500001/filename.pdf
+    year = instance.vacation_request.created_at.year
+    request_id = instance.vacation_request.request_id
+    return f'vacation/{year}/{request_id}/{filename}'
+
+
+class VacationAttachment(SoftDeleteModel):
+    """File attachments for vacation requests"""
+    vacation_request = models.ForeignKey(
+        VacationRequest, 
+        on_delete=models.CASCADE, 
+        related_name='attachments'
+    )
+    file = models.FileField(upload_to=vacation_attachment_path)
+    original_filename = models.CharField(max_length=255)
+    file_size = models.PositiveIntegerField(help_text="File size in bytes")
+    file_type = models.CharField(max_length=100, blank=True)
+    
+    uploaded_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        verbose_name = "Vacation Attachment"
+        verbose_name_plural = "Vacation Attachments"
+        db_table = 'vacation_attachments'
+        ordering = ['-uploaded_at']
+    
+    def __str__(self):
+        return f"{self.vacation_request.request_id} - {self.original_filename}"
+    
+    @property
+    def file_size_display(self):
+        """Human readable file size"""
+        size = self.file_size
+        for unit in ['B', 'KB', 'MB', 'GB']:
+            if size < 1024.0:
+                return f"{size:.1f} {unit}"
+            size /= 1024.0
+        return f"{size:.1f} TB"
+    
+    def delete(self, *args, **kwargs):
+        """Delete file from storage when model is deleted"""
+        if self.file:
+            import os
+            if os.path.isfile(self.file.path):
+                os.remove(self.file.path)
+        super().delete(*args, **kwargs)

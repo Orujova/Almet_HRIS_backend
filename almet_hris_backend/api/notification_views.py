@@ -4,7 +4,6 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status, viewsets
-from django.db.models import Count, Q
 from django.utils import timezone
 from datetime import timedelta
 from drf_yasg.utils import swagger_auto_schema
@@ -12,14 +11,13 @@ from drf_yasg import openapi
 
 from .notification_models import NotificationSettings, EmailTemplate, NotificationLog
 from .notification_serializers import (
-    NotificationSettingsSerializer,
     EmailTemplateSerializer,
     NotificationLogSerializer
 )
 from .notification_service import notification_service
 from .business_trip_permissions import is_admin_user
 from .models import UserGraphToken  # ✅ ADD THIS
-from .token_helpers import extract_graph_token_from_request  # ✅ ADD THIS
+
 
 logger = logging.getLogger(__name__)
 
@@ -49,60 +47,6 @@ def get_graph_token_from_request(request):
     
     logger.warning("❌ No valid Graph token found")
     return None
-
-
-# ==================== NOTIFICATION SETTINGS ====================
-
-@swagger_auto_schema(
-    method='get',
-    operation_description="Get notification settings",
-    operation_summary="Get Notification Settings",
-    tags=['Notifications'],
-    responses={200: NotificationSettingsSerializer()}
-)
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-def get_notification_settings(request):
-    """Get notification settings"""
-    try:
-        settings = NotificationSettings.get_active()
-        serializer = NotificationSettingsSerializer(settings)
-        return Response(serializer.data)
-    except Exception as e:
-        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
-
-
-@swagger_auto_schema(
-    method='put',
-    operation_description="Update notification settings (Admin only)",
-    operation_summary="Update Notification Settings",
-    tags=['Notifications'],
-    request_body=NotificationSettingsSerializer,
-    responses={200: NotificationSettingsSerializer()}
-)
-@api_view(['PUT'])
-@permission_classes([IsAuthenticated])
-def update_notification_settings(request):
-    """Update notification settings (Admin only)"""
-    try:
-        if not is_admin_user(request.user):
-            return Response(
-                {'error': 'Admin permission required'},
-                status=status.HTTP_403_FORBIDDEN
-            )
-        
-        settings = NotificationSettings.get_active()
-        serializer = NotificationSettingsSerializer(settings, data=request.data, partial=True)
-        
-        if serializer.is_valid():
-            serializer.save(updated_by=request.user)
-            return Response(serializer.data)
-        
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-        
-    except Exception as e:
-        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
-
 
 # ==================== EMAIL TEMPLATES ====================
 
@@ -135,7 +79,6 @@ class EmailTemplateViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_403_FORBIDDEN
             )
         return super().destroy(request, *args, **kwargs)
-
 
 # ==================== NOTIFICATION LOGS ====================
 
@@ -194,122 +137,51 @@ def get_notification_history(request):
     except Exception as e:
         return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
-
-@swagger_auto_schema(
-    method='get',
-    operation_description="Get Business Trip notification history",
-    operation_summary="Get Business Trip Notifications",
-    tags=['Notifications'],
-    responses={200: NotificationLogSerializer(many=True)}
-)
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-def get_business_trip_notifications(request):
-    """Get all Business Trip related notifications"""
-    try:
-        logs = NotificationLog.objects.filter(
-            related_model='BusinessTripRequest'
-        ).order_by('-created_at')[:50]
-        
-        serializer = NotificationLogSerializer(logs, many=True)
-        return Response({
-            'count': logs.count(),
-            'notifications': serializer.data
-        })
-        
-    except Exception as e:
-        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
-
-
-# ==================== GRAPH TOKEN STATUS ====================
-
-@swagger_auto_schema(
-    method='get',
-    operation_description="Check Microsoft Graph token status",
-    operation_summary="Graph Token Status",
-    tags=['Notifications'],
-    responses={
-        200: openapi.Response(
-            description='Token status',
-            examples={
-                'application/json': {
-                    'has_graph_token': True,
-                    'token_valid': True,
-                    'expires_at': '2025-01-15T10:30:00Z',
-                    'can_send_emails': True
-                }
-            }
-        )
-    }
-)
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-def get_graph_token_status(request):
-    """Check if user has valid Graph token for sending emails"""
-    try:
-        graph_token = get_graph_token_from_request(request)
-        
-        if graph_token:
-            # Check expiry
-            try:
-                token_obj = UserGraphToken.objects.get(user=request.user)
-                
-                return Response({
-                    'has_graph_token': True,
-                    'token_valid': token_obj.is_valid(),
-                    'token_expired': token_obj.is_expired(),
-                    'expires_at': token_obj.expires_at.isoformat(),
-                    'can_send_emails': token_obj.is_valid(),
-                    'message': 'Graph token is valid' if token_obj.is_valid() else 'Token expired'
-                })
-            except UserGraphToken.DoesNotExist:
-                return Response({
-                    'has_graph_token': True,
-                    'token_valid': True,
-                    'can_send_emails': True,
-                    'message': 'Graph token available (no expiry info)'
-                })
-        else:
-            return Response({
-                'has_graph_token': False,
-                'token_valid': False,
-                'can_send_emails': False,
-                'message': 'No Graph token. Please login again.'
-            })
-            
-    except Exception as e:
-        logger.error(f"Error checking Graph token status: {e}")
-        return Response({
-            'has_graph_token': False,
-            'token_valid': False,
-            'can_send_emails': False,
-            'message': f'Error: {str(e)}'
-        }, status=status.HTTP_400_BAD_REQUEST)
-
-
 # ==================== OUTLOOK INTEGRATION ====================
 
 @swagger_auto_schema(
     method='get',
-    operation_description="Get Business Trip emails from Outlook",
-    operation_summary="Get Outlook Business Trip Emails",
+    operation_description="Get emails from Outlook filtered by module",
+    operation_summary="Get Outlook Emails",
     tags=['Notifications'],
+    manual_parameters=[
+        openapi.Parameter(
+            'module',
+            openapi.IN_QUERY,
+            type=openapi.TYPE_STRING,
+            enum=['business_trip', 'vacation', 'all'],
+            required=False,
+            default='all',
+            description='Filter by module: business_trip, vacation, or all'
+        ),
+        openapi.Parameter(
+            'top',
+            openapi.IN_QUERY,
+            type=openapi.TYPE_INTEGER,
+            required=False,
+            default=50,
+            description='Number of emails to retrieve (max 50)'
+        )
+    ],
     responses={200: openapi.Response(description='Outlook emails')}
 )
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
-def get_outlook_business_trip_emails(request):
+def get_outlook_emails(request):
     """
-    ✅ FIXED: Get Business Trip emails from user's Outlook mailbox
-    Properly extracts Graph token from request
+    Get emails from user's Outlook mailbox
+    Filter by module: business_trip, vacation, or all
     """
     try:
-        # ✅ Get Graph token using helper function
+        # Get parameters
+        module = request.GET.get('module', 'all')
+        top = int(request.GET.get('top', 50))
+        
+        # Get Graph token
         graph_token = get_graph_token_from_request(request)
         
         if not graph_token:
             logger.warning(f"No Graph token for user {request.user.username}")
-            
             return Response({
                 'error': 'Microsoft Graph token not available',
                 'message': 'Please login again to refresh your Graph token',
@@ -319,25 +191,69 @@ def get_outlook_business_trip_emails(request):
             }, status=status.HTTP_401_UNAUTHORIZED)
         
         logger.info(f"✅ Graph token retrieved for {request.user.username}")
+        logger.info(f"📧 Fetching emails for module: {module}")
         
-        # Get Business Trip emails
+        # Get settings
         settings = NotificationSettings.get_active()
-        subject_filter = settings.business_trip_subject_prefix
         
-        logger.info(f"Searching emails with filter: {subject_filter}")
+        # Determine which filters to use
+        emails = []
         
-        emails = notification_service.get_emails_by_subject(
-            access_token=graph_token,
-            subject_filter=subject_filter,
-            top=50
-        )
+        if module == 'business_trip':
+            # Only Business Trip emails
+            subject_filter = settings.business_trip_subject_prefix
+            emails = notification_service.get_emails_by_subject(
+                access_token=graph_token,
+                subject_filter=subject_filter,
+                top=top
+            )
+            
+        elif module == 'vacation':
+            # Only Vacation emails
+            subject_filter = settings.vacation_subject_prefix
+            emails = notification_service.get_emails_by_subject(
+                access_token=graph_token,
+                subject_filter=subject_filter,
+                top=top
+            )
+            
+        else:  # module == 'all'
+            # Get both Business Trip and Vacation emails
+            business_trip_emails = notification_service.get_emails_by_subject(
+                access_token=graph_token,
+                subject_filter=settings.business_trip_subject_prefix,
+                top=top
+            )
+            
+            vacation_emails = notification_service.get_emails_by_subject(
+                access_token=graph_token,
+                subject_filter=settings.vacation_subject_prefix,
+                top=top
+            )
+            
+            # Combine and sort by receivedDateTime
+            emails = business_trip_emails + vacation_emails
+            emails.sort(key=lambda x: x.get('receivedDateTime', ''), reverse=True)
+            
+            # Limit to top count
+            emails = emails[:top]
         
         # Format response
         formatted_emails = []
         for email in emails:
+            # Determine module from subject
+            subject = email.get('subject', '')
+            email_module = 'unknown'
+            
+            if settings.business_trip_subject_prefix in subject:
+                email_module = 'business_trip'
+            elif settings.vacation_subject_prefix in subject:
+                email_module = 'vacation'
+            
             formatted_emails.append({
                 'id': email.get('id'),
-                'subject': email.get('subject'),
+                'subject': subject,
+                'module': email_module,  # ✅ Module tag
                 'from': email.get('from', {}).get('emailAddress', {}).get('address'),
                 'from_name': email.get('from', {}).get('emailAddress', {}).get('name'),
                 'received_at': email.get('receivedDateTime'),
@@ -347,13 +263,13 @@ def get_outlook_business_trip_emails(request):
                 'preview': email.get('bodyPreview', '')[:200]
             })
         
-        logger.info(f"✅ Found {len(formatted_emails)} emails for {request.user.username}")
+        logger.info(f"✅ Found {len(formatted_emails)} emails for module: {module}")
         
         return Response({
             'success': True,
             'count': len(formatted_emails),
             'emails': formatted_emails,
-            'subject_filter': subject_filter,
+            'module_filter': module,
             'graph_token_status': 'valid'
         })
         
@@ -367,6 +283,95 @@ def get_outlook_business_trip_emails(request):
             'count': 0,
             'emails': [],
             'graph_token_status': 'error'
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+@swagger_auto_schema(
+    method='post',
+    operation_description="Mark all emails as read by module",
+    operation_summary="Mark All Emails as Read",
+    tags=['Notifications'],
+    request_body=openapi.Schema(
+        type=openapi.TYPE_OBJECT,
+        required=['module'],
+        properties={
+            'module': openapi.Schema(
+                type=openapi.TYPE_STRING,
+                enum=['business_trip', 'vacation', 'all'],
+                description='Module filter'
+            )
+        }
+    ),
+    responses={200: openapi.Response(description='Batch result')}
+)
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def mark_all_emails_read(request):
+    """Mark all emails as read filtered by module"""
+    try:
+        module = request.data.get('module', 'all')
+        
+        graph_token = get_graph_token_from_request(request)
+        
+        if not graph_token:
+            return Response({
+                'error': 'Microsoft Graph token not available'
+            }, status=status.HTTP_401_UNAUTHORIZED)
+        
+        settings = NotificationSettings.get_active()
+        
+        # Collect unread email IDs based on module
+        unread_ids = []
+        
+        if module in ['business_trip', 'all']:
+            # Get Business Trip emails
+            bt_emails = notification_service.get_emails_by_subject(
+                access_token=graph_token,
+                subject_filter=settings.business_trip_subject_prefix,
+                top=50
+            )
+            unread_ids.extend([
+                email['id'] for email in bt_emails 
+                if not email.get('isRead', False)
+            ])
+        
+        if module in ['vacation', 'all']:
+            # Get Vacation emails
+            vac_emails = notification_service.get_emails_by_subject(
+                access_token=graph_token,
+                subject_filter=settings.vacation_subject_prefix,
+                top=50
+            )
+            unread_ids.extend([
+                email['id'] for email in vac_emails 
+                if not email.get('isRead', False)
+            ])
+        
+        if not unread_ids:
+            return Response({
+                'success': True,
+                'message': f'No unread emails for module: {module}',
+                'marked_count': 0,
+                'module': module
+            })
+        
+        # Mark all as read
+        results = notification_service.mark_multiple_emails_as_read(
+            access_token=graph_token,
+            message_ids=unread_ids
+        )
+        
+        return Response({
+            'success': True,
+            'marked_count': results['success'],
+            'failed_count': results['failed'],
+            'total_unread': len(unread_ids),
+            'module': module
+        })
+        
+    except Exception as e:
+        logger.error(f"Error marking emails as read: {e}")
+        return Response({
+            'error': str(e)
         }, status=status.HTTP_400_BAD_REQUEST)
 
 @swagger_auto_schema(
@@ -431,7 +436,6 @@ def mark_email_read(request):
             'error': str(e)
         }, status=status.HTTP_400_BAD_REQUEST)
 
-
 @swagger_auto_schema(
     method='post',
     operation_description="Mark email as unread",
@@ -488,16 +492,7 @@ def mark_email_unread(request):
         }, status=status.HTTP_400_BAD_REQUEST)
 
 
-@swagger_auto_schema(
-    method='post',
-    operation_description="Mark multiple Business Trip emails as read",
-    operation_summary="Mark All Business Trip Emails as Read",
-    tags=['Notifications'],
-    responses={200: openapi.Response(description='Batch result')}
-)
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
-def mark_all_business_trip_emails_read(request):
+
     """Mark all Business Trip emails as read"""
     try:
         graph_token = get_graph_token_from_request(request)

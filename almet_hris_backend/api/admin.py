@@ -245,10 +245,10 @@ class BusinessFunctionAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
 
 @admin.register(Department)
 class DepartmentAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
-    list_display = ('name', 'business_function', 'head_display', 'employee_count', 'unit_count', 'is_active', 'is_deleted_display')
+    list_display = ('name', 'business_function', 'employee_count', 'unit_count', 'is_active', 'is_deleted_display')
     list_filter = ('business_function', 'is_active', 'is_deleted', 'created_at')
     search_fields = ('name', 'business_function__name', 'business_function__code')
-    autocomplete_fields = ['head_of_department']
+  
     readonly_fields = ('created_at', 'updated_at')
     
     def is_deleted_display(self, obj):
@@ -257,15 +257,7 @@ class DepartmentAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
         return format_html('<span style="color: green;">✓ Active</span>')
     is_deleted_display.short_description = 'Status'
     
-    def head_display(self, obj):
-        if obj.head_of_department and not obj.head_of_department.is_deleted:
-            url = reverse('admin:api_employee_change', args=[obj.head_of_department.id])
-            return format_html(
-                '<a href="{}" style="color: #417690;">{}</a>',
-                url, obj.head_of_department.full_name
-            )
-        return format_html('<span style="color: #999;">No Head</span>')
-    head_display.short_description = 'Department Head'
+    
     
     def employee_count(self, obj):
         count = obj.employees.filter(status__affects_headcount=True, is_deleted=False).count()
@@ -291,7 +283,7 @@ class DepartmentAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
 
 @admin.register(Unit)
 class UnitAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
-    list_display = ('name', 'department', 'business_function_name', 'unit_head_display', 'employee_count', 'is_active', 'is_deleted_display')
+    list_display = ('name', 'department', 'business_function_name',  'employee_count', 'is_active', 'is_deleted_display')
     list_filter = ('department__business_function', 'department', 'is_active', 'is_deleted', 'created_at')
     search_fields = ('name', 'department__name', 'department__business_function__name')
     ordering = ('department__business_function__code', 'department__name', 'name')
@@ -308,15 +300,7 @@ class UnitAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
         return obj.department.business_function.name
     business_function_name.short_description = 'Business Function'
     
-    def unit_head_display(self, obj):
-        if obj.unit_head and not obj.unit_head.is_deleted:
-            url = reverse('admin:api_employee_change', args=[obj.unit_head.id])
-            return format_html(
-                '<a href="{}" style="color: #417690;">{}</a>',
-                url, obj.unit_head.full_name
-            )
-        return format_html('<span style="color: #999;">No Head</span>')
-    unit_head_display.short_description = 'Unit Head'
+    
     
     def employee_count(self, obj):
         count = obj.employees.filter(status__affects_headcount=True, is_deleted=False).count()

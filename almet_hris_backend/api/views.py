@@ -832,7 +832,7 @@ class BusinessFunctionViewSet(viewsets.ModelViewSet):
     ordering = ['code']
 
 class DepartmentViewSet(viewsets.ModelViewSet):
-    queryset = Department.objects.select_related('business_function', 'head_of_department').all()
+    queryset = Department.objects.select_related('business_function').all()
     serializer_class = DepartmentSerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
