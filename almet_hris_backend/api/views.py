@@ -3220,6 +3220,8 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         
         logger.info(f"✅ FIXED: CSV export completed with {len(fields)} fields for {queryset.count()} employees")
         return response
+    
+    
     def _process_bulk_employee_data_from_excel(self, df, user):
         """Excel data-sını process et və employee-lar yarat"""
         results = {
@@ -3373,10 +3375,11 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 results['failed'] = len(df_clean)
                 return results
             
-            # Process each row
-            with transaction.atomic():
-                for index, row in df_clean.iterrows():
-                    try:
+            # ✅ HƏR ROW ÜÇÜN AYRI TRANSACTION - BÖYÜK TRANSACTION YOX!
+            for index, row in df_clean.iterrows():
+                try:
+                    # ✅ HƏR EMPLOYEE ÜÇÜN AYRI TRANSACTION
+                    with transaction.atomic():
                         # Extract required fields with safe string conversion
                         def safe_get(col_name, default=''):
                             """Safely get value from row, handling lists and various data types"""
@@ -3480,19 +3483,15 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                             results['failed'] += 1
                             continue
                         
-                        # FIXED: Validate contract duration properly
+                        # Validate contract duration
                         try:
-                            # Check if it exists in ContractTypeConfig
                             if not ContractTypeConfig.objects.filter(contract_type=contract_duration, is_active=True).exists():
-                                # Get available options
                                 available_durations = list(ContractTypeConfig.objects.filter(is_active=True).values_list('contract_type', flat=True))
                                 if not available_durations:
-                                    # Create default configs if none exist
                                     ContractTypeConfig.get_or_create_defaults()
                                     available_durations = list(ContractTypeConfig.objects.filter(is_active=True).values_list('contract_type', flat=True))
                                 
                                 if not available_durations:
-                                    # Final fallback
                                     available_durations = ['3_MONTHS', '6_MONTHS', '1_YEAR', '2_YEARS', '3_YEARS', 'PERMANENT']
                                 
                                 if contract_duration not in available_durations:
@@ -3501,10 +3500,9 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                                     continue
                         except Exception as e:
                             logger.error(f"Error validating contract duration for row {index + 2}: {e}")
-                            # Fallback validation
                             default_durations = ['3_MONTHS', '6_MONTHS', '1_YEAR', '2_YEARS', '3_YEARS', 'PERMANENT']
                             if contract_duration not in default_durations:
-                                contract_duration = 'PERMANENT'  # Default fallback
+                                contract_duration = 'PERMANENT'
                         
                         # Optional fields
                         date_of_birth = None
@@ -3520,7 +3518,13 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                             gender = None
                         
                         father_name = safe_get('father_name')
+                        
+                        # ✅ PHONE FIELD VALIDATION - TRUNCATE IF TOO LONG
                         phone = safe_get('phone')
+                        if phone and len(phone) > 15:
+                            phone = phone[:15]  # Take only first 15 characters
+                            logger.warning(f"Row {index + 2}: Phone number truncated to 15 characters")
+                        
                         address = safe_get('address')
                         emergency_contact = safe_get('emergency_contact')
                         
@@ -3598,28 +3602,24 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                             for tag_spec in tags_str.split(','):
                                 tag_spec = tag_spec.strip()
                                 if ':' in tag_spec:
-                                    # FIXED: Properly handle the split result
-                                    tag_parts = tag_spec.split(':', 1)  # Returns a list [type, name]
+                                    tag_parts = tag_spec.split(':', 1)
                                     if len(tag_parts) >= 2:
-                                        tag_name = tag_parts[1].strip()  # Get the second part (name) and strip it
+                                        tag_name = tag_parts[1].strip()
                                     else:
-                                        tag_name = tag_spec.strip()  # Fallback to the whole spec
+                                        tag_name = tag_spec.strip()
                                 else:
-                                    # Simple tag name without type
                                     tag_name = tag_spec.strip()
                                 
-                                if tag_name:  # Only process if we have a valid tag name
-                                    # Get or create tag
+                                if tag_name:
                                     tag, created = EmployeeTag.objects.get_or_create(
                                         name=tag_name,
-                                        defaults={
-                                            'is_active': True
-                                        }
+                                        defaults={'is_active': True}
                                     )
                                     tags.append(tag)
                             
                             if tags:
                                 employee.tags.set(tags)
+                        
                         # Log activity
                         EmployeeActivity.objects.create(
                             employee=employee,
@@ -3636,26 +3636,26 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                             'email': employee.user.email
                         })
                         
-                        logger.info(f"Created employee: {employee.employee_id} - {employee.full_name}")
-                        
-                    except Exception as e:
-                        error_msg = f"Row {index + 2}: {str(e)}"
-                        results['errors'].append(error_msg)
-                        results['failed'] += 1
-                        logger.error(f"Error creating employee from row {index + 2}: {e}")
-                        logger.error(f"Traceback: {traceback.format_exc()}")
-                        continue
+                        logger.info(f"✅ Created employee: {employee.employee_id} - {employee.full_name}")
+                    
+                except Exception as e:
+                    # ✅ Bu row fail oldu, amma digərləri davam edər
+                    error_msg = f"Row {index + 2}: {str(e)}"
+                    results['errors'].append(error_msg)
+                    results['failed'] += 1
+                    logger.error(f"❌ Error creating employee from row {index + 2}: {e}")
+                    logger.error(f"Traceback: {traceback.format_exc()}")
+                    continue  # Növbəti row-a keç
             
-            logger.info(f"Bulk creation completed: {results['successful']} successful, {results['failed']} failed")
+            logger.info(f"🎉 Bulk creation completed: {results['successful']} successful, {results['failed']} failed")
             return results
             
         except Exception as e:
-            logger.error(f"Bulk processing failed: {str(e)}")
+            logger.error(f"❌ Bulk processing failed: {str(e)}")
             logger.error(f"Traceback: {traceback.format_exc()}")
             results['errors'].append(f"Processing failed: {str(e)}")
             results['failed'] = results['total_rows']
             return results
-    
     @action(detail=True, methods=['get'])
     def job_descriptions(self, request, pk=None):
         """UPDATED: Get job descriptions for employee"""

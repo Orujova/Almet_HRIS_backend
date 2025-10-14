@@ -68,19 +68,19 @@ urlpatterns = [
     path('balances/update/', views.update_individual_balance, name='vacation-update-individual-balance'),
     path('balances/reset/', views.reset_employee_balance, name='vacation-reset-employee-balance'),
     
-     path(
-        'vacation-requests/<uuid:request_id>/attachments/',
-        views.list_vacation_request_attachments,
-        name='vacation-request-attachments-list'
-    ),
+    path(
+    'vacation-requests/<str:request_id>/attachments/',
+    views.list_vacation_request_attachments,
+    name='vacation-request-attachments-list'
+),
     
 
     # Bulk upload files to vacation request
-    path(
-        'vacation-requests/<uuid:request_id>/attachments/bulk-upload/',
-        views.bulk_upload_vacation_attachments,
-        name='vacation-request-attachments-bulk-upload'
-    ),
+   path(
+    'vacation-requests/<str:request_id>/attachments/bulk-upload/',
+    views.bulk_upload_vacation_attachments,
+    name='vacation-request-attachments-bulk-upload'
+),
     
     # Get attachment details
     path(
