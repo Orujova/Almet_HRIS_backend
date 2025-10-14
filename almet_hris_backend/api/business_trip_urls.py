@@ -47,6 +47,23 @@ urlpatterns = [
     # Cancel Trip
     path('requests/<int:pk>/cancel/', views.cancel_trip, name='trip-cancel'),
     
+    # ==================== FILE UPLOAD ENDPOINTS ====================
+
+    
+    # Bulk upload multiple files
+    path('requests/<str:request_id>/attachments/bulk-upload/', views.bulk_upload_trip_attachments, name='trip-bulk-upload'),
+    
+    # List all attachments for a trip request
+    path('requests/<str:request_id>/attachments/', views.list_trip_attachments, name='trip-list-files'),
+    
+    # Get attachment details
+    path('attachments/<int:attachment_id>/', views.get_attachment_details, name='trip-get-attachment'),
+    
+     path('requests/<int:pk>/', views.get_trip_request_detail, name='trip-detail'),
+
+    # Delete attachment
+    path('attachments/<int:attachment_id>/delete/', views.delete_trip_attachment, name='trip-delete-file'),
+    
     # Include router URLs (this will add travel-types/, transport-types/, purposes/)
     path('', include(router.urls)),
 ]

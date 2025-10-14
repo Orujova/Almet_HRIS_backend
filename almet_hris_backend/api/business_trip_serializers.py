@@ -64,6 +64,59 @@ class GeneralTripSettingsSerializer(serializers.Serializer):
     """General Trip Settings serializer"""
     notification_days_before = serializers.IntegerField(required=False, min_value=1)
 
+# ============= ATTACHMENT SERIALIZERS =============
+
+class TripAttachmentSerializer(serializers.ModelSerializer):
+    file_url = serializers.SerializerMethodField()
+    file_size_display = serializers.ReadOnlyField()
+    uploaded_by_name = serializers.CharField(source='uploaded_by.get_full_name', read_only=True)
+    
+    class Meta:
+        model = TripAttachment
+        fields = [
+            'id', 'file', 'file_url', 'original_filename', 
+            'file_size', 'file_size_display', 'file_type', 
+             'uploaded_by_name', 'uploaded_at'
+        ]
+        read_only_fields = ['file_size', 'uploaded_by', 'uploaded_at']
+    
+    def get_file_url(self, obj):
+        request = self.context.get('request')
+        if obj.file and hasattr(obj.file, 'url'):
+            if request:
+                return request.build_absolute_uri(obj.file.url)
+            return obj.file.url
+        return None
+
+class TripAttachmentUploadSerializer(serializers.Serializer):
+    """Serializer for uploading attachments"""
+    file = serializers.FileField(required=True)
+   
+    
+    def validate_file(self, value):
+        """Validate file size and type"""
+        # Max file size: 10MB
+        max_size = 10 * 1024 * 1024
+        if value.size > max_size:
+            raise serializers.ValidationError(f"File size must not exceed 10MB. Current size: {value.size / (1024*1024):.2f}MB")
+        
+        # Allowed file types
+        allowed_types = [
+            'application/pdf',
+            'image/jpeg', 'image/jpg', 'image/png',
+            'application/msword',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'application/vnd.ms-excel',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        ]
+        
+        if value.content_type not in allowed_types:
+            raise serializers.ValidationError(
+                f"File type not allowed. Allowed types: PDF, JPG, PNG, DOC, DOCX, XLS, XLSX"
+            )
+        
+        return value
+
 # ============= SCHEDULE & HOTEL SERIALIZERS =============
 
 class TripScheduleSerializer(serializers.ModelSerializer):
@@ -88,6 +141,7 @@ class BusinessTripRequestListSerializer(serializers.ModelSerializer):
     transport_type_name = serializers.CharField(source='transport_type.name', read_only=True)
     purpose_name = serializers.CharField(source='purpose.name', read_only=True)
     status_display = serializers.CharField(source='get_status_display', read_only=True)
+    attachments_count = serializers.SerializerMethodField()
     
     class Meta:
         model = BusinessTripRequest
@@ -95,8 +149,12 @@ class BusinessTripRequestListSerializer(serializers.ModelSerializer):
             'id', 'request_id', 'employee_name', 'employee_id', 'department_name',
             'travel_type_name', 'transport_type_name', 'purpose_name',
             'start_date', 'end_date', 'return_date', 'number_of_days',
-            'status', 'status_display', 'finance_amount', 'comment', 'created_at'
+            'status', 'status_display', 'finance_amount', 'comment', 
+            'attachments_count', 'created_at'
         ]
+    
+    def get_attachments_count(self, obj):
+        return obj.attachments.filter(is_deleted=False).count()
 
 class BusinessTripRequestDetailSerializer(serializers.ModelSerializer):
     employee_info = serializers.SerializerMethodField()
@@ -111,6 +169,7 @@ class BusinessTripRequestDetailSerializer(serializers.ModelSerializer):
     
     schedules = TripScheduleSerializer(many=True, read_only=True)
     hotels = TripHotelSerializer(many=True, read_only=True)
+    attachments = serializers.SerializerMethodField()
     
     class Meta:
         model = BusinessTripRequest
@@ -122,7 +181,7 @@ class BusinessTripRequestDetailSerializer(serializers.ModelSerializer):
             'finance_approver_name', 'finance_amount', 'finance_comment', 'finance_approved_at',
             'hr_representative_name', 'hr_comment', 'hr_approved_at',
             'rejection_reason', 'rejected_at',
-            'schedules', 'hotels', 'created_at', 'updated_at'
+            'schedules', 'hotels', 'attachments', 'created_at', 'updated_at'
         ]
     
     def get_employee_info(self, obj):
@@ -136,6 +195,14 @@ class BusinessTripRequestDetailSerializer(serializers.ModelSerializer):
             'job_function': obj.employee.job_function.name if obj.employee.job_function else None,
             'phone': obj.employee.phone
         }
+    
+    def get_attachments(self, obj):
+        attachments = obj.attachments.filter(is_deleted=False).order_by('-uploaded_at')
+        return TripAttachmentSerializer(
+            attachments, 
+            many=True, 
+            context=self.context
+        ).data
 
 class EmployeeManualSerializer(serializers.Serializer):
     """Manual employee data"""

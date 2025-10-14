@@ -17,7 +17,9 @@ urlpatterns = [
     
  
     
-
+ path('outlook/mark-read/', notification_views.mark_email_read, name='notification-mark-read'),
+    path('outlook/mark-unread/', notification_views.mark_email_unread, name='notification-mark-unread'),
+    path('outlook/mark-all-business-trips-read/', notification_views.mark_all_business_trip_emails_read, name='notification-mark-all-read'),
     
     # Outlook Integration
     path('outlook/business-trips/', notification_views.get_outlook_business_trip_emails, name='notification-outlook-business-trips'),

@@ -369,3 +369,180 @@ def get_outlook_business_trip_emails(request):
             'graph_token_status': 'error'
         }, status=status.HTTP_400_BAD_REQUEST)
 
+@swagger_auto_schema(
+    method='post',
+    operation_description="Mark email as read",
+    operation_summary="Mark Email as Read",
+    tags=['Notifications'],
+    request_body=openapi.Schema(
+        type=openapi.TYPE_OBJECT,
+        required=['message_id'],
+        properties={
+            'message_id': openapi.Schema(type=openapi.TYPE_STRING, description='Email message ID')
+        }
+    ),
+    responses={
+        200: openapi.Response(description='Success'),
+        400: openapi.Response(description='Error')
+    }
+)
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def mark_email_read(request):
+    """Mark an email as read"""
+    try:
+        message_id = request.data.get('message_id')
+        
+        if not message_id:
+            return Response(
+                {'error': 'message_id is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Get Graph token
+        graph_token = get_graph_token_from_request(request)
+        
+        if not graph_token:
+            return Response({
+                'error': 'Microsoft Graph token not available',
+                'message': 'Please login again'
+            }, status=status.HTTP_401_UNAUTHORIZED)
+        
+        # Mark as read
+        success = notification_service.mark_email_as_read(
+            access_token=graph_token,
+            message_id=message_id
+        )
+        
+        if success:
+            return Response({
+                'success': True,
+                'message': 'Email marked as read',
+                'message_id': message_id
+            })
+        else:
+            return Response({
+                'error': 'Failed to mark email as read'
+            }, status=status.HTTP_400_BAD_REQUEST)
+            
+    except Exception as e:
+        logger.error(f"Error in mark_email_read: {e}")
+        return Response({
+            'error': str(e)
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+
+@swagger_auto_schema(
+    method='post',
+    operation_description="Mark email as unread",
+    operation_summary="Mark Email as Unread",
+    tags=['Notifications'],
+    request_body=openapi.Schema(
+        type=openapi.TYPE_OBJECT,
+        required=['message_id'],
+        properties={
+            'message_id': openapi.Schema(type=openapi.TYPE_STRING, description='Email message ID')
+        }
+    ),
+    responses={200: openapi.Response(description='Success')}
+)
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def mark_email_unread(request):
+    """Mark an email as unread"""
+    try:
+        message_id = request.data.get('message_id')
+        
+        if not message_id:
+            return Response(
+                {'error': 'message_id is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        graph_token = get_graph_token_from_request(request)
+        
+        if not graph_token:
+            return Response({
+                'error': 'Microsoft Graph token not available'
+            }, status=status.HTTP_401_UNAUTHORIZED)
+        
+        success = notification_service.mark_email_as_unread(
+            access_token=graph_token,
+            message_id=message_id
+        )
+        
+        if success:
+            return Response({
+                'success': True,
+                'message': 'Email marked as unread',
+                'message_id': message_id
+            })
+        else:
+            return Response({
+                'error': 'Failed to mark email as unread'
+            }, status=status.HTTP_400_BAD_REQUEST)
+            
+    except Exception as e:
+        return Response({
+            'error': str(e)
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+
+@swagger_auto_schema(
+    method='post',
+    operation_description="Mark multiple Business Trip emails as read",
+    operation_summary="Mark All Business Trip Emails as Read",
+    tags=['Notifications'],
+    responses={200: openapi.Response(description='Batch result')}
+)
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def mark_all_business_trip_emails_read(request):
+    """Mark all Business Trip emails as read"""
+    try:
+        graph_token = get_graph_token_from_request(request)
+        
+        if not graph_token:
+            return Response({
+                'error': 'Microsoft Graph token not available'
+            }, status=status.HTTP_401_UNAUTHORIZED)
+        
+        # Get all Business Trip emails
+        settings = NotificationSettings.get_active()
+        emails = notification_service.get_emails_by_subject(
+            access_token=graph_token,
+            subject_filter=settings.business_trip_subject_prefix,
+            top=50
+        )
+        
+        # Get unread email IDs
+        unread_ids = [
+            email['id'] for email in emails 
+            if not email.get('isRead', False)
+        ]
+        
+        if not unread_ids:
+            return Response({
+                'success': True,
+                'message': 'No unread Business Trip emails',
+                'marked_count': 0
+            })
+        
+        # Mark all as read
+        results = notification_service.mark_multiple_emails_as_read(
+            access_token=graph_token,
+            message_ids=unread_ids
+        )
+        
+        return Response({
+            'success': True,
+            'marked_count': results['success'],
+            'failed_count': results['failed'],
+            'total_unread': len(unread_ids)
+        })
+        
+    except Exception as e:
+        logger.error(f"Error marking emails as read: {e}")
+        return Response({
+            'error': str(e)
+        }, status=status.HTTP_400_BAD_REQUEST)

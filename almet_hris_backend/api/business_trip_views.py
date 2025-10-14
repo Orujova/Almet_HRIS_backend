@@ -29,6 +29,24 @@ import logging
 logger = logging.getLogger(__name__)
 from .business_trip_notifications import notification_manager
 
+from rest_framework.decorators import api_view, permission_classes, parser_classes
+from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework import status
+from django.shortcuts import get_object_or_404
+from drf_yasg.utils import swagger_auto_schema
+from drf_yasg import openapi
+import logging
+
+from .business_trip_models import BusinessTripRequest, TripAttachment
+from .business_trip_serializers import (
+    TripAttachmentSerializer, 
+    TripAttachmentUploadSerializer
+)
+
+logger = logging.getLogger(__name__)
+
 # ✅ FIXED: Helper function to get Microsoft Graph token
 def get_graph_access_token(user):
     """
@@ -487,40 +505,167 @@ def get_notification_context(request):
 
 
 # ==================== CREATE REQUEST ====================
+# api/business_trip_views.py - UPDATED create_trip_request function
+
 @swagger_auto_schema(
     method='post',
-    operation_description="Create business trip request with email notification",
-    operation_summary="Create Trip Request",
+    operation_description="Create business trip request with optional file attachments",
+    operation_summary="Create Trip Request with Files",
     tags=['Business Trip'],
-    request_body=BusinessTripRequestCreateSerializer,
-    responses={201: openapi.Response(description='Request created')}
+    manual_parameters=[
+        openapi.Parameter(
+            'requester_type',
+            openapi.IN_FORM,
+            type=openapi.TYPE_STRING,
+            required=True,
+            description='for_me or for_my_employee'
+        ),
+        openapi.Parameter(
+            'employee_id',
+            openapi.IN_FORM,
+            type=openapi.TYPE_INTEGER,
+            required=False,
+            description='Employee ID (for for_my_employee)'
+        ),
+        openapi.Parameter(
+            'travel_type_id',
+            openapi.IN_FORM,
+            type=openapi.TYPE_INTEGER,
+            required=True,
+            description='Travel Type ID'
+        ),
+        openapi.Parameter(
+            'transport_type_id',
+            openapi.IN_FORM,
+            type=openapi.TYPE_INTEGER,
+            required=True,
+            description='Transport Type ID'
+        ),
+        openapi.Parameter(
+            'purpose_id',
+            openapi.IN_FORM,
+            type=openapi.TYPE_INTEGER,
+            required=True,
+            description='Purpose ID'
+        ),
+        openapi.Parameter(
+            'start_date',
+            openapi.IN_FORM,
+            type=openapi.TYPE_STRING,
+            format='date',
+            required=True,
+            description='Start date (YYYY-MM-DD)'
+        ),
+        openapi.Parameter(
+            'end_date',
+            openapi.IN_FORM,
+            type=openapi.TYPE_STRING,
+            format='date',
+            required=True,
+            description='End date (YYYY-MM-DD)'
+        ),
+        openapi.Parameter(
+            'comment',
+            openapi.IN_FORM,
+            type=openapi.TYPE_STRING,
+            required=False,
+            description='Comment'
+        ),
+        openapi.Parameter(
+            'schedules',
+            openapi.IN_FORM,
+            type=openapi.TYPE_STRING,
+            required=True,
+            description='JSON string of schedules array'
+        ),
+        openapi.Parameter(
+            'hotels',
+            openapi.IN_FORM,
+            type=openapi.TYPE_STRING,
+            required=False,
+            description='JSON string of hotels array'
+        ),
+        openapi.Parameter(
+            'files',
+            openapi.IN_FORM,
+            type=openapi.TYPE_ARRAY,
+            items=openapi.Items(type=openapi.TYPE_FILE),
+            required=False,
+            description='Multiple files to upload (Max 10MB each, PDF/JPG/PNG/DOC/DOCX/XLS/XLSX)'
+        ),
+      
+    ],
+    responses={
+        201: openapi.Response(description='Request created'),
+        400: openapi.Response(description='Bad request')
+    }
 )
 @api_view(['POST'])
 @has_business_trip_permission('business_trips.request.create')
 @permission_classes([IsAuthenticated])
+@parser_classes([MultiPartParser, FormParser])
 def create_trip_request(request):
-    """Create business trip request with email notification"""
-    serializer = BusinessTripRequestCreateSerializer(data=request.data)
-    if not serializer.is_valid():
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
-    data = serializer.validated_data
+    """Create business trip request with optional file attachments"""
+    import json
     
     try:
+        # Parse JSON fields from form data
+        data = request.data.dict()
+        
+        # Parse schedules
+        if 'schedules' in data:
+            try:
+                data['schedules'] = json.loads(data['schedules'])
+            except json.JSONDecodeError:
+                return Response({
+                    'error': 'Invalid schedules format. Must be valid JSON array.'
+                }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Parse hotels
+        if 'hotels' in data:
+            try:
+                data['hotels'] = json.loads(data['hotels'])
+            except json.JSONDecodeError:
+                return Response({
+                    'error': 'Invalid hotels format. Must be valid JSON array.'
+                }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Parse employee_manual if exists
+        if 'employee_manual' in data:
+            try:
+                data['employee_manual'] = json.loads(data['employee_manual'])
+            except json.JSONDecodeError:
+                return Response({
+                    'error': 'Invalid employee_manual format. Must be valid JSON object.'
+                }, status=status.HTTP_400_BAD_REQUEST)
+        
+       
+        
+        # Get uploaded files
+        uploaded_files = request.FILES.getlist('files')
+        
+        # Validate request data
+        serializer = BusinessTripRequestCreateSerializer(data=data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        validated_data = serializer.validated_data
+        
+        # Get requester employee
         requester_emp = Employee.objects.get(user=request.user, is_deleted=False)
         
-        # Employee selection logic
-        if data['requester_type'] == 'for_me':
+        # Determine employee
+        if validated_data['requester_type'] == 'for_me':
             employee = requester_emp
         else:
-            if data.get('employee_id'):
-                employee = Employee.objects.get(id=data['employee_id'])
+            if validated_data.get('employee_id'):
+                employee = Employee.objects.get(id=validated_data['employee_id'])
                 if employee.line_manager != requester_emp:
                     return Response({
                         'error': 'This employee is not in your team'
                     }, status=status.HTTP_403_FORBIDDEN)
             else:
-                manual_data = data.get('employee_manual', {})
+                manual_data = validated_data.get('employee_manual', {})
                 if not manual_data.get('name'):
                     return Response({
                         'error': 'Employee name is required'
@@ -538,19 +683,19 @@ def create_trip_request(request):
             trip_req = BusinessTripRequest.objects.create(
                 employee=employee,
                 requester=request.user,
-                requester_type=data['requester_type'],
-                travel_type_id=data['travel_type_id'],
-                transport_type_id=data['transport_type_id'],
-                purpose_id=data['purpose_id'],
-                start_date=data['start_date'],
-                end_date=data['end_date'],
-                comment=data.get('comment', ''),
-                finance_approver_id=data.get('finance_approver_id'),
-                hr_representative_id=data.get('hr_representative_id')
+                requester_type=validated_data['requester_type'],
+                travel_type_id=validated_data['travel_type_id'],
+                transport_type_id=validated_data['transport_type_id'],
+                purpose_id=validated_data['purpose_id'],
+                start_date=validated_data['start_date'],
+                end_date=validated_data['end_date'],
+                comment=validated_data.get('comment', ''),
+                finance_approver_id=validated_data.get('finance_approver_id'),
+                hr_representative_id=validated_data.get('hr_representative_id')
             )
             
             # Create schedules
-            for i, schedule_data in enumerate(data['schedules']):
+            for i, schedule_data in enumerate(validated_data['schedules']):
                 TripSchedule.objects.create(
                     trip_request=trip_req,
                     date=schedule_data['date'],
@@ -561,7 +706,7 @@ def create_trip_request(request):
                 )
             
             # Create hotels
-            for hotel_data in data.get('hotels', []):
+            for hotel_data in validated_data.get('hotels', []):
                 TripHotel.objects.create(
                     trip_request=trip_req,
                     hotel_name=hotel_data['hotel_name'],
@@ -571,41 +716,85 @@ def create_trip_request(request):
                     notes=hotel_data.get('notes', '')
                 )
             
+            # Upload files if provided
+            uploaded_attachments = []
+            file_errors = []
+            
+            for idx, file in enumerate(uploaded_files):
+                try:
+                    # Validate file
+                    upload_serializer = TripAttachmentUploadSerializer(data={'file': file})
+                    if not upload_serializer.is_valid():
+                        file_errors.append({
+                            'filename': file.name,
+                            'errors': upload_serializer.errors
+                        })
+                        continue
+                    
+               
+                    
+                    # Create attachment
+                    attachment = TripAttachment.objects.create(
+                        trip_request=trip_req,
+                        file=file,
+                        original_filename=file.name,
+                        file_size=file.size,
+                        file_type=file.content_type,
+             
+                        uploaded_by=request.user
+                    )
+                    uploaded_attachments.append(attachment)
+                    
+                except Exception as e:
+                    file_errors.append({
+                        'filename': file.name,
+                        'error': str(e)
+                    })
+            
             # Submit request
             trip_req.submit_request(request.user)
             
-            # ✅ FIXED: Get notification context with Graph token
-            notification_ctx = get_notification_context(request)
-            
-            if notification_ctx['can_send_emails']:
-                try:
-                    success = notification_manager.notify_request_created(
-                        trip_request=trip_req,
-                        access_token=notification_ctx['graph_token']
-                    )
-                    if success:
-                        logger.info("✅ Notification email sent to Line Manager")
-                    else:
-                        logger.warning("⚠️ Notification failed to send")
-                except Exception as e:
-                    logger.error(f"❌ Error sending notification: {e}")
-                    # Don't fail the request creation if notification fails
+            # Send notification
+            graph_token = get_graph_access_token(request.user)
+            notification_sent = False
+            if graph_token:
+                notification_sent = notification_manager.notify_request_created(trip_req, graph_token)
+                if notification_sent:
+                    logger.info("✅ Notification sent to Line Manager")
+                else:
+                    logger.warning("⚠️ Failed to send notification")
             else:
-                logger.warning(f"⚠️ Email not sent: {notification_ctx['reason']}")
+                logger.warning("⚠️ Graph token not available - notification skipped")
             
-            return Response({
-                'message': 'Trip request created and submitted.',
-                'notification_sent': notification_ctx['can_send_emails'],
-                'notification_reason': notification_ctx['reason'],
-                'request': BusinessTripRequestDetailSerializer(trip_req).data
-            }, status=status.HTTP_201_CREATED)
+            # Prepare response
+            response_data = {
+                'message': 'Trip request created and submitted successfully.',
+                'notification_sent': notification_sent,
+                'request': BusinessTripRequestDetailSerializer(
+                    trip_req, 
+                    context={'request': request}
+                ).data,
+                'files_uploaded': len(uploaded_attachments),
+                'files_failed': len(file_errors)
+            }
+            
+            if uploaded_attachments:
+                response_data['attachments'] = TripAttachmentSerializer(
+                    uploaded_attachments,
+                    many=True,
+                    context={'request': request}
+                ).data
+            
+            if file_errors:
+                response_data['file_errors'] = file_errors
+            
+            return Response(response_data, status=status.HTTP_201_CREATED)
     
     except Employee.DoesNotExist:
         return Response({'error': 'Employee not found'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
         logger.error(f"Error creating trip request: {e}")
         return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
-
 # ==================== MY REQUESTS ====================
 
 @swagger_auto_schema(
@@ -1338,6 +1527,414 @@ def all_trip_requests(request):
         })
     except Exception as e:
         return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+# ==================== FILE UPLOAD ENDPOINTS ====================
+
+
+@swagger_auto_schema(
+    method='get',
+    operation_description="Get all attachments for a business trip request",
+    operation_summary="List Trip Attachments",
+    tags=['Business Trip - Files'],
+    responses={
+        200: openapi.Response(
+            description='List of attachments',
+            schema=TripAttachmentSerializer(many=True)
+        )
+    }
+)
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def list_trip_attachments(request, request_id):
+    """Get all attachments for a trip request"""
+    try:
+        trip_request = get_object_or_404(
+            BusinessTripRequest, 
+            request_id=request_id, 
+            is_deleted=False
+        )
+        
+        attachments = trip_request.attachments.filter(is_deleted=False).order_by('-uploaded_at')
+        
+        return Response({
+            'request_id': request_id,
+            'count': attachments.count(),
+            'attachments': TripAttachmentSerializer(
+                attachments, 
+                many=True, 
+                context={'request': request}
+            ).data
+        })
+        
+    except BusinessTripRequest.DoesNotExist:
+        return Response({
+            'error': 'Trip request not found'
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        return Response({
+            'error': str(e)
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+
+@swagger_auto_schema(
+    method='delete',
+    operation_description="Delete a file attachment (Only uploader or admin can delete)",
+    operation_summary="Delete Trip Attachment",
+    tags=['Business Trip - Files'],
+    responses={
+        200: 'File deleted successfully',
+        403: 'Permission denied',
+        404: 'Attachment not found'
+    }
+)
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def delete_trip_attachment(request, attachment_id):
+    """Delete a file attachment"""
+    try:
+        from .business_trip_permissions import is_admin_user
+        
+        attachment = get_object_or_404(
+            TripAttachment, 
+            id=attachment_id, 
+            is_deleted=False
+        )
+        
+        # Check permission - only uploader or admin can delete
+        if attachment.uploaded_by != request.user and not is_admin_user(request.user):
+            return Response({
+                'error': 'You can only delete files you uploaded'
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        # Soft delete
+        attachment.is_deleted = True
+        attachment.save()
+        
+        logger.info(f"🗑️ File deleted: {attachment.original_filename} by {request.user.username}")
+        
+        return Response({
+            'message': 'File deleted successfully',
+            'filename': attachment.original_filename
+        })
+        
+    except TripAttachment.DoesNotExist:
+        return Response({
+            'error': 'Attachment not found'
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Error deleting file: {e}")
+        return Response({
+            'error': str(e)
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+
+@swagger_auto_schema(
+    method='post',
+    operation_description="Upload multiple files at once",
+    operation_summary="Bulk Upload Trip Attachments",
+    tags=['Business Trip - Files'],
+    manual_parameters=[
+        openapi.Parameter(
+            'files',
+            openapi.IN_FORM,
+            type=openapi.TYPE_ARRAY,
+            items=openapi.Items(type=openapi.TYPE_FILE),
+            required=True,
+            description='Multiple files to upload'
+        )
+    ],
+    responses={
+        201: 'Files uploaded successfully',
+        400: 'Bad request'
+    }
+)
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@parser_classes([MultiPartParser, FormParser])
+def bulk_upload_trip_attachments(request, request_id):
+    """Upload multiple files at once"""
+    try:
+        trip_request = get_object_or_404(
+            BusinessTripRequest, 
+            request_id=request_id, 
+            is_deleted=False
+        )
+        
+        files = request.FILES.getlist('files')
+        if not files:
+            return Response({
+                'error': 'No files provided'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        uploaded_attachments = []
+        errors = []
+        
+        for file in files:
+            try:
+                # Validate each file
+                upload_serializer = TripAttachmentUploadSerializer(data={'file': file})
+                if not upload_serializer.is_valid():
+                    errors.append({
+                        'filename': file.name,
+                        'errors': upload_serializer.errors
+                    })
+                    continue
+                
+                # Create attachment
+                attachment = TripAttachment.objects.create(
+                    trip_request=trip_request,
+                    file=file,
+                    original_filename=file.name,
+                    file_size=file.size,
+                    file_type=file.content_type,
+                    uploaded_by=request.user
+                )
+                uploaded_attachments.append(attachment)
+                
+            except Exception as e:
+                errors.append({
+                    'filename': file.name,
+                    'error': str(e)
+                })
+        
+        logger.info(f"✅ Bulk upload: {len(uploaded_attachments)} files to {request_id}")
+        
+        return Response({
+            'message': f'{len(uploaded_attachments)} files uploaded successfully',
+            'uploaded': TripAttachmentSerializer(
+                uploaded_attachments, 
+                many=True, 
+                context={'request': request}
+            ).data,
+            'errors': errors,
+            'success_count': len(uploaded_attachments),
+            'error_count': len(errors)
+        }, status=status.HTTP_201_CREATED)
+        
+    except BusinessTripRequest.DoesNotExist:
+        return Response({
+            'error': 'Trip request not found'
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Error in bulk upload: {e}")
+        return Response({
+            'error': str(e)
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+
+@swagger_auto_schema(
+    method='get',
+    operation_description="Get attachment details",
+    operation_summary="Get Attachment Details",
+    tags=['Business Trip - Files'],
+    responses={
+        200: openapi.Response(
+            description='Attachment details',
+            schema=TripAttachmentSerializer
+        )
+    }
+)
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_attachment_details(request, attachment_id):
+    """Get details of a specific attachment"""
+    try:
+        attachment = get_object_or_404(
+            TripAttachment, 
+            id=attachment_id, 
+            is_deleted=False
+        )
+        
+        return Response({
+            'attachment': TripAttachmentSerializer(
+                attachment, 
+                context={'request': request}
+            ).data
+        })
+        
+    except TripAttachment.DoesNotExist:
+        return Response({
+            'error': 'Attachment not found'
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        return Response({
+            'error': str(e)
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+
+@swagger_auto_schema(
+    method='get',
+    operation_description="Get detailed information of a business trip request including schedules, hotels, attachments, and approval history",
+    operation_summary="Get Trip Request Detail",
+    tags=['Business Trip'],
+    responses={
+        200: openapi.Response(
+            description='Trip request details',
+            schema=BusinessTripRequestDetailSerializer
+        ),
+        403: 'Permission denied',
+        404: 'Request not found'
+    }
+)
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_trip_request_detail(request, pk):
+   
+    try:
+        # Get the trip request
+        trip_req = BusinessTripRequest.objects.select_related(
+            'employee', 
+            'employee__department',
+            'employee__business_function',
+            'employee__unit',
+            'employee__job_function',
+            'travel_type',
+            'transport_type',
+            'purpose',
+            'line_manager',
+            'finance_approver',
+            'hr_representative',
+            'requester'
+        ).prefetch_related(
+            'schedules',
+            'hotels',
+            'attachments'
+        ).get(pk=pk, is_deleted=False)
+        
+        # Check access permission
+        emp = None
+        try:
+            emp = Employee.objects.get(user=request.user, is_deleted=False)
+        except Employee.DoesNotExist:
+            pass
+        
+        # Determine if user can view this request
+        can_view = False
+        
+        # Admin can view all
+        if is_admin_user(request.user):
+            can_view = True
+        
+        # Employee can view their own requests
+        elif emp and trip_req.employee == emp:
+            can_view = True
+        
+        # Requester can view requests they created
+        elif trip_req.requester == request.user:
+            can_view = True
+        
+        # Approvers can view requests assigned to them
+        elif emp and (
+            trip_req.line_manager == emp or 
+            trip_req.finance_approver == emp or 
+            trip_req.hr_representative == emp
+        ):
+            can_view = True
+        
+        # Check if user has view_statistics permission (can view all)
+        elif check_business_trip_permission(request.user, 'business_trips.request.view_statistics')[0]:
+            can_view = True
+        
+        if not can_view:
+            return Response({
+                'error': 'Permission denied',
+                'detail': 'You do not have permission to view this trip request'
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        # Serialize the data
+        serializer = BusinessTripRequestDetailSerializer(
+            trip_req, 
+            context={'request': request}
+        )
+        
+        # Add extra context information
+        response_data = serializer.data
+        
+        # Add approval workflow status
+        response_data['workflow'] = {
+            'current_step': trip_req.status,
+            'steps': [
+                {
+                    'name': 'Line Manager Approval',
+                    'status': 'completed' if trip_req.line_manager_approved_at else (
+                        'rejected' if trip_req.status == 'REJECTED_LINE_MANAGER' else (
+                            'pending' if trip_req.status == 'PENDING_LINE_MANAGER' else 'not_started'
+                        )
+                    ),
+                    'approver': trip_req.line_manager.full_name if trip_req.line_manager else None,
+                    'approved_at': trip_req.line_manager_approved_at,
+                    'comment': trip_req.line_manager_comment
+                },
+                {
+                    'name': 'Finance Approval',
+                    'status': 'completed' if trip_req.finance_approved_at else (
+                        'rejected' if trip_req.status == 'REJECTED_FINANCE' else (
+                            'pending' if trip_req.status == 'PENDING_FINANCE' else 'not_started'
+                        )
+                    ),
+                    'approver': trip_req.finance_approver.full_name if trip_req.finance_approver else None,
+                    'approved_at': trip_req.finance_approved_at,
+                    'amount': float(trip_req.finance_amount) if trip_req.finance_amount else None,
+                    'comment': trip_req.finance_comment
+                },
+                {
+                    'name': 'HR Processing',
+                    'status': 'completed' if trip_req.hr_approved_at else (
+                        'rejected' if trip_req.status == 'REJECTED_HR' else (
+                            'pending' if trip_req.status == 'PENDING_HR' else 'not_started'
+                        )
+                    ),
+                    'approver': trip_req.hr_representative.full_name if trip_req.hr_representative else None,
+                    'approved_at': trip_req.hr_approved_at,
+                    'comment': trip_req.hr_comment
+                }
+            ]
+        }
+        
+        # Add requester information
+        response_data['requester_info'] = {
+            'type': trip_req.get_requester_type_display(),
+            'name': trip_req.requester.get_full_name() if trip_req.requester else None,
+            'email': trip_req.requester.email if trip_req.requester else None
+        }
+        
+        # Add permission flags for frontend
+        response_data['permissions'] = {
+            'can_cancel': (
+                trip_req.status == 'APPROVED' and 
+                (emp and trip_req.employee == emp or is_admin_user(request.user))
+            ),
+            'can_approve': (
+                (trip_req.status == 'PENDING_LINE_MANAGER' and emp and trip_req.line_manager == emp) or
+                (trip_req.status == 'PENDING_FINANCE' and emp and trip_req.finance_approver == emp) or
+                (trip_req.status == 'PENDING_HR' and emp and trip_req.hr_representative == emp) or
+                is_admin_user(request.user)
+            ),
+            'is_admin': is_admin_user(request.user)
+        }
+        
+        # Add summary statistics
+        response_data['summary'] = {
+            'total_schedules': trip_req.schedules.filter(is_deleted=False).count(),
+            'total_hotels': trip_req.hotels.filter(is_deleted=False).count(),
+            'total_attachments': trip_req.attachments.filter(is_deleted=False).count(),
+            'total_nights': sum(
+                hotel.nights_count for hotel in trip_req.hotels.filter(is_deleted=False)
+            ) if trip_req.hotels.filter(is_deleted=False).exists() else 0
+        }
+        
+        return Response(response_data)
+        
+    except BusinessTripRequest.DoesNotExist:
+        return Response({
+            'error': 'Trip request not found'
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Error fetching trip request detail: {e}")
+        return Response({
+            'error': str(e)
+        }, status=status.HTTP_400_BAD_REQUEST)
 
 @swagger_auto_schema(
     method='get',

@@ -6,6 +6,7 @@ from django.core.validators import MinValueValidator
 from django.core.exceptions import ValidationError
 from .models import Employee, SoftDeleteModel
 from datetime import date, timedelta
+import os
 
 class TravelType(SoftDeleteModel):
     """Travel type configuration (Domestic, Overseas)"""
@@ -237,6 +238,16 @@ class BusinessTripRequest(SoftDeleteModel):
     )
     rejection_reason = models.TextField(blank=True)
     
+    # Cancellation
+    cancelled_at = models.DateTimeField(null=True, blank=True)
+    cancelled_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='trip_cancellations'
+    )
+    
     # System fields
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -392,3 +403,54 @@ class TripHotel(SoftDeleteModel):
         verbose_name = "Trip Hotel"
         verbose_name_plural = "Trip Hotels"
         db_table = 'trip_hotels'
+
+
+def trip_attachment_path(instance, filename):
+    """Generate upload path for trip attachments"""
+    # business_trips/2025/BT202500001/filename.pdf
+    year = instance.trip_request.created_at.year
+    request_id = instance.trip_request.request_id
+    return f'business_trips/{year}/{request_id}/{filename}'
+
+
+class TripAttachment(SoftDeleteModel):
+    """File attachments for business trip requests"""
+    trip_request = models.ForeignKey(
+        BusinessTripRequest, 
+        on_delete=models.CASCADE, 
+        related_name='attachments'
+    )
+    file = models.FileField(upload_to=trip_attachment_path)
+    original_filename = models.CharField(max_length=255)
+    file_size = models.PositiveIntegerField(help_text="File size in bytes")
+    file_type = models.CharField(max_length=100, blank=True)
+
+    
+    uploaded_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        verbose_name = "Trip Attachment"
+        verbose_name_plural = "Trip Attachments"
+        db_table = 'trip_attachments'
+        ordering = ['-uploaded_at']
+    
+    def __str__(self):
+        return f"{self.trip_request.request_id} - {self.original_filename}"
+    
+    @property
+    def file_size_display(self):
+        """Human readable file size"""
+        size = self.file_size
+        for unit in ['B', 'KB', 'MB', 'GB']:
+            if size < 1024.0:
+                return f"{size:.1f} {unit}"
+            size /= 1024.0
+        return f"{size:.1f} TB"
+    
+    def delete(self, *args, **kwargs):
+        """Delete file from storage when model is deleted"""
+        if self.file:
+            if os.path.isfile(self.file.path):
+                os.remove(self.file.path)
+        super().delete(*args, **kwargs)

@@ -349,6 +349,99 @@ class NotificationService:
         
         return results
 
+    def mark_email_as_read(self, access_token, message_id):
+        """
+        Mark an email as read
+        
+        Args:
+            access_token: Microsoft Graph access token
+            message_id: Email message ID from Graph API
+        
+        Returns:
+            bool: Success status
+        """
+        try:
+            headers = {
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json"
+            }
+            
+            # Update message isRead property
+            response = requests.patch(
+                f"{self.graph_endpoint}/me/messages/{message_id}",
+                headers=headers,
+                json={"isRead": True},
+                timeout=30
+            )
+            
+            if response.status_code == 200:
+                logger.info(f"✅ Email {message_id} marked as read")
+                return True
+            else:
+                logger.error(f"Failed to mark email as read: {response.status_code}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error marking email as read: {str(e)}")
+            return False
 
+
+    def mark_email_as_unread(self, access_token, message_id):
+        """
+        Mark an email as unread
+        
+        Args:
+            access_token: Microsoft Graph access token
+            message_id: Email message ID from Graph API
+        
+        Returns:
+            bool: Success status
+        """
+        try:
+            headers = {
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json"
+            }
+            
+            response = requests.patch(
+                f"{self.graph_endpoint}/me/messages/{message_id}",
+                headers=headers,
+                json={"isRead": False},
+                timeout=30
+            )
+            
+            if response.status_code == 200:
+                logger.info(f"✅ Email {message_id} marked as unread")
+                return True
+            else:
+                logger.error(f"Failed to mark email as unread: {response.status_code}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error marking email as unread: {str(e)}")
+            return False
+    
+    
+    def mark_multiple_emails_as_read(self, access_token, message_ids):
+        """
+        Mark multiple emails as read
+        
+        Args:
+            access_token: Microsoft Graph access token
+            message_ids: List of email message IDs
+        
+        Returns:
+            dict: Results with success/failed counts
+        """
+        results = {'success': 0, 'failed': 0, 'total': len(message_ids)}
+        
+        for message_id in message_ids:
+            if self.mark_email_as_read(access_token, message_id):
+                results['success'] += 1
+            else:
+                results['failed'] += 1
+        
+        return results
+    
 # Singleton instance
 notification_service = NotificationService()
