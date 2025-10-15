@@ -1,9 +1,4 @@
-# api/notification_service.py - COMPLETE WITH GET_EMAILS_BY_SUBJECT
-"""
-Notification Service - FIXED
-Uses Microsoft Graph Token for sending emails
-Separate from JWT authentication token
-"""
+# api/notification_service.py - UPDATED WITH SENT/RECEIVED SEPARATION
 
 import logging
 import requests
@@ -32,97 +27,14 @@ class NotificationService:
                 from types import SimpleNamespace
                 self._settings = SimpleNamespace(
                     enable_email_notifications=True,
-                    business_trip_subject_prefix='[BUSINESS TRIP]'
+                    business_trip_subject_prefix='[BUSINESS TRIP]',
+                    vacation_subject_prefix='[VACATION]'
                 )
         return self._settings
     
-    def get_emails_by_subject(self, access_token, subject_filter, top=50):
+    def get_received_emails(self, access_token, subject_filter, top=50):
         """
-        Get emails from user's mailbox filtered by subject
-        
-        Args:
-            access_token: Microsoft Graph access token
-            subject_filter: Subject text to filter by (e.g., '[BUSINESS TRIP]')
-            top: Number of emails to retrieve (max 50)
-        
-        Returns:
-            list: List of email objects from Graph API
-        """
-        try:
-            # Method 1: Try with OData filter first
-            # Escape special characters for OData filter
-            escaped_filter = subject_filter.replace("'", "''")
-            filter_query = f"contains(subject, '{escaped_filter}')"
-            
-            # Query parameters
-            params = {
-                '$filter': filter_query,
-                '$top': min(top, 50),  # Graph API limits to 50
-                '$orderby': 'receivedDateTime desc',
-                '$select': 'id,subject,from,receivedDateTime,isRead,hasAttachments,importance,bodyPreview'
-            }
-            
-            headers = {
-                "Authorization": f"Bearer {access_token}",
-                "Content-Type": "application/json"
-            }
-            
-            logger.info(f"📧 Fetching emails with subject filter: {subject_filter}")
-            logger.info(f"   Filter query: {filter_query}")
-            
-            # Get emails from mailbox
-            response = requests.get(
-                f"{self.graph_endpoint}/me/messages",
-                headers=headers,
-                params=params,
-                timeout=30
-            )
-            
-            logger.info(f"Graph API response: {response.status_code}")
-            
-            if response.status_code == 200:
-                data = response.json()
-                emails = data.get('value', [])
-                logger.info(f"✅ Retrieved {len(emails)} emails with filter")
-                
-                # If no emails found with filter, try without filter and filter client-side
-                if len(emails) == 0:
-                    logger.info("No emails found with server filter, trying client-side filter...")
-                    return self._get_emails_client_side_filter(access_token, subject_filter, top)
-                
-                return emails
-            else:
-                error_msg = f"Failed to get emails: {response.status_code}"
-                if response.text:
-                    error_msg += f" - {response.text[:500]}"
-                    logger.error(f"Response body: {response.text}")
-                
-                logger.error(error_msg)
-                
-                # Check for specific errors
-                if response.status_code == 401:
-                    logger.error("❌ 401 Unauthorized: Graph token is invalid or expired")
-                elif response.status_code == 403:
-                    logger.error("❌ 403 Forbidden: Graph token lacks Mail.Read permission")
-                elif response.status_code == 400:
-                    # Bad filter query, try client-side filtering
-                    logger.warning("❌ 400 Bad Request: Filter query failed, trying client-side filter...")
-                    return self._get_emails_client_side_filter(access_token, subject_filter, top)
-                
-                return []
-                
-        except requests.exceptions.Timeout:
-            logger.error("Email retrieval timeout after 30 seconds")
-            return []
-        except Exception as e:
-            logger.error(f"Error getting emails: {str(e)}")
-            import traceback
-            logger.error(traceback.format_exc())
-            return []
-    
-    def _get_emails_client_side_filter(self, access_token, subject_filter, top=50):
-        """
-        Fallback method: Get all recent emails and filter client-side
+        📥 RECEIVED EMAILS - Gələn mailləri gətir
         
         Args:
             access_token: Microsoft Graph access token
@@ -130,14 +42,59 @@ class NotificationService:
             top: Number of emails to retrieve
         
         Returns:
-            list: Filtered email objects
+            list: List of received email objects
+        """
+        return self._get_emails_from_folder(
+            access_token=access_token,
+            folder_endpoint="/me/messages",  # Default inbox
+            subject_filter=subject_filter,
+            top=top,
+            email_type="RECEIVED"
+        )
+    
+    def get_sent_emails(self, access_token, subject_filter, top=50):
+        """
+        📤 SENT EMAILS - Göndərilən mailləri gətir
+        
+        Args:
+            access_token: Microsoft Graph access token
+            subject_filter: Subject text to filter by
+            top: Number of emails to retrieve
+        
+        Returns:
+            list: List of sent email objects
+        """
+        return self._get_emails_from_folder(
+            access_token=access_token,
+            folder_endpoint="/me/mailFolders/sentitems/messages",  # Sent items folder
+            subject_filter=subject_filter,
+            top=top,
+            email_type="SENT"
+        )
+    
+    def _get_emails_from_folder(self, access_token, folder_endpoint, subject_filter, top=50, email_type="RECEIVED"):
+        """
+        Internal method to get emails from specific folder
+        
+        Args:
+            access_token: Microsoft Graph access token
+            folder_endpoint: Graph API endpoint for folder
+            subject_filter: Subject filter
+            top: Number of emails
+            email_type: "RECEIVED" or "SENT"
+        
+        Returns:
+            list: Email objects with type tag
         """
         try:
-            # Get recent emails without server-side filter
+            escaped_filter = subject_filter.replace("'", "''")
+            filter_query = f"contains(subject, '{escaped_filter}')"
+            
             params = {
-                '$top': min(top * 3, 100),  # Get more emails to filter from
+                '$filter': filter_query,
+                '$top': min(top, 50),
                 '$orderby': 'receivedDateTime desc',
-                '$select': 'id,subject,from,receivedDateTime,isRead,hasAttachments,importance,bodyPreview'
+                '$select': 'id,subject,from,toRecipients,receivedDateTime,sentDateTime,isRead,hasAttachments,importance,bodyPreview'
             }
             
             headers = {
@@ -145,10 +102,57 @@ class NotificationService:
                 "Content-Type": "application/json"
             }
             
-            logger.info(f"📧 Fetching recent emails for client-side filtering...")
+            logger.info(f"📧 Fetching {email_type} emails with subject: {subject_filter}")
             
             response = requests.get(
-                f"{self.graph_endpoint}/me/messages",
+                f"{self.graph_endpoint}{folder_endpoint}",
+                headers=headers,
+                params=params,
+                timeout=30
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                emails = data.get('value', [])
+                
+                # Add email_type tag to each email
+                for email in emails:
+                    email['email_type'] = email_type
+                
+                logger.info(f"✅ Retrieved {len(emails)} {email_type} emails")
+                return emails
+            
+            elif response.status_code == 400:
+                logger.warning("⚠️ Filter failed, trying client-side filter...")
+                return self._get_emails_client_side_filter(
+                    access_token, folder_endpoint, subject_filter, top, email_type
+                )
+            else:
+                logger.error(f"Failed to get {email_type} emails: {response.status_code}")
+                return []
+                
+        except Exception as e:
+            logger.error(f"Error getting {email_type} emails: {str(e)}")
+            return []
+    
+    def _get_emails_client_side_filter(self, access_token, folder_endpoint, subject_filter, top=50, email_type="RECEIVED"):
+        """
+        Fallback: Client-side filtering
+        """
+        try:
+            params = {
+                '$top': min(top * 3, 100),
+                '$orderby': 'receivedDateTime desc',
+                '$select': 'id,subject,from,toRecipients,receivedDateTime,sentDateTime,isRead,hasAttachments,importance,bodyPreview'
+            }
+            
+            headers = {
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json"
+            }
+            
+            response = requests.get(
+                f"{self.graph_endpoint}{folder_endpoint}",
                 headers=headers,
                 params=params,
                 timeout=30
@@ -158,72 +162,84 @@ class NotificationService:
                 data = response.json()
                 all_emails = data.get('value', [])
                 
-                # Filter client-side (case-insensitive)
                 subject_filter_lower = subject_filter.lower()
                 filtered_emails = [
                     email for email in all_emails 
                     if subject_filter_lower in email.get('subject', '').lower()
                 ]
                 
-                # Limit to requested top count
+                # Add email_type tag
+                for email in filtered_emails:
+                    email['email_type'] = email_type
+                
                 filtered_emails = filtered_emails[:top]
                 
-                logger.info(f"✅ Client-side filter: Found {len(filtered_emails)} matching emails out of {len(all_emails)} total")
-                
+                logger.info(f"✅ Client-side: {len(filtered_emails)} {email_type} emails")
                 return filtered_emails
-            else:
-                logger.error(f"Failed to get emails for client-side filter: {response.status_code}")
-                return []
+            
+            return []
                 
         except Exception as e:
             logger.error(f"Client-side filter failed: {str(e)}")
             return []
     
+    def get_all_emails_by_type(self, access_token, subject_filter, top=50, email_type="all"):
+        """
+        📬 COMBINED - Həm gələn həm də göndərilən mailləri gətir
+        
+        Args:
+            access_token: Microsoft Graph access token
+            subject_filter: Subject filter
+            top: Number of emails per type
+            email_type: "received", "sent", or "all"
+        
+        Returns:
+            dict: {"received": [...], "sent": [...], "all": [...]}
+        """
+        result = {
+            "received": [],
+            "sent": [],
+            "all": []
+        }
+        
+        try:
+            if email_type in ["received", "all"]:
+                result["received"] = self.get_received_emails(access_token, subject_filter, top)
+            
+            if email_type in ["sent", "all"]:
+                result["sent"] = self.get_sent_emails(access_token, subject_filter, top)
+            
+            if email_type == "all":
+                # Combine and sort by date
+                all_emails = result["received"] + result["sent"]
+                all_emails.sort(key=lambda x: x.get('receivedDateTime', ''), reverse=True)
+                result["all"] = all_emails[:top]
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error in get_all_emails_by_type: {str(e)}")
+            return result
+    
+    # ==================== EXISTING METHODS ====================
+    
     def send_email(self, recipient_email, subject, body_html, body_text=None, 
                    sender_email=None, access_token=None, related_model=None, 
                    related_object_id=None, sent_by=None, request=None):
-        """
-        Send email via Microsoft Graph API
-        
-        CRITICAL: access_token must be Microsoft Graph Token, NOT JWT!
-        
-        Args:
-            recipient_email: Recipient email address
-            subject: Email subject
-            body_html: HTML email body
-            body_text: Plain text email body (optional)
-            sender_email: Sender email (optional)
-            access_token: Microsoft Graph access token (NOT JWT!)
-            related_model: Related model name (e.g., 'BusinessTripRequest')
-            related_object_id: Related object ID
-            sent_by: User who triggered the notification
-            request: Django request object (to extract token if not provided)
-        """
+        """Send email via Microsoft Graph API"""
         
         if not self.settings.enable_email_notifications:
             logger.info("Email notifications are disabled")
             return False
         
-        # ✅ Try to get Graph token from multiple sources
         if not access_token:
             if request:
                 access_token = extract_graph_token_from_request(request)
-                logger.info(f"Extracted Graph token from request: {bool(access_token)}")
         
         if not access_token:
-            logger.error("❌ Microsoft Graph token is required for sending emails")
-            logger.error("   Token must be provided via:")
-            logger.error("   1. access_token parameter")
-            logger.error("   2. X-Graph-Token header")
-            logger.error("   3. Stored in database (UserGraphToken)")
+            logger.error("❌ Microsoft Graph token is required")
             return False
         
-        # Log token info (first/last chars only for security)
-        if len(access_token) > 20:
-            token_preview = f"{access_token[:10]}...{access_token[-10:]}"
-            logger.info(f"Using Graph token: {token_preview}")
-        
-        # Create notification log
         notification_log = NotificationLog.objects.create(
             notification_type='EMAIL',
             recipient_email=recipient_email,
@@ -236,7 +252,6 @@ class NotificationService:
         )
         
         try:
-            # Prepare email message
             message = {
                 "message": {
                     "subject": subject,
@@ -255,16 +270,13 @@ class NotificationService:
                 "saveToSentItems": "true"
             }
             
-            # ✅ CRITICAL: Use Microsoft Graph token
             headers = {
                 "Authorization": f"Bearer {access_token}",
                 "Content-Type": "application/json"
             }
             
             logger.info(f"📧 Sending email to {recipient_email}")
-            logger.info(f"   Subject: {subject}")
             
-            # Send via Microsoft Graph API
             response = requests.post(
                 f"{self.graph_endpoint}/me/sendMail",
                 headers=headers,
@@ -272,101 +284,30 @@ class NotificationService:
                 timeout=30
             )
             
-            logger.info(f"Graph API response: {response.status_code}")
-            
             if response.status_code == 202:
-                logger.info(f"✅ Email sent successfully to {recipient_email}")
+                logger.info(f"✅ Email sent successfully")
                 notification_log.mark_as_sent()
                 return True
             else:
-                error_msg = f"Failed to send email: {response.status_code}"
-                if response.text:
-                    error_msg += f" - {response.text[:500]}"
-                    logger.error(f"Response body: {response.text}")
-                
+                error_msg = f"Failed: {response.status_code}"
                 logger.error(error_msg)
                 notification_log.mark_as_failed(error_msg)
-                
-                # Check for specific errors
-                if response.status_code == 401:
-                    logger.error("❌ 401 Unauthorized: Graph token is invalid or expired")
-                    logger.error("   User needs to login again to refresh Graph token")
-                elif response.status_code == 403:
-                    logger.error("❌ 403 Forbidden: Graph token lacks Mail.Send permission")
-                
                 return False
                 
-        except requests.exceptions.Timeout:
-            error_msg = "Email sending timeout after 30 seconds"
-            logger.error(error_msg)
-            notification_log.mark_as_failed(error_msg)
-            return False
         except Exception as e:
-            error_msg = f"Error sending email: {str(e)}"
+            error_msg = f"Error: {str(e)}"
             logger.error(error_msg)
-            import traceback
-            logger.error(traceback.format_exc())
             notification_log.mark_as_failed(error_msg)
             return False
     
-    def send_bulk_emails(self, recipients, subject, body_html, body_text=None, 
-                        access_token=None, sent_by=None, request=None):
-        """
-        Send email to multiple recipients
-        
-        Args:
-            recipients: List of email addresses
-            subject: Email subject
-            body_html: HTML email body
-            body_text: Plain text body (optional)
-            access_token: Microsoft Graph access token
-            sent_by: User who triggered the notification
-            request: Django request object
-        
-        Returns:
-            dict: {'success': int, 'failed': int, 'total': int}
-        """
-        # Get token once for all emails
-        if not access_token and request:
-            access_token = extract_graph_token_from_request(request)
-        
-        results = {'success': 0, 'failed': 0, 'total': len(recipients)}
-        
-        for recipient in recipients:
-            success = self.send_email(
-                recipient_email=recipient,
-                subject=subject,
-                body_html=body_html,
-                body_text=body_text,
-                access_token=access_token,
-                sent_by=sent_by
-            )
-            
-            if success:
-                results['success'] += 1
-            else:
-                results['failed'] += 1
-        
-        return results
-
     def mark_email_as_read(self, access_token, message_id):
-        """
-        Mark an email as read
-        
-        Args:
-            access_token: Microsoft Graph access token
-            message_id: Email message ID from Graph API
-        
-        Returns:
-            bool: Success status
-        """
+        """Mark email as read"""
         try:
             headers = {
                 "Authorization": f"Bearer {access_token}",
                 "Content-Type": "application/json"
             }
             
-            # Update message isRead property
             response = requests.patch(
                 f"{self.graph_endpoint}/me/messages/{message_id}",
                 headers=headers,
@@ -374,29 +315,13 @@ class NotificationService:
                 timeout=30
             )
             
-            if response.status_code == 200:
-                logger.info(f"✅ Email {message_id} marked as read")
-                return True
-            else:
-                logger.error(f"Failed to mark email as read: {response.status_code}")
-                return False
-                
+            return response.status_code == 200
         except Exception as e:
             logger.error(f"Error marking email as read: {str(e)}")
             return False
-
-
+    
     def mark_email_as_unread(self, access_token, message_id):
-        """
-        Mark an email as unread
-        
-        Args:
-            access_token: Microsoft Graph access token
-            message_id: Email message ID from Graph API
-        
-        Returns:
-            bool: Success status
-        """
+        """Mark email as unread"""
         try:
             headers = {
                 "Authorization": f"Bearer {access_token}",
@@ -410,29 +335,13 @@ class NotificationService:
                 timeout=30
             )
             
-            if response.status_code == 200:
-                logger.info(f"✅ Email {message_id} marked as unread")
-                return True
-            else:
-                logger.error(f"Failed to mark email as unread: {response.status_code}")
-                return False
-                
+            return response.status_code == 200
         except Exception as e:
             logger.error(f"Error marking email as unread: {str(e)}")
             return False
     
-    
     def mark_multiple_emails_as_read(self, access_token, message_ids):
-        """
-        Mark multiple emails as read
-        
-        Args:
-            access_token: Microsoft Graph access token
-            message_ids: List of email message IDs
-        
-        Returns:
-            dict: Results with success/failed counts
-        """
+        """Mark multiple emails as read"""
         results = {'success': 0, 'failed': 0, 'total': len(message_ids)}
         
         for message_id in message_ids:
@@ -442,6 +351,7 @@ class NotificationService:
                 results['failed'] += 1
         
         return results
-    
+
+
 # Singleton instance
 notification_service = NotificationService()

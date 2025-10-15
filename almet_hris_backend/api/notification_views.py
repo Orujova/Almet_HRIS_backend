@@ -1,4 +1,5 @@
-# api/notification_views.py - FIXED with proper token extraction
+# api/notification_views.py - COMPLETE VERSION WITH SENT/RECEIVED SEPARATION
+
 import logging
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
@@ -16,15 +17,14 @@ from .notification_serializers import (
 )
 from .notification_service import notification_service
 from .business_trip_permissions import is_admin_user
-from .models import UserGraphToken  # ✅ ADD THIS
-
+from .models import UserGraphToken
 
 logger = logging.getLogger(__name__)
 
 
 def get_graph_token_from_request(request):
     """
-    ✅ FIXED: Extract Microsoft Graph token from request
+    ✅ Extract Microsoft Graph token from request
     Tries multiple sources in priority order
     """
     # 1. Try custom header
@@ -47,6 +47,7 @@ def get_graph_token_from_request(request):
     
     logger.warning("❌ No valid Graph token found")
     return None
+
 
 # ==================== EMAIL TEMPLATES ====================
 
@@ -79,6 +80,7 @@ class EmailTemplateViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_403_FORBIDDEN
             )
         return super().destroy(request, *args, **kwargs)
+
 
 # ==================== NOTIFICATION LOGS ====================
 
@@ -137,12 +139,13 @@ def get_notification_history(request):
     except Exception as e:
         return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
-# ==================== OUTLOOK INTEGRATION ====================
+
+# ==================== OUTLOOK INTEGRATION WITH SENT/RECEIVED ====================
 
 @swagger_auto_schema(
     method='get',
-    operation_description="Get emails from Outlook filtered by module",
-    operation_summary="Get Outlook Emails",
+    operation_description="Get emails from Outlook with sent/received separation",
+    operation_summary="Get Outlook Emails (Sent/Received)",
     tags=['Notifications'],
     manual_parameters=[
         openapi.Parameter(
@@ -155,26 +158,45 @@ def get_notification_history(request):
             description='Filter by module: business_trip, vacation, or all'
         ),
         openapi.Parameter(
+            'email_type',
+            openapi.IN_QUERY,
+            type=openapi.TYPE_STRING,
+            enum=['received', 'sent', 'all'],
+            required=False,
+            default='all',
+            description='📬 Email type: received (gələn), sent (göndərilən), or all'
+        ),
+        openapi.Parameter(
             'top',
             openapi.IN_QUERY,
             type=openapi.TYPE_INTEGER,
             required=False,
             default=50,
-            description='Number of emails to retrieve (max 50)'
+            description='Number of emails per type (max 50)'
         )
     ],
-    responses={200: openapi.Response(description='Outlook emails')}
+    responses={200: openapi.Response(description='Outlook emails with sent/received separation')}
 )
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_outlook_emails(request):
     """
-    Get emails from user's Outlook mailbox
-    Filter by module: business_trip, vacation, or all
+    📬 Get emails with SENT/RECEIVED separation
+    
+    Query Parameters:
+    - module: business_trip, vacation, all
+    - email_type: received, sent, all
+    - top: number of emails
+    
+    Response includes:
+    - received_emails: Gələn mailləri (inbox)
+    - sent_emails: Göndərilən mailləri (sent items)
+    - all_emails: Hamısı birlikdə (sorted by date)
     """
     try:
         # Get parameters
         module = request.GET.get('module', 'all')
+        email_type = request.GET.get('email_type', 'all')  # NEW: received/sent/all
         top = int(request.GET.get('top', 50))
         
         # Get Graph token
@@ -185,93 +207,115 @@ def get_outlook_emails(request):
             return Response({
                 'error': 'Microsoft Graph token not available',
                 'message': 'Please login again to refresh your Graph token',
-                'count': 0,
-                'emails': [],
+                'received_emails': [],
+                'sent_emails': [],
+                'all_emails': [],
+                'counts': {'received': 0, 'sent': 0, 'total': 0},
                 'graph_token_status': 'missing'
             }, status=status.HTTP_401_UNAUTHORIZED)
         
         logger.info(f"✅ Graph token retrieved for {request.user.username}")
-        logger.info(f"📧 Fetching emails for module: {module}")
+        logger.info(f"📬 Fetching emails - Module: {module}, Type: {email_type}")
         
         # Get settings
         settings = NotificationSettings.get_active()
         
-        # Determine which filters to use
-        emails = []
+        # Prepare result structure
+        result = {
+            'success': True,
+            'module_filter': module,
+            'email_type_filter': email_type,
+            'received_emails': [],
+            'sent_emails': [],
+            'all_emails': [],
+            'counts': {
+                'received': 0,
+                'sent': 0,
+                'total': 0
+            },
+            'graph_token_status': 'valid'
+        }
+        
+        # Determine subject filter based on module
+        subject_filters = []
         
         if module == 'business_trip':
-            # Only Business Trip emails
-            subject_filter = settings.business_trip_subject_prefix
-            emails = notification_service.get_emails_by_subject(
-                access_token=graph_token,
-                subject_filter=subject_filter,
-                top=top
-            )
-            
+            subject_filters = [settings.business_trip_subject_prefix]
         elif module == 'vacation':
-            # Only Vacation emails
-            subject_filter = settings.vacation_subject_prefix
-            emails = notification_service.get_emails_by_subject(
+            subject_filters = [settings.vacation_subject_prefix]
+        else:  # all
+            subject_filters = [
+                settings.business_trip_subject_prefix,
+                settings.vacation_subject_prefix
+            ]
+        
+        # Fetch emails for each subject filter
+        for subject_filter in subject_filters:
+            
+            emails_by_type = notification_service.get_all_emails_by_type(
                 access_token=graph_token,
                 subject_filter=subject_filter,
-                top=top
+                top=top,
+                email_type=email_type
             )
             
-        else:  # module == 'all'
-            # Get both Business Trip and Vacation emails
-            business_trip_emails = notification_service.get_emails_by_subject(
-                access_token=graph_token,
-                subject_filter=settings.business_trip_subject_prefix,
-                top=top
+            # Accumulate results
+            result['received_emails'].extend(emails_by_type['received'])
+            result['sent_emails'].extend(emails_by_type['sent'])
+        
+        # Sort received emails by date
+        result['received_emails'].sort(
+            key=lambda x: x.get('receivedDateTime', ''), 
+            reverse=True
+        )
+        result['received_emails'] = result['received_emails'][:top]
+        
+        # Sort sent emails by date
+        result['sent_emails'].sort(
+            key=lambda x: x.get('sentDateTime', ''), 
+            reverse=True
+        )
+        result['sent_emails'] = result['sent_emails'][:top]
+        
+        # Combine all emails based on email_type filter
+        if email_type == 'all':
+            all_combined = result['received_emails'] + result['sent_emails']
+            all_combined.sort(
+                key=lambda x: x.get('receivedDateTime') or x.get('sentDateTime', ''), 
+                reverse=True
             )
-            
-            vacation_emails = notification_service.get_emails_by_subject(
-                access_token=graph_token,
-                subject_filter=settings.vacation_subject_prefix,
-                top=top
-            )
-            
-            # Combine and sort by receivedDateTime
-            emails = business_trip_emails + vacation_emails
-            emails.sort(key=lambda x: x.get('receivedDateTime', ''), reverse=True)
-            
-            # Limit to top count
-            emails = emails[:top]
+            result['all_emails'] = all_combined[:top]
+        elif email_type == 'received':
+            result['all_emails'] = result['received_emails']
+        elif email_type == 'sent':
+            result['all_emails'] = result['sent_emails']
         
-        # Format response
-        formatted_emails = []
-        for email in emails:
-            # Determine module from subject
-            subject = email.get('subject', '')
-            email_module = 'unknown'
-            
-            if settings.business_trip_subject_prefix in subject:
-                email_module = 'business_trip'
-            elif settings.vacation_subject_prefix in subject:
-                email_module = 'vacation'
-            
-            formatted_emails.append({
-                'id': email.get('id'),
-                'subject': subject,
-                'module': email_module,  # ✅ Module tag
-                'from': email.get('from', {}).get('emailAddress', {}).get('address'),
-                'from_name': email.get('from', {}).get('emailAddress', {}).get('name'),
-                'received_at': email.get('receivedDateTime'),
-                'is_read': email.get('isRead'),
-                'has_attachments': email.get('hasAttachments', False),
-                'importance': email.get('importance'),
-                'preview': email.get('bodyPreview', '')[:200]
-            })
+        # Format emails with module tags
+        result['received_emails'] = [
+            format_email(email, settings, 'RECEIVED') 
+            for email in result['received_emails']
+        ]
         
-        logger.info(f"✅ Found {len(formatted_emails)} emails for module: {module}")
+        result['sent_emails'] = [
+            format_email(email, settings, 'SENT') 
+            for email in result['sent_emails']
+        ]
         
-        return Response({
-            'success': True,
-            'count': len(formatted_emails),
-            'emails': formatted_emails,
-            'module_filter': module,
-            'graph_token_status': 'valid'
-        })
+        result['all_emails'] = [
+            format_email(email, settings, email.get('email_type', 'RECEIVED')) 
+            for email in result['all_emails']
+        ]
+        
+        # Update counts
+        result['counts'] = {
+            'received': len(result['received_emails']),
+            'sent': len(result['sent_emails']),
+            'total': len(result['all_emails'])
+        }
+        
+        logger.info(f"✅ Retrieved - Received: {result['counts']['received']}, Sent: {result['counts']['sent']}")
+        
+        return Response(result)
         
     except Exception as e:
         logger.error(f"Error getting Outlook emails: {e}")
@@ -280,14 +324,67 @@ def get_outlook_emails(request):
         
         return Response({
             'error': str(e),
-            'count': 0,
-            'emails': [],
+            'received_emails': [],
+            'sent_emails': [],
+            'all_emails': [],
+            'counts': {'received': 0, 'sent': 0, 'total': 0},
             'graph_token_status': 'error'
         }, status=status.HTTP_400_BAD_REQUEST)
 
+
+def format_email(email, settings, email_type):
+    """
+    Format email object with module and type tags
+    
+    Args:
+        email: Raw email from Graph API
+        settings: NotificationSettings instance
+        email_type: 'RECEIVED' or 'SENT'
+    
+    Returns:
+        dict: Formatted email object
+    """
+    subject = email.get('subject', '')
+    
+    # Determine module from subject
+    email_module = 'unknown'
+    if settings.business_trip_subject_prefix in subject:
+        email_module = 'business_trip'
+    elif settings.vacation_subject_prefix in subject:
+        email_module = 'vacation'
+    
+    # Get sender/recipient info based on type
+    if email_type == 'SENT':
+        # For sent emails, show recipient
+        to_recipients = email.get('toRecipients', [])
+        primary_recipient = to_recipients[0] if to_recipients else {}
+        contact_email = primary_recipient.get('emailAddress', {}).get('address')
+        contact_name = primary_recipient.get('emailAddress', {}).get('name')
+    else:
+        # For received emails, show sender
+        from_info = email.get('from', {}).get('emailAddress', {})
+        contact_email = from_info.get('address')
+        contact_name = from_info.get('name')
+    
+    return {
+        'id': email.get('id'),
+        'subject': subject,
+        'module': email_module,
+        'email_type': email_type,  # 📬 NEW: SENT or RECEIVED
+        'contact_email': contact_email,  # Sender (received) or Recipient (sent)
+        'contact_name': contact_name,
+        'received_at': email.get('receivedDateTime'),
+        'sent_at': email.get('sentDateTime'),
+        'is_read': email.get('isRead'),
+        'has_attachments': email.get('hasAttachments', False),
+        'importance': email.get('importance'),
+        'preview': email.get('bodyPreview', '')[:200]
+    }
+
+
 @swagger_auto_schema(
     method='post',
-    operation_description="Mark all emails as read by module",
+    operation_description="Mark all emails as read by module and type",
     operation_summary="Mark All Emails as Read",
     tags=['Notifications'],
     request_body=openapi.Schema(
@@ -298,6 +395,12 @@ def get_outlook_emails(request):
                 type=openapi.TYPE_STRING,
                 enum=['business_trip', 'vacation', 'all'],
                 description='Module filter'
+            ),
+            'email_type': openapi.Schema(
+                type=openapi.TYPE_STRING,
+                enum=['received', 'sent', 'all'],
+                default='all',
+                description='Mark only received, sent, or all emails'
             )
         }
     ),
@@ -306,9 +409,10 @@ def get_outlook_emails(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def mark_all_emails_read(request):
-    """Mark all emails as read filtered by module"""
+    """Mark all emails as read filtered by module and type"""
     try:
         module = request.data.get('module', 'all')
+        email_type = request.data.get('email_type', 'all')  # NEW: received/sent/all
         
         graph_token = get_graph_token_from_request(request)
         
@@ -319,39 +423,45 @@ def mark_all_emails_read(request):
         
         settings = NotificationSettings.get_active()
         
-        # Collect unread email IDs based on module
+        # Collect unread email IDs
         unread_ids = []
         
+        # Determine subject filters
+        subject_filters = []
         if module in ['business_trip', 'all']:
-            # Get Business Trip emails
-            bt_emails = notification_service.get_emails_by_subject(
-                access_token=graph_token,
-                subject_filter=settings.business_trip_subject_prefix,
-                top=50
-            )
-            unread_ids.extend([
-                email['id'] for email in bt_emails 
-                if not email.get('isRead', False)
-            ])
-        
+            subject_filters.append(settings.business_trip_subject_prefix)
         if module in ['vacation', 'all']:
-            # Get Vacation emails
-            vac_emails = notification_service.get_emails_by_subject(
+            subject_filters.append(settings.vacation_subject_prefix)
+        
+        # Collect unread emails
+        for subject_filter in subject_filters:
+            emails_by_type = notification_service.get_all_emails_by_type(
                 access_token=graph_token,
-                subject_filter=settings.vacation_subject_prefix,
-                top=50
+                subject_filter=subject_filter,
+                top=50,
+                email_type=email_type
             )
-            unread_ids.extend([
-                email['id'] for email in vac_emails 
-                if not email.get('isRead', False)
-            ])
+            
+            # Get unread IDs based on email_type filter
+            if email_type in ['received', 'all']:
+                unread_ids.extend([
+                    email['id'] for email in emails_by_type['received']
+                    if not email.get('isRead', False)
+                ])
+            
+            if email_type in ['sent', 'all']:
+                unread_ids.extend([
+                    email['id'] for email in emails_by_type['sent']
+                    if not email.get('isRead', False)
+                ])
         
         if not unread_ids:
             return Response({
                 'success': True,
-                'message': f'No unread emails for module: {module}',
+                'message': f'No unread emails for module: {module}, type: {email_type}',
                 'marked_count': 0,
-                'module': module
+                'module': module,
+                'email_type': email_type
             })
         
         # Mark all as read
@@ -365,7 +475,8 @@ def mark_all_emails_read(request):
             'marked_count': results['success'],
             'failed_count': results['failed'],
             'total_unread': len(unread_ids),
-            'module': module
+            'module': module,
+            'email_type': email_type
         })
         
     except Exception as e:
@@ -373,6 +484,7 @@ def mark_all_emails_read(request):
         return Response({
             'error': str(e)
         }, status=status.HTTP_400_BAD_REQUEST)
+
 
 @swagger_auto_schema(
     method='post',
@@ -436,6 +548,7 @@ def mark_email_read(request):
             'error': str(e)
         }, status=status.HTTP_400_BAD_REQUEST)
 
+
 @swagger_auto_schema(
     method='post',
     operation_description="Mark email as unread",
@@ -487,57 +600,6 @@ def mark_email_unread(request):
             }, status=status.HTTP_400_BAD_REQUEST)
             
     except Exception as e:
-        return Response({
-            'error': str(e)
-        }, status=status.HTTP_400_BAD_REQUEST)
-
-
-
-    """Mark all Business Trip emails as read"""
-    try:
-        graph_token = get_graph_token_from_request(request)
-        
-        if not graph_token:
-            return Response({
-                'error': 'Microsoft Graph token not available'
-            }, status=status.HTTP_401_UNAUTHORIZED)
-        
-        # Get all Business Trip emails
-        settings = NotificationSettings.get_active()
-        emails = notification_service.get_emails_by_subject(
-            access_token=graph_token,
-            subject_filter=settings.business_trip_subject_prefix,
-            top=50
-        )
-        
-        # Get unread email IDs
-        unread_ids = [
-            email['id'] for email in emails 
-            if not email.get('isRead', False)
-        ]
-        
-        if not unread_ids:
-            return Response({
-                'success': True,
-                'message': 'No unread Business Trip emails',
-                'marked_count': 0
-            })
-        
-        # Mark all as read
-        results = notification_service.mark_multiple_emails_as_read(
-            access_token=graph_token,
-            message_ids=unread_ids
-        )
-        
-        return Response({
-            'success': True,
-            'marked_count': results['success'],
-            'failed_count': results['failed'],
-            'total_unread': len(unread_ids)
-        })
-        
-    except Exception as e:
-        logger.error(f"Error marking emails as read: {e}")
         return Response({
             'error': str(e)
         }, status=status.HTTP_400_BAD_REQUEST)
