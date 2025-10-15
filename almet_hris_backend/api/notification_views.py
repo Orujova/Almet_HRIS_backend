@@ -13,7 +13,7 @@ from drf_yasg import openapi
 from .notification_models import NotificationSettings, EmailTemplate, NotificationLog
 from .notification_serializers import (
     EmailTemplateSerializer,
-    NotificationLogSerializer
+
 )
 from .notification_service import notification_service
 from .business_trip_permissions import is_admin_user
@@ -80,64 +80,6 @@ class EmailTemplateViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_403_FORBIDDEN
             )
         return super().destroy(request, *args, **kwargs)
-
-
-# ==================== NOTIFICATION LOGS ====================
-
-@swagger_auto_schema(
-    method='get',
-    operation_description="Get notification history",
-    operation_summary="Get Notification History",
-    tags=['Notifications'],
-    manual_parameters=[
-        openapi.Parameter('status', openapi.IN_QUERY, type=openapi.TYPE_STRING),
-        openapi.Parameter('recipient_email', openapi.IN_QUERY, type=openapi.TYPE_STRING),
-        openapi.Parameter('related_model', openapi.IN_QUERY, type=openapi.TYPE_STRING),
-        openapi.Parameter('days', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, description='Last N days'),
-    ],
-    responses={200: NotificationLogSerializer(many=True)}
-)
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-def get_notification_history(request):
-    """Get notification history with filters"""
-    try:
-        # Base queryset
-        logs = NotificationLog.objects.all()
-        
-        # Apply filters
-        status_filter = request.GET.get('status')
-        if status_filter:
-            logs = logs.filter(status=status_filter)
-        
-        recipient_email = request.GET.get('recipient_email')
-        if recipient_email:
-            logs = logs.filter(recipient_email__icontains=recipient_email)
-        
-        related_model = request.GET.get('related_model')
-        if related_model:
-            logs = logs.filter(related_model=related_model)
-        
-        # Time filter
-        days = request.GET.get('days', 30)
-        try:
-            days = int(days)
-            date_from = timezone.now() - timedelta(days=days)
-            logs = logs.filter(created_at__gte=date_from)
-        except ValueError:
-            pass
-        
-        # Order and limit
-        logs = logs.order_by('-created_at')[:100]
-        
-        serializer = NotificationLogSerializer(logs, many=True)
-        return Response({
-            'count': logs.count(),
-            'notifications': serializer.data
-        })
-        
-    except Exception as e:
-        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 
 # ==================== OUTLOOK INTEGRATION WITH SENT/RECEIVED ====================

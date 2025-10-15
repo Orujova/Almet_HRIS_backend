@@ -22,18 +22,6 @@ class _GradeValueSerializer(serializers.Serializer):
         allow_empty=True
     )
 
-class _HorizontalIntervalsSerializer(serializers.Serializer):
-    """Helper serializer for 4 horizontal interval inputs"""
-    LD_to_LQ = serializers.FloatField(min_value=0, max_value=100, required=False, allow_null=True)
-    LQ_to_M = serializers.FloatField(min_value=0, max_value=100, required=False, allow_null=True)
-    M_to_UQ = serializers.FloatField(min_value=0, max_value=100, required=False, allow_null=True)
-    UQ_to_UD = serializers.FloatField(min_value=0, max_value=100, required=False, allow_null=True)
-
-class _RateInputSerializer(serializers.Serializer):
-    """Helper serializer for vertical + horizontal interval inputs"""
-    vertical = serializers.FloatField(min_value=0, max_value=100, required=False, allow_null=True)
-    horizontal_intervals = _HorizontalIntervalsSerializer(required=False)
-
 # Main serializers
 class CurrentStructureSerializer(serializers.Serializer):
     """Serializer for the current grade structure"""
@@ -46,24 +34,6 @@ class CurrentStructureSerializer(serializers.Serializer):
     baseValue1 = serializers.FloatField()
     status = serializers.CharField()
 
-class DynamicCalculationRequestSerializer(serializers.Serializer):
-    """Serializer for validating the dynamic calculation request"""
-    baseValue1 = serializers.DecimalField(max_digits=15, decimal_places=2, min_value=1)
-    grades = serializers.DictField(child=_RateInputSerializer())
-
-class DynamicCalculationResponseSerializer(serializers.Serializer):
-    """Serializer for the dynamic calculation response"""
-    calculatedOutputs = serializers.DictField(child=_GradeValueSerializer())
-    success = serializers.BooleanField(default=True)
-
-class ScenarioSaveRequestSerializer(serializers.Serializer):
-    """Serializer for validating the 'save draft' request"""
-    name = serializers.CharField(max_length=100)
-    description = serializers.CharField(allow_blank=True, required=False)
-    baseValue1 = serializers.DecimalField(max_digits=15, decimal_places=2, min_value=1)
-    gradeOrder = serializers.ListField(child=serializers.CharField())
-    grades = serializers.DictField(child=_RateInputSerializer())
-    calculatedOutputs = serializers.DictField(child=_GradeValueSerializer())
 
 class GradingSystemSerializer(serializers.ModelSerializer):
     salary_grades_count = serializers.SerializerMethodField()
@@ -440,10 +410,3 @@ class ScenarioHistorySerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['id', 'timestamp']
 
-# Position Group serializer for dropdowns
-class PositionGroupDropdownSerializer(serializers.ModelSerializer):
-    display_name = serializers.CharField(source='get_name_display', read_only=True)
-    
-    class Meta:
-        model = PositionGroup
-        fields = ['id', 'name', 'display_name', 'hierarchy_level', 'is_active']

@@ -8,7 +8,7 @@ router.register(r'templates', notification_views.EmailTemplateViewSet, basename=
 
 urlpatterns = [
 
-    path('history/', notification_views.get_notification_history, name='notification-history'),
+  
 
     path('outlook/mark-read/', notification_views.mark_email_read, name='notification-mark-read'),
     path('outlook/mark-unread/', notification_views.mark_email_unread, name='notification-mark-unread'),

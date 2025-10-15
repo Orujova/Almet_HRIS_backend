@@ -11,19 +11,17 @@ from django.utils import timezone
 from django.conf import settings
 from decimal import Decimal
 import logging
-import traceback
-import json
+
 
 from .models import GradingSystem, SalaryGrade, SalaryScenario, ScenarioHistory
 from .serializers import (
     GradingSystemSerializer, SalaryGradeSerializer, CurrentStructureSerializer,
     SalaryScenarioListSerializer, SalaryScenarioDetailSerializer,
-    SalaryScenarioCreateSerializer, DynamicCalculationRequestSerializer,
-    DynamicCalculationResponseSerializer, ScenarioSaveRequestSerializer,
+    SalaryScenarioCreateSerializer,
     ScenarioHistorySerializer
 )
 from .managers import SalaryCalculationManager
-from api.views import StandardResultsSetPagination
+from api.views import ModernPagination
 from api.models import PositionGroup
 
 logger = logging.getLogger(__name__)
@@ -32,7 +30,7 @@ class GradingSystemViewSet(viewsets.ModelViewSet):
     queryset = GradingSystem.objects.all()
     serializer_class = GradingSystemSerializer
     permission_classes = [IsAuthenticated]
-    pagination_class = StandardResultsSetPagination
+    pagination_class = ModernPagination
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['name', 'description']
     filterset_fields = ['is_active']
@@ -109,7 +107,7 @@ class SalaryGradeViewSet(viewsets.ModelViewSet):
 
 class SalaryScenarioViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
-    pagination_class = StandardResultsSetPagination
+    pagination_class = ModernPagination
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['name', 'description']
     filterset_fields = ['status']  # FIXED: Removed grading_system filter that was causing 400 errors
@@ -414,7 +412,7 @@ class SalaryScenarioViewSet(viewsets.ModelViewSet):
 class ScenarioHistoryViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = ScenarioHistorySerializer
     permission_classes = [IsAuthenticated]
-    pagination_class = StandardResultsSetPagination
+    pagination_class = ModernPagination
     filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
     filterset_fields = ['scenario', 'action', 'performed_by']
     ordering = ['-timestamp']
