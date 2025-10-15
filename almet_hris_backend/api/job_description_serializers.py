@@ -202,7 +202,6 @@ class JobDescriptionActivitySerializer(serializers.ModelSerializer):
             'performed_by_detail', 'performed_at', 'metadata'
         ]
 
-# Updated sections in JobDescriptionCreateUpdateSerializer
 
 class JobDescriptionCreateUpdateSerializer(serializers.ModelSerializer):
     """ENHANCED: Manual employee and vacancy selection for multiple matches"""
@@ -242,11 +241,18 @@ class JobDescriptionCreateUpdateSerializer(serializers.ModelSerializer):
         required=False
     )
     
-    # UPDATED: Manual selection field - now supports both employees and vacancies using same field
     selected_employee_ids = serializers.ListField(
         child=serializers.IntegerField(),
         required=False,
         help_text="List of specific position IDs (both employee IDs and vacancy IDs) to create job descriptions for"
+    )
+    
+    # ADDED: Flag to reset approval status when editing
+    reset_approval_status = serializers.BooleanField(
+        required=False,
+        default=False,
+        write_only=True,
+        help_text="Set to true to reset approval status to DRAFT when updating (update only)"
     )
     
     # Response fields
@@ -261,7 +267,8 @@ class JobDescriptionCreateUpdateSerializer(serializers.ModelSerializer):
             'unit', 'job_function', 'position_group', 'grading_level',
             'sections', 'required_skills_data', 'behavioral_competencies_data',
             'business_resources_ids', 'access_rights_ids', 'company_benefits_ids',
-            'selected_employee_ids',  # UPDATED: Now handles both employees and vacancies
+            'selected_employee_ids',
+            'reset_approval_status',  # ADDED
             'created_job_descriptions', 'total_positions_assigned', 
             'requires_position_selection'
         ]
@@ -322,7 +329,7 @@ class JobDescriptionCreateUpdateSerializer(serializers.ModelSerializer):
     
     def create(self, validated_data):
         """ENHANCED: Create with both employee and vacancy selection logic"""
-        
+        validated_data.pop('reset_approval_status', None)
         # Extract nested data
         sections_data = validated_data.pop('sections', [])
         skills_data = validated_data.pop('required_skills_data', [])
@@ -672,7 +679,7 @@ class JobDescriptionCreateUpdateSerializer(serializers.ModelSerializer):
     
     
     def update(self, instance, validated_data):
-        """IMPROVED: Update job description with enhanced employee reassignment logic"""
+        """IMPROVED: Update job description with approval status reset logic"""
         
         # Extract nested data
         sections_data = validated_data.pop('sections', None)
@@ -683,7 +690,34 @@ class JobDescriptionCreateUpdateSerializer(serializers.ModelSerializer):
         company_benefits_ids = validated_data.pop('company_benefits_ids', None)
         force_employee_id = validated_data.pop('force_employee_id', None)
         
+        # FIXED: Extract reset_approval_status flag (only for updates)
+        reset_approval = validated_data.pop('reset_approval_status', False)
+        
+        
         with transaction.atomic():
+            
+            # ADDED: Reset approval status if requested
+            if reset_approval:
+                logger.info(f"🔄 Resetting approval status for job {instance.id}")
+                instance.status = 'DRAFT'
+                instance.line_manager_approved_by = None
+                instance.line_manager_approved_at = None
+                instance.line_manager_comments = ''
+                instance.employee_approved_by = None
+                instance.employee_approved_at = None
+                instance.employee_comments = ''
+                
+                # Log the reset
+                JobDescriptionActivity.objects.create(
+                    job_description=instance,
+                    activity_type='UPDATED',
+                    description=f"Approval status reset to DRAFT due to job description edit by {self.context['request'].user.get_full_name()}",
+                    performed_by=self.context['request'].user,
+                    metadata={
+                        'approval_reset': True,
+                        'reason': 'Job description edited while in approval process'
+                    }
+                )
             
             # Track organizational changes
             org_fields = ['business_function', 'department', 'unit', 'job_function', 'position_group', 'grading_level']
@@ -695,17 +729,14 @@ class JobDescriptionCreateUpdateSerializer(serializers.ModelSerializer):
             
             # ENHANCED: Employee reassignment logic
             if force_employee_id:
-                # Force reassignment (already validated)
                 new_employee = Employee.objects.get(id=force_employee_id)
                 validated_data['assigned_employee'] = new_employee
                 reassignment_reason = "Force reassignment requested"
                 logger.info(f"Force reassigning employee to: {new_employee.full_name}")
                 
             elif org_changed:
-                # Automatic reassignment due to organizational criteria changes
                 logger.info("Organizational criteria changed, checking for employee reassignment")
                 
-                # Get new organizational values (use new values or keep existing)
                 business_function = validated_data.get('business_function', instance.business_function)
                 department = validated_data.get('department', instance.department)
                 unit = validated_data.get('unit', instance.unit)
@@ -713,7 +744,6 @@ class JobDescriptionCreateUpdateSerializer(serializers.ModelSerializer):
                 position_group = validated_data.get('position_group', instance.position_group)
                 grading_level = validated_data.get('grading_level', instance.grading_level)
                 
-                # Check if current employee still matches new criteria
                 temp_jd = JobDescription()
                 temp_jd.business_function = business_function
                 temp_jd.department = department
@@ -726,18 +756,17 @@ class JobDescriptionCreateUpdateSerializer(serializers.ModelSerializer):
                 is_still_valid, validation_message = temp_jd.validate_employee_assignment()
                 
                 if not is_still_valid:
-                    # Current employee no longer matches, find new one
                     logger.info(f"Current employee no longer matches criteria: {validation_message}")
                     
                     eligible_employees = JobDescription.get_eligible_employees_with_priority(
-    job_title=temp_jd.job_title,  # FIX: Use the job title from temp_jd
-    business_function_id=business_function.id,
-    department_id=department.id,
-    unit_id=unit.id if unit else None,
-    job_function_id=job_function.id,
-    position_group_id=position_group.id,
-    grading_level=grading_level
-)
+                        job_title=temp_jd.job_title,
+                        business_function_id=business_function.id,
+                        department_id=department.id,
+                        unit_id=unit.id if unit else None,
+                        job_function_id=job_function.id,
+                        position_group_id=position_group.id,
+                        grading_level=grading_level
+                    )
                     
                     if eligible_employees.exists():
                         new_employee = eligible_employees.first()
@@ -758,7 +787,7 @@ class JobDescriptionCreateUpdateSerializer(serializers.ModelSerializer):
                 setattr(instance, attr, value)
             
             instance.updated_by = self.context['request'].user
-            instance.save()  # This will trigger auto-assignment of reports_to
+            instance.save()
             
             # Check what changed
             new_employee = instance.assigned_employee
@@ -825,7 +854,8 @@ class JobDescriptionCreateUpdateSerializer(serializers.ModelSerializer):
             
             metadata = {
                 'updated_fields': updated_fields,
-                'organizational_changes': org_changed
+                'organizational_changes': org_changed,
+                'approval_status_reset': reset_approval  # ADDED
             }
             
             if employee_changed:
@@ -861,6 +891,7 @@ class JobDescriptionCreateUpdateSerializer(serializers.ModelSerializer):
             logger.info(f"Job description update completed: {instance.id}")
             
             return instance
+
 
 class EligibleEmployeesSerializer(serializers.Serializer):
     """IMPROVED: Serializer for getting eligible employees with enhanced validation"""

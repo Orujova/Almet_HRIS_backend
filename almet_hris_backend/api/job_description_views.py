@@ -1185,9 +1185,10 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
             )
     
     
-    def _process_bulk_upload_rows(self, worksheet, validate_only=False, auto_assign=True, 
-                                  skip_duplicates=True, user=None):
-        """Process Excel rows and create job descriptions"""
+    def _process_bulk_upload_rows(self, worksheet, validate_only=False, auto_assign=True, skip_duplicates=True, user=None):
+        """
+        ENHANCED: Process Excel rows with SIMPLIFIED format supporting MULTIPLE GROUPS
+        """
         
         results = {
             'total_rows': 0,
@@ -1197,10 +1198,20 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
             'created_job_descriptions': [],
             'errors': [],
             'warnings': [],
-            'validation_summary': {}
+            'validation_summary': {},
+            'skills_summary': {
+                'total_skills_added': 0,
+                'skills_not_found': [],
+                'skills_from_multiple_groups': []
+            },
+            'competencies_summary': {
+                'total_competencies_added': 0,
+                'competencies_not_found': [],
+                'competencies_from_multiple_groups': []
+            }
         }
         
-        # Expected column mapping
+        # Column mapping
         COLUMNS = {
             'A': 'job_title',
             'B': 'business_function_code',
@@ -1215,8 +1226,8 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
             'K': 'main_kpis',
             'L': 'job_duties',
             'M': 'requirements',
-            'N': 'skills',
-            'O': 'competencies',
+            'N': 'skills',              # Multiple groups supported
+            'O': 'competencies',        # Multiple groups supported
             'P': 'business_resources',
             'Q': 'access_rights',
             'R': 'company_benefits'
@@ -1235,7 +1246,7 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                     cell_value = row[col_idx] if col_idx < len(row) else None
                     row_data[field_name] = str(cell_value).strip() if cell_value else None
                 
-                logger.info(f"Processing row {row_num}: {row_data.get('job_title')}")
+                logger.info(f"📋 Processing row {row_num}: {row_data.get('job_title')}")
                 
                 # Validate required fields
                 required_fields = ['job_title', 'business_function_code', 'department_code', 
@@ -1295,7 +1306,6 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                         })
                 
                 elif auto_assign:
-                    # Try to find matching employee
                     eligible_employees = JobDescription.get_eligible_employees_with_priority(
                         job_title=row_data['job_title'],
                         business_function_id=org_data['business_function'].id,
@@ -1308,12 +1318,12 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                     
                     if eligible_employees.count() == 1:
                         assigned_employee = eligible_employees.first()
-                        logger.info(f"Auto-assigned employee: {assigned_employee.full_name}")
+                        logger.info(f"✅ Auto-assigned employee: {assigned_employee.full_name}")
                     elif eligible_employees.count() > 1:
                         results['warnings'].append({
                             'row': row_num,
                             'job_title': row_data['job_title'],
-                            'message': f"Multiple employees match criteria ({eligible_employees.count()}). Skipping auto-assignment."
+                            'message': f"Multiple employees match ({eligible_employees.count()}). Skipping auto-assignment."
                         })
                 
                 if validate_only:
@@ -1345,18 +1355,17 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                     # Create sections
                     section_order = 1
                     section_mappings = [
-                        ('critical_duties', 'CRITICAL_DUTIES', 'Critical Duties'),
-                        ('main_kpis', 'MAIN_KPIS', 'Main KPIs'),
+                        ('critical_duties', 'CRITICAL_DUTIES', 'Critical Duties and Responsibilities'),
+                        ('main_kpis', 'MAIN_KPIS', 'Key Performance Indicators'),
                         ('job_duties', 'JOB_DUTIES', 'Job Duties'),
-                        ('requirements', 'REQUIREMENTS', 'Requirements')
+                        ('requirements', 'REQUIREMENTS', 'Requirements and Qualifications')
                     ]
                     
                     for field_name, section_type, section_title in section_mappings:
                         content = row_data.get(field_name)
                         if content:
-                            # Split by pipe separator and format
                             items = [item.strip() for item in content.split('|') if item.strip()]
-                            formatted_content = '\n'.join([f"• {item}" for item in items])
+                            formatted_content = '\n'.join([f"{index + 1}. {item}" for index, item in enumerate(items)])
                             
                             JobDescriptionSection.objects.create(
                                 job_description=jd,
@@ -1367,13 +1376,63 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                             )
                             section_order += 1
                     
-                    # Add skills
+                    # ENHANCED: Add skills with multiple groups support
+                    skills_before = JobDescriptionSkill.objects.filter(job_description=jd).count()
                     if row_data.get('skills'):
+                        logger.info(f"🎯 Adding skills for row {row_num}: {row_data['skills']}")
                         self._add_skills_from_string(jd, row_data['skills'])
+                    skills_after = JobDescriptionSkill.objects.filter(job_description=jd).count()
+                    skills_added = skills_after - skills_before
                     
-                    # Add competencies
+                    if skills_added > 0:
+                        results['skills_summary']['total_skills_added'] += skills_added
+                        
+                        # Track which groups were used
+                        added_skills = JobDescriptionSkill.objects.filter(
+                            job_description=jd
+                        ).select_related('skill', 'skill__group')
+                        
+                        skill_groups = set()
+                        for skill_obj in added_skills:
+                            if skill_obj.skill.group:
+                                skill_groups.add(skill_obj.skill.group.name)
+                        
+                        if len(skill_groups) > 1:
+                            results['skills_summary']['skills_from_multiple_groups'].append({
+                                'row': row_num,
+                                'job_title': row_data['job_title'],
+                                'groups': list(skill_groups),
+                                'count': skills_added
+                            })
+                    
+                    # ENHANCED: Add competencies with multiple groups support
+                    comp_before = JobDescriptionBehavioralCompetency.objects.filter(job_description=jd).count()
                     if row_data.get('competencies'):
+                        logger.info(f"🎯 Adding competencies for row {row_num}: {row_data['competencies']}")
                         self._add_competencies_from_string(jd, row_data['competencies'])
+                    comp_after = JobDescriptionBehavioralCompetency.objects.filter(job_description=jd).count()
+                    comp_added = comp_after - comp_before
+                    
+                    if comp_added > 0:
+                        results['competencies_summary']['total_competencies_added'] += comp_added
+                        
+                        # Track which groups were used
+                        added_comps = JobDescriptionBehavioralCompetency.objects.filter(
+                            job_description=jd
+                        ).select_related('competency', 'competency__group')
+                        
+                        comp_groups = set()
+                        for comp_obj in added_comps:
+                            if comp_obj.competency.group:
+                                comp_groups.add(comp_obj.competency.group.name)
+                        
+                        if len(comp_groups) > 1:
+                            results['competencies_summary']['competencies_from_multiple_groups'].append({
+                                'row': row_num,
+                                'job_title': row_data['job_title'],
+                                'groups': list(comp_groups),
+                                'count': comp_added
+                            })
                     
                     # Add business resources
                     if row_data.get('business_resources'):
@@ -1396,7 +1455,11 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                         metadata={
                             'source': 'bulk_upload',
                             'row_number': row_num,
-                            'auto_assigned': bool(assigned_employee)
+                            'auto_assigned': bool(assigned_employee),
+                            'simplified_format': True,
+                            'multiple_groups_support': True,
+                            'skills_added': skills_added,
+                            'competencies_added': comp_added
                         }
                     )
                     
@@ -1406,10 +1469,12 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                         'job_description_id': str(jd.id),
                         'job_title': jd.job_title,
                         'employee': assigned_employee.full_name if assigned_employee else 'Not assigned',
-                        'status': jd.get_status_display()
+                        'status': jd.get_status_display(),
+                        'skills_added': skills_added,
+                        'competencies_added': comp_added
                     })
                     
-                    logger.info(f"Successfully created JD from row {row_num}: {jd.job_title}")
+                    logger.info(f"✅ Row {row_num} SUCCESS: {jd.job_title} ({skills_added} skills, {comp_added} competencies)")
             
             except Exception as e:
                 results['failed'] += 1
@@ -1418,17 +1483,37 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                     'job_title': row_data.get('job_title', 'N/A'),
                     'error': str(e)
                 })
-                logger.error(f"Error processing row {row_num}: {str(e)}")
+                logger.error(f"❌ Error processing row {row_num}: {str(e)}")
                 logger.error(traceback.format_exc())
         
-        # Validation summary
+        # ENHANCED: Validation summary with multiple groups info
         results['validation_summary'] = {
             'total_processed': results['total_rows'],
             'success_rate': f"{(results['successful'] / results['total_rows'] * 100):.1f}%" if results['total_rows'] > 0 else "0%",
             'mode': 'validation_only' if validate_only else 'creation',
             'auto_assignment_enabled': auto_assign,
-            'skip_duplicates_enabled': skip_duplicates
+            'skip_duplicates_enabled': skip_duplicates,
+            'format': 'simplified_with_multiple_groups',
+            'skills_summary': {
+                'total_added': results['skills_summary']['total_skills_added'],
+                'jobs_with_multiple_skill_groups': len(results['skills_summary']['skills_from_multiple_groups'])
+            },
+            'competencies_summary': {
+                'total_added': results['competencies_summary']['total_competencies_added'],
+                'jobs_with_multiple_competency_groups': len(results['competencies_summary']['competencies_from_multiple_groups'])
+            }
         }
+        
+        logger.info(f"""
+        📊 BULK UPLOAD SUMMARY:
+        ✅ Successful: {results['successful']}
+        ❌ Failed: {results['failed']}
+        ⏭️ Skipped: {results['skipped']}
+        🎯 Total Skills Added: {results['skills_summary']['total_skills_added']}
+        🎯 Total Competencies Added: {results['competencies_summary']['total_competencies_added']}
+        🔀 Jobs with Multiple Skill Groups: {len(results['skills_summary']['skills_from_multiple_groups'])}
+        🔀 Jobs with Multiple Competency Groups: {len(results['competencies_summary']['competencies_from_multiple_groups'])}
+        """)
         
         return results
     
@@ -1557,83 +1642,145 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
         
         return result
     def _add_skills_from_string(self, job_description, skills_string):
-        """Add skills from formatted string: SkillCode:ProfLevel:Mandatory|SkillCode2:..."""
+        """SIMPLIFIED: Add skills from comma-separated string"""
         try:
-            skill_items = skills_string.split('|')
-            for item in skill_items:
-                parts = item.split(':')
-                if len(parts) >= 2:
-                    skill_code = parts[0].strip()
-                    prof_level = parts[1].strip().upper()
-                    is_mandatory = parts[2].strip().lower() == 'true' if len(parts) > 2 else True
+            # SIMPLIFIED: Just comma-separated skill names
+            skill_names = [name.strip() for name in skills_string.split(',') if name.strip()]
+            
+            for skill_name in skill_names:
+                try:
+                    skill = Skill.objects.get(name__iexact=skill_name, is_active=True)
+                    JobDescriptionSkill.objects.create(
+                        job_description=job_description,
+                        skill=skill,
+                        proficiency_level='INTERMEDIATE',  # Auto-set to INTERMEDIATE
+                        is_mandatory=True  # Auto-set to mandatory
+                    )
+                except Skill.DoesNotExist:
+                    logger.warning(f"Skill not found: {skill_name}")
+        except Exception as e:
+            logger.error(f"Error adding skills: {str(e)}")
+
+    def _add_skills_from_string(self, job_description, skills_string):
+        """
+        FIXED: Add skills from comma-separated string - SUPPORTS MULTIPLE GROUPS
+        System automatically finds which group each skill belongs to
+        """
+        try:
+            if not skills_string or not skills_string.strip():
+                return
+            
+            # Split by comma and clean up
+            skill_names = [name.strip() for name in skills_string.split(',') if name.strip()]
+            
+            logger.info(f"Processing {len(skill_names)} skills from bulk upload")
+            
+            added_count = 0
+            not_found = []
+            
+            for skill_name in skill_names:
+                try:
+                    # Search for skill by name (case-insensitive)
+                    # This will find the skill regardless of which group it belongs to
+                    skill = Skill.objects.get(name__iexact=skill_name, is_active=True)
                     
-                    try:
-                        skill = Skill.objects.get(name__iexact=skill_code, is_active=True)
+                    # Check if already added (avoid duplicates)
+                    existing = JobDescriptionSkill.objects.filter(
+                        job_description=job_description,
+                        skill=skill
+                    ).exists()
+                    
+                    if not existing:
                         JobDescriptionSkill.objects.create(
                             job_description=job_description,
                             skill=skill,
-                            proficiency_level=prof_level if prof_level in ['BASIC', 'INTERMEDIATE', 'ADVANCED', 'EXPERT'] else 'INTERMEDIATE',
-                            is_mandatory=is_mandatory
+                            proficiency_level='INTERMEDIATE',  # Auto-set
+                            is_mandatory=True  # Auto-set
                         )
-                    except Skill.DoesNotExist:
-                        logger.warning(f"Skill not found: {skill_code}")
+                        added_count += 1
+                        logger.info(f"✅ Added skill: {skill.name} (Group: {skill.group.name if skill.group else 'N/A'})")
+                    else:
+                        logger.info(f"⚠️ Skill already added: {skill_name}")
+                        
+                except Skill.DoesNotExist:
+                    not_found.append(skill_name)
+                    logger.warning(f"❌ Skill not found in system: {skill_name}")
+                except Exception as e:
+                    logger.error(f"❌ Error adding skill {skill_name}: {str(e)}")
+            
+            # Log summary
+            if added_count > 0:
+                logger.info(f"✅ Successfully added {added_count} skills from {len(skill_names)} listed")
+            
+            if not_found:
+                logger.warning(f"⚠️ Skills not found in system: {', '.join(not_found)}")
+                
         except Exception as e:
-            logger.error(f"Error adding skills: {str(e)}")
+            logger.error(f"Error processing skills string: {str(e)}")
+            logger.error(traceback.format_exc())
     
     def _add_competencies_from_string(self, job_description, competencies_string):
-        """Add competencies from formatted string"""
+        """
+        FIXED: Add competencies from comma-separated string - SUPPORTS MULTIPLE GROUPS
+        System automatically finds which group each competency belongs to
+        """
         try:
-            comp_items = competencies_string.split('|')
-            for item in comp_items:
-                parts = item.split(':')
-                if len(parts) >= 2:
-                    comp_code = parts[0].strip()
-                    prof_level = parts[1].strip().upper()
-                    is_mandatory = parts[2].strip().lower() == 'true' if len(parts) > 2 else True
+            if not competencies_string or not competencies_string.strip():
+                return
+            
+            # Split by comma and clean up
+            competency_names = [name.strip() for name in competencies_string.split(',') if name.strip()]
+            
+            logger.info(f"Processing {len(competency_names)} competencies from bulk upload")
+            
+            added_count = 0
+            not_found = []
+            
+            for comp_name in competency_names:
+                try:
+                    # Search for competency by name (case-insensitive)
+                    # This will find the competency regardless of which group it belongs to
+                    competency = BehavioralCompetency.objects.get(
+                        name__iexact=comp_name, 
+                        is_active=True
+                    )
                     
-                    try:
-                        competency = BehavioralCompetency.objects.get(name__iexact=comp_code, is_active=True)
+                    # Check if already added (avoid duplicates)
+                    existing = JobDescriptionBehavioralCompetency.objects.filter(
+                        job_description=job_description,
+                        competency=competency
+                    ).exists()
+                    
+                    if not existing:
                         JobDescriptionBehavioralCompetency.objects.create(
                             job_description=job_description,
                             competency=competency,
-                            proficiency_level=prof_level if prof_level in ['BASIC', 'INTERMEDIATE', 'ADVANCED', 'EXPERT'] else 'INTERMEDIATE',
-                            is_mandatory=is_mandatory
+                            proficiency_level='INTERMEDIATE',  # Auto-set
+                            is_mandatory=True  # Auto-set
                         )
-                    except BehavioralCompetency.DoesNotExist:
-                        logger.warning(f"Competency not found: {comp_code}")
-        except Exception as e:
-            logger.error(f"Error adding competencies: {str(e)}")
-    
-    def _add_resources_from_string(self, job_description, resources_string, resource_type):
-        """Add resources from comma-separated string"""
-        try:
-            resource_names = [name.strip() for name in resources_string.split(',') if name.strip()]
-            
-            for name in resource_names:
-                try:
-                    if resource_type == 'business':
-                        resource = JobBusinessResource.objects.get(name__iexact=name, is_active=True)
-                        JobDescriptionBusinessResource.objects.create(
-                            job_description=job_description,
-                            resource=resource
-                        )
-                    elif resource_type == 'access':
-                        access = AccessMatrix.objects.get(name__iexact=name, is_active=True)
-                        JobDescriptionAccessMatrix.objects.create(
-                            job_description=job_description,
-                            access_matrix=access
-                        )
-                    elif resource_type == 'benefits':
-                        benefit = CompanyBenefit.objects.get(name__iexact=name, is_active=True)
-                        JobDescriptionCompanyBenefit.objects.create(
-                            job_description=job_description,
-                            benefit=benefit
-                        )
+                        added_count += 1
+                        logger.info(f"✅ Added competency: {competency.name} (Group: {competency.group.name if competency.group else 'N/A'})")
+                    else:
+                        logger.info(f"⚠️ Competency already added: {comp_name}")
+                        
+                except BehavioralCompetency.DoesNotExist:
+                    not_found.append(comp_name)
+                    logger.warning(f"❌ Competency not found in system: {comp_name}")
                 except Exception as e:
-                    logger.warning(f"{resource_type} not found: {name}")
+                    logger.error(f"❌ Error adding competency {comp_name}: {str(e)}")
+            
+            # Log summary
+            if added_count > 0:
+                logger.info(f"✅ Successfully added {added_count} competencies from {len(competency_names)} listed")
+            
+            if not_found:
+                logger.warning(f"⚠️ Competencies not found in system: {', '.join(not_found)}")
+                
         except Exception as e:
-            logger.error(f"Error adding {resource_type}: {str(e)}")
-    
+            logger.error(f"Error processing competencies string: {str(e)}")
+            logger.error(traceback.format_exc())
+
+
     @swagger_auto_schema(
     method='get',
     operation_description="""
@@ -1653,12 +1800,11 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
 )
     @action(detail=False, methods=['get'])
     def download_template(self, request):
-        """Download Excel template for bulk upload"""
+        """Download ENHANCED Excel template with multiple groups support"""
         try:
-            # Check if openpyxl is available
             if not HAS_OPENPYXL:
                 return Response(
-                    {'error': 'Excel library (openpyxl) is not installed. Please contact administrator.'},
+                    {'error': 'Excel library (openpyxl) is not installed.'},
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR
                 )
             
@@ -1667,29 +1813,29 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
             ws = wb.active
             ws.title = "Job Descriptions"
             
-            # Define headers
+            # Headers
             headers = [
                 'Job Title*',
-                'Business Function Code*',
-                'Department Code*',
-                'Unit Code',
-                'Job Function Code*',
-                'Position Group Code*',
+                'Business Function*',
+                'Department*',
+                'Unit',
+                'Job Function*',
+                'Position Group*',
                 'Grading Level*',
                 'Employee ID',
                 'Job Purpose*',
-                'Critical Duties (pipe | separated)',
-                'Main KPIs (pipe | separated)',
-                'Job Duties (pipe | separated)',
-                'Requirements (pipe | separated)',
-                'Skills (Code:Level:Mandatory|Code2:...)',
-                'Competencies (Code:Level:Mandatory|Code2:...)',
-                'Business Resources (comma separated)',
-                'Access Rights (comma separated)',
-                'Company Benefits (comma separated)'
+                'Critical Duties*',
+                'Main KPIs*',
+                'Job Duties*',
+                'Requirements*',
+                'Technical Skills',
+                'Behavioral Competencies',
+                'Business Resources',
+                'Access Rights',
+                'Company Benefits'
             ]
             
-            # Style the header row
+            # Style headers
             header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
             header_font = Font(bold=True, color="FFFFFF", size=11)
             header_alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
@@ -1700,7 +1846,6 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                 bottom=Side(style='thin')
             )
             
-            # Write and style headers
             for col_num, header in enumerate(headers, 1):
                 cell = ws.cell(row=1, column=col_num)
                 cell.value = header
@@ -1709,7 +1854,7 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                 cell.alignment = header_alignment
                 cell.border = border
             
-            # Add sample data row
+            # ENHANCED: Sample data showing multiple skills from different groups
             sample_data = [
                 'Senior Software Engineer',
                 'IT',
@@ -1718,17 +1863,22 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                 'Engineering',
                 'Senior',
                 'G7',
-                '',  # Empty Employee ID = auto-assign to all matching
+                '',
                 'Lead backend development and architecture decisions for enterprise applications',
-                'Design system architecture|Lead code reviews|Mentor junior developers|Define technical standards',
-                'Code quality > 90%|Sprint completion rate > 95%|Technical debt reduction by 20%',
-                'Develop REST APIs|Database optimization|Unit testing|CI/CD pipeline management',
-                "Bachelor's in CS|5+ years experience|Strong Python skills|Cloud experience required",
-                'Python:EXPERT:true|SQL:ADVANCED:true|Docker:INTERMEDIATE:false|AWS:ADVANCED:true',
-                'Leadership:ADVANCED:true|Communication:ADVANCED:true|Problem Solving:EXPERT:true',
-                'Laptop,IDE License,Cloud Access',
-                'GitHub Admin,AWS Console,Database Write',
-                'Health Insurance,Annual Leave,Learning Budget,Remote Work'
+                'Design system architecture | Lead code reviews | Mentor junior developers | Define technical standards',
+                'Code quality > 90% | Sprint completion rate > 95% | Technical debt reduction by 20%',
+                'Develop REST APIs | Database optimization | Unit testing | CI/CD pipeline management',
+                "Bachelor's in CS | 5+ years experience | Strong Python skills | Cloud experience required",
+                
+                # ENHANCED: Shows skills from multiple groups
+                'Python, SQL, Docker, AWS, Kubernetes, Git, JavaScript, React, Node.js, PostgreSQL',
+                
+                # ENHANCED: Shows competencies from multiple groups
+                'Leadership, Communication, Problem Solving, Teamwork, Strategic Thinking, Decision Making, Innovation, Adaptability',
+                
+                'Laptop, IDE License, Cloud Access, Development Tools',
+                'GitHub Admin, AWS Console, Database Write, Production Deploy',
+                'Health Insurance, Annual Leave, Learning Budget, Remote Work, Performance Bonus'
             ]
             
             for col_num, value in enumerate(sample_data, 1):
@@ -1737,104 +1887,178 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                 cell.border = border
                 cell.alignment = Alignment(wrap_text=True, vertical="top")
             
-            # Set column widths
-            column_widths = [25, 20, 20, 15, 20, 20, 12, 12, 40, 40, 40, 40, 40, 40, 40, 30, 30, 30]
+            # Column widths
+            column_widths = [25, 20, 20, 15, 20, 20, 12, 12, 40, 35, 35, 35, 35, 35, 35, 25, 25, 25]
             for col_num, width in enumerate(column_widths, 1):
                 ws.column_dimensions[get_column_letter(col_num)].width = width
             
-            # Set row heights
             ws.row_dimensions[1].height = 40
             ws.row_dimensions[2].height = 120
             
-            # Add Instructions sheet
+            # ENHANCED: Instructions with multiple groups explanation
             ws_instructions = wb.create_sheet("Instructions")
             
-            # FIXED: All rows must have exactly 2 columns
             instructions = [
-                ["JOB DESCRIPTION BULK UPLOAD INSTRUCTIONS", ""],
+                ["BULK UPLOAD - MULTIPLE GROUPS SUPPORTED", ""],
                 ["", ""],
-                ["OVERVIEW", ""],
-                ["", "This template allows you to create multiple job descriptions at once."],
-                ["", "The system will automatically find and assign matching employees and vacant positions."],
+                
+                ["🎯 KEY FEATURE", ""],
+                ["", "You can select skills and competencies from MULTIPLE groups!"],
+                ["", "System automatically handles skills from different categories."],
                 ["", ""],
-                ["REQUIRED FIELDS (marked with *)", ""],
-                ["Job Title", "The official job title (must match employee records exactly)"],
-                ["Business Function Code", "Code of business function (e.g., IT, HR, FIN, OPS)"],
-                ["Department Code", "Department name that exists in the system"],
-                ["Job Function Code", "Job function name (e.g., Engineering, Management, Support)"],
-                ["Position Group Code", "Position group/hierarchy name (e.g., Senior, Junior, Manager)"],
-                ["Grading Level", "Grading level code (e.g., G1, G2, M, S, E)"],
-                ["Job Purpose", "Main purpose and objectives of the role (minimum 5 characters)"],
+                
+                ["QUICK START GUIDE", ""],
+                ["1.", "Fill required fields (marked with *)"],
+                ["2.", "Use | (pipe) to separate list items"],
+                ["3.", "Use , (comma) to separate skills and competencies"],
+                ["4.", "List as many skills/competencies as needed from ANY group"],
+                ["5.", "Save and upload"],
                 ["", ""],
+                
+                ["REQUIRED FIELDS", ""],
+                ["Job Title*", "Must match existing employee records exactly"],
+                ["Business Function*", "Example: IT, HR, Finance, Operations"],
+                ["Department*", "Must exist in selected Business Function"],
+                ["Job Function*", "Example: Engineering, Management, Support"],
+                ["Position Group*", "Example: Senior, Junior, Manager, Director"],
+                ["Grading Level*", "Example: G1, G2, G7, M, S, E"],
+                ["Job Purpose*", "Brief description (minimum 5 characters)"],
+                ["Critical Duties*", "Use | separator: Task1 | Task2 | Task3"],
+                ["Main KPIs*", "Use | separator: KPI1 | KPI2 | KPI3"],
+                ["Job Duties*", "Use | separator: Duty1 | Duty2 | Duty3"],
+                ["Requirements*", "Use | separator: Req1 | Req2 | Req3"],
+                ["", ""],
+                
                 ["OPTIONAL FIELDS", ""],
-                ["Unit Code", "Unit name if applicable (can be left empty)"],
-                ["Employee ID", "IMPORTANT: If empty, creates JD for ALL matching employees + vacant positions!"],
-                ["", "If filled, creates JD only for this specific employee"],
-                ["Critical Duties", "Pipe-separated list: Duty1|Duty2|Duty3"],
-                ["Main KPIs", "Pipe-separated list of key performance indicators"],
-                ["Job Duties", "Pipe-separated list of daily duties"],
-                ["Requirements", "Pipe-separated list: Bachelor's degree|5 years experience|Certification"],
-                ["Skills", "Format: SkillName:Level:Mandatory|Skill2:Level:Mandatory"],
-                ["", "Levels: BASIC, INTERMEDIATE, ADVANCED, EXPERT"],
-                ["", "Mandatory: true or false"],
-                ["", "Example: Python:EXPERT:true|SQL:ADVANCED:true"],
-                ["Competencies", "Same format as Skills"],
-                ["", "Example: Leadership:ADVANCED:true|Communication:EXPERT:true"],
-                ["Business Resources", "Comma-separated: Laptop,Software License,Mobile Phone"],
-                ["Access Rights", "Comma-separated: System Admin,Database Access,Report Viewer"],
-                ["Company Benefits", "Comma-separated: Health Insurance,Bonus,Car Allowance"],
+                ["Unit", "Leave empty if not applicable"],
+                ["Employee ID", "Empty = create for ALL matching positions"],
+                ["", "Filled = create ONLY for that specific employee"],
                 ["", ""],
-                ["AUTO-ASSIGNMENT LOGIC", ""],
-                ["", "When Employee ID is EMPTY, the system will:"],
-                ["1.", "Find ALL employees matching these criteria:"],
-                ["", "  - Job Title (exact match, case-insensitive)"],
-                ["", "  - Business Function"],
-                ["", "  - Department"],
-                ["", "  - Unit (if provided)"],
-                ["", "  - Job Function"],
-                ["", "  - Position Group"],
-                ["", "  - Grading Level"],
-                ["2.", "Find ALL vacant positions matching the same criteria"],
-                ["3.", "Create one job description for EACH matching position"],
+                
+                ["✨ TECHNICAL SKILLS - MULTIPLE GROUPS", ""],
+                ["What it means", "You can list skills from Programming, Cloud, Database, etc. ALL IN ONE CELL"],
+                ["Format", "Just comma-separated skill names"],
                 ["", ""],
-                ["Example:", "If 5 employees + 2 vacant positions match"],
-                ["", "System creates 7 job descriptions from one row!"],
+                ["Example 1", "Python, SQL, Docker"],
+                ["", "→ These might be from: Programming, Database, DevOps groups"],
                 ["", ""],
-                ["IMPORTANT NOTES", ""],
-                ["1.", "All codes must match existing records in the system exactly"],
-                ["2.", "Job Title must match employee records exactly (case-insensitive)"],
-                ["3.", "Leave Employee ID empty to auto-assign to all matching positions"],
-                ["4.", "Fill Employee ID to assign to a specific employee only"],
-                ["5.", "Delete the sample data row before uploading"],
-                ["6.", "Upload options available:"],
-                ["", "  - validate_only: Check data without creating (dry run)"],
-                ["", "  - auto_assign_employees: Enable/disable auto-assignment"],
-                ["", "  - skip_duplicates: Skip job descriptions that already exist"],
+                ["Example 2", "AWS, Azure, Kubernetes, Git, Python, PostgreSQL"],
+                ["", "→ Cloud skills + DevOps + Programming + Database"],
+                ["", "→ All from different groups, all work together!"],
                 ["", ""],
-                ["UPLOAD PROCESS", ""],
-                ["1.", "Fill in your data (one job description per row)"],
-                ["2.", "Save the file"],
-                ["3.", "Use POST /job-descriptions/bulk-upload/"],
-                ["4.", "Select your file and set options"],
-                ["5.", "Click Execute"],
-                ["6.", "Review the results - success/failed/skipped counts"],
+                ["System Behavior", "• Automatically finds which group each skill belongs to"],
+                ["", "• No need to specify groups - just list the skills"],
+                ["", "• All skills set to INTERMEDIATE proficiency"],
+                ["", "• All skills marked as MANDATORY"],
+                ["", "• Skills from multiple groups handled automatically"],
                 ["", ""],
-                ["TROUBLESHOOTING", ""],
-                ["Department not found", "Check department name spelling"],
-                ["No employees match", "Verify all criteria (job title, function, etc.)"],
-                ["Multiple employees match", "This is OK! JDs created for all"],
-                ["Skill not found", "Check skill names in system"],
+                
+                ["✨ BEHAVIORAL COMPETENCIES - MULTIPLE GROUPS", ""],
+                ["What it means", "Mix competencies from Leadership, Communication, Technical, etc."],
+                ["Format", "Just comma-separated competency names"],
                 ["", ""],
-                ["SUPPORT", ""],
-                ["", "For questions, contact your HRIS administrator."],
+                ["Example 1", "Leadership, Communication, Problem Solving"],
+                ["", "→ From Leadership, Communication, Analytical groups"],
+                ["", ""],
+                ["Example 2", "Strategic Thinking, Team Management, Innovation, Adaptability, Decision Making"],
+                ["", "→ Strategic + Leadership + Innovation + Change Management groups"],
+                ["", "→ All work together automatically!"],
+                ["", ""],
+                ["System Behavior", "• Finds correct group for each competency"],
+                ["", "• No manual group assignment needed"],
+                ["", "• All set to INTERMEDIATE proficiency"],
+                ["", "• All marked as MANDATORY"],
+                ["", "• Multiple groups supported seamlessly"],
+                ["", ""],
+                
+                ["💡 PRACTICAL EXAMPLES", ""],
+                ["", ""],
+                ["Software Engineer", "Skills: Python, Java, SQL, Docker, AWS, Git, React"],
+                ["", "→ Programming + Database + Cloud + DevOps + Frontend"],
+                ["", "Competencies: Problem Solving, Teamwork, Communication, Innovation"],
+                ["", "→ Analytical + Collaboration + Communication + Creative groups"],
+                ["", ""],
+                ["Project Manager", "Skills: MS Project, Agile, JIRA, Excel, PowerBI"],
+                ["", "→ PM Tools + Methodologies + Data Analysis groups"],
+                ["", "Competencies: Leadership, Strategic Planning, Stakeholder Management, Decision Making"],
+                ["", "→ Leadership + Strategic + Communication + Management groups"],
+                ["", ""],
+                ["HR Specialist", "Skills: HRIS, Recruitment Software, Excel, HR Analytics"],
+                ["", "→ HR Systems + Tools + Data Analysis groups"],
+                ["", "Competencies: Communication, Empathy, Organization, Conflict Resolution"],
+                ["", "→ Communication + Interpersonal + Admin + Problem-Solving groups"],
+                ["", ""],
+                
+                ["🔧 HOW IT WORKS BEHIND THE SCENES", ""],
+                ["Step 1", "You list: Python, AWS, Docker, SQL"],
+                ["Step 2", "System searches: Which groups contain these skills?"],
+                ["Step 3", "System finds:"],
+                ["", "  • Python → Programming Languages group"],
+                ["", "  • AWS → Cloud Services group"],
+                ["", "  • Docker → DevOps Tools group"],
+                ["", "  • SQL → Database Technologies group"],
+                ["Step 4", "System creates job with skills from 4 different groups!"],
+                ["Step 5", "Same logic applies to competencies"],
+                ["", ""],
+                
+                ["📋 LISTS WITH PIPE SEPARATOR |", ""],
+                ["Use for", "Critical Duties, Main KPIs, Job Duties, Requirements"],
+                ["Why", "Each item becomes a separate bullet point"],
+                ["Example", "Develop APIs | Code review | Write documentation"],
+                ["Result", "• Develop APIs"],
+                ["", "• Code review"],
+                ["", "• Write documentation"],
+                ["", ""],
+                
+                ["📋 COMMA SEPARATED LISTS", ""],
+                ["Use for", "Technical Skills, Behavioral Competencies, Resources, Benefits"],
+                ["Why", "Each item is a separate skill/competency/resource"],
+                ["Example", "Python, SQL, Docker"],
+                ["Result", "Three separate skills added to job description"],
+                ["", ""],
+                
+                ["🎯 AUTO-ASSIGNMENT LOGIC", ""],
+                ["Empty Employee ID", "System finds ALL matching employees and vacancies"],
+                ["", "Example: 5 match → Creates 5 job descriptions"],
+                ["", ""],
+                ["Filled Employee ID", "Creates job ONLY for that employee"],
+                ["", "Example: 'EMP001' → Creates 1 job for EMP001"],
+                ["", ""],
+                
+                ["✅ TIPS FOR SUCCESS", ""],
+                ["✓", "Delete sample data row before uploading"],
+                ["✓", "List ALL relevant skills - system handles grouping"],
+                ["✓", "Mix skills from different categories freely"],
+                ["✓", "Same for competencies - no group limits"],
+                ["✓", "Use exact skill/competency names from system"],
+                ["✓", "Don't add proficiency levels - auto INTERMEDIATE"],
+                ["✓", "Don't add true/false - all auto MANDATORY"],
+                ["", ""],
+                
+                ["❌ COMMON MISTAKES", ""],
+                ["✗", "Don't write: 'Python:EXPERT:true' → Just write: 'Python'"],
+                ["✗", "Don't write: 'Leadership (Advanced)' → Just write: 'Leadership'"],
+                ["✗", "Don't worry about grouping → System does it automatically"],
+                ["✗", "Don't use | for skills → Use , (comma) only"],
+                ["✗", "Don't leave required fields empty"],
+                ["", ""],
+                
+                ["🆘 TROUBLESHOOTING", ""],
+                ["Skill not found", "Check exact spelling in system (case-insensitive)"],
+                ["Competency not found", "Verify competency name exists in system"],
+                ["No employees match", "Check organizational criteria spelling"],
+                ["Multiple matches", "Normal! System creates job for each match"],
+                ["", ""],
+                
+              
             ]
             
             # Style instructions
             title_font = Font(bold=True, size=14, color="366092")
             section_font = Font(bold=True, size=11, color="2E7D32")
+            emoji_font = Font(bold=True, size=12, color="FF6B35")
             
             for row_num, row_data in enumerate(instructions, 1):
-                # Ensure we have exactly 2 columns
                 col1 = row_data[0] if len(row_data) > 0 else ""
                 col2 = row_data[1] if len(row_data) > 1 else ""
                 
@@ -1844,27 +2068,32 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                 # Apply formatting
                 if row_num == 1:
                     ws_instructions.cell(row=row_num, column=1).font = title_font
-                elif col1 in ["OVERVIEW", "REQUIRED FIELDS (marked with *)", "OPTIONAL FIELDS", 
-                             "AUTO-ASSIGNMENT LOGIC", "IMPORTANT NOTES", "UPLOAD PROCESS", 
-                             "TROUBLESHOOTING", "SUPPORT"]:
+                elif col1.startswith('🎯') or col1.startswith('✨') or col1.startswith('💡') or \
+                     col1.startswith('🔧') or col1.startswith('📋') or col1.startswith('✅') or \
+                     col1.startswith('❌') or col1.startswith('🆘') or col1.startswith('📞'):
+                    ws_instructions.cell(row=row_num, column=1).font = emoji_font
+                elif col1 in ["QUICK START GUIDE", "REQUIRED FIELDS", "OPTIONAL FIELDS", 
+                             "PRACTICAL EXAMPLES", "HOW IT WORKS BEHIND THE SCENES", 
+                             "LISTS WITH PIPE SEPARATOR |", "COMMA SEPARATED LISTS",
+                             "AUTO-ASSIGNMENT LOGIC", "TIPS FOR SUCCESS",
+                             "COMMON MISTAKES", "TROUBLESHOOTING", "SUPPORT"]:
                     ws_instructions.cell(row=row_num, column=1).font = section_font
             
             ws_instructions.column_dimensions['A'].width = 30
-            ws_instructions.column_dimensions['B'].width = 70
+            ws_instructions.column_dimensions['B'].width = 75
             
             # Save workbook
             wb.save(buffer)
             buffer.seek(0)
             
-            # Create response
             response = HttpResponse(
                 buffer.getvalue(),
                 content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
             )
-            filename = f"Job_Description_Bulk_Upload_Template_{datetime.now().strftime('%Y%m%d')}.xlsx"
+            filename = f"Job_Description_Multi_Group_Template_{datetime.now().strftime('%Y%m%d')}.xlsx"
             response['Content-Disposition'] = f'attachment; filename="{filename}"'
             
-            logger.info(f"Template downloaded by {request.user.username}: {filename}")
+            logger.info(f"Multi-group template downloaded by {request.user.username}")
             return response
             
         except Exception as e:
@@ -1874,7 +2103,6 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                 {'error': f'Failed to generate template: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-    
     @swagger_auto_schema(
         method='post',
         operation_description="Export job descriptions to Excel",
