@@ -168,119 +168,238 @@ class JobDescription(models.Model):
     
    
     
+    
     @classmethod
     def get_eligible_employees_with_priority(cls, job_title=None, business_function_id=None, 
                                            department_id=None, unit_id=None, job_function_id=None, 
                                            position_group_id=None, grading_level=None):
-        """FIXED: Get employees matching ALL criteria INCLUDING job title"""
+        """COMPLETELY REWRITTEN: Get employees matching ALL criteria with detailed logging"""
         from .models import Employee
+        import logging
+        logger = logging.getLogger(__name__)
        
-        print(f"  Job Title: '{job_title}'")
-        print(f"  Business Function ID: {business_function_id}")
-        print(f"  Department ID: {department_id}")
-        print(f"  Unit ID: {unit_id}")
-        print(f"  Job Function ID: {job_function_id}")
-        print(f"  Position Group ID: {position_group_id}")
-        print(f"  Grading Level: '{grading_level}'")
+        logger.info(f"\n{'='*80}")
+        logger.info(f"🔍 EMPLOYEE SEARCH STARTED")
+        logger.info(f"{'='*80}")
+        logger.info(f"Search Criteria:")
+        logger.info(f"  📋 Job Title: '{job_title}'")
+        logger.info(f"  🏢 Business Function ID: {business_function_id}")
+        logger.info(f"  🏬 Department ID: {department_id}")
+        logger.info(f"  🏪 Unit ID: {unit_id}")
+        logger.info(f"  💼 Job Function ID: {job_function_id}")
+        logger.info(f"  📊 Position Group ID: {position_group_id}")
+        logger.info(f"  🎯 Grading Level: '{grading_level}'")
+        logger.info(f"{'='*80}\n")
         
         # Start with all active employees
         queryset = Employee.objects.filter(
-           
             is_deleted=False
         ).select_related(
             'business_function', 'department', 'unit', 'job_function', 
             'position_group', 'line_manager'
         )
         
+        initial_count = queryset.count()
+        logger.info(f"📊 STEP 0: Starting with {initial_count} total active employees\n")
         
-        
-
-        
-        # 1. JOB TITLE FILTER (MOST IMPORTANT - WAS MISSING!)
+        # 1. JOB TITLE FILTER - MOST CRITICAL
         if job_title:
             job_title_clean = job_title.strip()
+            before = queryset.count()
             queryset = queryset.filter(job_title__iexact=job_title_clean)
-            print(f"  ✅ After job_title '{job_title_clean}' filter: {queryset.count()}")
+            after = queryset.count()
             
-            if queryset.count() == 0:
-           
-                existing_titles = Employee.objects.filter(
-                     is_deleted=False
-                ).values_list('job_title', flat=True).distinct()
-                print(f"  Available job titles: {list(existing_titles)}")
+            logger.info(f"📋 STEP 1: Job Title Filter")
+            logger.info(f"  Searching for: '{job_title_clean}'")
+            logger.info(f"  Result: {before} → {after} employees")
+            
+            if after == 0:
+                logger.error(f"  ❌ ZERO employees found with job title '{job_title_clean}'")
+                
+                # Show what job titles exist
+                all_titles = list(Employee.objects.filter(
+                    is_deleted=False
+                ).values_list('job_title', flat=True).distinct()[:30])
+                logger.error(f"  Available job titles in database: {all_titles}")
+                
+                return Employee.objects.none()
+            else:
+                logger.info(f"  ✅ Found {after} employees with job title '{job_title_clean}'")
+                for emp in queryset[:5]:
+                    logger.info(f"    - {emp.full_name} ({emp.employee_id})")
+            logger.info("")
         
         # 2. BUSINESS FUNCTION FILTER
         if business_function_id:
+            before = queryset.count()
             queryset = queryset.filter(business_function_id=business_function_id)
-            print(f"  ✅ After business_function filter: {queryset.count()}")
+            after = queryset.count()
+            logger.info(f"🏢 STEP 2: Business Function Filter")
+            logger.info(f"  Filter: business_function_id = {business_function_id}")
+            logger.info(f"  Result: {before} → {after} employees")
+            if after > 0:
+                logger.info(f"  ✅ {after} employees remain")
+            else:
+                logger.error(f"  ❌ NO employees in this business function")
+            logger.info("")
         
         # 3. DEPARTMENT FILTER
+        # 3. DEPARTMENT FILTER - FLEXIBLE: Match by NAME, not strict ID
         if department_id:
-            queryset = queryset.filter(department_id=department_id)
-            print(f"  ✅ After department filter: {queryset.count()}")
+            before = queryset.count()
+            
+            # Get the department object to find its name
+            try:
+                from .models import Department
+                target_dept = Department.objects.get(id=department_id)
+                dept_name = target_dept.name
+                
+                logger.info(f"🏬 STEP 3: Department Filter")
+                logger.info(f"  Target: department_id={department_id}, name='{dept_name}'")
+                logger.info(f"  Strategy: Match by NAME (flexible - any BF with this dept name)")
+                
+                # Show what employees have before filtering
+                if before > 0 and before <= 5:
+                    logger.info(f"  Employees BEFORE filter:")
+                    for emp in queryset:
+                        emp_dept_id = emp.department.id if emp.department else None
+                        emp_dept_name = emp.department.name if emp.department else 'None'
+                        emp_bf_name = emp.business_function.name if emp.business_function else 'None'
+                        logger.info(f"    - {emp.full_name}: dept_id={emp_dept_id}, dept_name='{emp_dept_name}', BF='{emp_bf_name}'")
+                
+                # 🔥 KEY CHANGE: Filter by department NAME, not ID
+                queryset = queryset.filter(department__name__iexact=dept_name)
+                after = queryset.count()
+                
+                logger.info(f"  Result: {before} → {after} employees (matched by dept name '{dept_name}')")
+                
+                if after > 0:
+                    logger.info(f"  ✅ {after} employees in departments named '{dept_name}'")
+                    # Show which departments they're in
+                    dept_ids = queryset.values_list('department_id', flat=True).distinct()
+                    logger.info(f"     Found in department IDs: {list(dept_ids)}")
+                else:
+                    logger.error(f"  ❌ NO employees in any department named '{dept_name}'")
+                    
+            except Exception as dept_error:
+                logger.error(f"  ⚠️  Error in flexible dept filter: {str(dept_error)}")
+                logger.error(f"     Falling back to strict department_id filter")
+                queryset = queryset.filter(department_id=department_id)
+                after = queryset.count()
+                logger.info(f"  Fallback result: {before} → {after} employees")
+            
+            logger.info("")
         
         # 4. UNIT FILTER (optional)
         if unit_id:
+            before = queryset.count()
             queryset = queryset.filter(unit_id=unit_id)
-            print(f"  ✅ After unit filter: {queryset.count()}")
+            after = queryset.count()
+            logger.info(f"🏪 STEP 4: Unit Filter")
+            logger.info(f"  Filter: unit_id = {unit_id}")
+            logger.info(f"  Result: {before} → {after} employees")
+            logger.info("")
         
         # 5. JOB FUNCTION FILTER
         if job_function_id:
+            before = queryset.count()
             queryset = queryset.filter(job_function_id=job_function_id)
-            print(f"  ✅ After job_function filter: {queryset.count()}")
+            after = queryset.count()
+            logger.info(f"💼 STEP 5: Job Function Filter")
+            logger.info(f"  Filter: job_function_id = {job_function_id}")
+            logger.info(f"  Result: {before} → {after} employees")
+            if after > 0:
+                logger.info(f"  ✅ {after} employees remain")
+            else:
+                logger.error(f"  ❌ NO employees in this job function")
+            logger.info("")
         
         # 6. POSITION GROUP FILTER
+        # 6. POSITION GROUP FILTER
         if position_group_id:
+            before = queryset.count()
+            
+            logger.info(f"📊 STEP 6: Position Group Filter")
+            logger.info(f"  Target position_group_id: {position_group_id}")
+            logger.info(f"  Employees BEFORE filter: {before}")
+            
+            # DEBUG: Show what position groups the remaining employees have
+            if before > 0:
+                logger.info(f"  Current employees and their Position Groups:")
+                try:
+                    remaining_employees = list(queryset)  # Convert to list first
+                    for emp in remaining_employees:
+                        try:
+                            emp_pg_id = emp.position_group.id if emp.position_group else None
+                            emp_pg_name = emp.position_group.name if emp.position_group else 'None'
+                            logger.info(f"    - {emp.full_name} ({emp.employee_id}): PG_ID={emp_pg_id}, PG_Name='{emp_pg_name}'")
+                        except Exception as emp_error:
+                            logger.error(f"    - Error reading {emp.full_name}: {str(emp_error)}")
+                except Exception as list_error:
+                    logger.error(f"  ❌ Error listing employees: {str(list_error)}")
+            else:
+                logger.warning(f"  ⚠️  No employees to check (before={before})")
+            
+            # Apply filter
             queryset = queryset.filter(position_group_id=position_group_id)
-            print(f"  ✅ After position_group filter: {queryset.count()}")
+            after = queryset.count()
+            
+            logger.info(f"  Result: {before} → {after} employees")
+            if after > 0:
+                logger.info(f"  ✅ {after} employees remain")
+            else:
+                logger.error(f"  ❌ NO employees match position_group_id = {position_group_id}")
+                logger.error(f"  🔍 This means the {before} employee(s) have DIFFERENT position group IDs!")
         
-        # 7. GRADING LEVEL FILTER
+        # 7. GRADING LEVEL FILTER - Special handling with normalization
         if grading_level:
             grading_level_clean = grading_level.strip()
             normalized_target = normalize_grading_level(grading_level_clean)
             
-            print(f"  Target grading level: '{grading_level_clean}' (normalized: '{normalized_target}')")
+            logger.info(f"🎯 STEP 7: Grading Level Filter")
+            logger.info(f"  Target: '{grading_level_clean}' (normalized: '{normalized_target}')")
             
-            # Get all employees and filter manually for smart comparison
-            all_employees = list(queryset)
-            matching_employees = []
+            # Manual filtering with normalization
+            all_remaining = list(queryset)
+            matching_ids = []
             
-            for employee in all_employees:
-                emp_grade = employee.grading_level.strip() if employee.grading_level else ""
+            logger.info(f"  Checking {len(all_remaining)} employees:")
+            for emp in all_remaining:
+                emp_grade = emp.grading_level.strip() if emp.grading_level else ""
                 emp_normalized = normalize_grading_level(emp_grade)
                 
                 if emp_normalized == normalized_target:
-                    matching_employees.append(employee.id)
-                    print(f"    ✅ Match: {employee.full_name} - '{emp_grade}' (normalized: '{emp_normalized}')")
+                    matching_ids.append(emp.id)
+                    logger.info(f"    ✅ {emp.full_name} ({emp.employee_id}): grade '{emp_grade}' MATCHES")
                 else:
-                    print(f"    ❌ No match: {employee.full_name} - '{emp_grade}' (normalized: '{emp_normalized}')")
-        
-      
-        
-        if queryset.count() == 0:
-      
+                    logger.info(f"    ❌ {emp.full_name} ({emp.employee_id}): grade '{emp_grade}' ≠ '{grading_level_clean}'")
             
-            # Debug: Show what employees exist with each criteria
-            if job_title:
-                job_title_matches = Employee.objects.filter(
-                    is_deleted=False, job_title__iexact=job_title.strip()
-                ).count()
-                print(f"     Employees with job title '{job_title}': {job_title_matches}")
-            
-            if business_function_id:
-                bf_matches = Employee.objects.filter(
-                 is_deleted=False, business_function_id=business_function_id
-                ).count()
-                print(f"     Employees in business function {business_function_id}: {bf_matches}")
-                
-            if department_id:
-                dept_matches = Employee.objects.filter(
-                   is_deleted=False, department_id=department_id
-                ).count()
-                print(f"     Employees in department {department_id}: {dept_matches}")
+            before = queryset.count()
+            queryset = queryset.filter(id__in=matching_ids)
+            after = queryset.count()
+            logger.info(f"  Result: {before} → {after} employees")
+            logger.info("")
+        
+        # FINAL RESULT
+        final_count = queryset.count()
+        logger.info(f"\n{'='*80}")
+        logger.info(f"🎯 FINAL RESULT: {final_count} MATCHING EMPLOYEES FOUND")
+        logger.info(f"{'='*80}")
+        
+        if final_count > 0:
+            logger.info(f"✅ Matched Employees:")
+            for idx, emp in enumerate(queryset[:10], 1):
+                manager = emp.line_manager.full_name if emp.line_manager else "NO MANAGER"
+                logger.info(f"  {idx}. {emp.full_name} ({emp.employee_id}) - {emp.job_title}")
+                logger.info(f"     Manager: {manager}")
+                logger.info(f"     Business Function: {emp.business_function.name if emp.business_function else 'N/A'}")
+                logger.info(f"     Department: {emp.department.name if emp.department else 'N/A'}")
+        else:
+            logger.error(f"❌ NO EMPLOYEES MATCHED ALL CRITERIA")
+        
+        logger.info(f"{'='*80}\n")
         
         return queryset.order_by('line_manager_id', 'employee_id')
-    
     @classmethod 
     def get_eligible_employees(cls, job_title=None, business_function=None, department=None, 
                              unit=None, job_function=None, position_group=None, grading_level=None):

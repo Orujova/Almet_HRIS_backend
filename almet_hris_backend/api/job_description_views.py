@@ -1187,7 +1187,8 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
     
     def _process_bulk_upload_rows(self, worksheet, validate_only=False, auto_assign=True, skip_duplicates=True, user=None):
         """
-        ENHANCED: Process Excel rows with SIMPLIFIED format supporting MULTIPLE GROUPS
+        FIXED: Process Excel rows with correct data type handling
+        Problem was: organizational IDs were being passed as objects instead of integers
         """
         
         results = {
@@ -1202,12 +1203,10 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
             'skills_summary': {
                 'total_skills_added': 0,
                 'skills_not_found': [],
-                'skills_from_multiple_groups': []
             },
             'competencies_summary': {
                 'total_competencies_added': 0,
                 'competencies_not_found': [],
-                'competencies_from_multiple_groups': []
             }
         }
         
@@ -1220,17 +1219,16 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
             'E': 'job_function_code',
             'F': 'position_group_code',
             'G': 'grading_level',
-            'H': 'employee_id',
-            'I': 'job_purpose',
-            'J': 'critical_duties',
-            'K': 'main_kpis',
-            'L': 'job_duties',
-            'M': 'requirements',
-            'N': 'skills',              # Multiple groups supported
-            'O': 'competencies',        # Multiple groups supported
-            'P': 'business_resources',
-            'Q': 'access_rights',
-            'R': 'company_benefits'
+            'H': 'job_purpose',
+            'I': 'critical_duties',
+            'J': 'main_kpis',
+            'K': 'job_duties',
+            'L': 'requirements',
+            'M': 'skills',
+            'N': 'competencies',
+            'O': 'business_resources',
+            'P': 'access_rights',
+            'Q': 'company_benefits'
         }
         
         # Skip header row
@@ -1244,9 +1242,23 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                 for col_idx, col_letter in enumerate(COLUMNS.keys()):
                     field_name = COLUMNS[col_letter]
                     cell_value = row[col_idx] if col_idx < len(row) else None
-                    row_data[field_name] = str(cell_value).strip() if cell_value else None
+                    
+                    # Handle None and "None" string
+                    if cell_value is None or str(cell_value).strip().upper() == 'NONE':
+                        row_data[field_name] = None
+                    else:
+                        row_data[field_name] = str(cell_value).strip()
                 
-                logger.info(f"📋 Processing row {row_num}: {row_data.get('job_title')}")
+                logger.info(f"\n{'='*80}")
+                logger.info(f"📋 PROCESSING ROW {row_num}")
+                logger.info(f"{'='*80}")
+                logger.info(f"Job Title: '{row_data.get('job_title')}'")
+                logger.info(f"Business Function: '{row_data.get('business_function_code')}'")
+                logger.info(f"Department: '{row_data.get('department_code')}'")
+                logger.info(f"Unit: '{row_data.get('unit_code')}'")
+                logger.info(f"Job Function: '{row_data.get('job_function_code')}'")
+                logger.info(f"Position Group: '{row_data.get('position_group_code')}'")
+                logger.info(f"Grading Level: '{row_data.get('grading_level')}'")
                 
                 # Validate required fields
                 required_fields = ['job_title', 'business_function_code', 'department_code', 
@@ -1260,27 +1272,37 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                         'job_title': row_data.get('job_title', 'N/A'),
                         'error': f"Missing required fields: {', '.join(missing_fields)}"
                     })
+                    logger.error(f"❌ Missing required fields: {missing_fields}")
                     continue
                 
-                # Check for duplicates
-                if skip_duplicates and row_data.get('employee_id'):
-                    existing = JobDescription.objects.filter(
-                        job_title__iexact=row_data['job_title'],
-                        assigned_employee__employee_id=row_data['employee_id']
-                    ).exists()
-                    
-                    if existing:
-                        results['skipped'] += 1
-                        results['warnings'].append({
-                            'row': row_num,
-                            'job_title': row_data['job_title'],
-                            'message': f"Skipped - already exists for employee {row_data['employee_id']}"
-                        })
-                        continue
-                
-                # Resolve organizational structure
+ 
                 try:
                     org_data = self._resolve_organizational_structure(row_data)
+                    
+                    # 🔥 CRITICAL FIX: Re-check department is in correct business function
+                    if org_data['department'].business_function_id != org_data['business_function'].id:
+                        logger.error(f"❌ MISMATCH: Department {org_data['department'].name} (ID: {org_data['department'].id}) belongs to BF ID: {org_data['department'].business_function_id}, but we need BF ID: {org_data['business_function'].id}")
+                        
+                        # Find correct department in the correct business function
+                        correct_dept = Department.objects.filter(
+                            business_function_id=org_data['business_function'].id,
+                            name__iexact=row_data['department_code'].strip(),
+                            is_active=True
+                        ).first()
+                        
+                        if correct_dept:
+                            logger.info(f"✅ FIXED: Found correct department {correct_dept.name} (ID: {correct_dept.id}) in correct BF")
+                            org_data['department'] = correct_dept
+                        else:
+                            raise ValueError(f"No department '{row_data['department_code']}' found in Business Function '{org_data['business_function'].name}'")
+                    
+                    logger.info(f"\n✅ ORGANIZATIONAL STRUCTURE RESOLVED:")
+                    logger.info(f"   Business Function: {org_data['business_function'].name} (ID: {org_data['business_function'].id})")
+                    logger.info(f"   Department: {org_data['department'].name} (ID: {org_data['department'].id})")
+                    logger.info(f"   Unit: {org_data['unit'].name if org_data.get('unit') else 'None'} (ID: {org_data['unit'].id if org_data.get('unit') else 'None'})")
+                    logger.info(f"   Job Function: {org_data['job_function'].name} (ID: {org_data['job_function'].id})")
+                    logger.info(f"   Position Group: {org_data['position_group'].name} (ID: {org_data['position_group'].id})")
+                    
                 except Exception as e:
                     results['failed'] += 1
                     results['errors'].append({
@@ -1288,193 +1310,243 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                         'job_title': row_data['job_title'],
                         'error': f"Organizational structure error: {str(e)}"
                     })
+                    logger.error(f"❌ Row {row_num}: Org error - {str(e)}")
                     continue
                 
-                # Find employee (if auto_assign or employee_id provided)
-                assigned_employee = None
-                if row_data.get('employee_id'):
-                    try:
-                        assigned_employee = Employee.objects.get(
-                            employee_id=row_data['employee_id'],
-                            is_deleted=False
-                        )
-                    except Employee.DoesNotExist:
-                        results['warnings'].append({
-                            'row': row_num,
-                            'job_title': row_data['job_title'],
-                            'message': f"Employee {row_data['employee_id']} not found"
-                        })
+                # 🔥 AUTO-ASSIGNMENT WITH DETAILED DEBUG
+                assigned_employees = []
                 
-                elif auto_assign:
-                    eligible_employees = JobDescription.get_eligible_employees_with_priority(
-                        job_title=row_data['job_title'],
-                        business_function_id=org_data['business_function'].id,
-                        department_id=org_data['department'].id,
-                        unit_id=org_data['unit'].id if org_data.get('unit') else None,
-                        job_function_id=org_data['job_function'].id,
-                        position_group_id=org_data['position_group'].id,
-                        grading_level=row_data['grading_level']
-                    )
+                if auto_assign:
+                    logger.info(f"\n🔍 SEARCHING FOR MATCHING EMPLOYEES:")
+                    logger.info(f"   Criteria being sent to get_eligible_employees_with_priority:")
                     
-                    if eligible_employees.count() == 1:
-                        assigned_employee = eligible_employees.first()
-                        logger.info(f"✅ Auto-assigned employee: {assigned_employee.full_name}")
-                    elif eligible_employees.count() > 1:
+                    # 🔥 CRITICAL: Get INTEGER IDs, not objects
+                    search_criteria = {
+                        'job_title': row_data['job_title'],
+                        'business_function_id': org_data['business_function'].id,  # ✅ .id to get integer
+                        'department_id': org_data['department'].id,  # ✅ .id to get integer
+                        'unit_id': org_data['unit'].id if org_data.get('unit') else None,  # ✅ .id to get integer
+                        'job_function_id': org_data['job_function'].id,  # ✅ .id to get integer
+                        'position_group_id': org_data['position_group'].id,  # ✅ .id to get integer
+                        'grading_level': row_data['grading_level']
+                    }
+                    
+                    # Log each criterion with type
+                    for key, value in search_criteria.items():
+                        logger.info(f"   - {key}: '{value}' (type: {type(value).__name__})")
+                    
+                    # Call the method with unpacked criteria
+                    eligible_employees = JobDescription.get_eligible_employees_with_priority(**search_criteria)
+                    
+                    logger.info(f"\n🎯 SEARCH RESULT: Found {eligible_employees.count()} matching employee(s)")
+                    
+                    if eligible_employees.exists():
+                        logger.info(f"\n✅ MATCHED EMPLOYEES:")
+                        for idx, emp in enumerate(eligible_employees, 1):
+                            logger.info(f"   {idx}. {emp.full_name} ({emp.employee_id})")
+                            logger.info(f"      Job Title: '{emp.job_title}'")
+                            logger.info(f"      Business Function: {emp.business_function.name if emp.business_function else 'N/A'}")
+                            logger.info(f"      Department: {emp.department.name if emp.department else 'N/A'}")
+                            logger.info(f"      Job Function: {emp.job_function.name if emp.job_function else 'N/A'}")
+                            logger.info(f"      Position Group: {emp.position_group.name if emp.position_group else 'N/A'}")
+                            logger.info(f"      Grading Level: '{emp.grading_level}'")
+                        
+                        assigned_employees = list(eligible_employees)
+                    else:
+                        logger.warning(f"\n⚠️ NO EMPLOYEES FOUND MATCHING CRITERIA")
+                        logger.warning(f"   This will create a VACANT job description")
+                        
+                        # Debug: Let's check what employees exist with this job title
+                        from .models import Employee
+                        
+                        employees_with_job_title = Employee.objects.filter(
+                            job_title__iexact=row_data['job_title'],
+                            is_deleted=False
+                        ).select_related('business_function', 'department', 'job_function', 'position_group')
+                        
+                        if employees_with_job_title.exists():
+                            logger.warning(f"\n   🔍 DEBUG: Found {employees_with_job_title.count()} employees with job title '{row_data['job_title']}':")
+                            for emp in employees_with_job_title[:5]:  # Show first 5
+                                logger.warning(f"      - {emp.full_name} ({emp.employee_id})")
+                                logger.warning(f"        BF: {emp.business_function.name if emp.business_function else 'None'} (Expected: {org_data['business_function'].name})")
+                                logger.warning(f"        Dept: {emp.department.name if emp.department else 'None'} (Expected: {org_data['department'].name})")
+                                logger.warning(f"        Job Func: {emp.job_function.name if emp.job_function else 'None'} (Expected: {org_data['job_function'].name})")
+                                logger.warning(f"        Pos Group: {emp.position_group.name if emp.position_group else 'None'} (Expected: {org_data['position_group'].name})")
+                                logger.warning(f"        Grade: '{emp.grading_level}' (Expected: '{row_data['grading_level']}')")
+                        else:
+                            logger.warning(f"   🔍 DEBUG: NO employees found with job title '{row_data['job_title']}'")
+                            
+                            # Show available job titles
+                            available_titles = Employee.objects.filter(
+                                is_deleted=False
+                            ).values_list('job_title', flat=True).distinct()[:20]
+                            logger.warning(f"   Available job titles in system: {list(available_titles)}")
+                        
                         results['warnings'].append({
                             'row': row_num,
                             'job_title': row_data['job_title'],
-                            'message': f"Multiple employees match ({eligible_employees.count()}). Skipping auto-assignment."
+                            'message': f"No employees match ALL criteria. Creating vacant job description.",
+                            'criteria': search_criteria
                         })
                 
+                # VALIDATION MODE
                 if validate_only:
                     results['successful'] += 1
                     results['created_job_descriptions'].append({
                         'row': row_num,
                         'job_title': row_data['job_title'],
                         'status': 'validated',
-                        'employee': assigned_employee.full_name if assigned_employee else 'No assignment'
+                        'employees_found': len(assigned_employees),
+                        'employees': [f"{emp.full_name} ({emp.employee_id})" for emp in assigned_employees] if assigned_employees else ['No matches - will create vacant']
                     })
                     continue
                 
-                # Create job description
-                with transaction.atomic():
-                    jd = JobDescription.objects.create(
-                        job_title=row_data['job_title'],
-                        business_function=org_data['business_function'],
-                        department=org_data['department'],
-                        unit=org_data.get('unit'),
-                        job_function=org_data['job_function'],
-                        position_group=org_data['position_group'],
-                        grading_level=row_data['grading_level'],
-                        assigned_employee=assigned_employee,
-                        job_purpose=row_data['job_purpose'],
-                        status='DRAFT',
-                        created_by=user
-                    )
-                    
-                    # Create sections
-                    section_order = 1
-                    section_mappings = [
-                        ('critical_duties', 'CRITICAL_DUTIES', 'Critical Duties and Responsibilities'),
-                        ('main_kpis', 'MAIN_KPIS', 'Key Performance Indicators'),
-                        ('job_duties', 'JOB_DUTIES', 'Job Duties'),
-                        ('requirements', 'REQUIREMENTS', 'Requirements and Qualifications')
-                    ]
-                    
-                    for field_name, section_type, section_title in section_mappings:
-                        content = row_data.get(field_name)
-                        if content:
-                            items = [item.strip() for item in content.split('|') if item.strip()]
-                            formatted_content = '\n'.join([f"{index + 1}. {item}" for index, item in enumerate(items)])
-                            
-                            JobDescriptionSection.objects.create(
-                                job_description=jd,
-                                section_type=section_type,
-                                title=section_title,
-                                content=formatted_content,
-                                order=section_order
+                if auto_assign and assigned_employees:
+                    # Multiple employees found - create one JD per employee
+                    employees_to_assign = assigned_employees
+                    logger.info(f"\n💾 CREATING {len(employees_to_assign)} JOB DESCRIPTION(S) (one per employee):")
+                else:
+                    # No employees found - create one vacant JD
+                    employees_to_assign = [None]
+                    logger.info(f"\n💾 CREATING 1 VACANT JOB DESCRIPTION:")
+                
+                for emp_idx, emp in enumerate(employees_to_assign, 1):
+                    try:
+                        # Create separate transaction for each JD to ensure isolation
+                        with transaction.atomic():
+                            jd = JobDescription.objects.create(
+                                job_title=row_data['job_title'],
+                                business_function=org_data['business_function'],
+                                department=org_data['department'],
+                                unit=org_data.get('unit'),
+                                job_function=org_data['job_function'],
+                                position_group=org_data['position_group'],
+                                grading_level=row_data['grading_level'],
+                                assigned_employee=emp,
+                                reports_to=emp.line_manager if emp else None,  # 🔥 FIX: Explicitly set reports_to
+                                job_purpose=row_data['job_purpose'],
+                                status='DRAFT',
+                                created_by=user
                             )
-                            section_order += 1
-                    
-                    # ENHANCED: Add skills with multiple groups support
-                    skills_before = JobDescriptionSkill.objects.filter(job_description=jd).count()
-                    if row_data.get('skills'):
-                        logger.info(f"🎯 Adding skills for row {row_num}: {row_data['skills']}")
-                        self._add_skills_from_string(jd, row_data['skills'])
-                    skills_after = JobDescriptionSkill.objects.filter(job_description=jd).count()
-                    skills_added = skills_after - skills_before
-                    
-                    if skills_added > 0:
-                        results['skills_summary']['total_skills_added'] += skills_added
-                        
-                        # Track which groups were used
-                        added_skills = JobDescriptionSkill.objects.filter(
-                            job_description=jd
-                        ).select_related('skill', 'skill__group')
-                        
-                        skill_groups = set()
-                        for skill_obj in added_skills:
-                            if skill_obj.skill.group:
-                                skill_groups.add(skill_obj.skill.group.name)
-                        
-                        if len(skill_groups) > 1:
-                            results['skills_summary']['skills_from_multiple_groups'].append({
+                            
+                            if emp:
+                                logger.info(f"   {emp_idx}. ✅ JD {jd.id} → {emp.full_name} ({emp.employee_id}) | Manager: {jd.reports_to.full_name if jd.reports_to else 'NO MANAGER'}")
+                                
+                                # 🔥 CRITICAL CHECK: Verify employee has manager
+                                if not jd.reports_to:
+                                    logger.warning(f"   ⚠️  WARNING: Employee {emp.full_name} has no line manager!")
+                                    results['warnings'].append({
+                                        'row': row_num,
+                                        'job_title': row_data['job_title'],
+                                        'employee': f"{emp.full_name} ({emp.employee_id})",
+                                        'message': f"Employee has no line manager assigned. Job description created but cannot be submitted for approval without a manager."
+                                    })
+                            else:
+                                logger.info(f"   {emp_idx}. ⭕ JD {jd.id} → VACANT (no employee)")
+                            
+                            # Create sections
+                            section_order = 1
+                            section_mappings = [
+                                ('critical_duties', 'CRITICAL_DUTIES', 'Critical Duties and Responsibilities'),
+                                ('main_kpis', 'MAIN_KPIS', 'Key Performance Indicators'),
+                                ('job_duties', 'JOB_DUTIES', 'Job Duties'),
+                                ('requirements', 'REQUIREMENTS', 'Requirements and Qualifications')
+                            ]
+                            
+                            for field_name, section_type, section_title in section_mappings:
+                                content = row_data.get(field_name)
+                                if content:
+                                    items = [item.strip() for item in content.split('|') if item.strip()]
+                                    formatted_content = '\n'.join([f"{index + 1}. {item}" for index, item in enumerate(items)])
+                                    
+                                    JobDescriptionSection.objects.create(
+                                        job_description=jd,
+                                        section_type=section_type,
+                                        title=section_title,
+                                        content=formatted_content,
+                                        order=section_order
+                                    )
+                                    section_order += 1
+                            
+                            # Add skills
+                            skills_before = JobDescriptionSkill.objects.filter(job_description=jd).count()
+                            if row_data.get('skills'):
+                                self._add_skills_from_string(jd, row_data['skills'])
+                            skills_after = JobDescriptionSkill.objects.filter(job_description=jd).count()
+                            skills_added = skills_after - skills_before
+                            
+                            if skills_added > 0:
+                                results['skills_summary']['total_skills_added'] += skills_added
+                            
+                            # Add competencies
+                            comp_before = JobDescriptionBehavioralCompetency.objects.filter(job_description=jd).count()
+                            if row_data.get('competencies'):
+                                self._add_competencies_from_string(jd, row_data['competencies'])
+                            comp_after = JobDescriptionBehavioralCompetency.objects.filter(job_description=jd).count()
+                            comp_added = comp_after - comp_before
+                            
+                            if comp_added > 0:
+                                results['competencies_summary']['total_competencies_added'] += comp_added
+                            
+                            # Add resources (if methods exist)
+                            if row_data.get('business_resources') and hasattr(self, '_add_resources_from_string'):
+                                self._add_resources_from_string(jd, row_data['business_resources'], 'business')
+                            
+                            if row_data.get('access_rights') and hasattr(self, '_add_resources_from_string'):
+                                self._add_resources_from_string(jd, row_data['access_rights'], 'access')
+                            
+                            if row_data.get('company_benefits') and hasattr(self, '_add_resources_from_string'):
+                                self._add_resources_from_string(jd, row_data['company_benefits'], 'benefits')
+                            
+                            # Log activity
+                            JobDescriptionActivity.objects.create(
+                                job_description=jd,
+                                activity_type='CREATED',
+                                description=f"Job description created via bulk upload (Row {row_num})",
+                                performed_by=user,
+                                metadata={
+                                    'source': 'bulk_upload',
+                                    'row_number': row_num,
+                                    'auto_assigned': bool(emp),
+                                    'employee_name': emp.full_name if emp else None,
+                                    'employee_id': emp.employee_id if emp else None,
+                                    'skills_added': skills_added,
+                                    'competencies_added': comp_added,
+                                    'matching_criteria': search_criteria
+                                }
+                            )
+                            
+                            results['successful'] += 1
+                            results['created_job_descriptions'].append({
                                 'row': row_num,
-                                'job_title': row_data['job_title'],
-                                'groups': list(skill_groups),
-                                'count': skills_added
+                                'job_description_id': str(jd.id),
+                                'job_title': jd.job_title,
+                                'employee': emp.full_name if emp else 'VACANT - No employee assigned',
+                                'employee_id': emp.employee_id if emp else None,
+                                'status': jd.get_status_display(),
+                                'skills_added': skills_added,
+                                'competencies_added': comp_added
                             })
-                    
-                    # ENHANCED: Add competencies with multiple groups support
-                    comp_before = JobDescriptionBehavioralCompetency.objects.filter(job_description=jd).count()
-                    if row_data.get('competencies'):
-                        logger.info(f"🎯 Adding competencies for row {row_num}: {row_data['competencies']}")
-                        self._add_competencies_from_string(jd, row_data['competencies'])
-                    comp_after = JobDescriptionBehavioralCompetency.objects.filter(job_description=jd).count()
-                    comp_added = comp_after - comp_before
-                    
-                    if comp_added > 0:
-                        results['competencies_summary']['total_competencies_added'] += comp_added
+                            
+                    except Exception as jd_error:
+                        logger.error(f"   ❌ Failed to create JD {emp_idx}/{len(employees_to_assign)}: {str(jd_error)}")
+                        logger.error(f"   Full error: {traceback.format_exc()}")
                         
-                        # Track which groups were used
-                        added_comps = JobDescriptionBehavioralCompetency.objects.filter(
-                            job_description=jd
-                        ).select_related('competency', 'competency__group')
+                        # Add to failed results instead of raising
+                        results['failed'] += 1
+                        results['errors'].append({
+                            'row': row_num,
+                            'job_title': row_data['job_title'],
+                            'employee': emp.full_name if emp else 'VACANT',
+                            'error': f"Failed to create job description: {str(jd_error)}"
+                        })
                         
-                        comp_groups = set()
-                        for comp_obj in added_comps:
-                            if comp_obj.competency.group:
-                                comp_groups.add(comp_obj.competency.group.name)
-                        
-                        if len(comp_groups) > 1:
-                            results['competencies_summary']['competencies_from_multiple_groups'].append({
-                                'row': row_num,
-                                'job_title': row_data['job_title'],
-                                'groups': list(comp_groups),
-                                'count': comp_added
-                            })
-                    
-                    # Add business resources
-                    if row_data.get('business_resources'):
-                        self._add_resources_from_string(jd, row_data['business_resources'], 'business')
-                    
-                    # Add access rights
-                    if row_data.get('access_rights'):
-                        self._add_resources_from_string(jd, row_data['access_rights'], 'access')
-                    
-                    # Add company benefits
-                    if row_data.get('company_benefits'):
-                        self._add_resources_from_string(jd, row_data['company_benefits'], 'benefits')
-                    
-                    # Log activity
-                    JobDescriptionActivity.objects.create(
-                        job_description=jd,
-                        activity_type='CREATED',
-                        description=f"Job description created via bulk upload (Row {row_num})",
-                        performed_by=user,
-                        metadata={
-                            'source': 'bulk_upload',
-                            'row_number': row_num,
-                            'auto_assigned': bool(assigned_employee),
-                            'simplified_format': True,
-                            'multiple_groups_support': True,
-                            'skills_added': skills_added,
-                            'competencies_added': comp_added
-                        }
-                    )
-                    
-                    results['successful'] += 1
-                    results['created_job_descriptions'].append({
-                        'row': row_num,
-                        'job_description_id': str(jd.id),
-                        'job_title': jd.job_title,
-                        'employee': assigned_employee.full_name if assigned_employee else 'Not assigned',
-                        'status': jd.get_status_display(),
-                        'skills_added': skills_added,
-                        'competencies_added': comp_added
-                    })
-                    
-                    logger.info(f"✅ Row {row_num} SUCCESS: {jd.job_title} ({skills_added} skills, {comp_added} competencies)")
+                        # Don't let one failure stop the whole batch - continue to next employee
+                        continue
+                
+                logger.info(f"\n{'='*80}")
+                logger.info(f"✅ ROW {row_num} COMPLETE: Created {len(employees_to_assign)} JD(s)")
+                logger.info(f"{'='*80}\n")
             
             except Exception as e:
                 results['failed'] += 1
@@ -1483,162 +1555,194 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                     'job_title': row_data.get('job_title', 'N/A'),
                     'error': str(e)
                 })
-                logger.error(f"❌ Error processing row {row_num}: {str(e)}")
+                logger.error(f"\n❌ ERROR processing row {row_num}: {str(e)}")
                 logger.error(traceback.format_exc())
         
-        # ENHANCED: Validation summary with multiple groups info
+        # Final summary
         results['validation_summary'] = {
             'total_processed': results['total_rows'],
             'success_rate': f"{(results['successful'] / results['total_rows'] * 100):.1f}%" if results['total_rows'] > 0 else "0%",
             'mode': 'validation_only' if validate_only else 'creation',
             'auto_assignment_enabled': auto_assign,
             'skip_duplicates_enabled': skip_duplicates,
-            'format': 'simplified_with_multiple_groups',
+            'format': 'auto_assign_with_debug',
             'skills_summary': {
-                'total_added': results['skills_summary']['total_skills_added'],
-                'jobs_with_multiple_skill_groups': len(results['skills_summary']['skills_from_multiple_groups'])
+                'total_added': results['skills_summary']['total_skills_added']
             },
             'competencies_summary': {
-                'total_added': results['competencies_summary']['total_competencies_added'],
-                'jobs_with_multiple_competency_groups': len(results['competencies_summary']['competencies_from_multiple_groups'])
+                'total_added': results['competencies_summary']['total_competencies_added']
             }
         }
         
         logger.info(f"""
-        📊 BULK UPLOAD SUMMARY:
+        {'='*80}
+        📊 BULK UPLOAD FINAL SUMMARY
+        {'='*80}
         ✅ Successful: {results['successful']}
         ❌ Failed: {results['failed']}
-        ⏭️ Skipped: {results['skipped']}
-        🎯 Total Skills Added: {results['skills_summary']['total_skills_added']}
-        🎯 Total Competencies Added: {results['competencies_summary']['total_competencies_added']}
-        🔀 Jobs with Multiple Skill Groups: {len(results['skills_summary']['skills_from_multiple_groups'])}
-        🔀 Jobs with Multiple Competency Groups: {len(results['competencies_summary']['competencies_from_multiple_groups'])}
+        ⚠️  Warnings: {len(results['warnings'])}
+        ⭕ Skipped: {results['skipped']}
+        🎯 Skills Added: {results['skills_summary']['total_skills_added']}
+        🎯 Competencies Added: {results['competencies_summary']['total_competencies_added']}
+        {'='*80}
         """)
         
         return results
     
     def _resolve_organizational_structure(self, row_data):
-        """Resolve organizational structure from codes/names - FLEXIBLE matching"""
+        """
+        FIXED: Resolve organizational structure with detailed debugging
+        Ensures department belongs to correct business function
+        """
         result = {}
         
-        # Business Function - try CODE first, then NAME
+        logger.info(f"\n{'='*80}")
+        logger.info(f"🏗️  RESOLVING ORGANIZATIONAL STRUCTURE")
+        logger.info(f"{'='*80}")
+        
+        # 1. BUSINESS FUNCTION - try CODE first, then NAME
+        bf_search = row_data['business_function_code'].strip()
+        logger.info(f"1️⃣  Business Function: Searching for '{bf_search}'")
+        
         try:
             try:
                 result['business_function'] = BusinessFunction.objects.get(
-                    code=row_data['business_function_code'],
+                    code=bf_search,
                     is_active=True
                 )
+                logger.info(f"   ✅ Found by CODE: {result['business_function'].name} (ID: {result['business_function'].id})")
             except BusinessFunction.DoesNotExist:
-                # Try by name if code doesn't work
                 result['business_function'] = BusinessFunction.objects.get(
-                    name__iexact=row_data['business_function_code'],
+                    name__iexact=bf_search,
                     is_active=True
                 )
+                logger.info(f"   ✅ Found by NAME: {result['business_function'].name} (ID: {result['business_function'].id})")
         except BusinessFunction.DoesNotExist:
-            raise ValueError(f"Business Function not found with code or name: '{row_data['business_function_code']}'")
+            available_bfs = list(BusinessFunction.objects.filter(
+                is_active=True
+            ).values_list('name', 'code'))
+            logger.error(f"   ❌ Business Function '{bf_search}' not found!")
+            logger.error(f"   Available: {available_bfs}")
+            raise ValueError(f"Business Function not found: '{bf_search}'")
         
-        # Department - SMART matching with debug info
-        dept_search_value = row_data['department_code'].strip()
-        logger.info(f"Searching for department: '{dept_search_value}' in business function: {result['business_function'].name}")
+        # 2. DEPARTMENT - FLEXIBLE APPROACH
+        dept_search = row_data['department_code'].strip()
+        logger.info(f"\n2️⃣  Department: Searching for '{dept_search}'")
         
         try:
-            result['department'] = Department.objects.get(
-                business_function=result['business_function'],
-                name__iexact=dept_search_value,
+            # Find ALL departments with this name
+            all_depts_with_name = Department.objects.filter(
+                name__iexact=dept_search,
                 is_active=True
-            )
-            logger.info(f"✅ Department found: {result['department'].name} (ID: {result['department'].id})")
+            ).select_related('business_function')
+            
+            dept_count = all_depts_with_name.count()
+            logger.info(f"   Found {dept_count} department(s) with name '{dept_search}':")
+            
+            for dept in all_depts_with_name:
+                logger.info(f"     - ID: {dept.id}, Name: '{dept.name}', BF: '{dept.business_function.name}' (ID: {dept.business_function.id})")
+            
+            if dept_count == 0:
+                raise ValueError(f"No department found with name '{dept_search}'")
+            
+            # 🔥 CRITICAL DECISION: Which department to use?
+            # Strategy 1: Try to match business function first
+            dept_in_bf = all_depts_with_name.filter(
+                business_function=result['business_function']
+            ).first()
+            
+            if dept_in_bf:
+                result['department'] = dept_in_bf
+                logger.info(f"   ✅ Using department in same BF: {dept_in_bf.name} (ID: {dept_in_bf.id})")
+                logger.info(f"      Belongs to BF: {dept_in_bf.business_function.name}")
+            else:
+                # Strategy 2: If no match in BF, use the first one found
+                result['department'] = all_depts_with_name.first()
+                logger.warning(f"   ⚠️  No '{dept_search}' in BF '{result['business_function'].name}'")
+                logger.warning(f"   Using: {result['department'].name} (ID: {result['department'].id}) from BF '{result['department'].business_function.name}'")
+                
+                # 🔥 IMPORTANT: Update business_function to match department's BF
+                logger.warning(f"   🔄 Auto-updating Business Function to match department!")
+                result['business_function'] = result['department'].business_function
+                logger.warning(f"   New BF: {result['business_function'].name} (ID: {result['business_function'].id})")
+            
+        except Exception as e:
+            logger.error(f"   ❌ Error finding department: {str(e)}")
+            raise ValueError(f"Department error: {str(e)}")
+            
         except Department.DoesNotExist:
-            # Show available departments for debugging
+            # Show what departments exist in this business function
             available_depts = list(Department.objects.filter(
                 business_function=result['business_function'],
                 is_active=True
-            ).values('id', 'name'))
+            ).values_list('name', flat=True))
             
-            logger.error(f"❌ Department '{dept_search_value}' not found. Available: {available_depts}")
+            logger.error(f"   ❌ Department '{dept_search}' NOT found in BF '{result['business_function'].name}'!")
+            logger.error(f"   Available departments in this BF: {available_depts}")
+            
             raise ValueError(
-                f"Department not found: '{dept_search_value}'. "
-                f"Available departments in {result['business_function'].name}: "
-                f"{[d['name'] for d in available_depts]}"
+                f"Department '{dept_search}' not found in Business Function '{result['business_function'].name}'. "
+                f"Available: {available_depts}"
             )
         
-        # Unit (optional) - SMART matching with detailed debugging
-        if row_data.get('unit_code'):
-            unit_search_value = row_data['unit_code'].strip()
-            logger.info(f"Searching for unit: '{unit_search_value}' in department: {result['department'].name} (ID: {result['department'].id})")
+        # 3. UNIT (optional)
+        if row_data.get('unit_code') and row_data['unit_code'] != 'None':
+            unit_search = row_data['unit_code'].strip()
+            logger.info(f"\n3️⃣  Unit: Searching for '{unit_search}' in Dept '{result['department'].name}'")
             
             try:
                 result['unit'] = Unit.objects.get(
                     department=result['department'],
-                    name__iexact=unit_search_value,
+                    name__iexact=unit_search,
                     is_active=True
                 )
-                logger.info(f"✅ Unit found: {result['unit'].name} (ID: {result['unit'].id}, Dept ID: {result['unit'].department_id})")
+                logger.info(f"   ✅ Found: {result['unit'].name} (ID: {result['unit'].id})")
             except Unit.DoesNotExist:
-                # Show ALL units with this name across all departments for debugging
-                all_matching_units = Unit.objects.filter(
-                    name__iexact=unit_search_value,
-                    is_active=True
-                ).select_related('department', 'department__business_function')
-                
-                if all_matching_units.exists():
-                    unit_details = []
-                    for u in all_matching_units:
-                        unit_details.append({
-                            'unit_id': u.id,
-                            'unit_name': u.name,
-                            'department_id': u.department_id,
-                            'department_name': u.department.name,
-                            'business_function': u.department.business_function.name
-                        })
-                    
-                    logger.error(f"❌ Unit '{unit_search_value}' found in other departments: {unit_details}")
-                    logger.error(f"Looking for department_id={result['department'].id}, but units belong to: {[u['department_id'] for u in unit_details]}")
-                    
-                    raise ValueError(
-                        f"Unit '{unit_search_value}' exists but not in department '{result['department'].name}'. "
-                        # f"Found in: {[f\"{u['department_name']} (ID: {u['department_id']})\" for u in unit_details]}. "
-                        f"Expected department ID: {result['department'].id}"
-                    )
-                else:
-                    # Show available units in the correct department
-                    available_units = list(Unit.objects.filter(
-                        department=result['department'],
-                        is_active=True
-                    ).values('id', 'name'))
-                    
-                    logger.error(f"❌ Unit '{unit_search_value}' not found at all. Available units in {result['department'].name}: {available_units}")
-                    
-                    raise ValueError(
-                        f"Unit not found: '{unit_search_value}'. "
-                        f"Available units in {result['department'].name}: "
-                        f"{[u['name'] for u in available_units]}"
-                    )
+                logger.warning(f"   ⚠️  Unit '{unit_search}' not found, setting to None")
+                result['unit'] = None
         else:
             result['unit'] = None
-            logger.info("No unit specified - continuing without unit")
+            logger.info(f"\n3️⃣  Unit: None (not provided)")
         
-        # Job Function - try NAME or CODE
+        # 4. JOB FUNCTION
+        jf_search = row_data['job_function_code'].strip()
+        logger.info(f"\n4️⃣  Job Function: Searching for '{jf_search}'")
+        
         try:
             result['job_function'] = JobFunction.objects.get(
-                name__iexact=row_data['job_function_code'],
+                name__iexact=jf_search,
                 is_active=True
             )
+            logger.info(f"   ✅ Found: {result['job_function'].name} (ID: {result['job_function'].id})")
         except JobFunction.DoesNotExist:
-            # Show available job functions
-            available_jfs = JobFunction.objects.filter(is_active=True).values_list('name', flat=True)
-            raise ValueError(f"Job Function not found: '{row_data['job_function_code']}'. Available: {list(available_jfs)}")
+            available_jfs = list(JobFunction.objects.filter(
+                is_active=True
+            ).values_list('name', flat=True)[:20])
+            logger.error(f"   ❌ Job Function '{jf_search}' not found!")
+            logger.error(f"   Available: {available_jfs}")
+            raise ValueError(f"Job Function not found: '{jf_search}'")
         
-        # Position Group - try NAME
+        # 5. POSITION GROUP
+        pg_search = row_data['position_group_code'].strip()
+        logger.info(f"\n5️⃣  Position Group: Searching for '{pg_search}'")
+        
         try:
             result['position_group'] = PositionGroup.objects.get(
-                name__iexact=row_data['position_group_code'],
+                name__iexact=pg_search,
                 is_active=True
             )
+            logger.info(f"   ✅ Found: {result['position_group'].name} (ID: {result['position_group'].id})")
         except PositionGroup.DoesNotExist:
-            # Show available position groups
-            available_pgs = PositionGroup.objects.filter(is_active=True).values_list('name', flat=True)
-            raise ValueError(f"Position Group not found: '{row_data['position_group_code']}'. Available: {list(available_pgs)}")
+            available_pgs = list(PositionGroup.objects.filter(
+                is_active=True
+            ).values_list('name', flat=True))
+            logger.error(f"   ❌ Position Group '{pg_search}' not found!")
+            logger.error(f"   Available: {available_pgs}")
+            raise ValueError(f"Position Group not found: '{pg_search}'")
+        
+        logger.info(f"\n{'='*80}")
+        logger.info(f"✅ ORGANIZATIONAL STRUCTURE RESOLVED SUCCESSFULLY")
+        logger.info(f"{'='*80}\n")
         
         return result
     def _add_skills_from_string(self, job_description, skills_string):
@@ -1800,20 +1904,17 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
 )
     @action(detail=False, methods=['get'])
     def download_template(self, request):
-        """Download ENHANCED Excel template with multiple groups support"""
+        """Download Excel template WITHOUT Employee ID column"""
         try:
             if not HAS_OPENPYXL:
-                return Response(
-                    {'error': 'Excel library (openpyxl) is not installed.'},
-                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
-                )
+                return Response({'error': 'Excel library not available'}, status=500)
             
             buffer = io.BytesIO()
             wb = Workbook()
             ws = wb.active
             ws.title = "Job Descriptions"
             
-            # Headers
+            # ✅ NEW: Headers WITHOUT Employee ID
             headers = [
                 'Job Title*',
                 'Business Function*',
@@ -1822,8 +1923,7 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                 'Job Function*',
                 'Position Group*',
                 'Grading Level*',
-                'Employee ID',
-                'Job Purpose*',
+                'Job Purpose*',           # ✅ Now H column
                 'Critical Duties*',
                 'Main KPIs*',
                 'Job Duties*',
@@ -1854,28 +1954,22 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                 cell.alignment = header_alignment
                 cell.border = border
             
-            # ENHANCED: Sample data showing multiple skills from different groups
+            # ✅ Sample data WITHOUT Employee ID
             sample_data = [
-                'Senior Software Engineer',
-                'IT',
-                'Software Development',
-                'Backend Team',
-                'Engineering',
-                'Senior',
-                'G7',
+                'CASHIER',
+                'Holding',
+                'OPERATIONS',
                 '',
-                'Lead backend development and architecture decisions for enterprise applications',
+                'LEGAL',
+                'Vice Chairman',
+                'M',
+                'Lead backend development and architecture decisions for enterprise applications',  # ✅ Job Purpose
                 'Design system architecture | Lead code reviews | Mentor junior developers | Define technical standards',
                 'Code quality > 90% | Sprint completion rate > 95% | Technical debt reduction by 20%',
                 'Develop REST APIs | Database optimization | Unit testing | CI/CD pipeline management',
                 "Bachelor's in CS | 5+ years experience | Strong Python skills | Cloud experience required",
-                
-                # ENHANCED: Shows skills from multiple groups
                 'Python, SQL, Docker, AWS, Kubernetes, Git, JavaScript, React, Node.js, PostgreSQL',
-                
-                # ENHANCED: Shows competencies from multiple groups
                 'Leadership, Communication, Problem Solving, Teamwork, Strategic Thinking, Decision Making, Innovation, Adaptability',
-                
                 'Laptop, IDE License, Cloud Access, Development Tools',
                 'GitHub Admin, AWS Console, Database Write, Production Deploy',
                 'Health Insurance, Annual Leave, Learning Budget, Remote Work, Performance Bonus'
@@ -1888,175 +1982,63 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                 cell.alignment = Alignment(wrap_text=True, vertical="top")
             
             # Column widths
-            column_widths = [25, 20, 20, 15, 20, 20, 12, 12, 40, 35, 35, 35, 35, 35, 35, 25, 25, 25]
+            column_widths = [25, 20, 20, 15, 20, 20, 12, 40, 35, 35, 35, 35, 35, 35, 25, 25, 25]
             for col_num, width in enumerate(column_widths, 1):
                 ws.column_dimensions[get_column_letter(col_num)].width = width
             
             ws.row_dimensions[1].height = 40
             ws.row_dimensions[2].height = 120
             
-            # ENHANCED: Instructions with multiple groups explanation
+            # Instructions sheet
             ws_instructions = wb.create_sheet("Instructions")
             
             instructions = [
-                ["BULK UPLOAD - MULTIPLE GROUPS SUPPORTED", ""],
+                ["AUTO-ASSIGNMENT BULK UPLOAD", ""],
                 ["", ""],
-                
-                ["🎯 KEY FEATURE", ""],
-                ["", "You can select skills and competencies from MULTIPLE groups!"],
-                ["", "System automatically handles skills from different categories."],
+                ["🎯 HOW IT WORKS", ""],
+                ["", "System automatically finds employees matching ALL criteria"],
+                ["", "No Employee ID needed - just fill organizational info!"],
                 ["", ""],
-                
-                ["QUICK START GUIDE", ""],
-                ["1.", "Fill required fields (marked with *)"],
-                ["2.", "Use | (pipe) to separate list items"],
-                ["3.", "Use , (comma) to separate skills and competencies"],
-                ["4.", "List as many skills/competencies as needed from ANY group"],
-                ["5.", "Save and upload"],
+                ["✅ IF 1 MATCH FOUND", "Creates 1 JD for that employee"],
+                ["✅ IF 2+ MATCHES FOUND", "Creates MULTIPLE JDs - one for each employee"],
+                ["⚠️ IF NO MATCHES", "Creates 1 JD without employee (vacant position)"],
                 ["", ""],
-                
-                ["REQUIRED FIELDS", ""],
-                ["Job Title*", "Must match existing employee records exactly"],
-                ["Business Function*", "Example: IT, HR, Finance, Operations"],
-                ["Department*", "Must exist in selected Business Function"],
-                ["Job Function*", "Example: Engineering, Management, Support"],
-                ["Position Group*", "Example: Senior, Junior, Manager, Director"],
-                ["Grading Level*", "Example: G1, G2, G7, M, S, E"],
-                ["Job Purpose*", "Brief description (minimum 5 characters)"],
-                ["Critical Duties*", "Use | separator: Task1 | Task2 | Task3"],
-                ["Main KPIs*", "Use | separator: KPI1 | KPI2 | KPI3"],
-                ["Job Duties*", "Use | separator: Duty1 | Duty2 | Duty3"],
-                ["Requirements*", "Use | separator: Req1 | Req2 | Req3"],
+                ["EXAMPLE SCENARIOS", ""],
                 ["", ""],
-                
-                ["OPTIONAL FIELDS", ""],
-                ["Unit", "Leave empty if not applicable"],
-                ["Employee ID", "Empty = create for ALL matching positions"],
-                ["", "Filled = create ONLY for that specific employee"],
+                ["Scenario 1: Exact Match", ""],
+                ["Excel:", "CASHIER | Holding | OPERATIONS | | LEGAL | Vice Chairman | M"],
+                ["System finds:", "Shefa Muradova (TRD7) - CASHIER"],
+                ["Result:", "✅ Creates 1 JD for Shefa"],
                 ["", ""],
-                
-                ["✨ TECHNICAL SKILLS - MULTIPLE GROUPS", ""],
-                ["What it means", "You can list skills from Programming, Cloud, Database, etc. ALL IN ONE CELL"],
-                ["Format", "Just comma-separated skill names"],
+                ["Scenario 2: Multiple Matches", ""],
+                ["Excel:", "CASHIER | Holding | OPERATIONS | | LEGAL | Vice Chairman | M"],
+                ["System finds:", "Shefa Muradova (TRD7) + Arzu Hasanova (GEO3)"],
+                ["Result:", "✅ Creates 2 JDs - one for each"],
                 ["", ""],
-                ["Example 1", "Python, SQL, Docker"],
-                ["", "→ These might be from: Programming, Database, DevOps groups"],
+                ["Scenario 3: No Matches", ""],
+                ["Excel:", "CFO | Holding | FINANCE | | FINANCE | Executive | E"],
+                ["System finds:", "No employees match"],
+                ["Result:", "⚠️ Creates 1 vacant JD without employee"],
                 ["", ""],
-                ["Example 2", "AWS, Azure, Kubernetes, Git, Python, PostgreSQL"],
-                ["", "→ Cloud skills + DevOps + Programming + Database"],
-                ["", "→ All from different groups, all work together!"],
+                ["CRITICAL MATCHING CRITERIA", ""],
+                ["ALL must match:", ""],
+                ["  ✓", "Job Title (exact)"],
+                ["  ✓", "Business Function"],
+                ["  ✓", "Department"],
+                ["  ✓", "Job Function"],
+                ["  ✓", "Position Group"],
+                ["  ✓", "Grading Level"],
                 ["", ""],
-                ["System Behavior", "• Automatically finds which group each skill belongs to"],
-                ["", "• No need to specify groups - just list the skills"],
-                ["", "• All skills set to INTERMEDIATE proficiency"],
-                ["", "• All skills marked as MANDATORY"],
-                ["", "• Skills from multiple groups handled automatically"],
-                ["", ""],
-                
-                ["✨ BEHAVIORAL COMPETENCIES - MULTIPLE GROUPS", ""],
-                ["What it means", "Mix competencies from Leadership, Communication, Technical, etc."],
-                ["Format", "Just comma-separated competency names"],
-                ["", ""],
-                ["Example 1", "Leadership, Communication, Problem Solving"],
-                ["", "→ From Leadership, Communication, Analytical groups"],
-                ["", ""],
-                ["Example 2", "Strategic Thinking, Team Management, Innovation, Adaptability, Decision Making"],
-                ["", "→ Strategic + Leadership + Innovation + Change Management groups"],
-                ["", "→ All work together automatically!"],
-                ["", ""],
-                ["System Behavior", "• Finds correct group for each competency"],
-                ["", "• No manual group assignment needed"],
-                ["", "• All set to INTERMEDIATE proficiency"],
-                ["", "• All marked as MANDATORY"],
-                ["", "• Multiple groups supported seamlessly"],
-                ["", ""],
-                
-                ["💡 PRACTICAL EXAMPLES", ""],
-                ["", ""],
-                ["Software Engineer", "Skills: Python, Java, SQL, Docker, AWS, Git, React"],
-                ["", "→ Programming + Database + Cloud + DevOps + Frontend"],
-                ["", "Competencies: Problem Solving, Teamwork, Communication, Innovation"],
-                ["", "→ Analytical + Collaboration + Communication + Creative groups"],
-                ["", ""],
-                ["Project Manager", "Skills: MS Project, Agile, JIRA, Excel, PowerBI"],
-                ["", "→ PM Tools + Methodologies + Data Analysis groups"],
-                ["", "Competencies: Leadership, Strategic Planning, Stakeholder Management, Decision Making"],
-                ["", "→ Leadership + Strategic + Communication + Management groups"],
-                ["", ""],
-                ["HR Specialist", "Skills: HRIS, Recruitment Software, Excel, HR Analytics"],
-                ["", "→ HR Systems + Tools + Data Analysis groups"],
-                ["", "Competencies: Communication, Empathy, Organization, Conflict Resolution"],
-                ["", "→ Communication + Interpersonal + Admin + Problem-Solving groups"],
-                ["", ""],
-                
-                ["🔧 HOW IT WORKS BEHIND THE SCENES", ""],
-                ["Step 1", "You list: Python, AWS, Docker, SQL"],
-                ["Step 2", "System searches: Which groups contain these skills?"],
-                ["Step 3", "System finds:"],
-                ["", "  • Python → Programming Languages group"],
-                ["", "  • AWS → Cloud Services group"],
-                ["", "  • Docker → DevOps Tools group"],
-                ["", "  • SQL → Database Technologies group"],
-                ["Step 4", "System creates job with skills from 4 different groups!"],
-                ["Step 5", "Same logic applies to competencies"],
-                ["", ""],
-                
-                ["📋 LISTS WITH PIPE SEPARATOR |", ""],
-                ["Use for", "Critical Duties, Main KPIs, Job Duties, Requirements"],
-                ["Why", "Each item becomes a separate bullet point"],
-                ["Example", "Develop APIs | Code review | Write documentation"],
-                ["Result", "• Develop APIs"],
-                ["", "• Code review"],
-                ["", "• Write documentation"],
-                ["", ""],
-                
-                ["📋 COMMA SEPARATED LISTS", ""],
-                ["Use for", "Technical Skills, Behavioral Competencies, Resources, Benefits"],
-                ["Why", "Each item is a separate skill/competency/resource"],
-                ["Example", "Python, SQL, Docker"],
-                ["Result", "Three separate skills added to job description"],
-                ["", ""],
-                
-                ["🎯 AUTO-ASSIGNMENT LOGIC", ""],
-                ["Empty Employee ID", "System finds ALL matching employees and vacancies"],
-                ["", "Example: 5 match → Creates 5 job descriptions"],
-                ["", ""],
-                ["Filled Employee ID", "Creates job ONLY for that employee"],
-                ["", "Example: 'EMP001' → Creates 1 job for EMP001"],
-                ["", ""],
-                
-                ["✅ TIPS FOR SUCCESS", ""],
-                ["✓", "Delete sample data row before uploading"],
-                ["✓", "List ALL relevant skills - system handles grouping"],
-                ["✓", "Mix skills from different categories freely"],
-                ["✓", "Same for competencies - no group limits"],
-                ["✓", "Use exact skill/competency names from system"],
-                ["✓", "Don't add proficiency levels - auto INTERMEDIATE"],
-                ["✓", "Don't add true/false - all auto MANDATORY"],
-                ["", ""],
-                
-                ["❌ COMMON MISTAKES", ""],
-                ["✗", "Don't write: 'Python:EXPERT:true' → Just write: 'Python'"],
-                ["✗", "Don't write: 'Leadership (Advanced)' → Just write: 'Leadership'"],
-                ["✗", "Don't worry about grouping → System does it automatically"],
-                ["✗", "Don't use | for skills → Use , (comma) only"],
-                ["✗", "Don't leave required fields empty"],
-                ["", ""],
-                
-                ["🆘 TROUBLESHOOTING", ""],
-                ["Skill not found", "Check exact spelling in system (case-insensitive)"],
-                ["Competency not found", "Verify competency name exists in system"],
-                ["No employees match", "Check organizational criteria spelling"],
-                ["Multiple matches", "Normal! System creates job for each match"],
-                ["", ""],
-                
-              
+                ["TIPS", ""],
+                ["✓", "Use EXACT job titles from employee records"],
+                ["✓", "Check spelling of organizational fields"],
+                ["✓", "System will log all matches found"],
+                ["✓", "Review warnings for unmatched rows"],
             ]
             
             # Style instructions
             title_font = Font(bold=True, size=14, color="366092")
             section_font = Font(bold=True, size=11, color="2E7D32")
-            emoji_font = Font(bold=True, size=12, color="FF6B35")
             
             for row_num, row_data in enumerate(instructions, 1):
                 col1 = row_data[0] if len(row_data) > 0 else ""
@@ -2065,19 +2047,10 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                 ws_instructions.cell(row=row_num, column=1).value = col1
                 ws_instructions.cell(row=row_num, column=2).value = col2
                 
-                # Apply formatting
                 if row_num == 1:
                     ws_instructions.cell(row=row_num, column=1).font = title_font
-                elif col1.startswith('🎯') or col1.startswith('✨') or col1.startswith('💡') or \
-                     col1.startswith('🔧') or col1.startswith('📋') or col1.startswith('✅') or \
-                     col1.startswith('❌') or col1.startswith('🆘') or col1.startswith('📞'):
-                    ws_instructions.cell(row=row_num, column=1).font = emoji_font
-                elif col1 in ["QUICK START GUIDE", "REQUIRED FIELDS", "OPTIONAL FIELDS", 
-                             "PRACTICAL EXAMPLES", "HOW IT WORKS BEHIND THE SCENES", 
-                             "LISTS WITH PIPE SEPARATOR |", "COMMA SEPARATED LISTS",
-                             "AUTO-ASSIGNMENT LOGIC", "TIPS FOR SUCCESS",
-                             "COMMON MISTAKES", "TROUBLESHOOTING", "SUPPORT"]:
-                    ws_instructions.cell(row=row_num, column=1).font = section_font
+                elif col1.startswith('🎯') or col1.startswith('✅') or col1.startswith('⚠️'):
+                    ws_instructions.cell(row=row_num, column=1).font = Font(bold=True, size=12)
             
             ws_instructions.column_dimensions['A'].width = 30
             ws_instructions.column_dimensions['B'].width = 75
@@ -2090,19 +2063,16 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                 buffer.getvalue(),
                 content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
             )
-            filename = f"Job_Description_Multi_Group_Template_{datetime.now().strftime('%Y%m%d')}.xlsx"
+            filename = f"Job_Description_Auto_Assign_Template_{datetime.now().strftime('%Y%m%d')}.xlsx"
             response['Content-Disposition'] = f'attachment; filename="{filename}"'
             
-            logger.info(f"Multi-group template downloaded by {request.user.username}")
+            logger.info(f"Auto-assign template downloaded by {request.user.username}")
             return response
             
         except Exception as e:
             logger.error(f"Error generating template: {str(e)}")
-            logger.error(traceback.format_exc())
-            return Response(
-                {'error': f'Failed to generate template: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+            return Response({'error': str(e)}, status=500)
+        
     @swagger_auto_schema(
         method='post',
         operation_description="Export job descriptions to Excel",
@@ -2986,7 +2956,7 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
         }
         return status_colors.get(status, colors.grey)
     
-    # Update the download_pdf method in your ViewSet
+ 
     @action(detail=True, methods=['get'])
     def download_pdf(self, request, pk=None):
         """Download job description as enhanced PDF"""
