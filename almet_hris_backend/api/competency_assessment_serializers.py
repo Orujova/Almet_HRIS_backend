@@ -10,12 +10,7 @@ from .competency_assessment_models import (
     EmployeeCoreAssessment, EmployeeCoreCompetencyRating,
     EmployeeBehavioralAssessment, EmployeeBehavioralCompetencyRating
 )
-from .competency_models import Skill, BehavioralCompetency
-from .models import Employee, PositionGroup
-from .job_description_models import JobDescription
-
-
-# SCALE MANAGEMENT SERIALIZERS
+from .models import Employee
 
 class CoreCompetencyScaleSerializer(serializers.ModelSerializer):
     created_by_name = serializers.CharField(source='created_by.username', read_only=True)
@@ -32,7 +27,6 @@ class CoreCompetencyScaleSerializer(serializers.ModelSerializer):
         validated_data['created_by'] = self.context['request'].user
         return super().create(validated_data)
 
-
 class BehavioralScaleSerializer(serializers.ModelSerializer):
     created_by_name = serializers.CharField(source='created_by.username', read_only=True)
     
@@ -47,7 +41,6 @@ class BehavioralScaleSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         validated_data['created_by'] = self.context['request'].user
         return super().create(validated_data)
-
 
 class LetterGradeMappingSerializer(serializers.ModelSerializer):
     class Meta:
@@ -82,9 +75,6 @@ class LetterGradeMappingSerializer(serializers.ModelSerializer):
         
         return data
 
-
-# POSITION ASSESSMENT SERIALIZERS
-
 class PositionCoreCompetencyRatingSerializer(serializers.ModelSerializer):
     skill_name = serializers.CharField(source='skill.name', read_only=True)
     skill_group_name = serializers.CharField(source='skill.group.name', read_only=True)
@@ -96,7 +86,6 @@ class PositionCoreCompetencyRatingSerializer(serializers.ModelSerializer):
             'required_level', 'created_at'
         ]
         read_only_fields = ['created_at']
-
 
 class PositionCoreAssessmentSerializer(serializers.ModelSerializer):
     position_group_name = serializers.CharField(source='position_group.get_name_display', read_only=True)
@@ -111,7 +100,6 @@ class PositionCoreAssessmentSerializer(serializers.ModelSerializer):
             'created_at', 'updated_at', 'created_by', 'created_by_name'
         ]
         read_only_fields = ['created_at', 'updated_at', 'created_by']
-
 
 class PositionCoreAssessmentCreateSerializer(serializers.ModelSerializer):
     competency_ratings = serializers.ListField(
@@ -204,11 +192,13 @@ class PositionBehavioralAssessmentSerializer(serializers.ModelSerializer):
     position_group_name = serializers.CharField(source='position_group.get_name_display', read_only=True)
     competency_ratings = PositionBehavioralCompetencyRatingSerializer(many=True, read_only=True)
     created_by_name = serializers.CharField(source='created_by.username', read_only=True)
+    grade_level = serializers.CharField(required=True, max_length=20)  # NEW FIELD
     
     class Meta:
         model = PositionBehavioralAssessment
         fields = [
-            'id', 'position_group', 'position_group_name', 'job_title',
+            'id', 'position_group', 'position_group_name', 'job_title', 
+            'grade_level',  # NEW FIELD
             'competency_ratings', 'is_active',
             'created_at', 'updated_at', 'created_by', 'created_by_name'
         ]
@@ -221,12 +211,35 @@ class PositionBehavioralAssessmentCreateSerializer(serializers.ModelSerializer):
         write_only=True,
         help_text="List of {behavioral_competency_id: required_level} mappings"
     )
+    grade_level = serializers.CharField(required=True, max_length=20)  # NEW FIELD - REQUIRED
     
     class Meta:
         model = PositionBehavioralAssessment
         fields = [
-            'position_group', 'job_title', 'competency_ratings'
+            'position_group', 'job_title', 'grade_level', 'competency_ratings'  # Added grade_level
         ]
+    
+    def validate(self, data):
+        """Validate grade level matches employee job titles"""
+        position_group = data.get('position_group')
+        grade_level = data.get('grade_level')
+        job_title = data.get('job_title')
+        
+        if position_group and grade_level and job_title:
+            # Check if there are employees with this combination
+            matching_employees = Employee.objects.filter(
+                position_group=position_group,
+                grading_level=grade_level,  # DƏYİŞDİ: grade_level -> grading_level
+                job_title=job_title
+            )
+            
+            if not matching_employees.exists():
+                raise serializers.ValidationError(
+                    f"No employees found with Position Group '{position_group.get_name_display()}', "
+                    f"Grade Level {grade_level}, and Job Title '{job_title}'"
+                )
+        
+        return data
     
     def validate_competency_ratings(self, value):
         """Validate competency ratings format"""
@@ -269,9 +282,10 @@ class PositionBehavioralAssessmentCreateSerializer(serializers.ModelSerializer):
         """Update position assessment and its competency ratings"""
         competency_ratings = validated_data.pop('competency_ratings', None)
         
-        # Update basic fields
+        # Update basic fields including grade_level
         instance.position_group = validated_data.get('position_group', instance.position_group)
         instance.job_title = validated_data.get('job_title', instance.job_title)
+        instance.grade_level = validated_data.get('grade_level', instance.grade_level)  # NEW
         instance.save()
         
         # Update competency ratings if provided
@@ -288,6 +302,9 @@ class PositionBehavioralAssessmentCreateSerializer(serializers.ModelSerializer):
                 )
         
         return instance
+
+
+
 class EmployeeCoreCompetencyRatingSerializer(serializers.ModelSerializer):
     skill_name = serializers.CharField(source='skill.name', read_only=True)
     skill_group_name = serializers.CharField(source='skill.group.name', read_only=True)

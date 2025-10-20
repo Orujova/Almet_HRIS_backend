@@ -815,7 +815,7 @@ class JobDescriptionBehavioralCompetency(models.Model):
         return f"{self.competency.name} ({self.get_proficiency_level_display()})"
 
 class JobBusinessResource(models.Model):
-    """Business resources for job descriptions"""
+    """Business resources (parent) - e.g., Laptop, Phone, Software"""
     
     name = models.CharField(max_length=200, unique=True)
     description = models.TextField(blank=True)
@@ -830,8 +830,32 @@ class JobBusinessResource(models.Model):
     def __str__(self):
         return self.name
 
+class JobBusinessResourceItem(models.Model):
+    """🆕 Nested items for business resources - e.g., Dell XPS, MacBook Pro"""
+    
+    resource = models.ForeignKey(
+        JobBusinessResource, 
+        on_delete=models.CASCADE,
+        related_name='items',
+        help_text="Parent resource category"
+    )
+    name = models.CharField(max_length=200)
+    description = models.TextField(blank=True)
+  
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
+    
+    class Meta:
+        db_table = 'job_business_resource_items'
+        ordering = ['resource', 'name']
+        unique_together = ['resource', 'name']
+    
+    def __str__(self):
+        return f"{self.resource.name} - {self.name}"
+
 class AccessMatrix(models.Model):
-    """Access rights matrix for job descriptions"""
+    """Access rights categories (parent) - e.g., Database Access, Admin Panel, API Keys"""
     
     name = models.CharField(max_length=200, unique=True)
     description = models.TextField(blank=True)
@@ -847,8 +871,35 @@ class AccessMatrix(models.Model):
     def __str__(self):
         return self.name
 
+class AccessMatrixItem(models.Model):
+    """🆕 Nested items for access rights - e.g., PostgreSQL Read, AWS S3 Write"""
+    
+  
+    
+    access_matrix = models.ForeignKey(
+        AccessMatrix,
+        on_delete=models.CASCADE,
+        related_name='items',
+        help_text="Parent access category"
+    )
+    name = models.CharField(max_length=200)
+    description = models.TextField(blank=True)
+
+
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
+    
+    class Meta:
+        db_table = 'access_matrix_items'
+        ordering = ['access_matrix', 'name']
+        unique_together = ['access_matrix', 'name']
+    
+    def __str__(self):
+        return f"{self.access_matrix.name} - {self.name})"
+
 class CompanyBenefit(models.Model):
-    """Company benefits for job descriptions"""
+    """Company benefits categories (parent) - e.g., Health Insurance, Leave Policy"""
     
     name = models.CharField(max_length=200, unique=True)
     description = models.TextField(blank=True)
@@ -863,15 +914,57 @@ class CompanyBenefit(models.Model):
     def __str__(self):
         return self.name
 
+class CompanyBenefitItem(models.Model):
+    """🆕 Nested items for benefits - e.g., Annual Leave: 21 days, Private Health: Full Family"""
+    
+    benefit = models.ForeignKey(
+        CompanyBenefit,
+        on_delete=models.CASCADE,
+        related_name='items',
+        help_text="Parent benefit category"
+    )
+    name = models.CharField(max_length=200)
+    description = models.TextField(blank=True)
+    value = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text="Benefit value (e.g., '21 days', '100%', '£500')"
+    )
+    details = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Additional details like eligibility, conditions, etc."
+    )
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
+    
+    class Meta:
+        db_table = 'company_benefit_items'
+        ordering = ['benefit', 'name']
+        unique_together = ['benefit', 'name']
+    
+    def __str__(self):
+        value_str = f" ({self.value})" if self.value else ""
+        return f"{self.benefit.name} - {self.name}{value_str}"
+
 class JobDescriptionBusinessResource(models.Model):
     """Link job descriptions to business resources"""
     
     job_description = models.ForeignKey(
-        JobDescription, 
+        'JobDescription', 
         on_delete=models.CASCADE,
         related_name='business_resources'
     )
     resource = models.ForeignKey(JobBusinessResource, on_delete=models.CASCADE)
+    
+    # 🆕 Link to specific items (optional - if not specified, means "any item from this resource")
+    specific_items = models.ManyToManyField(
+        JobBusinessResourceItem,
+        blank=True,
+        related_name='job_descriptions',
+        help_text="Specific items required (leave empty for any)"
+    )
     
     class Meta:
         db_table = 'job_description_business_resources'
@@ -881,11 +974,19 @@ class JobDescriptionAccessMatrix(models.Model):
     """Link job descriptions to access rights"""
     
     job_description = models.ForeignKey(
-        JobDescription, 
+        'JobDescription',
         on_delete=models.CASCADE,
         related_name='access_rights'
     )
     access_matrix = models.ForeignKey(AccessMatrix, on_delete=models.CASCADE)
+    
+    # 🆕 Link to specific access items
+    specific_items = models.ManyToManyField(
+        AccessMatrixItem,
+        blank=True,
+        related_name='job_descriptions',
+        help_text="Specific access rights required"
+    )
     
     class Meta:
         db_table = 'job_description_access_matrix'
@@ -895,11 +996,19 @@ class JobDescriptionCompanyBenefit(models.Model):
     """Link job descriptions to company benefits"""
     
     job_description = models.ForeignKey(
-        JobDescription, 
+        'JobDescription',
         on_delete=models.CASCADE,
         related_name='company_benefits'
     )
     benefit = models.ForeignKey(CompanyBenefit, on_delete=models.CASCADE)
+    
+    # 🆕 Link to specific benefit items
+    specific_items = models.ManyToManyField(
+        CompanyBenefitItem,
+        blank=True,
+        related_name='job_descriptions',
+        help_text="Specific benefit details"
+    )
     
     class Meta:
         db_table = 'job_description_company_benefits'

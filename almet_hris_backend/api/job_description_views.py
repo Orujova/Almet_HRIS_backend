@@ -1,7 +1,5 @@
 # api/job_description_views.py - UPDATED: Smart employee selection based on organizational hierarchy
 
-# api/job_description_views.py - IMPORT SECTION UPDATE
-
 from rest_framework import viewsets, status, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -15,7 +13,6 @@ from django.http import HttpResponse, JsonResponse
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 import logging
-import uuid
 from datetime import datetime
 from io import BytesIO
 import traceback
@@ -53,9 +50,9 @@ from .job_description_models import (
     JobBusinessResource, 
     AccessMatrix,
     CompanyBenefit, 
-    JobDescriptionBusinessResource, 
-    JobDescriptionAccessMatrix,
-    JobDescriptionCompanyBenefit, 
+    JobBusinessResourceItem, 
+AccessMatrixItem,
+    CompanyBenefitItem, 
     JobDescriptionActivity
 )
 
@@ -71,11 +68,9 @@ from .job_description_serializers import (
     AccessMatrixSerializer, 
     CompanyBenefitSerializer, 
     JobDescriptionActivitySerializer,
-    EligibleEmployeesSerializer, 
     EmployeeBasicSerializer,
     JobDescriptionExportSerializer,
-    JobDescriptionBulkUploadSerializer,  # NEW - Bulk Upload
-    JobDescriptionBulkUploadResultSerializer  # NEW - Bulk Upload Result
+JobBusinessResourceItemSerializer,AccessMatrixItemSerializer,CompanyBenefitItemSerializer
 )
 
 # Competency and Skill Models
@@ -87,12 +82,11 @@ from .models import (
     Department, 
     Unit, 
     PositionGroup, 
-    Employee, 
     JobFunction,
     VacantPosition
 )
 from .competency_models import Skill, BehavioralCompetency
-from .models import BusinessFunction, Department, Unit, PositionGroup, Employee, JobFunction,VacantPosition
+from .models import BusinessFunction, Department, Unit, PositionGroup, JobFunction,VacantPosition
 from .job_description_serializers import JobDescriptionExportSerializer
 
 from openpyxl import load_workbook, Workbook
@@ -3023,7 +3017,7 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
     
 
 class JobBusinessResourceViewSet(viewsets.ModelViewSet):
-    """ViewSet for Job Business Resources"""
+    """UPDATED: Business resources with nested items support"""
     
     queryset = JobBusinessResource.objects.all()
     serializer_class = JobBusinessResourceSerializer
@@ -3033,12 +3027,77 @@ class JobBusinessResourceViewSet(viewsets.ModelViewSet):
     search_fields = ['name', 'description']
     ordering = ['name']
     
+    def get_queryset(self):
+        """Include items in queryset"""
+        return JobBusinessResource.objects.prefetch_related('items').all()
+    
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
+    
+    @action(detail=True, methods=['get'])
+    def items(self, request, pk=None):
+        """🆕 Get all items for a resource"""
+        resource = self.get_object()
+        items = resource.items.filter(is_active=True)
+        serializer = JobBusinessResourceItemSerializer(items, many=True)
+        return Response({
+            'resource': JobBusinessResourceSerializer(resource).data,
+            'items': serializer.data,
+            'total_items': items.count()
+        })
+    
+    @action(detail=True, methods=['post'])
+    def add_item(self, request, pk=None):
+        """🆕 Add a new item to this resource"""
+        resource = self.get_object()
+        
+        data = request.data.copy()
+        data['resource'] = resource.id
+        
+        serializer = JobBusinessResourceItemSerializer(data=data)
+        if serializer.is_valid():
+            serializer.save(created_by=request.user)
+            return Response({
+                'success': True,
+                'message': f'Item added to {resource.name}',
+                'item': serializer.data
+            }, status=status.HTTP_201_CREATED)
+        
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    
 
+class JobBusinessResourceItemViewSet(viewsets.ModelViewSet):
+    """🆕 CRUD for business resource items"""
+    
+    queryset = JobBusinessResourceItem.objects.select_related('resource').all()
+    serializer_class = JobBusinessResourceItemSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_fields = ['resource', 'is_active']
+    search_fields = ['name', 'description']
+    ordering_fields = ['name', 'created_at']
+    ordering = ['resource__name', 'name']
+    
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user)
+    
+    @action(detail=False, methods=['get'])
+    def by_resource(self, request):
+        """Get items grouped by resource"""
+        resource_id = request.query_params.get('resource_id')
+        if not resource_id:
+            return Response({'error': 'resource_id required'}, status=400)
+        
+        items = self.queryset.filter(resource_id=resource_id, is_active=True)
+        serializer = self.get_serializer(items, many=True)
+        return Response({
+            'items': serializer.data,
+            'count': items.count()
+        })
 
 class AccessMatrixViewSet(viewsets.ModelViewSet):
-    """ViewSet for Access Matrix"""
+    """UPDATED: Access matrix with nested items support"""
     
     queryset = AccessMatrix.objects.all()
     serializer_class = AccessMatrixSerializer
@@ -3048,12 +3107,62 @@ class AccessMatrixViewSet(viewsets.ModelViewSet):
     search_fields = ['name', 'description']
     ordering = ['name']
     
+    def get_queryset(self):
+        return AccessMatrix.objects.prefetch_related('items').all()
+    
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user)
+    
+    @action(detail=True, methods=['get'])
+    def items(self, request, pk=None):
+        """🆕 Get all items for an access matrix"""
+        access_matrix = self.get_object()
+        items = access_matrix.items.filter(is_active=True)
+        serializer = AccessMatrixItemSerializer(items, many=True)
+        return Response({
+            'access_matrix': AccessMatrixSerializer(access_matrix).data,
+            'items': serializer.data,
+            'total_items': items.count()
+        })
+    
+    @action(detail=True, methods=['post'])
+    def add_item(self, request, pk=None):
+ 
+        access_matrix = self.get_object()
+        
+        data = request.data.copy()
+        data['access_matrix'] = access_matrix.id
+        
+        serializer = AccessMatrixItemSerializer(data=data)
+        if serializer.is_valid():
+            serializer.save(created_by=request.user)
+            return Response({
+                'success': True,
+                'message': f'Access item added to {access_matrix.name}',
+                'item': serializer.data
+            }, status=status.HTTP_201_CREATED)
+        
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+   
+
+class AccessMatrixItemViewSet(viewsets.ModelViewSet):
+
+    
+    queryset = AccessMatrixItem.objects.select_related('access_matrix').all()
+    serializer_class = AccessMatrixItemSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_fields = ['access_matrix',  'is_active']
+    search_fields = ['name', 'description']
+    ordering_fields = ['name',  'created_at']
+    ordering = ['access_matrix__name', 'name']
+    
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
 
-
 class CompanyBenefitViewSet(viewsets.ModelViewSet):
-    """ViewSet for Company Benefits"""
+    """UPDATED: Company benefits with nested items support"""
     
     queryset = CompanyBenefit.objects.all()
     serializer_class = CompanyBenefitSerializer
@@ -3063,9 +3172,59 @@ class CompanyBenefitViewSet(viewsets.ModelViewSet):
     search_fields = ['name', 'description']
     ordering = ['name']
     
+    def get_queryset(self):
+        return CompanyBenefit.objects.prefetch_related('items').all()
+    
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
+    
+    @action(detail=True, methods=['get'])
+    def items(self, request, pk=None):
+        """🆕 Get all items for a benefit"""
+        benefit = self.get_object()
+        items = benefit.items.filter(is_active=True)
+   
+        return Response({
+            'benefit': CompanyBenefitSerializer(benefit).data,
+   
+            'total_items': items.count()
+        })
+    
+    @action(detail=True, methods=['post'])
+    def add_item(self, request, pk=None):
+        """🆕 Add a new benefit item"""
+        benefit = self.get_object()
+        
+        data = request.data.copy()
+        data['benefit'] = benefit.id
+        
+        serializer = CompanyBenefitItemSerializer(data=data)
+        if serializer.is_valid():
+            serializer.save(created_by=request.user)
+            return Response({
+                'success': True,
+                'message': f'Benefit item added to {benefit.name}',
+                'item': serializer.data
+            }, status=status.HTTP_201_CREATED)
+        
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    
 
+class CompanyBenefitItemViewSet(viewsets.ModelViewSet):
+    """🆕 CRUD for company benefit items"""
+    
+    queryset = CompanyBenefitItem.objects.select_related('benefit').all()
+    serializer_class = CompanyBenefitItemSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_fields = ['benefit', 'is_active']
+    search_fields = ['name', 'description', 'value']
+    ordering_fields = ['name', 'created_at']
+    ordering = ['benefit__name', 'name']
+    
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user)
 
 class JobDescriptionStatsViewSet(viewsets.ViewSet):
     """ViewSet for Job Description Statistics"""

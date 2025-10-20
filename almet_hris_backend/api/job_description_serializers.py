@@ -5,7 +5,7 @@ from .job_description_models import (
     JobDescription, JobDescriptionSection, JobDescriptionSkill,
     JobDescriptionBehavioralCompetency, JobBusinessResource, AccessMatrix,
     CompanyBenefit, JobDescriptionBusinessResource, JobDescriptionAccessMatrix,
-    JobDescriptionCompanyBenefit, JobDescriptionActivity
+    JobDescriptionCompanyBenefit, JobDescriptionActivity,JobBusinessResourceItem,AccessMatrixItem,CompanyBenefitItem
 )
 from .models import BusinessFunction, Department, Unit, PositionGroup, Employee, JobFunction,VacantPosition
 from .competency_models import Skill, BehavioralCompetency
@@ -119,38 +119,219 @@ class BehavioralCompetencyBasicSerializer(serializers.ModelSerializer):
         model = BehavioralCompetency
         fields = ['id', 'name', 'group_name']
 
-class JobBusinessResourceSerializer(serializers.ModelSerializer):
+class AccessMatrixItemDetailSerializer(serializers.ModelSerializer):
+    """ENHANCED: More detailed access item with rich information"""
+    
     created_by_name = serializers.CharField(source='created_by.get_full_name', read_only=True)
+    access_matrix_name = serializers.CharField(source='access_matrix.name', read_only=True)
+    full_path = serializers.SerializerMethodField()
+    formatted_created_at = serializers.SerializerMethodField()
     
     class Meta:
-        model = JobBusinessResource
+        model = AccessMatrixItem
         fields = [
-            'id', 'name', 'description', 'is_active',
-            'created_at', 'created_by', 'created_by_name'
+            'id', 
+            'access_matrix', 
+            'access_matrix_name',
+            'name', 
+            'description',
+            'full_path',           # 🆕 Complete path
+            'is_active',
+            'created_at',
+            'formatted_created_at',  # 🆕 Human-readable date
+            'created_by',
+            'created_by_name'
         ]
         read_only_fields = ['created_at', 'created_by']
+    
+    def get_full_path(self, obj):
+        """Get full hierarchical path"""
+        return f"{obj.access_matrix.name} > {obj.name}"
+    
+    
+    def get_formatted_created_at(self, obj):
+        """Human-readable date"""
+        if obj.created_at:
+            return obj.created_at.strftime('%d %B %Y, %H:%M')
+        return None
+
+class AccessMatrixItemSerializer(serializers.ModelSerializer):
+    """Simple serializer for create/update operations"""
+    
+    class Meta:
+        model = AccessMatrixItem
+        fields = [
+            'id', 'access_matrix', 'name', 'description',
+             'is_active'
+        ]
 
 class AccessMatrixSerializer(serializers.ModelSerializer):
+    """ENHANCED: Access matrix with detailed items"""
+    
     created_by_name = serializers.CharField(source='created_by.get_full_name', read_only=True)
+    items = AccessMatrixItemDetailSerializer(many=True, read_only=True)  # 🔥 Use detailed serializer
+    items_count = serializers.SerializerMethodField()
     
     class Meta:
         model = AccessMatrix
         fields = [
-            'id', 'name', 'description', 'is_active',
-            'created_at', 'created_by', 'created_by_name'
+            'id', 
+            'name', 
+            'description', 
+            'is_active',
+            'created_at', 
+            'created_by', 
+            'created_by_name',
+            'items',                        # Detailed items
+            'items_count',                  # Total count
         ]
         read_only_fields = ['created_at', 'created_by']
+    
+    def get_items_count(self, obj):
+        return obj.items.filter(is_active=True).count()
+    
+class JobBusinessResourceItemDetailSerializer(serializers.ModelSerializer):
+    """ENHANCED: Detailed business resource item"""
+    
+    created_by_name = serializers.CharField(source='created_by.get_full_name', read_only=True)
+    resource_name = serializers.CharField(source='resource.name', read_only=True)
+    
+    # 🆕 Enhanced fields
+    full_path = serializers.SerializerMethodField()
+
+    formatted_created_at = serializers.SerializerMethodField()
+
+    
+    class Meta:
+        model = JobBusinessResourceItem
+        fields = [
+            'id',
+            'resource',
+            'resource_name',
+            'name',
+            'description',
+            'full_path',              # 🆕 Complete hierarchy
+            'is_active',
+            'created_at',
+            'formatted_created_at',
+            'created_by',
+            'created_by_name'
+        ]
+        read_only_fields = ['created_at', 'created_by']
+    
+    def get_full_path(self, obj):
+        return f"{obj.resource.name} > {obj.name}"
+    
+    
+    def get_formatted_created_at(self, obj):
+        if obj.created_at:
+            return obj.created_at.strftime('%d %B %Y, %H:%M')
+        return None
+    
+class JobBusinessResourceItemSerializer(serializers.ModelSerializer):
+    """Simple serializer for create/update"""
+    
+    class Meta:
+        model = JobBusinessResourceItem
+        fields = [
+            'id', 'resource', 'name', 'description',
+       'is_active'
+        ]
+
+class JobBusinessResourceSerializer(serializers.ModelSerializer):
+    """ENHANCED: Business resource with detailed items"""
+    
+    created_by_name = serializers.CharField(source='created_by.get_full_name', read_only=True)
+    items = JobBusinessResourceItemDetailSerializer(many=True, read_only=True)  # 🔥 Detailed
+    items_count = serializers.SerializerMethodField()
+    
+
+    
+    class Meta:
+        model = JobBusinessResource
+        fields = [
+            'id',
+            'name',
+            'description',
+            'is_active',
+            'created_at',
+            'created_by',
+            'created_by_name',
+            'items',                    # Detailed items
+            'items_count',              # Count
+
+        ]
+        read_only_fields = ['created_at', 'created_by']
+    
+    def get_items_count(self, obj):
+        return obj.items.filter(is_active=True).count()
+
+class CompanyBenefitItemDetailSerializer(serializers.ModelSerializer):
+    """ENHANCED: Detailed company benefit item"""
+    
+    created_by_name = serializers.CharField(source='created_by.get_full_name', read_only=True)
+    benefit_name = serializers.CharField(source='benefit.name', read_only=True)
+    
+    # 🆕 Enhanced fields
+    full_path = serializers.SerializerMethodField()
+    formatted_created_at = serializers.SerializerMethodField()
+
+    
+    class Meta:
+        model = CompanyBenefitItem
+        fields = [
+            'id',
+            'benefit',
+            'benefit_name',
+            'name',
+            'description',
+            'full_path',
+            'is_active',
+            'created_at',
+            'formatted_created_at',
+            'created_by',
+            'created_by_name'
+        ]
+        read_only_fields = ['created_at', 'created_by']
+    
+    def get_full_path(self, obj):
+        return f"{obj.benefit.name} > {obj.name}"
+    
+   
+    
+    def get_formatted_created_at(self, obj):
+        if obj.created_at:
+            return obj.created_at.strftime('%d %B %Y, %H:%M')
+        return None
+
+class CompanyBenefitItemSerializer(serializers.ModelSerializer):
+    """Simple serializer for create/update"""
+    
+    class Meta:
+        model = CompanyBenefitItem
+        fields = [
+            'id', 'benefit', 'name', 'description',
+         'is_active'
+        ]
 
 class CompanyBenefitSerializer(serializers.ModelSerializer):
+    """UPDATED: Company benefit with nested items"""
+    
     created_by_name = serializers.CharField(source='created_by.get_full_name', read_only=True)
+    items = CompanyBenefitItemSerializer(many=True, read_only=True)
+    items_count = serializers.SerializerMethodField()
     
     class Meta:
         model = CompanyBenefit
         fields = [
             'id', 'name', 'description', 'is_active',
-            'created_at', 'created_by', 'created_by_name'
+            'created_at', 'created_by', 'created_by_name',
+            'items', 'items_count'  # 🆕 Include nested items
         ]
         read_only_fields = ['created_at', 'created_by']
+    
+    def get_items_count(self, obj):
+        return obj.items.filter(is_active=True).count()
 
 class JobDescriptionSectionSerializer(serializers.ModelSerializer):
     class Meta:
@@ -201,7 +382,6 @@ class JobDescriptionActivitySerializer(serializers.ModelSerializer):
             'id', 'activity_type', 'description', 'performed_by', 
             'performed_by_detail', 'performed_at', 'metadata'
         ]
-
 
 class JobDescriptionCreateUpdateSerializer(serializers.ModelSerializer):
     """ENHANCED: Manual employee and vacancy selection for multiple matches"""
@@ -892,7 +1072,6 @@ class JobDescriptionCreateUpdateSerializer(serializers.ModelSerializer):
             
             return instance
 
-
 class EligibleEmployeesSerializer(serializers.Serializer):
     """IMPROVED: Serializer for getting eligible employees with enhanced validation"""
     
@@ -1292,6 +1471,7 @@ class JobDescriptionDetailSerializer(serializers.ModelSerializer):
             }
         
         return None
+
 class JobDescriptionApprovalSerializer(serializers.Serializer):
     """Serializer for approval actions"""
     
@@ -1324,72 +1504,6 @@ class JobDescriptionSubmissionSerializer(serializers.Serializer):
     
     submit_to_line_manager = serializers.BooleanField(default=True)
     comments = serializers.CharField(required=False, allow_blank=True)
-
-# job_description_serializers.py-ə əlavə edin
-
-class JobDescriptionBulkUploadSerializer(serializers.Serializer):
-    """Serializer for bulk uploading job descriptions from Excel"""
-    
-    file = serializers.FileField(
-        required=True,
-        help_text="Excel file (.xlsx or .xls) containing job descriptions"
-    )
-    
-    validate_only = serializers.BooleanField(
-        default=False,
-        help_text="If true, only validates data without creating records"
-    )
-    
-    auto_assign_employees = serializers.BooleanField(
-        default=True,
-        help_text="Automatically assign employees matching all criteria"
-    )
-    
-    skip_duplicates = serializers.BooleanField(
-        default=True,
-        help_text="Skip job descriptions that already exist (based on job_title + employee_id)"
-    )
-    
-    def validate_file(self, value):
-        """Validate uploaded file"""
-        if not value.name.endswith(('.xlsx', '.xls')):
-            raise serializers.ValidationError(
-                "Invalid file format. Please upload an Excel file (.xlsx or .xls)"
-            )
-        
-        # Check file size (max 10MB)
-        if value.size > 10 * 1024 * 1024:
-            raise serializers.ValidationError(
-                "File size too large. Maximum size is 10MB."
-            )
-        
-        return value
-
-
-class JobDescriptionBulkUploadResultSerializer(serializers.Serializer):
-    """Serializer for bulk upload results"""
-    
-    total_rows = serializers.IntegerField()
-    successful = serializers.IntegerField()
-    failed = serializers.IntegerField()
-    skipped = serializers.IntegerField()
-    
-    created_job_descriptions = serializers.ListField(
-        child=serializers.DictField(),
-        required=False
-    )
-    
-    errors = serializers.ListField(
-        child=serializers.DictField(),
-        required=False
-    )
-    
-    warnings = serializers.ListField(
-        child=serializers.DictField(),
-        required=False
-    )
-    
-    validation_summary = serializers.DictField(required=False)
 
 class JobDescriptionExportSerializer(serializers.Serializer):
     """Serializer for export functionality with proper UUID handling"""

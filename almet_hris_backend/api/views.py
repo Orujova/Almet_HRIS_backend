@@ -3619,7 +3619,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                         results['created_employees'].append({
                             'employee_id': employee.employee_id,
                             'name': employee.full_name,
-                            'email': employee.user.email
+                            'email': employee.email 
                         })
                         
                         logger.info(f"✅ Created employee: {employee.employee_id} - {employee.full_name}")
