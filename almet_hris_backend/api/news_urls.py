@@ -1,4 +1,4 @@
-# api/news_urls.py
+# api/news_urls.py - COMPLETE VERSION
 """
 Company News System URL Configuration
 """
@@ -15,9 +15,9 @@ router.register(r'target-groups', news_views.TargetGroupViewSet, basename='targe
 router.register(r'', news_views.CompanyNewsViewSet, basename='news')
 
 urlpatterns = [
+    # Permissions endpoint
+    path('permissions/', news_views.NewsPermissionsView.as_view(), name='news-permissions'),
+    
+    # ViewSet routes
     path('', include(router.urls)),
 ]
-
-
-
-

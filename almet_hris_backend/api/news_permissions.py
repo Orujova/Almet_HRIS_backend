@@ -1,7 +1,7 @@
-# api/news_permissions.py
+# api/news_permissions.py - COMPLETE FIX
 """
 Company News System Permissions
-Role-based permission system similar to vacation module
+Complete role-based permission system matching vacation module pattern
 """
 
 from functools import wraps
@@ -211,11 +211,12 @@ def get_user_news_permissions(user):
     return list(permission_codenames)
 
 
-# ✅ UPDATED: Permission classes with both has_permission and has_object_permission
+# ==================== DRF PERMISSION CLASSES ====================
+
 class IsAdminOrNewsManager(BasePermission):
     """
     Permission class for News management
-    Inherits from BasePermission to get all required methods
+    Maps CRUD actions to specific permissions
     """
     
     def has_permission(self, request, view):
@@ -223,109 +224,30 @@ class IsAdminOrNewsManager(BasePermission):
         if not request.user or not request.user.is_authenticated:
             return False
         
-        # Check specific permissions based on action
-        if view.action in ['list', 'retrieve']:
-            has_perm, _ = check_news_permission(request.user, 'news.news.view')
-            return has_perm
-        elif view.action == 'create':
-            has_perm, _ = check_news_permission(request.user, 'news.news.create')
-            return has_perm
-        elif view.action in ['update', 'partial_update']:
-            has_perm, _ = check_news_permission(request.user, 'news.news.update')
-            return has_perm
-        elif view.action == 'destroy':
-            has_perm, _ = check_news_permission(request.user, 'news.news.delete')
-            return has_perm
-        
-        # Default: admin only
-        return is_admin_user(request.user)
-    
-    def has_object_permission(self, request, view, obj):
-        """Check permission at object level"""
-        if not request.user or not request.user.is_authenticated:
-            return False
-        
-        # Admin has full access
+        # Admin bypass
         if is_admin_user(request.user):
             return True
         
-        # Check action-specific permissions
-        if view.action == 'retrieve':
-            has_perm, _ = check_news_permission(request.user, 'news.news.view')
-            return has_perm
-        elif view.action in ['update', 'partial_update']:
-            has_perm, _ = check_news_permission(request.user, 'news.news.update')
-            return has_perm
-        elif view.action == 'destroy':
-            has_perm, _ = check_news_permission(request.user, 'news.news.delete')
-            return has_perm
+        # Map actions to permissions
+        permission_map = {
+            'list': 'news.news.view',
+            'retrieve': 'news.news.view',
+            'create': 'news.news.create',
+            'update': 'news.news.update',
+            'partial_update': 'news.news.update',
+            'destroy': 'news.news.delete',
+            'toggle_pin': 'news.news.pin',
+            'toggle_publish': 'news.news.publish',
+            'statistics': 'news.news.view_statistics',
+        }
         
-        return False
-
-
-class IsAdminOrTargetGroupManager(BasePermission):
-    """
-    Permission class for Target Group management
-    Inherits from BasePermission to get all required methods
-    """
-    
-    def has_permission(self, request, view):
-        """Check permission at view level"""
-        if not request.user or not request.user.is_authenticated:
+        required_permission = permission_map.get(view.action)
+        
+        if not required_permission:
+            # Default deny for unknown actions
             return False
         
-        # Check specific permissions based on action
-        if view.action in ['list', 'retrieve']:
-            has_perm, _ = check_news_permission(request.user, 'news.target_group.view')
-            return has_perm
-        elif view.action == 'create':
-            has_perm, _ = check_news_permission(request.user, 'news.target_group.create')
-            return has_perm
-        elif view.action in ['update', 'partial_update', 'add_members', 'remove_members']:
-            has_perm, _ = check_news_permission(request.user, 'news.target_group.update')
-            return has_perm
-        elif view.action == 'destroy':
-            has_perm, _ = check_news_permission(request.user, 'news.target_group.delete')
-            return has_perm
-        
-        # Default: admin only
-        return is_admin_user(request.user)
-    
-    def has_object_permission(self, request, view, obj):
-        """Check permission at object level"""
-        if not request.user or not request.user.is_authenticated:
-            return False
-        
-        # Admin has full access
-        if is_admin_user(request.user):
-            return True
-        
-        # Check action-specific permissions
-        if view.action == 'retrieve':
-            has_perm, _ = check_news_permission(request.user, 'news.target_group.view')
-            return has_perm
-        elif view.action in ['update', 'partial_update', 'add_members', 'remove_members']:
-            has_perm, _ = check_news_permission(request.user, 'news.target_group.update')
-            return has_perm
-        elif view.action == 'destroy':
-            has_perm, _ = check_news_permission(request.user, 'news.target_group.delete')
-            return has_perm
-        
-        return False
-
-
-class CanViewNews(BasePermission):
-    """
-    Permission class for viewing news
-    Inherits from BasePermission to get all required methods
-    """
-    
-    def has_permission(self, request, view):
-        """Check permission at view level"""
-        if not request.user or not request.user.is_authenticated:
-            return False
-        
-        has_perm, _ = check_news_permission(request.user, 'news.news.view')
+        has_perm, _ = check_news_permission(request.user, required_permission)
         return has_perm
     
     def has_object_permission(self, request, view, obj):
@@ -333,8 +255,120 @@ class CanViewNews(BasePermission):
         if not request.user or not request.user.is_authenticated:
             return False
         
-        # News managers can view all news
-        has_manage_perm, _ = check_news_permission(request.user, 'news.news.update')
+        # Admin bypass
+        if is_admin_user(request.user):
+            return True
+        
+        # Check action-specific permissions
+        permission_map = {
+            'retrieve': 'news.news.view',
+            'update': 'news.news.update',
+            'partial_update': 'news.news.update',
+            'destroy': 'news.news.delete',
+            'toggle_pin': 'news.news.pin',
+            'toggle_publish': 'news.news.publish',
+        }
+        
+        required_permission = permission_map.get(view.action)
+        
+        if not required_permission:
+            return False
+        
+        has_perm, _ = check_news_permission(request.user, required_permission)
+        return has_perm
+
+
+class IsAdminOrTargetGroupManager(BasePermission):
+    """
+    Permission class for Target Group management
+    Maps CRUD actions to specific permissions
+    """
+    
+    def has_permission(self, request, view):
+        """Check permission at view level"""
+        if not request.user or not request.user.is_authenticated:
+            return False
+        
+        # Admin bypass
+        if is_admin_user(request.user):
+            return True
+        
+        # Map actions to permissions
+        permission_map = {
+            'list': 'news.target_group.view',
+            'retrieve': 'news.target_group.view',
+            'create': 'news.target_group.create',
+            'update': 'news.target_group.update',
+            'partial_update': 'news.target_group.update',
+            'destroy': 'news.target_group.delete',
+            'add_members': 'news.target_group.add_members',
+            'remove_members': 'news.target_group.remove_members',
+            'statistics': 'news.target_group.view_statistics',
+        }
+        
+        required_permission = permission_map.get(view.action)
+        
+        if not required_permission:
+            return False
+        
+        has_perm, _ = check_news_permission(request.user, required_permission)
+        return has_perm
+    
+    def has_object_permission(self, request, view, obj):
+        """Check permission at object level"""
+        if not request.user or not request.user.is_authenticated:
+            return False
+        
+        # Admin bypass
+        if is_admin_user(request.user):
+            return True
+        
+        # Check action-specific permissions
+        permission_map = {
+            'retrieve': 'news.target_group.view',
+            'update': 'news.target_group.update',
+            'partial_update': 'news.target_group.update',
+            'destroy': 'news.target_group.delete',
+            'add_members': 'news.target_group.add_members',
+            'remove_members': 'news.target_group.remove_members',
+        }
+        
+        required_permission = permission_map.get(view.action)
+        
+        if not required_permission:
+            return False
+        
+        has_perm, _ = check_news_permission(request.user, required_permission)
+        return has_perm
+
+
+class CanViewNews(BasePermission):
+    """
+    Permission class for viewing news
+    Regular users can only view published news
+    News managers can view all news
+    """
+    
+    def has_permission(self, request, view):
+        """Check permission at view level"""
+        if not request.user or not request.user.is_authenticated:
+            return False
+        
+        # Check if user can view news
+        has_view_perm, _ = check_news_permission(request.user, 'news.news.view')
+        return has_view_perm
+    
+    def has_object_permission(self, request, view, obj):
+        """Check permission at object level"""
+        if not request.user or not request.user.is_authenticated:
+            return False
+        
+        # Admin can view all
+        if is_admin_user(request.user):
+            return True
+        
+        # News managers can view all news (including drafts)
+        has_manage_perm, _ = check_news_permission(request.user, 'news.news.view_all')
         if has_manage_perm:
             return True
         
@@ -344,3 +378,35 @@ class CanViewNews(BasePermission):
             return obj.is_published and not obj.is_deleted
         
         return False
+
+
+class IsAdminOrNewsCategoryManager(BasePermission):
+    """
+    Permission class for News Category management
+    Only authenticated users can list/view
+    Only admins can create/update/delete
+    """
+    
+    def has_permission(self, request, view):
+        """Check permission at view level"""
+        if not request.user or not request.user.is_authenticated:
+            return False
+        
+        # Anyone authenticated can view categories
+        if view.action in ['list', 'retrieve']:
+            return True
+        
+        # Only admin can manage categories
+        return is_admin_user(request.user)
+    
+    def has_object_permission(self, request, view, obj):
+        """Check permission at object level"""
+        if not request.user or not request.user.is_authenticated:
+            return False
+        
+        # Anyone authenticated can view
+        if view.action == 'retrieve':
+            return True
+        
+        # Only admin can modify
+        return is_admin_user(request.user)

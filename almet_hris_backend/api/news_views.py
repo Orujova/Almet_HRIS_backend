@@ -1,18 +1,11 @@
-# api/news_views.py - COMPLETE WITH CATEGORY CRUD & NOTIFICATION INTEGRATION
-"""
-Company News System Views
-- NewsCategoryViewSet: Dynamic category CRUD
-- CompanyNewsViewSet: Full news management
-- TargetGroupViewSet: Target group management
-- Notification integration: Get company news from Outlook
-"""
+# api/news_views.py - WITH PROPER PERMISSION CHECKS
 
 import logging
 from rest_framework import viewsets, status
-from rest_framework.decorators import action, api_view, permission_classes
+from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from django.db.models import Q, Count, Sum
+from django.db.models import Q, Sum
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 
@@ -25,18 +18,17 @@ from .news_serializers import (
     TargetGroupListSerializer,
     TargetGroupDetailSerializer,
     TargetGroupCreateUpdateSerializer,
-  
 )
 from .news_permissions import (
     IsAdminOrNewsManager,
     IsAdminOrTargetGroupManager,
+    IsAdminOrNewsCategoryManager,
     CanViewNews,
-    is_admin_user
+    is_admin_user,
+    check_news_permission,
 )
 from .news_notifications import news_notification_manager
 from .token_helpers import extract_graph_token_from_request
-from .notification_service import notification_service
-from .notification_models import NotificationSettings
 
 logger = logging.getLogger(__name__)
 
@@ -44,51 +36,44 @@ logger = logging.getLogger(__name__)
 # ==================== NEWS CATEGORY VIEWSET ====================
 
 class NewsCategoryViewSet(viewsets.ModelViewSet):
-
+    """News Category CRUD - Admin Only for Create/Update/Delete"""
     
     queryset = NewsCategory.objects.filter(is_deleted=False)
     serializer_class = NewsCategorySerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAdminOrNewsCategoryManager]
     
     def get_queryset(self):
         queryset = NewsCategory.objects.filter(is_deleted=False)
         
-        # Filter by active status
         is_active = self.request.query_params.get('is_active', None)
         if is_active is not None:
             queryset = queryset.filter(is_active=is_active.lower() == 'true')
         
-        # Search
         search = self.request.query_params.get('search', None)
         if search:
             queryset = queryset.filter(
                 Q(name__icontains=search) |
-             
                 Q(description__icontains=search)
             )
         
-        return queryset.order_by( 'name')
-    
-    def get_permissions(self):
-        if self.action in ['list', 'retrieve']:
-            return [IsAuthenticated()]
-        return [IsAdminOrNewsManager()]
+        return queryset.order_by('name')
     
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
-    
-   
 
 
 # ==================== COMPANY NEWS VIEWSET ====================
 
 class CompanyNewsViewSet(viewsets.ModelViewSet):
-  
+    """Company News CRUD with Permission-based Access Control"""
     
     queryset = CompanyNews.objects.filter(is_deleted=False)
-    permission_classes = [IsAuthenticated]
     
     def get_serializer_class(self):
+        # Toggle actions don't need serializer
+        if self.action in ['toggle_pin', 'toggle_publish']:
+            return None
+        
         if self.action == 'list':
             return NewsListSerializer
         elif self.action in ['create', 'update', 'partial_update']:
@@ -96,9 +81,21 @@ class CompanyNewsViewSet(viewsets.ModelViewSet):
         return NewsDetailSerializer
     
     def get_permissions(self):
-        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+        """Dynamic permission classes based on action"""
+        if self.action in ['list', 'retrieve']:
+            # Anyone with view permission
+            return [CanViewNews()]
+        elif self.action in ['create', 'update', 'partial_update', 'destroy']:
+            # Need specific CRUD permissions
             return [IsAdminOrNewsManager()]
-        return [CanViewNews()]
+        elif self.action in ['toggle_pin', 'toggle_publish']:
+            # Need specific action permissions
+            return [IsAdminOrNewsManager()]
+        elif self.action == 'statistics':
+            # Need statistics permission
+            return [IsAdminOrNewsManager()]
+        
+        return [IsAuthenticated()]
     
     def get_queryset(self):
         queryset = CompanyNews.objects.filter(is_deleted=False)
@@ -108,7 +105,7 @@ class CompanyNewsViewSet(viewsets.ModelViewSet):
         if category_id:
             queryset = queryset.filter(category_id=category_id)
         
-        # Filter by published status
+        # Filter by publish status
         is_published = self.request.query_params.get('is_published', None)
         if is_published is not None:
             queryset = queryset.filter(is_published=is_published.lower() == 'true')
@@ -128,18 +125,14 @@ class CompanyNewsViewSet(viewsets.ModelViewSet):
                 Q(tags__icontains=search)
             )
         
-        # If not news manager, only show published news
-        try:
-            from .models import Employee
-            employee = Employee.objects.get(user=self.request.user, is_deleted=False)
-            if not is_admin_user(self.request.user):
+        # Non-admin users can only see published news
+        if not is_admin_user(self.request.user):
+            has_view_all, _ = check_news_permission(self.request.user, 'news.news.view_all')
+            if not has_view_all:
                 queryset = queryset.filter(is_published=True)
-        except:
-            queryset = queryset.filter(is_published=True)
         
         return queryset.select_related('author', 'category').prefetch_related('target_groups')
 
-    
     def retrieve(self, request, *args, **kwargs):
         """Get news detail and increment view count"""
         instance = self.get_object()
@@ -154,7 +147,7 @@ class CompanyNewsViewSet(viewsets.ModelViewSet):
             author=self.request.user
         )
         
-        # If news is published and notify_members is True, send notifications
+        # Auto-send notifications if published
         if news.is_published and news.notify_members and not news.notification_sent:
             self._send_notifications_async(news)
         
@@ -167,49 +160,34 @@ class CompanyNewsViewSet(viewsets.ModelViewSet):
         
         news = serializer.save(updated_by=self.request.user)
         
-        # If news was just published and notify_members is True, send notifications
+        # Send notifications if newly published
         if not was_published and news.is_published and news.notify_members and not news.notification_sent:
             self._send_notifications_async(news)
         
         return news
     
-    
-
+    # ==================== TOGGLE PIN ACTION ====================
     @swagger_auto_schema(
         method='post',
-        operation_description='Toggle pin status of news (pin if unpinned, unpin if pinned). No request body required, only news ID in URL.',
-        manual_parameters=[
-            openapi.Parameter(
-                'id',
-                openapi.IN_PATH,
-                description="News UUID",
-                type=openapi.TYPE_STRING,
-                format=openapi.FORMAT_UUID,
-                required=True
-            )
-        ],
-        request_body=None,  # ✅ Explicitly None
+        operation_description='Toggle pin status (requires news.news.pin permission)',
+        request_body=openapi.Schema(type=openapi.TYPE_OBJECT, properties={}),
         responses={
             200: openapi.Response(
-                description='Pin status toggled successfully',
-                examples={
-                    'application/json': {
-                        'message': 'News pinned successfully',
-                        'news_id': '3fa85f64-5717-4562-b3fc-2c963f66afa6',
-                        'is_pinned': True
-                    }
-                }
+                description='Pin status toggled',
+                examples={'application/json': {
+                    'message': 'News pinned successfully',
+                    'news_id': 'uuid',
+                    'is_pinned': True
+                }}
             ),
-            404: openapi.Response(description='News not found'),
-            403: openapi.Response(description='Permission denied')
+            403: 'Permission denied - requires news.news.pin'
         }
     )
-    @action(detail=True, methods=['post'], permission_classes=[IsAdminOrNewsManager])
+    @action(detail=True, methods=['post'], serializer_class=None)
     def toggle_pin(self, request, pk=None):
-        """Toggle pin status - pin if unpinned, unpin if pinned"""
+        """Toggle pin status - requires news.news.pin permission"""
         news = self.get_object()
         
-        # Toggle the status
         news.is_pinned = not news.is_pinned
         news.save(update_fields=['is_pinned'])
         
@@ -221,49 +199,34 @@ class CompanyNewsViewSet(viewsets.ModelViewSet):
             'is_pinned': news.is_pinned
         })
     
-    
-    # ==================== ✅ TOGGLE PUBLISH ACTION ====================
+    # ==================== TOGGLE PUBLISH ACTION ====================
     @swagger_auto_schema(
         method='post',
-        operation_description='Toggle publish status of news (publish if unpublished, unpublish if published). Auto-sends notifications on publish if notify_members is True. No request body required, only news ID in URL.',
-        manual_parameters=[
-            openapi.Parameter(
-                'id',
-                openapi.IN_PATH,
-                description="News UUID",
-                type=openapi.TYPE_STRING,
-                format=openapi.FORMAT_UUID,
-                required=True
-            )
-        ],
-        request_body=None,  # ✅ Explicitly None
+        operation_description='Toggle publish status with auto-notifications (requires news.news.publish permission)',
+        request_body=openapi.Schema(type=openapi.TYPE_OBJECT, properties={}),
         responses={
             200: openapi.Response(
-                description='Publish status toggled successfully',
-                examples={
-                    'application/json': {
-                        'message': 'News published successfully',
-                        'news_id': '3fa85f64-5717-4562-b3fc-2c963f66afa6',
-                        'is_published': True,
-                        'notification_status': {
-                            'sent': True,
-                            'total_recipients': 50,
-                            'success_count': 48,
-                            'failed_count': 2
-                        }
+                description='Publish status toggled',
+                examples={'application/json': {
+                    'message': 'News published successfully',
+                    'news_id': 'uuid',
+                    'is_published': True,
+                    'notification_status': {
+                        'sent': True,
+                        'total_recipients': 50,
+                        'success_count': 48,
+                        'failed_count': 2
                     }
-                }
+                }}
             ),
-            404: openapi.Response(description='News not found'),
-            403: openapi.Response(description='Permission denied')
+            403: 'Permission denied - requires news.news.publish'
         }
     )
-    @action(detail=True, methods=['post'], permission_classes=[IsAdminOrNewsManager])
+    @action(detail=True, methods=['post'], serializer_class=None)
     def toggle_publish(self, request, pk=None):
-        """Toggle publish status - publish if unpublished, unpublish if published"""
+        """Toggle publish status - requires news.news.publish permission"""
         news = self.get_object()
         
-        # Toggle the status
         news.is_published = not news.is_published
         news.save(update_fields=['is_published'])
         
@@ -275,7 +238,7 @@ class CompanyNewsViewSet(viewsets.ModelViewSet):
             'is_published': news.is_published
         }
         
-        # Auto-send notifications if news was just published
+        # Auto-send notifications when publishing
         if news.is_published and news.notify_members and not news.notification_sent:
             graph_token = extract_graph_token_from_request(request)
             
@@ -297,7 +260,7 @@ class CompanyNewsViewSet(viewsets.ModelViewSet):
         return Response(response_data)
     
     def _send_notifications_async(self, news):
-        """Helper method to send notifications"""
+        """Helper to send notifications"""
         try:
             graph_token = extract_graph_token_from_request(self.request)
             
@@ -310,10 +273,17 @@ class CompanyNewsViewSet(viewsets.ModelViewSet):
         except Exception as e:
             logger.error(f"Failed to send auto-notifications for news {news.id}: {e}")
     
-    @action(detail=False, methods=['get'], permission_classes=[IsAdminOrNewsManager])
+    @swagger_auto_schema(
+        method='get',
+        operation_description='Get news statistics (requires news.news.view_statistics permission)',
+        responses={
+            200: openapi.Response(description='Statistics retrieved successfully'),
+            403: 'Permission denied - requires news.news.view_statistics'
+        }
+    )
+    @action(detail=False, methods=['get'])
     def statistics(self, request):
-        """Get news statistics"""
-        
+        """Get news statistics - requires news.news.view_statistics permission"""
         total_news = CompanyNews.objects.filter(is_deleted=False).count()
         published_news = CompanyNews.objects.filter(is_deleted=False, is_published=True).count()
         pinned_news = CompanyNews.objects.filter(is_deleted=False, is_pinned=True).count()
@@ -322,7 +292,6 @@ class CompanyNewsViewSet(viewsets.ModelViewSet):
             total=Sum('view_count')
         )['total'] or 0
         
-        # News by category
         news_by_category = []
         for category in NewsCategory.objects.filter(is_active=True, is_deleted=False):
             count = CompanyNews.objects.filter(
@@ -331,9 +300,7 @@ class CompanyNewsViewSet(viewsets.ModelViewSet):
             ).count()
             news_by_category.append({
                 'id': str(category.id),
-              
                 'name': category.name,
-              
                 'count': count
             })
         
@@ -350,7 +317,7 @@ class CompanyNewsViewSet(viewsets.ModelViewSet):
 # ==================== TARGET GROUP VIEWSET ====================
 
 class TargetGroupViewSet(viewsets.ModelViewSet):
-    """Target Group CRUD ViewSet"""
+    """Target Group CRUD with Permission Checks"""
     
     queryset = TargetGroup.objects.filter(is_deleted=False)
     permission_classes = [IsAdminOrTargetGroupManager]
@@ -382,38 +349,29 @@ class TargetGroupViewSet(viewsets.ModelViewSet):
         serializer.save(created_by=self.request.user)
     
     @swagger_auto_schema(
-    method='post',
-    request_body=openapi.Schema(
-        type=openapi.TYPE_OBJECT,
-        required=['employee_ids'],
-        properties={
-            'employee_ids': openapi.Schema(
-                type=openapi.TYPE_ARRAY,
-                items=openapi.Schema(type=openapi.TYPE_INTEGER),
-                description='List of employee IDs to add to the target group',
-                example=[1, 2, 3, 5]
-            )
-        }
-    ),
-    responses={
-        200: openapi.Response(
-            description='Members added successfully',
-            examples={
-                'application/json': {
-                    'message': '3 member(s) added successfully',
-                    'group_id': 'uuid-here',
-                    'total_members': 10,
-                    'already_existing': 0
-                }
+        method='post',
+        operation_description='Add members to target group (requires news.target_group.add_members permission)',
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['employee_ids'],
+            properties={
+                'employee_ids': openapi.Schema(
+                    type=openapi.TYPE_ARRAY,
+                    items=openapi.Schema(type=openapi.TYPE_INTEGER),
+                    example=[1, 2, 3, 5]
+                )
             }
         ),
-        400: 'Bad Request - Invalid data',
-        404: 'Not Found - No valid employees'
-    }
-)
+        responses={
+            200: 'Members added successfully',
+            400: 'Bad Request',
+            403: 'Permission denied - requires news.target_group.add_members',
+            404: 'Not Found'
+        }
+    )
     @action(detail=True, methods=['post'])
     def add_members(self, request, pk=None):
-        """Add members to target group"""
+        """Add members - requires news.target_group.add_members permission"""
         group = self.get_object()
         
         employee_ids = request.data.get('employee_ids', [])
@@ -424,7 +382,6 @@ class TargetGroupViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        # Validate employee_ids format
         if not isinstance(employee_ids, list):
             return Response(
                 {'error': 'employee_ids must be a list of integers'},
@@ -440,7 +397,6 @@ class TargetGroupViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_404_NOT_FOUND
             )
         
-        # Add only non-existing members
         added_count = 0
         for employee in employees:
             if not group.members.filter(id=employee.id).exists():
@@ -453,39 +409,31 @@ class TargetGroupViewSet(viewsets.ModelViewSet):
             'total_members': group.member_count,
             'already_existing': employees.count() - added_count
         })
+    
     @swagger_auto_schema(
-    method='post',
-    request_body=openapi.Schema(
-        type=openapi.TYPE_OBJECT,
-        required=['employee_ids'],
-        properties={
-            'employee_ids': openapi.Schema(
-                type=openapi.TYPE_ARRAY,
-                items=openapi.Schema(type=openapi.TYPE_INTEGER),
-                description='List of employee IDs to remove from the target group',
-                example=[1, 2, 3]
-            )
-        }
-    ),
-    responses={
-        200: openapi.Response(
-            description='Members removed successfully',
-            examples={
-                'application/json': {
-                    'message': '2 member(s) removed successfully',
-                    'group_id': 'uuid-here',
-                    'total_members': 8,
-                    'not_found': 1
-                }
+        method='post',
+        operation_description='Remove members from target group (requires news.target_group.remove_members permission)',
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['employee_ids'],
+            properties={
+                'employee_ids': openapi.Schema(
+                    type=openapi.TYPE_ARRAY,
+                    items=openapi.Schema(type=openapi.TYPE_INTEGER),
+                    example=[1, 2, 3]
+                )
             }
         ),
-        400: 'Bad Request - Invalid data',
-        404: 'Not Found - No valid employees'
-    }
-)
+        responses={
+            200: 'Members removed successfully',
+            400: 'Bad Request',
+            403: 'Permission denied - requires news.target_group.remove_members',
+            404: 'Not Found'
+        }
+    )
     @action(detail=True, methods=['post'])
     def remove_members(self, request, pk=None):
-        """Remove members from target group"""
+        """Remove members - requires news.target_group.remove_members permission"""
         group = self.get_object()
         
         employee_ids = request.data.get('employee_ids', [])
@@ -496,7 +444,6 @@ class TargetGroupViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        # Validate employee_ids format
         if not isinstance(employee_ids, list):
             return Response(
                 {'error': 'employee_ids must be a list of integers'},
@@ -512,7 +459,6 @@ class TargetGroupViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_404_NOT_FOUND
             )
         
-        # Remove only existing members
         removed_count = 0
         for employee in employees:
             if group.members.filter(id=employee.id).exists():
@@ -525,10 +471,18 @@ class TargetGroupViewSet(viewsets.ModelViewSet):
             'total_members': group.member_count,
             'not_found': employees.count() - removed_count
         })
+    
+    @swagger_auto_schema(
+        method='get',
+        operation_description='Get target group statistics (requires news.target_group.view_statistics permission)',
+        responses={
+            200: 'Statistics retrieved successfully',
+            403: 'Permission denied - requires news.target_group.view_statistics'
+        }
+    )
     @action(detail=False, methods=['get'])
     def statistics(self, request):
-        """Get target group statistics"""
-        
+        """Get statistics - requires news.target_group.view_statistics permission"""
         total_groups = TargetGroup.objects.filter(is_deleted=False).count()
         active_groups = TargetGroup.objects.filter(is_deleted=False, is_active=True).count()
         
@@ -559,5 +513,92 @@ class TargetGroupViewSet(viewsets.ModelViewSet):
             'average_members_per_group': round(avg_members_per_group, 1),
             'largest_groups': largest_groups
         })
+        
+# Add to news_views.py
 
+from rest_framework.views import APIView
+from .news_permissions import get_user_news_permissions, is_admin_user
 
+class NewsPermissionsView(APIView):
+    """
+    GET /api/news/permissions/
+    Returns current user's news permissions
+    """
+    permission_classes = [IsAuthenticated]
+    
+    @swagger_auto_schema(
+        operation_description='Get current user news permissions',
+        responses={
+            200: openapi.Response(
+                description='User permissions',
+                examples={
+                    'application/json': {
+                        'is_admin': True,
+                        'permissions': [
+                            'news.news.view',
+                            'news.news.create',
+                            'news.news.update',
+                            'news.news.delete',
+                            'news.news.pin',
+                            'news.news.publish'
+                        ],
+                        'can_manage_news': True,
+                        'can_manage_target_groups': True,
+                        'can_view_statistics': True
+                    }
+                }
+            )
+        }
+    )
+    def get(self, request):
+        """Get user's news permissions"""
+        user = request.user
+        
+        is_admin = is_admin_user(user)
+        permissions = get_user_news_permissions(user)
+        
+        # Helper flags for frontend
+        can_manage_news = (
+            is_admin or 
+            'news.news.update' in permissions or 
+            'news.news.create' in permissions
+        )
+        
+        can_manage_target_groups = (
+            is_admin or 
+            'news.target_group.update' in permissions or 
+            'news.target_group.create' in permissions
+        )
+        
+        can_view_statistics = (
+            is_admin or 
+            'news.news.view_statistics' in permissions
+        )
+        
+        can_pin_news = is_admin or 'news.news.pin' in permissions
+        can_publish_news = is_admin or 'news.news.publish' in permissions
+        
+        return Response({
+            'is_admin': is_admin,
+            'permissions': permissions,
+            'capabilities': {
+                'can_view_news': 'news.news.view' in permissions or is_admin,
+                'can_view_all_news': 'news.news.view_all' in permissions or is_admin,
+                'can_create_news': 'news.news.create' in permissions or is_admin,
+                'can_update_news': 'news.news.update' in permissions or is_admin,
+                'can_delete_news': 'news.news.delete' in permissions or is_admin,
+                'can_pin_news': can_pin_news,
+                'can_publish_news': can_publish_news,
+                'can_manage_news': can_manage_news,
+                'can_view_target_groups': 'news.target_group.view' in permissions or is_admin,
+                'can_create_target_groups': 'news.target_group.create' in permissions or is_admin,
+                'can_update_target_groups': 'news.target_group.update' in permissions or is_admin,
+                'can_delete_target_groups': 'news.target_group.delete' in permissions or is_admin,
+                'can_add_members': 'news.target_group.add_members' in permissions or is_admin,
+                'can_remove_members': 'news.target_group.remove_members' in permissions or is_admin,
+                'can_manage_target_groups': can_manage_target_groups,
+                'can_view_statistics': can_view_statistics,
+                'can_view_news_statistics': 'news.news.view_statistics' in permissions or is_admin,
+                'can_view_group_statistics': 'news.target_group.view_statistics' in permissions or is_admin,
+            }
+        })        

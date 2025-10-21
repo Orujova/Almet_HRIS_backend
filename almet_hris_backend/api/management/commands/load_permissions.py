@@ -63,78 +63,67 @@ class Command(BaseCommand):
             ('assets.category.delete', 'Delete Asset Category', 'Assets'),
             
             # BUSINESS TRIPS
-            # BUSINESS TRIPS
-('business_trips.request.view', 'View Business Trip Requests', 'Business Trips'),
-('business_trips.request.create', 'Create Business Trip Request', 'Business Trips'),
-('business_trips.request.update', 'Update Business Trip Request', 'Business Trips'),
-('business_trips.request.delete', 'Delete Business Trip Request', 'Business Trips'),
-('business_trips.request.submit', 'Submit Business Trip Request', 'Business Trips'),
-('business_trips.request.approve', 'Approve Business Trip Request', 'Business Trips'),
-('business_trips.request.cancel', 'Cancel Business Trip', 'Business Trips'),
-('business_trips.request.view_pending', 'View Pending Approvals', 'Business Trips'),
-('business_trips.request.view_statistics', 'View Trip Statistics', 'Business Trips'),
-('business_trips.export_all', 'Export All Business Trip Records', 'Business Trips'),
-('business_trips.settings.view', 'View Trip Settings', 'Business Trips'),
-('business_trips.settings.update', 'Update Trip Settings', 'Business Trips'),
+            ('business_trips.request.view', 'View Business Trip Requests', 'Business Trips'),
+            ('business_trips.request.create', 'Create Business Trip Request', 'Business Trips'),
+            ('business_trips.request.update', 'Update Business Trip Request', 'Business Trips'),
+            ('business_trips.request.delete', 'Delete Business Trip Request', 'Business Trips'),
+            ('business_trips.request.submit', 'Submit Business Trip Request', 'Business Trips'),
+            ('business_trips.request.approve', 'Approve Business Trip Request', 'Business Trips'),
+            ('business_trips.request.cancel', 'Cancel Business Trip', 'Business Trips'),
+            ('business_trips.request.view_pending', 'View Pending Approvals', 'Business Trips'),
+            ('business_trips.request.view_statistics', 'View Trip Statistics', 'Business Trips'),
+            ('business_trips.export_all', 'Export All Business Trip Records', 'Business Trips'),
+            ('business_trips.settings.view', 'View Trip Settings', 'Business Trips'),
+            ('business_trips.settings.update', 'Update Trip Settings', 'Business Trips'),
             
             # VACATION
             ('vacation.dashboard.view', 'View Vacation Dashboard', 'Vacation'),
-('vacation.dashboard.view_own', 'View Own Vacation Dashboard', 'Vacation'),
-('vacation.dashboard.view_team', 'View Team Dashboard', 'Vacation'),
+            ('vacation.dashboard.view_own', 'View Own Vacation Dashboard', 'Vacation'),
+            ('vacation.dashboard.view_team', 'View Team Dashboard', 'Vacation'),
 
-# Requests
-('vacation.request.view_own', 'View Own Vacation Requests', 'Vacation'),
-('vacation.request.view_team', 'View Team Vacation Requests', 'Vacation'),
-('vacation.request.view_all', 'View All Vacation Requests', 'Vacation'),
-('vacation.request.create_own', 'Create Own Vacation Request', 'Vacation'),
-('vacation.request.create_for_employee', 'Create Vacation Request for Employee', 'Vacation'),
-('vacation.request.update_own', 'Update Own Vacation Request', 'Vacation'),
-('vacation.request.delete_own', 'Delete Own Vacation Request', 'Vacation'),
-('vacation.request.approve_as_line_manager', 'Approve as Line Manager', 'Vacation'),
-('vacation.request.approve_as_hr', 'Approve as HR', 'Vacation'),
-('vacation.request.export_own', 'Export Own Vacation Records', 'Vacation'),
-('vacation.request.export_all', 'Export All Vacation Records', 'Vacation'),
+            # Vacation Requests
+            ('vacation.request.view_own', 'View Own Vacation Requests', 'Vacation'),
+            ('vacation.request.view_team', 'View Team Vacation Requests', 'Vacation'),
+            ('vacation.request.view_all', 'View All Vacation Requests', 'Vacation'),
+            ('vacation.request.create_own', 'Create Own Vacation Request', 'Vacation'),
+            ('vacation.request.create_for_employee', 'Create Vacation Request for Employee', 'Vacation'),
+            ('vacation.request.update_own', 'Update Own Vacation Request', 'Vacation'),
+            ('vacation.request.delete_own', 'Delete Own Vacation Request', 'Vacation'),
+            ('vacation.request.approve_as_line_manager', 'Approve as Line Manager', 'Vacation'),
+            ('vacation.request.approve_as_hr', 'Approve as HR', 'Vacation'),
+            ('vacation.request.export_own', 'Export Own Vacation Records', 'Vacation'),
+            ('vacation.request.export_all', 'Export All Vacation Records', 'Vacation'),
+            ('vacation.request.export_team', 'Export Team Vacations', 'Vacation'),
 
+            # Vacation Schedules
+            ('vacation.schedule.view_own', 'View Own Schedules', 'Vacation'),
+            ('vacation.schedule.view_team', 'View Team Schedules', 'Vacation'),
+            ('vacation.schedule.view_all', 'View All Schedules', 'Vacation'),
+            ('vacation.schedule.create_own', 'Create Own Schedule', 'Vacation'),
+            ('vacation.schedule.create_for_employee', 'Create Schedule for Employee', 'Vacation'),
+            ('vacation.schedule.update_own', 'Update Own Schedule', 'Vacation'),
+            ('vacation.schedule.delete_own', 'Delete Own Schedule', 'Vacation'),
+            ('vacation.schedule.register', 'Register Schedule as Taken', 'Vacation'),
 
-(
-    'vacation.request.export_team',
-    'Export Team Vacations',
-     'Vacation'
-),
-    
+            # Vacation Balances
+            ('vacation.balance.view_own', 'View Own Balance', 'Vacation'),
+            ('vacation.balance.view_all', 'View All Balances', 'Vacation'),
+            ('vacation.balance.update', 'Update Any Employee Balance', 'Vacation'),
+            ('vacation.balance.bulk_upload', 'Bulk Upload Balances', 'Vacation'),
+            ('vacation.balance.reset', 'Reset Employee Balance', 'Vacation'),
+            ('vacation.balance.export', 'Export Balances', 'Vacation'),
 
+            # Vacation Settings
+            ('vacation.settings.view', 'View Vacation Settings', 'Vacation'),
+            ('vacation.settings.update_production_calendar', 'Update Production Calendar', 'Vacation'),
+            ('vacation.settings.update_general', 'Update General Settings', 'Vacation'),
+            ('vacation.settings.update_hr_representative', 'Update HR Representative', 'Vacation'),
 
-# Schedules
-('vacation.schedule.view_own', 'View Own Schedules', 'Vacation'),
-('vacation.schedule.view_team', 'View Team Schedules', 'Vacation'),
-('vacation.schedule.view_all', 'View All Schedules', 'Vacation'),
-('vacation.schedule.create_own', 'Create Own Schedule', 'Vacation'),
-('vacation.schedule.create_for_employee', 'Create Schedule for Employee', 'Vacation'),
-('vacation.schedule.update_own', 'Update Own Schedule', 'Vacation'),
-('vacation.schedule.delete_own', 'Delete Own Schedule', 'Vacation'),
-('vacation.schedule.register', 'Register Schedule as Taken', 'Vacation'),
-
-# Balances
-('vacation.balance.view_own', 'View Own Balance', 'Vacation'),
-('vacation.balance.view_all', 'View All Balances', 'Vacation'),
-('vacation.balance.update', 'Update Any Employee Balance', 'Vacation'),
-('vacation.balance.bulk_upload', 'Bulk Upload Balances', 'Vacation'),
-('vacation.balance.reset', 'Reset Employee Balance', 'Vacation'),
-('vacation.balance.export', 'Export Balances', 'Vacation'),
-
-# Settings
-('vacation.settings.view', 'View Vacation Settings', 'Vacation'),
-('vacation.settings.update_production_calendar', 'Update Production Calendar', 'Vacation'),
-('vacation.settings.update_general', 'Update General Settings', 'Vacation'),
-('vacation.settings.update_hr_representative', 'Update HR Representative', 'Vacation'),
-
-# Types
-('vacation.type.view', 'View Vacation Types', 'Vacation'),
-('vacation.type.create', 'Create Vacation Type', 'Vacation'),
-('vacation.type.update', 'Update Vacation Type', 'Vacation'),
-('vacation.type.delete', 'Delete Vacation Type', 'Vacation'),
-
-
+            # Vacation Types
+            ('vacation.type.view', 'View Vacation Types', 'Vacation'),
+            ('vacation.type.create', 'Create Vacation Type', 'Vacation'),
+            ('vacation.type.update', 'Update Vacation Type', 'Vacation'),
+            ('vacation.type.delete', 'Delete Vacation Type', 'Vacation'),
             
             # JOB DESCRIPTIONS
             ('job_description.template.view', 'View JD Templates', 'Job Descriptions'),
@@ -249,27 +238,25 @@ class Command(BaseCommand):
             ('profile.image.upload', 'Upload Profile Image', 'Profile'),
             ('profile.image.delete', 'Delete Profile Image', 'Profile'),
             
+            # ==================== COMPANY NEWS ====================
+            # News Management
             ('news.news.view', 'View Company News', 'Company News'),
-('news.news.view_all', 'View All News (including unpublished)', 'Company News'),
-('news.news.create', 'Create Company News', 'Company News'),
-('news.news.update', 'Update Company News', 'Company News'),
-('news.news.delete', 'Delete Company News', 'Company News'),
-('news.news.publish', 'Publish Company News', 'Company News'),
-('news.news.unpublish', 'Unpublish Company News', 'Company News'),
-('news.news.pin', 'Pin Company News', 'Company News'),
-('news.news.unpin', 'Unpin Company News', 'Company News'),
-('news.news.send_notifications', 'Send Email Notifications', 'Company News'),
-('news.news.view_activities', 'View News Activities', 'Company News'),
-('news.news.view_statistics', 'View News Statistics', 'Company News'),
+            ('news.news.view_all', 'View All News (including unpublished)', 'Company News'),
+            ('news.news.create', 'Create Company News', 'Company News'),
+            ('news.news.update', 'Update Company News', 'Company News'),
+            ('news.news.delete', 'Delete Company News', 'Company News'),
+            ('news.news.publish', 'Publish/Unpublish Company News', 'Company News'),
+            ('news.news.pin', 'Pin/Unpin Company News', 'Company News'),
+            ('news.news.view_statistics', 'View News Statistics', 'Company News'),
 
-# TARGET GROUPS
-('news.target_group.view', 'View Target Groups', 'Company News'),
-('news.target_group.create', 'Create Target Group', 'Company News'),
-('news.target_group.update', 'Update Target Group', 'Company News'),
-('news.target_group.delete', 'Delete Target Group', 'Company News'),
-('news.target_group.add_members', 'Add Members to Target Group', 'Company News'),
-('news.target_group.remove_members', 'Remove Members from Target Group', 'Company News'),
-('news.target_group.view_statistics', 'View Target Group Statistics', 'Company News'),
+            # Target Groups
+            ('news.target_group.view', 'View Target Groups', 'Company News'),
+            ('news.target_group.create', 'Create Target Group', 'Company News'),
+            ('news.target_group.update', 'Update Target Group', 'Company News'),
+            ('news.target_group.delete', 'Delete Target Group', 'Company News'),
+            ('news.target_group.add_members', 'Add Members to Target Group', 'Company News'),
+            ('news.target_group.remove_members', 'Remove Members from Target Group', 'Company News'),
+            ('news.target_group.view_statistics', 'View Target Group Statistics', 'Company News'),
         ]
         
         created_count = 0
@@ -290,8 +277,24 @@ class Command(BaseCommand):
                 self.stdout.write(self.style.SUCCESS(f'✓ Created: {codename}'))
             else:
                 updated_count += 1
-                self.stdout.write(self.style.WARNING(f'→ Updated: {codename}'))
+                self.stdout.write(self.style.WARNING(f'↻ Updated: {codename}'))
         
-        self.stdout.write(self.style.SUCCESS(f'\n✓ Created {created_count} permissions'))
-        self.stdout.write(self.style.SUCCESS(f'→ Updated {updated_count} permissions'))
+        # Summary by category
+        self.stdout.write('\n' + '='*60)
+        self.stdout.write(self.style.SUCCESS('SUMMARY BY CATEGORY:'))
+        self.stdout.write('='*60)
+        
+        categories = {}
+        for codename, name, category in permissions_data:
+            if category not in categories:
+                categories[category] = 0
+            categories[category] += 1
+        
+        for category, count in sorted(categories.items()):
+            self.stdout.write(f'  {category}: {count} permissions')
+        
+        self.stdout.write('\n' + '='*60)
+        self.stdout.write(self.style.SUCCESS(f'✓ Created: {created_count} permissions'))
+        self.stdout.write(self.style.SUCCESS(f'↻ Updated: {updated_count} permissions'))
         self.stdout.write(self.style.SUCCESS(f'Total: {created_count + updated_count} permissions'))
+        self.stdout.write('='*60)

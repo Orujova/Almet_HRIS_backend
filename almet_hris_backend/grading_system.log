@@ -1,0 +1,42 @@
+WARNING 2025-10-21 17:09:36,765 notification_views 27140 34604 No Graph token for user n.orujova
+INFO 2025-10-21 17:11:23,518 views 27140 34604 === Microsoft authentication request received ===
+INFO 2025-10-21 17:11:23,519 views 27140 34604 Token length: 1274, Graph token: True
+INFO 2025-10-21 17:11:23,519 auth 27140 34604 === Starting Microsoft token validation ===
+INFO 2025-10-21 17:11:23,696 auth 27140 34604    - Access token length: 228
+INFO 2025-10-21 17:11:23,696 auth 27140 34604    - Refresh token length: 229
+INFO 2025-10-21 17:11:51,382 token_helpers 27140 34604 Graph token found in database for user n.orujova
+ERROR 2025-10-21 17:11:51,386 news_notifications 27140 34604 Error sending news notifications: 'NotificationSettings' object has no attribute 'company_news_subject_prefix'
+ERROR 2025-10-21 17:11:51,410 news_notifications 27140 34604 Traceback (most recent call last):
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\almet_hris_backend\api\news_notifications.py", line 95, in send_news_notification
+    subject = f"{self.settings.company_news_subject_prefix} {news.title}"
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NotificationSettings' object has no attribute 'company_news_subject_prefix'
+
+INFO 2025-10-21 17:16:18,666 token_helpers 27140 34604 Graph token found in database for user n.orujova
+ERROR 2025-10-21 17:16:18,669 news_notifications 27140 34604 Error sending news notifications: 'NotificationSettings' object has no attribute 'company_news_subject_prefix'
+ERROR 2025-10-21 17:16:18,670 news_notifications 27140 34604 Traceback (most recent call last):
+  File "C:\Users\NarminOrujova\OneDrive - Almet Holding CJSC\Desktop\backend\almet_hris_backend\api\news_notifications.py", line 95, in send_news_notification
+    subject = f"{self.settings.company_news_subject_prefix} {news.title}"
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NotificationSettings' object has no attribute 'company_news_subject_prefix'
+
+INFO 2025-10-21 18:45:44,433 views 30484 6260 === Microsoft authentication request received ===
+INFO 2025-10-21 18:45:44,435 views 30484 6260 Token length: 1274, Graph token: True
+INFO 2025-10-21 18:45:44,436 auth 30484 6260 === Starting Microsoft token validation ===
+INFO 2025-10-21 18:45:45,132 auth 30484 6260    - Access token length: 228
+INFO 2025-10-21 18:45:45,132 auth 30484 6260    - Refresh token length: 229
+INFO 2025-10-21 19:00:50,094 views 30484 34380 User info request for user: n.orujova
+INFO 2025-10-21 19:00:50,259 views 30484 34380 [n.orujova] Employee profile found: HLD29
+INFO 2025-10-21 19:00:50,260 views 30484 34380 [n.orujova] User info response prepared successfully
+INFO 2025-10-21 19:02:54,476 views 30484 1408 User info request for user: n.orujova
+INFO 2025-10-21 19:02:54,703 views 30484 1408 [n.orujova] Employee profile found: HLD29
+INFO 2025-10-21 19:02:54,705 views 30484 1408 [n.orujova] User info response prepared successfully
+INFO 2025-10-21 19:07:49,951 views 30484 36456 User info request for user: n.orujova
+INFO 2025-10-21 19:07:50,123 views 30484 36456 [n.orujova] Employee profile found: HLD29
+INFO 2025-10-21 19:07:50,126 views 30484 36456 [n.orujova] User info response prepared successfully
+INFO 2025-10-21 19:10:40,961 views 30484 32196 User info request for user: n.orujova
+INFO 2025-10-21 19:10:41,409 views 30484 32196 [n.orujova] Employee profile found: HLD29
+INFO 2025-10-21 19:10:41,416 views 30484 32196 [n.orujova] User info response prepared successfully
+INFO 2025-10-21 19:13:49,934 views 30484 29940 User info request for user: n.orujova
+INFO 2025-10-21 19:13:50,120 views 30484 29940 [n.orujova] Employee profile found: HLD29
+INFO 2025-10-21 19:13:50,124 views 30484 29940 [n.orujova] User info response prepared successfully
