@@ -192,17 +192,27 @@ class PositionBehavioralAssessmentSerializer(serializers.ModelSerializer):
     position_group_name = serializers.CharField(source='position_group.get_name_display', read_only=True)
     competency_ratings = PositionBehavioralCompetencyRatingSerializer(many=True, read_only=True)
     created_by_name = serializers.CharField(source='created_by.username', read_only=True)
-    grade_level = serializers.CharField(required=True, max_length=20)  # NEW FIELD
+    grade_levels = serializers.ListField(  # ƏLAVƏ ETDIK
+        child=serializers.CharField(max_length=20),
+        required=True
+    )
+    grade_levels_display = serializers.SerializerMethodField()  # Display üçün
     
     class Meta:
         model = PositionBehavioralAssessment
         fields = [
             'id', 'position_group', 'position_group_name', 'job_title', 
-            'grade_level',  # NEW FIELD
+            'grade_levels', 'grade_levels_display',  # DƏYIŞDIRDIK
             'competency_ratings', 'is_active',
             'created_at', 'updated_at', 'created_by', 'created_by_name'
         ]
         read_only_fields = ['created_at', 'updated_at', 'created_by']
+    
+    def get_grade_levels_display(self, obj):
+        """Format grade levels for display"""
+        if not obj.grade_levels:
+            return "No grades"
+        return f"Grades: {', '.join(map(str, sorted(obj.grade_levels)))}"
 
 
 class PositionBehavioralAssessmentCreateSerializer(serializers.ModelSerializer):
@@ -211,32 +221,46 @@ class PositionBehavioralAssessmentCreateSerializer(serializers.ModelSerializer):
         write_only=True,
         help_text="List of {behavioral_competency_id: required_level} mappings"
     )
-    grade_level = serializers.CharField(required=True, max_length=20)  # NEW FIELD - REQUIRED
+    grade_levels = serializers.ListField(  # DƏYIŞDIRDIK: CharField-dən ListField-ə
+        child=serializers.CharField(max_length=20),
+        required=True,
+        min_length=1,  # Ən azı 1 grade level seçilməlidir
+        help_text="List of grade levels for this position"
+    )
     
     class Meta:
         model = PositionBehavioralAssessment
         fields = [
-            'position_group', 'job_title', 'grade_level', 'competency_ratings'  # Added grade_level
+            'position_group', 'job_title', 'grade_levels', 'competency_ratings'
         ]
     
+    def validate_grade_levels(self, value):
+        """Validate grade levels"""
+        if not value or len(value) == 0:
+            raise serializers.ValidationError("At least one grade level must be selected")
+        
+        # Remove duplicates and sort
+        unique_grades = list(set(value))
+        return sorted(unique_grades)
+    
     def validate(self, data):
-        """Validate grade level matches employee job titles"""
+        """Validate that grade levels match employee job titles"""
         position_group = data.get('position_group')
-        grade_level = data.get('grade_level')
+        grade_levels = data.get('grade_levels', [])
         job_title = data.get('job_title')
         
-        if position_group and grade_level and job_title:
+        if position_group and grade_levels and job_title:
             # Check if there are employees with this combination
             matching_employees = Employee.objects.filter(
                 position_group=position_group,
-                grading_level=grade_level,  # DƏYİŞDİ: grade_level -> grading_level
+                grading_level__in=grade_levels,  # DƏYIŞDIRDIK: __in istifadə edirik
                 job_title=job_title
             )
             
             if not matching_employees.exists():
                 raise serializers.ValidationError(
                     f"No employees found with Position Group '{position_group.get_name_display()}', "
-                    f"Grade Level {grade_level}, and Job Title '{job_title}'"
+                    f"Grade Levels {', '.join(grade_levels)}, and Job Title '{job_title}'"
                 )
         
         return data

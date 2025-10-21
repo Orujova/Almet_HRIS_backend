@@ -450,16 +450,16 @@ class AccessMatrixAdmin(admin.ModelAdmin):
 # Register junction table models for direct editing if needed
 @admin.register(JobDescriptionSkill)
 class JobDescriptionSkillAdmin(admin.ModelAdmin):
-    list_display = ['job_description', 'skill', 'proficiency_level', 'is_mandatory']
-    list_filter = ['proficiency_level', 'is_mandatory', 'skill__group']
+    list_display = ['job_description', 'skill']
+    list_filter = [ 'skill__group']
     search_fields = ['job_description__job_title', 'skill__name']
     autocomplete_fields = ['job_description', 'skill']
 
 
 @admin.register(JobDescriptionBehavioralCompetency)
 class JobDescriptionBehavioralCompetencyAdmin(admin.ModelAdmin):
-    list_display = ['job_description', 'competency', 'proficiency_level', 'is_mandatory']
-    list_filter = ['proficiency_level', 'is_mandatory', 'competency__group']
+    list_display = ['job_description', 'competency']
+    list_filter = [ 'competency__group']
     search_fields = ['job_description__job_title', 'competency__name']
     autocomplete_fields = ['job_description', 'competency']
 

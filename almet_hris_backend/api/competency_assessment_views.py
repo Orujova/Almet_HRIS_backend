@@ -319,17 +319,19 @@ class PositionBehavioralAssessmentViewSet(viewsets.ModelViewSet):
         if position_group:
             queryset = queryset.filter(position_group_id=position_group)
         
-        # Filter by grade level - NEW
+        # Filter by grade level - DƏYIŞDIRDIK
         grade_level = self.request.query_params.get('grade_level')
         if grade_level:
-            queryset = queryset.filter(grade_level=grade_level)
+            queryset = queryset.filter(grade_levels__contains=[grade_level])  # JSON array-də axtarış
         
         # Search by job title
         search = self.request.query_params.get('search')
         if search:
             queryset = queryset.filter(job_title__icontains=search)
         
-        return queryset.order_by('position_group__hierarchy_level', 'grade_level', 'job_title')
+        return queryset.order_by('position_group__hierarchy_level', 'job_title')
+    
+    
     
     @action(detail=False, methods=['get'])
     def get_grade_levels(self, request):
@@ -399,11 +401,11 @@ class PositionBehavioralAssessmentViewSet(viewsets.ModelViewSet):
         try:
             employee = Employee.objects.get(id=employee_id)
             
-            # Find matching position assessment with grade level
+            # Find matching position assessment - DƏYIŞDIRDIK
             assessment = PositionBehavioralAssessment.objects.filter(
                 position_group=employee.position_group,
                 job_title=employee.job_title,
-                grade_level=employee.grading_level,  # DƏYİŞDİ: grade_level -> grading_level
+                grade_levels__contains=[employee.grading_level],  # JSON array-də axtarış
                 is_active=True
             ).first()
             
@@ -414,7 +416,7 @@ class PositionBehavioralAssessmentViewSet(viewsets.ModelViewSet):
                         'id': employee.id,
                         'name': employee.full_name,
                         'job_title': employee.job_title,
-                        'grade_level': employee.grading_level,  # DƏYİŞDİ
+                        'grade_level': employee.grading_level,
                         'position_group': employee.position_group.get_name_display()
                     }
                 }, status=status.HTTP_404_NOT_FOUND)
@@ -425,7 +427,7 @@ class PositionBehavioralAssessmentViewSet(viewsets.ModelViewSet):
                     'id': employee.id,
                     'name': employee.full_name,
                     'job_title': employee.job_title,
-                    'grade_level': employee.grading_level,  # DƏYİŞDİ
+                    'grade_level': employee.grading_level,
                     'position_group': employee.position_group.get_name_display()
                 },
                 'assessment_template': serializer.data
@@ -434,9 +436,7 @@ class PositionBehavioralAssessmentViewSet(viewsets.ModelViewSet):
         except Employee.DoesNotExist:
             return Response({'error': 'Employee not found'}, 
                           status=status.HTTP_404_NOT_FOUND)
-        except ValueError:
-            return Response({'error': 'Invalid employee_id format'}, 
-                          status=status.HTTP_400_BAD_REQUEST)
+    
     @action(detail=True, methods=['post'])
     def duplicate(self, request, pk=None):
         """Duplicate behavioral position assessment for new job title"""

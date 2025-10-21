@@ -15,7 +15,6 @@ from .competency_serializers import (
     SkillGroupSerializer, SkillGroupListSerializer, SkillSerializer, SkillCreateSerializer,
     BehavioralCompetencyGroupSerializer, BehavioralCompetencyGroupListSerializer,
     BehavioralCompetencySerializer, BehavioralCompetencyCreateSerializer,
-    BulkSkillCreateSerializer, BulkBehavioralCompetencyCreateSerializer,
     CompetencyStatsSerializer
 )
 
@@ -84,41 +83,7 @@ class SkillViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
     
-    @action(detail=False, methods=['post'])
-    def bulk_create(self, request):
-        """Çoxlu skill yaratmaq üçün"""
-        serializer = BulkSkillCreateSerializer(data=request.data)
-        if serializer.is_valid():
-            group_id = serializer.validated_data['group_id']
-            skills_list = serializer.validated_data['skills']
-            
-            try:
-                group = SkillGroup.objects.get(id=group_id)
-            except SkillGroup.DoesNotExist:
-                return Response(
-                    {'error': 'Skill group not found'}, 
-                    status=status.HTTP_404_NOT_FOUND
-                )
-            
-            with transaction.atomic():
-                created_skills = []
-                for skill_name in skills_list:
-                    skill, created = Skill.objects.get_or_create(
-                        group=group,
-                        name=skill_name,
-                        defaults={'created_by': request.user}
-                    )
-                    if created:
-                        created_skills.append(skill)
-                
-                serializer_response = SkillSerializer(created_skills, many=True)
-                return Response({
-                    'created_count': len(created_skills),
-                    'skills': serializer_response.data
-                }, status=status.HTTP_201_CREATED)
-        
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
+   
 class BehavioralCompetencyGroupViewSet(viewsets.ModelViewSet):
     queryset = BehavioralCompetencyGroup.objects.all()
     permission_classes = [IsAuthenticated]
@@ -184,41 +149,7 @@ class BehavioralCompetencyViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
     
-    @action(detail=False, methods=['post'])
-    def bulk_create(self, request):
-        """Çoxlu behavioral competency yaratmaq üçün"""
-        serializer = BulkBehavioralCompetencyCreateSerializer(data=request.data)
-        if serializer.is_valid():
-            group_id = serializer.validated_data['group_id']
-            competencies_list = serializer.validated_data['competencies']
-            
-            try:
-                group = BehavioralCompetencyGroup.objects.get(id=group_id)
-            except BehavioralCompetencyGroup.DoesNotExist:
-                return Response(
-                    {'error': 'Behavioral competency group not found'}, 
-                    status=status.HTTP_404_NOT_FOUND
-                )
-            
-            with transaction.atomic():
-                created_competencies = []
-                for competency_name in competencies_list:
-                    competency, created = BehavioralCompetency.objects.get_or_create(
-                        group=group,
-                        name=competency_name,
-                        defaults={'created_by': request.user}
-                    )
-                    if created:
-                        created_competencies.append(competency)
-                
-                serializer_response = BehavioralCompetencySerializer(created_competencies, many=True)
-                return Response({
-                    'created_count': len(created_competencies),
-                    'competencies': serializer_response.data
-                }, status=status.HTTP_201_CREATED)
-        
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-# Stats view
+    
 from rest_framework.views import APIView
 
 class CompetencyStatsView(APIView):

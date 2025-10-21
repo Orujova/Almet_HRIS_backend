@@ -248,6 +248,28 @@ class Command(BaseCommand):
             # PROFILE IMAGES
             ('profile.image.upload', 'Upload Profile Image', 'Profile'),
             ('profile.image.delete', 'Delete Profile Image', 'Profile'),
+            
+            ('news.news.view', 'View Company News', 'Company News'),
+('news.news.view_all', 'View All News (including unpublished)', 'Company News'),
+('news.news.create', 'Create Company News', 'Company News'),
+('news.news.update', 'Update Company News', 'Company News'),
+('news.news.delete', 'Delete Company News', 'Company News'),
+('news.news.publish', 'Publish Company News', 'Company News'),
+('news.news.unpublish', 'Unpublish Company News', 'Company News'),
+('news.news.pin', 'Pin Company News', 'Company News'),
+('news.news.unpin', 'Unpin Company News', 'Company News'),
+('news.news.send_notifications', 'Send Email Notifications', 'Company News'),
+('news.news.view_activities', 'View News Activities', 'Company News'),
+('news.news.view_statistics', 'View News Statistics', 'Company News'),
+
+# TARGET GROUPS
+('news.target_group.view', 'View Target Groups', 'Company News'),
+('news.target_group.create', 'Create Target Group', 'Company News'),
+('news.target_group.update', 'Update Target Group', 'Company News'),
+('news.target_group.delete', 'Delete Target Group', 'Company News'),
+('news.target_group.add_members', 'Add Members to Target Group', 'Company News'),
+('news.target_group.remove_members', 'Remove Members from Target Group', 'Company News'),
+('news.target_group.view_statistics', 'View Target Group Statistics', 'Company News'),
         ]
         
         created_count = 0

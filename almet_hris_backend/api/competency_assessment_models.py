@@ -181,11 +181,9 @@ class PositionBehavioralAssessment(models.Model):
     # Position details
     position_group = models.ForeignKey(PositionGroup, on_delete=models.CASCADE)
     job_title = models.CharField(max_length=200)
-    grade_level = models.CharField(  # CHANGED from IntegerField to CharField
-        max_length=20,  
-        help_text="Grade level for this position",
-        null=True,
-        blank=True
+    grade_levels = models.JSONField(  # DƏYIŞDIRDIK: CharField-dən JSONField-ə
+        default=list,
+        help_text="List of grade levels for this position",
     )
     
     # Status
@@ -198,10 +196,10 @@ class PositionBehavioralAssessment(models.Model):
     
     class Meta:
         db_table = 'position_behavioral_assessments'
-        unique_together = ['position_group', 'job_title', 'grade_level']  # YENİLƏNDİ
+        unique_together = ['position_group', 'job_title']  # DƏYIŞDIRDIK: grade_level-i sildik
     
     def __str__(self):
-        grade_text = f" (Grade {self.grade_level})" if self.grade_level else ""
+        grade_text = f" (Grades {', '.join(map(str, self.grade_levels))})" if self.grade_levels else ""
         return f"{self.job_title}{grade_text} - Behavioral Assessment"
 
 

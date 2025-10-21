@@ -748,14 +748,7 @@ class JobDescriptionSection(models.Model):
 
 class JobDescriptionSkill(models.Model):
     """Core skills for job descriptions"""
-    
-    PROFICIENCY_LEVELS = [
-        ('BASIC', 'Basic'),
-        ('INTERMEDIATE', 'Intermediate'),
-        ('ADVANCED', 'Advanced'),
-        ('EXPERT', 'Expert'),
-    ]
-    
+
     job_description = models.ForeignKey(
         JobDescription, 
         on_delete=models.CASCADE,
@@ -766,30 +759,19 @@ class JobDescriptionSkill(models.Model):
         on_delete=models.CASCADE,
         help_text="Skill from competency system"
     )
-    proficiency_level = models.CharField(
-        max_length=15, 
-        choices=PROFICIENCY_LEVELS,
-        default='INTERMEDIATE'
-    )
-    is_mandatory = models.BooleanField(default=True)
+ 
     
     class Meta:
         db_table = 'job_description_skills'
         unique_together = ['job_description', 'skill']
     
     def __str__(self):
-        return f"{self.skill.name} ({self.get_proficiency_level_display()})"
+        return f"{self.skill.name} "
 
 class JobDescriptionBehavioralCompetency(models.Model):
     """Behavioral competencies for job descriptions"""
     
-    PROFICIENCY_LEVELS = [
-        ('BASIC', 'Basic'),
-        ('INTERMEDIATE', 'Intermediate'),
-        ('ADVANCED', 'Advanced'),
-        ('EXPERT', 'Expert'),
-    ]
-    
+ 
     job_description = models.ForeignKey(
         JobDescription, 
         on_delete=models.CASCADE,
@@ -800,19 +782,14 @@ class JobDescriptionBehavioralCompetency(models.Model):
         on_delete=models.CASCADE,
         help_text="Competency from competency system"
     )
-    proficiency_level = models.CharField(
-        max_length=15, 
-        choices=PROFICIENCY_LEVELS,
-        default='INTERMEDIATE'
-    )
-    is_mandatory = models.BooleanField(default=True)
+
     
     class Meta:
         db_table = 'job_description_behavioral_competencies'
         unique_together = ['job_description', 'competency']
     
     def __str__(self):
-        return f"{self.competency.name} ({self.get_proficiency_level_display()})"
+        return f"{self.competency.name} "
 
 class JobBusinessResource(models.Model):
     """Business resources (parent) - e.g., Laptop, Phone, Software"""

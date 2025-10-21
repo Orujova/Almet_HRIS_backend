@@ -119,6 +119,6 @@ urlpatterns = [
     
     path('business-trips/', include('api.business_trip_urls')),
 path('notifications/', include('api.notification_urls')),
-
+   path('news/', include('api.news_urls')),
     path('', include(router.urls)),
 ]

@@ -50,7 +50,7 @@ from .job_description_models import (
     JobBusinessResource, 
     AccessMatrix,
     CompanyBenefit, 
-    JobBusinessResourceItem, 
+    JobBusinessResourceItem, JobDescriptionBusinessResource,JobDescriptionAccessMatrix,JobDescriptionCompanyBenefit,
 AccessMatrixItem,
     CompanyBenefitItem, 
     JobDescriptionActivity
@@ -255,14 +255,25 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
     schema = FileUploadAutoSchema()
     
     def get_queryset(self):
+        """FIXED: Include nested items in prefetch"""
         return JobDescription.objects.select_related(
             'business_function', 'department', 'unit', 'job_function', 'position_group',
             'reports_to', 'assigned_employee', 'created_by', 'updated_by',
             'line_manager_approved_by', 'employee_approved_by'
         ).prefetch_related(
-            'sections', 'required_skills__skill', 'behavioral_competencies__competency',
-            'business_resources__resource', 'access_rights__access_matrix',
-            'company_benefits__benefit'
+            'sections',
+            'required_skills__skill__group',
+            'behavioral_competencies__competency__group',
+            
+            # 🔥 FIX: Prefetch with nested items
+            'business_resources__resource__items',
+            'business_resources__specific_items',  # ✅ Add this
+            
+            'access_rights__access_matrix__items',
+            'access_rights__specific_items',  # ✅ Add this
+            
+            'company_benefits__benefit__items',
+            'company_benefits__specific_items'  # ✅ Add this
         ).all()
     
     def get_serializer_class(self):
@@ -1751,8 +1762,7 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                     JobDescriptionSkill.objects.create(
                         job_description=job_description,
                         skill=skill,
-                        proficiency_level='INTERMEDIATE',  # Auto-set to INTERMEDIATE
-                        is_mandatory=True  # Auto-set to mandatory
+                     
                     )
                 except Skill.DoesNotExist:
                     logger.warning(f"Skill not found: {skill_name}")
@@ -1792,8 +1802,7 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                         JobDescriptionSkill.objects.create(
                             job_description=job_description,
                             skill=skill,
-                            proficiency_level='INTERMEDIATE',  # Auto-set
-                            is_mandatory=True  # Auto-set
+                       
                         )
                         added_count += 1
                         logger.info(f"✅ Added skill: {skill.name} (Group: {skill.group.name if skill.group else 'N/A'})")
@@ -1853,8 +1862,7 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                         JobDescriptionBehavioralCompetency.objects.create(
                             job_description=job_description,
                             competency=competency,
-                            proficiency_level='INTERMEDIATE',  # Auto-set
-                            is_mandatory=True  # Auto-set
+                     
                         )
                         added_count += 1
                         logger.info(f"✅ Added competency: {competency.name} (Group: {competency.group.name if competency.group else 'N/A'})")
@@ -1877,7 +1885,104 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
         except Exception as e:
             logger.error(f"Error processing competencies string: {str(e)}")
             logger.error(traceback.format_exc())
-
+    def _add_resources_from_string(self, job_description, resources_string, resource_type):
+        """
+        UPDATED: Parse format "ResourceName:Item1,Item2|ResourceName2:Item3"
+        Supports both parent-only and parent+items format
+        """
+        try:
+            if not resources_string or not resources_string.strip():
+                return
+            
+            # Split by | to get each resource entry
+            resource_entries = [entry.strip() for entry in resources_string.split('|') if entry.strip()]
+            
+            for entry in resource_entries:
+                if ':' in entry:
+                    # Format: "ResourceName:Item1,Item2,Item3"
+                    parent_name, items_str = entry.split(':', 1)
+                    parent_name = parent_name.strip()
+                    item_names = [name.strip() for name in items_str.split(',') if name.strip()]
+                else:
+                    # Format: "ResourceName" (no specific items)
+                    parent_name = entry.strip()
+                    item_names = []
+                
+                # Find the parent resource
+                if resource_type == 'business':
+                    try:
+                        parent = JobBusinessResource.objects.get(name__iexact=parent_name, is_active=True)
+                        
+                        # Create the JD link
+                        jd_resource = JobDescriptionBusinessResource.objects.create(
+                            job_description=job_description,
+                            resource=parent
+                        )
+                        
+                        # Link specific items if provided
+                        if item_names:
+                            items = JobBusinessResourceItem.objects.filter(
+                                resource=parent,
+                                name__in=item_names,
+                                is_active=True
+                            )
+                            jd_resource.specific_items.set(items)
+                            logger.info(f"✅ Added resource '{parent_name}' with {items.count()} specific items")
+                        else:
+                            logger.info(f"✅ Added resource '{parent_name}' (all items)")
+                            
+                    except JobBusinessResource.DoesNotExist:
+                        logger.warning(f"❌ Business Resource not found: {parent_name}")
+                
+                elif resource_type == 'access':
+                    try:
+                        parent = AccessMatrix.objects.get(name__iexact=parent_name, is_active=True)
+                        
+                        jd_access = JobDescriptionAccessMatrix.objects.create(
+                            job_description=job_description,
+                            access_matrix=parent
+                        )
+                        
+                        if item_names:
+                            items = AccessMatrixItem.objects.filter(
+                                access_matrix=parent,
+                                name__in=item_names,
+                                is_active=True
+                            )
+                            jd_access.specific_items.set(items)
+                            logger.info(f"✅ Added access '{parent_name}' with {items.count()} specific items")
+                        else:
+                            logger.info(f"✅ Added access '{parent_name}' (all items)")
+                            
+                    except AccessMatrix.DoesNotExist:
+                        logger.warning(f"❌ Access Matrix not found: {parent_name}")
+                
+                elif resource_type == 'benefits':
+                    try:
+                        parent = CompanyBenefit.objects.get(name__iexact=parent_name, is_active=True)
+                        
+                        jd_benefit = JobDescriptionCompanyBenefit.objects.create(
+                            job_description=job_description,
+                            benefit=parent
+                        )
+                        
+                        if item_names:
+                            items = CompanyBenefitItem.objects.filter(
+                                benefit=parent,
+                                name__in=item_names,
+                                is_active=True
+                            )
+                            jd_benefit.specific_items.set(items)
+                            logger.info(f"✅ Added benefit '{parent_name}' with {items.count()} specific items")
+                        else:
+                            logger.info(f"✅ Added benefit '{parent_name}' (all items)")
+                            
+                    except CompanyBenefit.DoesNotExist:
+                        logger.warning(f"❌ Company Benefit not found: {parent_name}")
+                        
+        except Exception as e:
+            logger.error(f"Error adding resources from string: {str(e)}")
+            logger.error(traceback.format_exc())
 
     @swagger_auto_schema(
     method='get',
@@ -1898,7 +2003,7 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
 )
     @action(detail=False, methods=['get'])
     def download_template(self, request):
-        """Download Excel template WITHOUT Employee ID column"""
+        """Download Excel template with nested items support"""
         try:
             if not HAS_OPENPYXL:
                 return Response({'error': 'Excel library not available'}, status=500)
@@ -1908,7 +2013,7 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
             ws = wb.active
             ws.title = "Job Descriptions"
             
-            # ✅ NEW: Headers WITHOUT Employee ID
+            # ✅ Headers remain EXACTLY THE SAME
             headers = [
                 'Job Title*',
                 'Business Function*',
@@ -1917,16 +2022,16 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                 'Job Function*',
                 'Position Group*',
                 'Grading Level*',
-                'Job Purpose*',           # ✅ Now H column
+                'Job Purpose*',
                 'Critical Duties*',
                 'Main KPIs*',
                 'Job Duties*',
                 'Requirements*',
                 'Technical Skills',
                 'Behavioral Competencies',
-                'Business Resources',
-                'Access Rights',
-                'Company Benefits'
+                'Business Resources',      # ✅ Same column
+                'Access Rights',            # ✅ Same column
+                'Company Benefits'          # ✅ Same column
             ]
             
             # Style headers
@@ -1948,7 +2053,7 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                 cell.alignment = header_alignment
                 cell.border = border
             
-            # ✅ Sample data WITHOUT Employee ID
+            # ✅ Sample data with BOTH simple and nested formats
             sample_data = [
                 'CASHIER',
                 'Holding',
@@ -1957,16 +2062,16 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                 'LEGAL',
                 'Vice Chairman',
                 'M',
-                'Lead backend development and architecture decisions for enterprise applications',  # ✅ Job Purpose
+                'Lead backend development and architecture decisions for enterprise applications',
                 'Design system architecture | Lead code reviews | Mentor junior developers | Define technical standards',
                 'Code quality > 90% | Sprint completion rate > 95% | Technical debt reduction by 20%',
                 'Develop REST APIs | Database optimization | Unit testing | CI/CD pipeline management',
                 "Bachelor's in CS | 5+ years experience | Strong Python skills | Cloud experience required",
                 'Python, SQL, Docker, AWS, Kubernetes, Git, JavaScript, React, Node.js, PostgreSQL',
                 'Leadership, Communication, Problem Solving, Teamwork, Strategic Thinking, Decision Making, Innovation, Adaptability',
-                'Laptop, IDE License, Cloud Access, Development Tools',
-                'GitHub Admin, AWS Console, Database Write, Production Deploy',
-                'Health Insurance, Annual Leave, Learning Budget, Remote Work, Performance Bonus'
+                'Laptop:Dell XPS 15,MacBook Pro | Software:VS Code,Docker Desktop | Phone:iPhone 14',  # 🔥 NEW FORMAT
+                'Database:PostgreSQL Write,MongoDB Read | Cloud:AWS Console,Azure Portal | Admin Panel',  # 🔥 NEW FORMAT
+                'Health Insurance:Full Family Coverage | Leave:21 Days Annual,10 Days Sick | Bonus:Performance Based'  # 🔥 NEW FORMAT
             ]
             
             for col_num, value in enumerate(sample_data, 1):
@@ -1976,18 +2081,20 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                 cell.alignment = Alignment(wrap_text=True, vertical="top")
             
             # Column widths
-            column_widths = [25, 20, 20, 15, 20, 20, 12, 40, 35, 35, 35, 35, 35, 35, 25, 25, 25]
+            column_widths = [25, 20, 20, 15, 20, 20, 12, 40, 35, 35, 35, 35, 35, 35, 40, 40, 40]  # Last 3 wider
             for col_num, width in enumerate(column_widths, 1):
                 ws.column_dimensions[get_column_letter(col_num)].width = width
             
             ws.row_dimensions[1].height = 40
             ws.row_dimensions[2].height = 120
             
-            # Instructions sheet
+            # ============================================
+            # 🔥 UPDATED INSTRUCTIONS SHEET
+            # ============================================
             ws_instructions = wb.create_sheet("Instructions")
             
             instructions = [
-                ["AUTO-ASSIGNMENT BULK UPLOAD", ""],
+                ["JOB DESCRIPTION BULK UPLOAD - INSTRUCTIONS", ""],
                 ["", ""],
                 ["🎯 HOW IT WORKS", ""],
                 ["", "System automatically finds employees matching ALL criteria"],
@@ -1997,42 +2104,88 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                 ["✅ IF 2+ MATCHES FOUND", "Creates MULTIPLE JDs - one for each employee"],
                 ["⚠️ IF NO MATCHES", "Creates 1 JD without employee (vacant position)"],
                 ["", ""],
-                ["EXAMPLE SCENARIOS", ""],
+                ["📋 REQUIRED FIELDS", ""],
+                ["", "Job Title, Business Function, Department, Job Function, Position Group, Grading Level, Job Purpose"],
                 ["", ""],
-                ["Scenario 1: Exact Match", ""],
-                ["Excel:", "CASHIER | Holding | OPERATIONS | | LEGAL | Vice Chairman | M"],
-                ["System finds:", "Shefa Muradova (TRD7) - CASHIER"],
-                ["Result:", "✅ Creates 1 JD for Shefa"],
+                ["📦 RESOURCES, ACCESS & BENEFITS - TWO FORMATS", ""],
                 ["", ""],
-                ["Scenario 2: Multiple Matches", ""],
-                ["Excel:", "CASHIER | Holding | OPERATIONS | | LEGAL | Vice Chairman | M"],
-                ["System finds:", "Shefa Muradova (TRD7) + Arzu Hasanova (GEO3)"],
-                ["Result:", "✅ Creates 2 JDs - one for each"],
+                ["FORMAT 1: Simple (Parent Only)", "Just list parent categories separated by |"],
+                ["Example:", "Laptop | Software | Phone"],
+                ["Result:", "All items from each category are included"],
                 ["", ""],
-                ["Scenario 3: No Matches", ""],
-                ["Excel:", "CFO | Holding | FINANCE | | FINANCE | Executive | E"],
-                ["System finds:", "No employees match"],
-                ["Result:", "⚠️ Creates 1 vacant JD without employee"],
+                ["FORMAT 2: Nested (Parent + Specific Items)", "Use colon to specify items"],
+                ["Syntax:", "ParentName:Item1,Item2,Item3 | ParentName2:Item4,Item5"],
+                ["Example:", "Laptop:Dell XPS 15,MacBook Pro | Software:VS Code,Docker"],
+                ["Result:", "Only specified items from each category"],
                 ["", ""],
-                ["CRITICAL MATCHING CRITERIA", ""],
+                ["🔧 BUSINESS RESOURCES EXAMPLES", ""],
+                ["Simple:", "Laptop | Software | Office Supplies"],
+                ["Nested:", "Laptop:Dell XPS 15,MacBook Pro 16 | Software:VS Code,Docker Desktop,Slack"],
+                ["Mixed:", "Laptop:Dell XPS 15 | Software | Phone:iPhone 14 Pro"],
+                ["", ""],
+                ["🔐 ACCESS RIGHTS EXAMPLES", ""],
+                ["Simple:", "Database Access | Admin Panel | Cloud Services"],
+                ["Nested:", "Database:PostgreSQL Write,MongoDB Read | Cloud:AWS Console,Azure Portal"],
+                ["Mixed:", "Database:PostgreSQL Write | Admin Panel | Cloud Services"],
+                ["", ""],
+                ["💰 COMPANY BENEFITS EXAMPLES", ""],
+                ["Simple:", "Health Insurance | Leave Policy | Bonus Scheme"],
+                ["Nested:", "Health Insurance:Full Family Coverage | Leave:21 Days Annual,10 Days Sick"],
+                ["Mixed:", "Health Insurance:Full Family | Leave Policy | Bonus Scheme"],
+                ["", ""],
+                ["⚡ SKILLS & COMPETENCIES FORMAT", ""],
+                ["", "Comma-separated list of names only"],
+                ["Skills Example:", "Python, SQL, Docker, AWS, Kubernetes, Git"],
+                ["Competencies Example:", "Leadership, Communication, Problem Solving, Teamwork"],
+                ["Note:", "System auto-assigns to INTERMEDIATE level and MANDATORY"],
+                ["", ""],
+                ["🎯 CRITICAL MATCHING CRITERIA", ""],
                 ["ALL must match:", ""],
-                ["  ✓", "Job Title (exact)"],
+                ["  ✓", "Job Title (exact, case-insensitive)"],
                 ["  ✓", "Business Function"],
                 ["  ✓", "Department"],
                 ["  ✓", "Job Function"],
                 ["  ✓", "Position Group"],
                 ["  ✓", "Grading Level"],
                 ["", ""],
-                ["TIPS", ""],
-                ["✓", "Use EXACT job titles from employee records"],
-                ["✓", "Check spelling of organizational fields"],
-                ["✓", "System will log all matches found"],
-                ["✓", "Review warnings for unmatched rows"],
+                ["📝 SECTIONS FORMAT", ""],
+                ["", "Use | (pipe) to separate multiple items"],
+                ["Example:", "Design system architecture | Lead code reviews | Mentor developers"],
+                ["", ""],
+                ["💡 TIPS FOR SUCCESS", ""],
+                ["✓", "Use EXACT spelling for parent categories (case-insensitive)"],
+                ["✓", "Use EXACT spelling for nested items (case-insensitive)"],
+                ["✓", "Check system for available parent categories before upload"],
+                ["✓", "For nested format, ensure items exist in that parent category"],
+                ["✓", "You can mix formats: some parents with items, some without"],
+                ["✓", "Use | to separate different parent categories"],
+                ["✓", "Use : to specify nested items"],
+                ["✓", "Use , to separate multiple items within same parent"],
+                ["✓", "If item not found, it will be skipped (not cause error)"],
+                ["", ""],
+                ["❌ COMMON MISTAKES", ""],
+                ["Wrong:", "Laptop, Software, Phone  (comma instead of pipe)"],
+                ["Correct:", "Laptop | Software | Phone"],
+                ["", ""],
+                ["Wrong:", "Laptop-Dell XPS  (dash instead of colon)"],
+                ["Correct:", "Laptop:Dell XPS"],
+                ["", ""],
+                ["Wrong:", "Laptop:Dell XPS|MacBook  (pipe between items)"],
+                ["Correct:", "Laptop:Dell XPS,MacBook Pro"],
+                ["", ""],
+                ["📊 VALIDATION SUMMARY", ""],
+                ["", "After upload, check the response for:"],
+                ["  •", "Total rows processed"],
+                ["  •", "Successful creations"],
+                ["  •", "Failed rows (with error details)"],
+                ["  •", "Skipped items (resources/access/benefits not found)"],
+                ["  •", "Warnings (employees not matched)"],
             ]
             
             # Style instructions
             title_font = Font(bold=True, size=14, color="366092")
-            section_font = Font(bold=True, size=11, color="2E7D32")
+            section_font = Font(bold=True, size=12, color="2E7D32")
+            example_font = Font(size=10, color="D32F2F")
             
             for row_num, row_data in enumerate(instructions, 1):
                 col1 = row_data[0] if len(row_data) > 0 else ""
@@ -2043,11 +2196,15 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                 
                 if row_num == 1:
                     ws_instructions.cell(row=row_num, column=1).font = title_font
-                elif col1.startswith('🎯') or col1.startswith('✅') or col1.startswith('⚠️'):
-                    ws_instructions.cell(row=row_num, column=1).font = Font(bold=True, size=12)
+                elif col1.startswith('🎯') or col1.startswith('📋') or col1.startswith('📦') or col1.startswith('🔧') or col1.startswith('🔐') or col1.startswith('💰') or col1.startswith('⚡') or col1.startswith('📝') or col1.startswith('💡') or col1.startswith('❌') or col1.startswith('📊'):
+                    ws_instructions.cell(row=row_num, column=1).font = section_font
+                elif col1.startswith('Example') or col1.startswith('Syntax') or col1.startswith('Wrong') or col1.startswith('Correct'):
+                    ws_instructions.cell(row=row_num, column=1).font = Font(bold=True, size=10, color="1976D2")
+                elif col1.startswith('✓') or col1.startswith('  ✓') or col1.startswith('  •'):
+                    ws_instructions.cell(row=row_num, column=1).font = Font(size=10, color="2E7D32")
             
-            ws_instructions.column_dimensions['A'].width = 30
-            ws_instructions.column_dimensions['B'].width = 75
+            ws_instructions.column_dimensions['A'].width = 35
+            ws_instructions.column_dimensions['B'].width = 80
             
             # Save workbook
             wb.save(buffer)
@@ -2057,16 +2214,16 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                 buffer.getvalue(),
                 content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
             )
-            filename = f"Job_Description_Auto_Assign_Template_{datetime.now().strftime('%Y%m%d')}.xlsx"
+            filename = f"Job_Description_Upload_Template_{datetime.now().strftime('%Y%m%d')}.xlsx"
             response['Content-Disposition'] = f'attachment; filename="{filename}"'
             
-            logger.info(f"Auto-assign template downloaded by {request.user.username}")
+            logger.info(f"Template with nested items support downloaded by {request.user.username}")
             return response
             
         except Exception as e:
             logger.error(f"Error generating template: {str(e)}")
             return Response({'error': str(e)}, status=500)
-        
+            
     @swagger_auto_schema(
         method='post',
         operation_description="Export job descriptions to Excel",
@@ -2262,8 +2419,7 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                 worksheet.cell(row=row_num, column=2).value = jd.assigned_employee.full_name if jd.assigned_employee else 'N/A'
                 worksheet.cell(row=row_num, column=3).value = skill_req.skill.name
                 worksheet.cell(row=row_num, column=4).value = skill_req.skill.group.name if skill_req.skill.group else 'N/A'
-                worksheet.cell(row=row_num, column=5).value = skill_req.get_proficiency_level_display()
-                worksheet.cell(row=row_num, column=6).value = 'Yes' if skill_req.is_mandatory else 'No'
+
                 row_num += 1
         
         for col_num in range(1, len(headers) + 1):
@@ -2292,8 +2448,7 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                 worksheet.cell(row=row_num, column=2).value = jd.assigned_employee.full_name if jd.assigned_employee else 'N/A'
                 worksheet.cell(row=row_num, column=3).value = comp_req.competency.name
                 worksheet.cell(row=row_num, column=4).value = comp_req.competency.group.name if comp_req.competency.group else 'N/A'
-                worksheet.cell(row=row_num, column=5).value = comp_req.get_proficiency_level_display()
-                worksheet.cell(row=row_num, column=6).value = 'Yes' if comp_req.is_mandatory else 'No'
+       
                 row_num += 1
         
         for col_num in range(1, len(headers) + 1):
@@ -2662,8 +2817,7 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                     skills_data.append([
                         skill_req.skill.name,
                         skill_req.skill.group.name if skill_req.skill.group else 'N/A',
-                        skill_req.get_proficiency_level_display(),
-                        'Yes' if skill_req.is_mandatory else 'No'
+ 
                     ])
                 
                 skills_table = Table(skills_data, colWidths=[5*cm, 3.5*cm, 3*cm, 2*cm])
@@ -2703,8 +2857,8 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                     comp_data.append([
                         comp_req.competency.name,
                         comp_req.competency.group.name if comp_req.competency.group else 'N/A',
-                        comp_req.get_proficiency_level_display(),
-                        'Yes' if comp_req.is_mandatory else 'No'
+                    
+                  
                     ])
                 
                 comp_table = Table(comp_data, colWidths=[5*cm, 3.5*cm, 3*cm, 2*cm])
@@ -3046,6 +3200,7 @@ class JobBusinessResourceViewSet(viewsets.ModelViewSet):
             'total_items': items.count()
         })
     
+    
     @action(detail=True, methods=['post'])
     def add_item(self, request, pk=None):
         """🆕 Add a new item to this resource"""
@@ -3065,7 +3220,71 @@ class JobBusinessResourceViewSet(viewsets.ModelViewSet):
         
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
+    # In JobBusinessResourceViewSet class
+    @action(detail=True, methods=['delete'])
+    def delete_item(self, request, pk=None):
+        """🆕 Delete a specific item from this resource"""
+        resource = self.get_object()
+        item_id = request.data.get('item_id')
+        
+        if not item_id:
+            return Response({'error': 'item_id required'}, status=400)
+        
+        try:
+            item = JobBusinessResourceItem.objects.get(
+                id=item_id,
+                resource=resource
+            )
+            item_name = item.name
+            item.delete()
+            
+            return Response({
+                'success': True,
+                'message': f'Item "{item_name}" deleted from {resource.name}'
+            }, status=status.HTTP_200_OK)
+        except JobBusinessResourceItem.DoesNotExist:
+            return Response(
+                {'error': 'Item not found in this resource'},
+                status=status.HTTP_404_NOT_FOUND
+            )
     
+    @action(detail=True, methods=['put'])
+    def update_item(self, request, pk=None):
+        """🆕 Update a specific item in this resource"""
+        resource = self.get_object()
+        item_id = request.data.get('item_id')
+        
+        if not item_id:
+            return Response({'error': 'item_id required'}, status=400)
+        
+        try:
+            item = JobBusinessResourceItem.objects.get(
+                id=item_id,
+                resource=resource
+            )
+            
+            # Update fields
+            if 'name' in request.data:
+                item.name = request.data['name']
+            if 'description' in request.data:
+                item.description = request.data['description']
+            if 'is_active' in request.data:
+                item.is_active = request.data['is_active']
+            
+            item.save()
+            
+            serializer = JobBusinessResourceItemSerializer(item)
+            return Response({
+                'success': True,
+                'message': f'Item updated in {resource.name}',
+                'item': serializer.data
+            }, status=status.HTTP_200_OK)
+            
+        except JobBusinessResourceItem.DoesNotExist:
+            return Response(
+                {'error': 'Item not found in this resource'},
+                status=status.HTTP_404_NOT_FOUND
+            )
 
 class JobBusinessResourceItemViewSet(viewsets.ModelViewSet):
     """🆕 CRUD for business resource items"""
@@ -3144,8 +3363,72 @@ class AccessMatrixViewSet(viewsets.ModelViewSet):
         
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
-   
-
+    
+    # In AccessMatrixViewSet class
+    @action(detail=True, methods=['delete'])
+    def delete_item(self, request, pk=None):
+        """🆕 Delete a specific access item"""
+        access_matrix = self.get_object()
+        item_id = request.data.get('item_id')
+        
+        if not item_id:
+            return Response({'error': 'item_id required'}, status=400)
+        
+        try:
+            item = AccessMatrixItem.objects.get(
+                id=item_id,
+                access_matrix=access_matrix
+            )
+            item_name = item.name
+            item.delete()
+            
+            return Response({
+                'success': True,
+                'message': f'Access item "{item_name}" deleted from {access_matrix.name}'
+            }, status=status.HTTP_200_OK)
+        except AccessMatrixItem.DoesNotExist:
+            return Response(
+                {'error': 'Access item not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+    
+    @action(detail=True, methods=['put'])
+    def update_item(self, request, pk=None):
+        """🆕 Update a specific access item"""
+        access_matrix = self.get_object()
+        item_id = request.data.get('item_id')
+        
+        if not item_id:
+            return Response({'error': 'item_id required'}, status=400)
+        
+        try:
+            item = AccessMatrixItem.objects.get(
+                id=item_id,
+                access_matrix=access_matrix
+            )
+            
+            if 'name' in request.data:
+                item.name = request.data['name']
+            if 'description' in request.data:
+                item.description = request.data['description']
+            if 'is_active' in request.data:
+                item.is_active = request.data['is_active']
+            
+            item.save()
+            
+            serializer = AccessMatrixItemSerializer(item)
+            return Response({
+                'success': True,
+                'message': f'Access item updated in {access_matrix.name}',
+                'item': serializer.data
+            }, status=status.HTTP_200_OK)
+            
+        except AccessMatrixItem.DoesNotExist:
+            return Response(
+                {'error': 'Access item not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+    
 class AccessMatrixItemViewSet(viewsets.ModelViewSet):
 
     
@@ -3209,8 +3492,70 @@ class CompanyBenefitViewSet(viewsets.ModelViewSet):
         
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
+    # In CompanyBenefitViewSet class
+    @action(detail=True, methods=['delete'])
+    def delete_item(self, request, pk=None):
+        """🆕 Delete a specific benefit item"""
+        benefit = self.get_object()
+        item_id = request.data.get('item_id')
+        
+        if not item_id:
+            return Response({'error': 'item_id required'}, status=400)
+        
+        try:
+            item = CompanyBenefitItem.objects.get(
+                id=item_id,
+                benefit=benefit
+            )
+            item_name = item.name
+            item.delete()
+            
+            return Response({
+                'success': True,
+                'message': f'Benefit item "{item_name}" deleted from {benefit.name}'
+            }, status=status.HTTP_200_OK)
+        except CompanyBenefitItem.DoesNotExist:
+            return Response(
+                {'error': 'Benefit item not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
     
-
+    @action(detail=True, methods=['put'])
+    def update_item(self, request, pk=None):
+        """🆕 Update a specific benefit item"""
+        benefit = self.get_object()
+        item_id = request.data.get('item_id')
+        
+        if not item_id:
+            return Response({'error': 'item_id required'}, status=400)
+        
+        try:
+            item = CompanyBenefitItem.objects.get(
+                id=item_id,
+                benefit=benefit
+            )
+            
+            if 'name' in request.data:
+                item.name = request.data['name']
+            if 'description' in request.data:
+                item.description = request.data['description']
+            if 'is_active' in request.data:
+                item.is_active = request.data['is_active']
+            
+            item.save()
+            
+            serializer = CompanyBenefitItemSerializer(item)
+            return Response({
+                'success': True,
+                'message': f'Benefit item updated in {benefit.name}',
+                'item': serializer.data
+            }, status=status.HTTP_200_OK)
+            
+        except CompanyBenefitItem.DoesNotExist:
+            return Response(
+                {'error': 'Benefit item not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
 class CompanyBenefitItemViewSet(viewsets.ModelViewSet):
     """🆕 CRUD for company benefit items"""
     

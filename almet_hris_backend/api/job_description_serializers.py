@@ -343,14 +343,14 @@ class JobDescriptionSkillSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = JobDescriptionSkill
-        fields = ['id', 'skill', 'skill_detail', 'proficiency_level', 'is_mandatory']
+        fields = ['id', 'skill', 'skill_detail']
 
 class JobDescriptionBehavioralCompetencySerializer(serializers.ModelSerializer):
     competency_detail = BehavioralCompetencyBasicSerializer(source='competency', read_only=True)
     
     class Meta:
         model = JobDescriptionBehavioralCompetency
-        fields = ['id', 'competency', 'competency_detail', 'proficiency_level', 'is_mandatory']
+        fields = ['id', 'competency', 'competency_detail']
 
 class JobDescriptionBusinessResourceSerializer(serializers.ModelSerializer):
     resource_detail = JobBusinessResourceSerializer(source='resource', read_only=True)
@@ -397,13 +397,13 @@ class JobDescriptionCreateUpdateSerializer(serializers.ModelSerializer):
         child=serializers.DictField(),
         write_only=True,
         required=False,
-        help_text="List of {skill_id, proficiency_level, is_mandatory}"
+        help_text="List of {skill_id}"
     )
     behavioral_competencies_data = serializers.ListField(
         child=serializers.DictField(),
         write_only=True,
         required=False,
-        help_text="List of {competency_id, proficiency_level, is_mandatory}"
+        help_text="List of {competency_id}"
     )
     business_resources_ids = serializers.ListField(
         child=serializers.IntegerField(),
@@ -420,7 +420,26 @@ class JobDescriptionCreateUpdateSerializer(serializers.ModelSerializer):
         write_only=True,
         required=False
     )
+    business_resources_with_items = serializers.ListField(
+        child=serializers.DictField(),
+        write_only=True,
+        required=False,
+        help_text="List of {resource_id: int, item_ids: [int]} - specify parent and specific items"
+    )
     
+    access_rights_with_items = serializers.ListField(
+        child=serializers.DictField(),
+        write_only=True,
+        required=False,
+        help_text="List of {access_matrix_id: int, item_ids: [int]}"
+    )
+    
+    company_benefits_with_items = serializers.ListField(
+        child=serializers.DictField(),
+        write_only=True,
+        required=False,
+        help_text="List of {benefit_id: int, item_ids: [int]}"
+    )
     selected_employee_ids = serializers.ListField(
         child=serializers.IntegerField(),
         required=False,
@@ -448,7 +467,10 @@ class JobDescriptionCreateUpdateSerializer(serializers.ModelSerializer):
             'sections', 'required_skills_data', 'behavioral_competencies_data',
             'business_resources_ids', 'access_rights_ids', 'company_benefits_ids',
             'selected_employee_ids',
-            'reset_approval_status',  # ADDED
+            'reset_approval_status',  
+                 'business_resources_with_items',  # NEW
+            'access_rights_with_items',  # NEW
+            'company_benefits_with_items',  # NEW
             'created_job_descriptions', 'total_positions_assigned', 
             'requires_position_selection'
         ]
@@ -518,7 +540,23 @@ class JobDescriptionCreateUpdateSerializer(serializers.ModelSerializer):
         access_rights_ids = validated_data.pop('access_rights_ids', [])
         company_benefits_ids = validated_data.pop('company_benefits_ids', [])
         selected_employee_ids = validated_data.pop('selected_employee_ids', [])
+        # 🔥 NEW: Extract nested item data
+        business_resources_data = validated_data.pop('business_resources_with_items', [])
+        access_rights_data = validated_data.pop('access_rights_with_items', [])
+        company_benefits_data = validated_data.pop('company_benefits_with_items', [])
         
+        # Keep backward compatibility with old format
+        if not business_resources_data:
+            old_format = validated_data.pop('business_resources_ids', [])
+            business_resources_data = [{'resource_id': rid, 'item_ids': []} for rid in old_format]
+        
+        if not access_rights_data:
+            old_format = validated_data.pop('access_rights_ids', [])
+            access_rights_data = [{'access_matrix_id': aid, 'item_ids': []} for aid in old_format]
+        
+        if not company_benefits_data:
+            old_format = validated_data.pop('company_benefits_ids', [])
+            company_benefits_data = [{'benefit_id': bid, 'item_ids': []} for bid in old_format]
         logger.info(f"Creating job description - Selected position IDs: {selected_employee_ids}")
         
         with transaction.atomic():
@@ -639,9 +677,9 @@ class JobDescriptionCreateUpdateSerializer(serializers.ModelSerializer):
                 
                 # Create all related objects
                 self._create_job_description_components(
-                    job_description, sections_data, skills_data, competencies_data,
-                    business_resources_ids, access_rights_ids, company_benefits_ids
-                )
+        job_description, sections_data, skills_data, competencies_data,
+        business_resources_data, access_rights_data, company_benefits_data  # Updated params
+    )
                 
                 # Activity logging
                 if position_type == 'employee':
@@ -748,56 +786,86 @@ class JobDescriptionCreateUpdateSerializer(serializers.ModelSerializer):
         
         return queryset.order_by('position_id')
     
-    def _create_job_description_components(self, job_description, sections_data, skills_data, 
-                                         competencies_data, business_resources_ids, 
-                                         access_rights_ids, company_benefits_ids):
-        """Helper method to create all job description components"""
+    def _create_job_description_components(self, job_description, sections_data, skills_data,   competencies_data, business_resources_data,  access_rights_data, company_benefits_data):
+        """Helper method to create all job description components with nested items"""
         
-        # Create sections
+        # Create sections (unchanged)
         for section_data in sections_data:
             JobDescriptionSection.objects.create(
                 job_description=job_description,
                 **section_data
             )
         
-        # Create skills
+        # Create skills (unchanged)
         for skill_data in skills_data:
             JobDescriptionSkill.objects.create(
                 job_description=job_description,
                 skill_id=skill_data['skill_id'],
-                proficiency_level=skill_data.get('proficiency_level', 'INTERMEDIATE'),
-                is_mandatory=skill_data.get('is_mandatory', True)
+            
             )
         
-        # Create behavioral competencies
+        # Create behavioral competencies (unchanged)
         for competency_data in competencies_data:
             JobDescriptionBehavioralCompetency.objects.create(
                 job_description=job_description,
                 competency_id=competency_data['competency_id'],
-                proficiency_level=competency_data.get('proficiency_level', 'INTERMEDIATE'),
-                is_mandatory=competency_data.get('is_mandatory', True)
+            
             )
         
-        # Create business resources links
-        for resource_id in business_resources_ids:
-            JobDescriptionBusinessResource.objects.create(
+        # 🔥 UPDATED: Create business resources with nested items
+        for resource_data in business_resources_data:
+            resource_id = resource_data.get('resource_id')
+            item_ids = resource_data.get('item_ids', [])
+            
+            jd_resource = JobDescriptionBusinessResource.objects.create(
                 job_description=job_description,
                 resource_id=resource_id
             )
+            
+            # Link specific items if provided
+            if item_ids:
+                items = JobBusinessResourceItem.objects.filter(
+                    id__in=item_ids,
+                    resource_id=resource_id,
+                    is_active=True
+                )
+                jd_resource.specific_items.set(items)
         
-        # Create access rights links
-        for access_id in access_rights_ids:
-            JobDescriptionAccessMatrix.objects.create(
+        # 🔥 UPDATED: Create access rights with nested items
+        for access_data in access_rights_data:
+            access_matrix_id = access_data.get('access_matrix_id')
+            item_ids = access_data.get('item_ids', [])
+            
+            jd_access = JobDescriptionAccessMatrix.objects.create(
                 job_description=job_description,
-                access_matrix_id=access_id
+                access_matrix_id=access_matrix_id
             )
+            
+            if item_ids:
+                items = AccessMatrixItem.objects.filter(
+                    id__in=item_ids,
+                    access_matrix_id=access_matrix_id,
+                    is_active=True
+                )
+                jd_access.specific_items.set(items)
         
-        # Create company benefits links
-        for benefit_id in company_benefits_ids:
-            JobDescriptionCompanyBenefit.objects.create(
+        # 🔥 UPDATED: Create company benefits with nested items
+        for benefit_data in company_benefits_data:
+            benefit_id = benefit_data.get('benefit_id')
+            item_ids = benefit_data.get('item_ids', [])
+            
+            jd_benefit = JobDescriptionCompanyBenefit.objects.create(
                 job_description=job_description,
                 benefit_id=benefit_id
             )
+            
+            if item_ids:
+                items = CompanyBenefitItem.objects.filter(
+                    id__in=item_ids,
+                    benefit_id=benefit_id,
+                    is_active=True
+                )
+                jd_benefit.specific_items.set(items)
     def get_employee_matching_details(self, obj):
         """Get detailed matching information"""
         if hasattr(obj, 'get_employee_matching_details'):
@@ -990,8 +1058,7 @@ class JobDescriptionCreateUpdateSerializer(serializers.ModelSerializer):
                     JobDescriptionSkill.objects.create(
                         job_description=instance,
                         skill_id=skill_data['skill_id'],
-                        proficiency_level=skill_data.get('proficiency_level', 'INTERMEDIATE'),
-                        is_mandatory=skill_data.get('is_mandatory', True)
+                 
                     )
             
             if competencies_data is not None:
@@ -1000,8 +1067,7 @@ class JobDescriptionCreateUpdateSerializer(serializers.ModelSerializer):
                     JobDescriptionBehavioralCompetency.objects.create(
                         job_description=instance,
                         competency_id=competency_data['competency_id'],
-                        proficiency_level=competency_data.get('proficiency_level', 'INTERMEDIATE'),
-                        is_mandatory=competency_data.get('is_mandatory', True)
+              
                     )
             
             if business_resources_ids is not None:
@@ -1185,7 +1251,108 @@ class JobDescriptionListSerializer(serializers.ModelSerializer):
                 'message': message[:100] + '...' if len(message) > 100 else message
             }
         return {'is_valid': False, 'message': 'No employee assigned'}
+class JobDescriptionBusinessResourceDetailSerializer(serializers.ModelSerializer):
+    """ENHANCED: Business resource with NESTED ITEMS for detail view"""
+    
+    resource_detail = JobBusinessResourceSerializer(source='resource', read_only=True)
+    specific_items_detail = JobBusinessResourceItemDetailSerializer(
+        source='specific_items',
+        many=True,
+        read_only=True
+    )
+    has_specific_items = serializers.SerializerMethodField()
+    items_display = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = JobDescriptionBusinessResource
+        fields = [
+            'id',
+            'resource',
+            'resource_detail',
+            'specific_items_detail',
+            'has_specific_items',
+            'items_display'
+        ]
+    
+    def get_has_specific_items(self, obj):
+        """Check if specific items are selected"""
+        return obj.specific_items.exists()
+    
+    def get_items_display(self, obj):
+        """Get human-readable items display"""
+        if obj.specific_items.exists():
+            items = obj.specific_items.all()
+            return f"{obj.resource.name}: {', '.join([item.name for item in items])}"
+        else:
+            return f"{obj.resource.name}: All items"
 
+
+class JobDescriptionAccessMatrixDetailSerializer(serializers.ModelSerializer):
+    """ENHANCED: Access matrix with NESTED ITEMS for detail view"""
+    
+    access_detail = AccessMatrixSerializer(source='access_matrix', read_only=True)
+    specific_items_detail = AccessMatrixItemDetailSerializer(
+        source='specific_items',
+        many=True,
+        read_only=True
+    )
+    has_specific_items = serializers.SerializerMethodField()
+    items_display = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = JobDescriptionAccessMatrix
+        fields = [
+            'id',
+            'access_matrix',
+            'access_detail',
+            'specific_items_detail',
+            'has_specific_items',
+            'items_display'
+        ]
+    
+    def get_has_specific_items(self, obj):
+        return obj.specific_items.exists()
+    
+    def get_items_display(self, obj):
+        if obj.specific_items.exists():
+            items = obj.specific_items.all()
+            return f"{obj.access_matrix.name}: {', '.join([item.name for item in items])}"
+        else:
+            return f"{obj.access_matrix.name}: All items"
+
+
+class JobDescriptionCompanyBenefitDetailSerializer(serializers.ModelSerializer):
+    """ENHANCED: Company benefit with NESTED ITEMS for detail view"""
+    
+    benefit_detail = CompanyBenefitSerializer(source='benefit', read_only=True)
+    specific_items_detail = CompanyBenefitItemDetailSerializer(
+        source='specific_items',
+        many=True,
+        read_only=True
+    )
+    has_specific_items = serializers.SerializerMethodField()
+    items_display = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = JobDescriptionCompanyBenefit
+        fields = [
+            'id',
+            'benefit',
+            'benefit_detail',
+            'specific_items_detail',
+            'has_specific_items',
+            'items_display'
+        ]
+    
+    def get_has_specific_items(self, obj):
+        return obj.specific_items.exists()
+    
+    def get_items_display(self, obj):
+        if obj.specific_items.exists():
+            items = obj.specific_items.all()
+            return f"{obj.benefit.name}: {', '.join([item.name for item in items])}"
+        else:
+            return f"{obj.benefit.name}: All items"
 class JobDescriptionDetailSerializer(serializers.ModelSerializer):
     """Enhanced detail serializer with all nested data and employee validation info"""
     
@@ -1208,10 +1375,9 @@ class JobDescriptionDetailSerializer(serializers.ModelSerializer):
     sections = JobDescriptionSectionSerializer(many=True, read_only=True)
     required_skills = JobDescriptionSkillSerializer(many=True, read_only=True)
     behavioral_competencies = JobDescriptionBehavioralCompetencySerializer(many=True, read_only=True)
-    business_resources = JobDescriptionBusinessResourceSerializer(many=True, read_only=True)
-    access_rights = JobDescriptionAccessMatrixSerializer(many=True, read_only=True)
-    company_benefits = JobDescriptionCompanyBenefitSerializer(many=True, read_only=True)
-    
+    business_resources = JobDescriptionBusinessResourceDetailSerializer(many=True, read_only=True)
+    access_rights = JobDescriptionAccessMatrixDetailSerializer(many=True, read_only=True)
+    company_benefits = JobDescriptionCompanyBenefitDetailSerializer(many=True, read_only=True)
     # Approval and user information
     created_by_detail = UserBasicSerializer(source='created_by', read_only=True)
     updated_by_detail = UserBasicSerializer(source='updated_by', read_only=True)

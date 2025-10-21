@@ -63,22 +63,7 @@ class BehavioralCompetencyGroupListSerializer(serializers.ModelSerializer):
         fields = ['id', 'name',  'competencies_count', 'created_at', 'updated_at']
 
 
-# Bulk operations üçün serializers
-class BulkSkillCreateSerializer(serializers.Serializer):
-    group_id = serializers.IntegerField()
-    skills = serializers.ListField(
-        child=serializers.CharField(max_length=200),
-        min_length=1,
-        max_length=50
-    )
 
-class BulkBehavioralCompetencyCreateSerializer(serializers.Serializer):
-    group_id = serializers.IntegerField()
-    competencies = serializers.ListField(
-        child=serializers.CharField(max_length=200),
-        min_length=1,
-        max_length=50
-    )
 
 # Stats üçün serializer
 class CompetencyStatsSerializer(serializers.Serializer):
