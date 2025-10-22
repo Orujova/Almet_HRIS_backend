@@ -1,4 +1,4 @@
-# api/news_views.py - WITH PROPER PERMISSION CHECKS
+# api/news_views.py - WITH TARGET GROUP FILTERING
 
 import logging
 from rest_framework import viewsets, status
@@ -65,12 +65,11 @@ class NewsCategoryViewSet(viewsets.ModelViewSet):
 # ==================== COMPANY NEWS VIEWSET ====================
 
 class CompanyNewsViewSet(viewsets.ModelViewSet):
-    """Company News CRUD with Permission-based Access Control"""
+    """Company News CRUD with Target Group Filtering"""
     
     queryset = CompanyNews.objects.filter(is_deleted=False)
     
     def get_serializer_class(self):
-        # Toggle actions don't need serializer
         if self.action in ['toggle_pin', 'toggle_publish']:
             return None
         
@@ -83,32 +82,67 @@ class CompanyNewsViewSet(viewsets.ModelViewSet):
     def get_permissions(self):
         """Dynamic permission classes based on action"""
         if self.action in ['list', 'retrieve']:
-            # Anyone with view permission
             return [CanViewNews()]
         elif self.action in ['create', 'update', 'partial_update', 'destroy']:
-            # Need specific CRUD permissions
             return [IsAdminOrNewsManager()]
         elif self.action in ['toggle_pin', 'toggle_publish']:
-            # Need specific action permissions
             return [IsAdminOrNewsManager()]
         elif self.action == 'statistics':
-            # Need statistics permission
             return [IsAdminOrNewsManager()]
         
         return [IsAuthenticated()]
     
     def get_queryset(self):
         queryset = CompanyNews.objects.filter(is_deleted=False)
+        user = self.request.user
+        
+        # Check if user is admin or has view_all permission
+        is_admin = is_admin_user(user)
+        has_view_all, _ = check_news_permission(user, 'news.news.view_all')
+        
+        # CRITICAL: Target Group Filtering
+        if not is_admin and not has_view_all:
+            # Get current employee
+            try:
+                from .models import Employee
+                employee = Employee.objects.get(user=user, is_deleted=False)
+                
+                # Get target groups where this employee is a member
+                employee_target_groups = TargetGroup.objects.filter(
+                    members=employee,
+                    is_active=True,
+                    is_deleted=False
+                )
+                
+                # Filter news: show only published news that belong to user's target groups
+                queryset = queryset.filter(
+                    Q(is_published=True) &
+                    (
+                        Q(target_groups__in=employee_target_groups) |
+                        Q(target_groups__isnull=True)  # News without target groups are visible to all
+                    )
+                ).distinct()
+                
+            except Employee.DoesNotExist:
+                # If no employee profile, show only published news without target groups
+                queryset = queryset.filter(
+                    is_published=True,
+                    target_groups__isnull=True
+                )
+        else:
+            # Admin or users with view_all permission can see everything
+            pass
         
         # Filter by category
         category_id = self.request.query_params.get('category', None)
         if category_id:
             queryset = queryset.filter(category_id=category_id)
         
-        # Filter by publish status
-        is_published = self.request.query_params.get('is_published', None)
-        if is_published is not None:
-            queryset = queryset.filter(is_published=is_published.lower() == 'true')
+        # Filter by publish status (only for admin/view_all users)
+        if is_admin or has_view_all:
+            is_published = self.request.query_params.get('is_published', None)
+            if is_published is not None:
+                queryset = queryset.filter(is_published=is_published.lower() == 'true')
         
         # Filter by pinned status
         is_pinned = self.request.query_params.get('is_pinned', None)
@@ -125,18 +159,52 @@ class CompanyNewsViewSet(viewsets.ModelViewSet):
                 Q(tags__icontains=search)
             )
         
-        # Non-admin users can only see published news
-        if not is_admin_user(self.request.user):
-            has_view_all, _ = check_news_permission(self.request.user, 'news.news.view_all')
-            if not has_view_all:
-                queryset = queryset.filter(is_published=True)
-        
         return queryset.select_related('author', 'category').prefetch_related('target_groups')
 
     def retrieve(self, request, *args, **kwargs):
         """Get news detail and increment view count"""
         instance = self.get_object()
+        
+        # Check if user has access to this news
+        user = request.user
+        is_admin = is_admin_user(user)
+        has_view_all, _ = check_news_permission(user, 'news.news.view_all')
+        
+        if not is_admin and not has_view_all:
+            # Regular users can only view published news in their target groups
+            try:
+                from .models import Employee
+                employee = Employee.objects.get(user=user, is_deleted=False)
+                
+                # Check if news is published
+                if not instance.is_published:
+                    return Response(
+                        {'error': 'News not found or you do not have access'},
+                        status=status.HTTP_404_NOT_FOUND
+                    )
+                
+                # Check if user is in any of the news target groups
+                news_target_groups = instance.target_groups.filter(is_active=True, is_deleted=False)
+                
+                # If news has target groups, user must be in at least one of them
+                if news_target_groups.exists():
+                    user_in_target_group = news_target_groups.filter(members=employee).exists()
+                    
+                    if not user_in_target_group:
+                        return Response(
+                            {'error': 'You do not have access to this news'},
+                            status=status.HTTP_403_FORBIDDEN
+                        )
+                
+            except Employee.DoesNotExist:
+                return Response(
+                    {'error': 'Employee profile not found'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+        
+        # Increment view count
         instance.increment_view_count()
+        
         serializer = self.get_serializer(instance)
         return Response(serializer.data)
     
@@ -284,31 +352,61 @@ class CompanyNewsViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'])
     def statistics(self, request):
         """Get news statistics - requires news.news.view_statistics permission"""
-        total_news = CompanyNews.objects.filter(is_deleted=False).count()
-        published_news = CompanyNews.objects.filter(is_deleted=False, is_published=True).count()
-        pinned_news = CompanyNews.objects.filter(is_deleted=False, is_pinned=True).count()
+        user = request.user
+        is_admin = is_admin_user(user)
+        has_view_all, _ = check_news_permission(user, 'news.news.view_all')
         
-        total_views = CompanyNews.objects.filter(is_deleted=False).aggregate(
+        # Base queryset
+        base_queryset = CompanyNews.objects.filter(is_deleted=False)
+        
+        # Filter by user's target groups if not admin
+        if not is_admin and not has_view_all:
+            try:
+                from .models import Employee
+                employee = Employee.objects.get(user=user, is_deleted=False)
+                
+                employee_target_groups = TargetGroup.objects.filter(
+                    members=employee,
+                    is_active=True,
+                    is_deleted=False
+                )
+                
+                base_queryset = base_queryset.filter(
+                    Q(is_published=True) &
+                    (
+                        Q(target_groups__in=employee_target_groups) |
+                        Q(target_groups__isnull=True)
+                    )
+                ).distinct()
+            except Employee.DoesNotExist:
+                base_queryset = base_queryset.filter(
+                    is_published=True,
+                    target_groups__isnull=True
+                )
+        
+        total_news = base_queryset.count()
+        published_news = base_queryset.filter(is_published=True).count()
+        pinned_news = base_queryset.filter(is_pinned=True).count()
+        
+        total_views = base_queryset.aggregate(
             total=Sum('view_count')
         )['total'] or 0
         
         news_by_category = []
         for category in NewsCategory.objects.filter(is_active=True, is_deleted=False):
-            count = CompanyNews.objects.filter(
-                is_deleted=False,
-                category=category
-            ).count()
-            news_by_category.append({
-                'id': str(category.id),
-                'name': category.name,
-                'count': count
-            })
+            count = base_queryset.filter(category=category).count()
+            if count > 0:  # Only show categories with news
+                news_by_category.append({
+                    'id': str(category.id),
+                    'name': category.name,
+                    'count': count
+                })
         
         return Response({
             'total_news': total_news,
             'published_news': published_news,
             'pinned_news': pinned_news,
-            'draft_news': total_news - published_news,
+            'draft_news': total_news - published_news if (is_admin or has_view_all) else 0,
             'total_views': total_views,
             'news_by_category': news_by_category
         })
@@ -365,7 +463,7 @@ class TargetGroupViewSet(viewsets.ModelViewSet):
         responses={
             200: 'Members added successfully',
             400: 'Bad Request',
-            403: 'Permission denied - requires news.target_group.add_members',
+            403: 'Permission denied',
             404: 'Not Found'
         }
     )
@@ -427,7 +525,7 @@ class TargetGroupViewSet(viewsets.ModelViewSet):
         responses={
             200: 'Members removed successfully',
             400: 'Bad Request',
-            403: 'Permission denied - requires news.target_group.remove_members',
+            403: 'Permission denied',
             404: 'Not Found'
         }
     )
@@ -477,7 +575,7 @@ class TargetGroupViewSet(viewsets.ModelViewSet):
         operation_description='Get target group statistics (requires news.target_group.view_statistics permission)',
         responses={
             200: 'Statistics retrieved successfully',
-            403: 'Permission denied - requires news.target_group.view_statistics'
+            403: 'Permission denied'
         }
     )
     @action(detail=False, methods=['get'])
@@ -513,8 +611,9 @@ class TargetGroupViewSet(viewsets.ModelViewSet):
             'average_members_per_group': round(avg_members_per_group, 1),
             'largest_groups': largest_groups
         })
-        
-# Add to news_views.py
+
+
+# ==================== NEWS PERMISSIONS VIEW ====================
 
 from rest_framework.views import APIView
 from .news_permissions import get_user_news_permissions, is_admin_user
@@ -534,17 +633,11 @@ class NewsPermissionsView(APIView):
                 examples={
                     'application/json': {
                         'is_admin': True,
-                        'permissions': [
-                            'news.news.view',
-                            'news.news.create',
-                            'news.news.update',
-                            'news.news.delete',
-                            'news.news.pin',
-                            'news.news.publish'
-                        ],
-                        'can_manage_news': True,
-                        'can_manage_target_groups': True,
-                        'can_view_statistics': True
+                        'permissions': ['news.news.view', 'news.news.create'],
+                        'capabilities': {
+                            'can_view_news': True,
+                            'can_create_news': True
+                        }
                     }
                 }
             )
@@ -601,4 +694,4 @@ class NewsPermissionsView(APIView):
                 'can_view_news_statistics': 'news.news.view_statistics' in permissions or is_admin,
                 'can_view_group_statistics': 'news.target_group.view_statistics' in permissions or is_admin,
             }
-        })        
+        })
