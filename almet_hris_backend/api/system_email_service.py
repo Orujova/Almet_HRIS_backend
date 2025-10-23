@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 class SystemEmailService:
     """
-    🔐 Application Permissions ilə email göndərmək
+    🔒 Application Permissions ilə email göndərmək
     shadmin@almettrading.com-dan user token olmadan göndərir
     """
     
@@ -25,7 +25,7 @@ class SystemEmailService:
         # ⚙️ Azure AD Application settings (settings.py-dən oxuyur)
         self.tenant_id = getattr(settings, 'MICROSOFT_TENANT_ID', '')
         self.client_id = getattr(settings, 'MICROSOFT_CLIENT_ID', '')
-        # self.client_secret = getattr(settings, 'AZURE_CLIENT_SECRET', '')
+        self.client_secret = getattr(settings, 'AZURE_CLIENT_SECRET', '')
         
         self.authority = f"https://login.microsoftonline.com/{self.tenant_id}"
         self.scope = ["https://graph.microsoft.com/.default"]
@@ -51,11 +51,11 @@ class SystemEmailService:
             # MSAL ilə token al
             app = msal.ConfidentialClientApplication(
                 client_id=self.client_id,
-                # client_credential=self.client_secret,
+                client_credential=self.client_secret,
                 authority=self.authority
             )
             
-            logger.info(" Acquiring application token...")
+            logger.info("🔄 Acquiring application token...")
             
             result = app.acquire_token_for_client(scopes=self.scope)
             
@@ -66,15 +66,15 @@ class SystemEmailService:
                 # Cache-lə (5 dəqiqə əvvəl expire edirik ki, problem olmasın)
                 cache.set(self.cache_key, token, timeout=expires_in - 300)
                 
-                logger.info("Application token acquired successfully")
+                logger.info("✅ Application token acquired successfully")
                 return token
             else:
                 error = result.get("error_description", result.get("error", "Unknown error"))
-                logger.error(f" Token acquisition failed: {error}")
+                logger.error(f"❌ Token acquisition failed: {error}")
                 return None
                 
         except Exception as e:
-            logger.error(f"❌Error acquiring application token: {e}")
+            logger.error(f"❌ Error acquiring application token: {e}")
             return None
     
     def send_email_as_system(self, from_email, to_email, subject, body_html):
@@ -136,7 +136,7 @@ class SystemEmailService:
             )
             
             if response.status_code == 202:
-                logger.info(f" System email sent successfully")
+                logger.info(f"✅ System email sent successfully")
                 return {
                     'success': True,
                     'message': 'Email sent successfully',

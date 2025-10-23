@@ -103,7 +103,7 @@ class EmailTemplateViewSet(viewsets.ModelViewSet):
             'email_type',
             openapi.IN_QUERY,
             type=openapi.TYPE_STRING,
-            enum=['received', 'sent', 'all'],
+             enum=['business_trip', 'vacation', 'company_news', 'all'],
             required=False,
             default='all',
             description='📬 Email type: received (gələn), sent (göndərilən), or all'
@@ -122,19 +122,7 @@ class EmailTemplateViewSet(viewsets.ModelViewSet):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_outlook_emails(request):
-    """
-    📬 Get emails with SENT/RECEIVED separation
-    
-    Query Parameters:
-    - module: business_trip, vacation, all
-    - email_type: received, sent, all
-    - top: number of emails
-    
-    Response includes:
-    - received_emails: Gələn mailləri (inbox)
-    - sent_emails: Göndərilən mailləri (sent items)
-    - all_emails: Hamısı birlikdə (sorted by date)
-    """
+
     try:
         # Get parameters
         module = request.GET.get('module', 'all')
@@ -185,10 +173,13 @@ def get_outlook_emails(request):
             subject_filters = [settings.business_trip_subject_prefix]
         elif module == 'vacation':
             subject_filters = [settings.vacation_subject_prefix]
+        elif module == 'company_news':  # ✅ NEW
+            subject_filters = [settings.company_news_subject_prefix]
         else:  # all
             subject_filters = [
                 settings.business_trip_subject_prefix,
-                settings.vacation_subject_prefix
+                settings.vacation_subject_prefix,
+                settings.company_news_subject_prefix  # ✅ NEW
             ]
         
         # Fetch emails for each subject filter
@@ -275,17 +266,7 @@ def get_outlook_emails(request):
 
 
 def format_email(email, settings, email_type):
-    """
-    Format email object with module and type tags
-    
-    Args:
-        email: Raw email from Graph API
-        settings: NotificationSettings instance
-        email_type: 'RECEIVED' or 'SENT'
-    
-    Returns:
-        dict: Formatted email object
-    """
+
     subject = email.get('subject', '')
     
     # Determine module from subject
@@ -294,6 +275,8 @@ def format_email(email, settings, email_type):
         email_module = 'business_trip'
     elif settings.vacation_subject_prefix in subject:
         email_module = 'vacation'
+    elif settings.company_news_subject_prefix in subject:  # ✅ NEW
+        email_module = 'company_news'    
     
     # Get sender/recipient info based on type
     if email_type == 'SENT':

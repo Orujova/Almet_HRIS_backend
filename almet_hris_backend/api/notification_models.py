@@ -36,14 +36,25 @@ class NotificationSettings(models.Model):
     business_trip_subject_prefix = models.CharField(
         max_length=50, 
         default='[BUSINESS TRIP]',
-        help_text="Subject prefix for business trip emails (used for filtering in Outlook)"
+        help_text="Subject prefix for business trip emails"
     )
     
-    # ✅ NEW: Vacation specific settings
+    # Vacation specific settings
     vacation_subject_prefix = models.CharField(
         max_length=50, 
         default='[VACATION]',
-        help_text="Subject prefix for vacation emails (used for filtering in Outlook)"
+        help_text="Subject prefix for vacation emails"
+    )
+    
+    # ✅ NEW: Company News specific settings
+    company_news_subject_prefix = models.CharField(
+        max_length=50, 
+        default='[COMPANY NEWS]',
+        help_text="Subject prefix for company news emails"
+    )
+    company_news_sender_email = models.EmailField(
+        default='shadmin@almettrading.com',
+        help_text="Email address for sending company news (must be valid Outlook/Exchange mailbox)"
     )
     
     # System fields
@@ -79,10 +90,7 @@ class NotificationSettings(models.Model):
     
     @classmethod
     def get_active(cls):
-        """
-        Get or create active notification settings
-        Returns the single active settings instance
-        """
+        """Get or create active notification settings"""
         settings, created = cls.objects.get_or_create(
             is_active=True,
             defaults={
@@ -90,7 +98,9 @@ class NotificationSettings(models.Model):
                 'email_retry_attempts': 3,
                 'email_retry_delay_minutes': 5,
                 'business_trip_subject_prefix': '[BUSINESS TRIP]',
-                'vacation_subject_prefix': '[VACATION]',  # ✅ NEW
+                'vacation_subject_prefix': '[VACATION]',
+                'company_news_subject_prefix': '[COMPANY NEWS]',  # ✅ NEW
+                'company_news_sender_email': 'shadmin@almettrading.com',  # ✅ NEW
             }
         )
         return settings
@@ -98,7 +108,6 @@ class NotificationSettings(models.Model):
     def save(self, *args, **kwargs):
         """Ensure only one active settings record exists"""
         if self.is_active:
-            # Deactivate all other settings
             NotificationSettings.objects.filter(is_active=True).exclude(pk=self.pk).update(is_active=False)
         super().save(*args, **kwargs)
 

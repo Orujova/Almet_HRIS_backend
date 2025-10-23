@@ -1,7 +1,11 @@
 import os
 from pathlib import Path
 from datetime import timedelta
-
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    print("Warning: python-dotenv not installed. Using default settings.")
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -74,28 +78,28 @@ TEMPLATES = [
 WSGI_APPLICATION = 'almet_hris_backend.wsgi.application'
 
 # Database - Local Configuration
-# DATABASES = {
-#     'default': {
-#         'ENGINE': 'django.db.backends.postgresql',
-#         'NAME': 'almet_hris',
-#         'USER': 'postgres',
-#         'PASSWORD': 'almet2025',  # Sizin qoyduğunuz parol
-#         'HOST': 'localhost',
-#         'PORT': '5432',
-#         'CONN_MAX_AGE': 60,  # Connection pooling
-#     }
-# }
-# Database - Server Configuration
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'myalmet_db',           # Bu adı dəyişin
-        'USER': 'myalmet_user',         # Bu adı dəyişin
-        'PASSWORD': 'almet2025',
+        'NAME': 'almet_hris',
+        'USER': 'postgres',
+        'PASSWORD': 'almet2025',  # Sizin qoyduğunuz parol
         'HOST': 'localhost',
         'PORT': '5432',
+        'CONN_MAX_AGE': 60,  # Connection pooling
     }
 }
+# Database - Server Configuration
+# DATABASES = {
+#     'default': {
+#         'ENGINE': 'django.db.backends.postgresql',
+#         'NAME': 'myalmet_db',           # Bu adı dəyişin
+#         'USER': 'myalmet_user',         # Bu adı dəyişin
+#         'PASSWORD': 'almet2025',
+#         'HOST': 'localhost',
+#         'PORT': '5432',
+#     }
+# }
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
@@ -161,6 +165,8 @@ SIMPLE_JWT = {
 MICROSOFT_CLIENT_ID = "230458ff-ed69-4abb-8496-3888067116f6"
 MICROSOFT_TENANT_ID = 'b3222ef7-242d-4724-a665-97b0a764f2d0'
 
+AZURE_CLIENT_SECRET = os.getenv('AZURE_CLIENT_SECRET', '')
+
 # CORS settings - Frontend üçün
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
@@ -174,54 +180,54 @@ CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_ALL_ORIGINS = False  # Development üçün True edə bilərsiniz
 
 # Enhanced Logging for Grading System
-# LOGGING = {
-#     'version': 1,
-#     'disable_existing_loggers': False,
-#     'formatters': {
-#         'verbose': {
-#             'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
-#             'style': '{',
-#         },
-#         'simple': {
-#             'format': '{levelname} {message}',
-#             'style': '{',
-#         },
-#     },
-#     'handlers': {
-#         'console': {
-#             'level': 'INFO',
-#             'class': 'logging.StreamHandler',
-#             'formatter': 'simple',
-#         },
-#         'file': {
-#             'level': 'INFO',
-#             'class': 'logging.FileHandler',
-#             'filename': os.path.join(BASE_DIR, 'grading_system.log'),
-#             'formatter': 'verbose',
-#         },
-#     },
-#     'loggers': {
-#         'grading': {
-#             'handlers': ['console', 'file'],
-#             'level': 'INFO',
-#             'propagate': True,
-#         },
-#         'api': {
-#             'handlers': ['console', 'file'],
-#             'level': 'INFO',
-#             'propagate': True,
-#         },
-#         'django.db.backends': {
-#             'handlers': ['console'],
-#             'level': 'WARNING',  # SQL query logging
-#             'propagate': False,
-#         },
-#     },
-#     'root': {
-#         'handlers': ['console'],
-#         'level': 'INFO',
-#     },
-# }
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
+            'style': '{',
+        },
+        'simple': {
+            'format': '{levelname} {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            'level': 'INFO',
+            'class': 'logging.StreamHandler',
+            'formatter': 'simple',
+        },
+        'file': {
+            'level': 'INFO',
+            'class': 'logging.FileHandler',
+            'filename': os.path.join(BASE_DIR, 'grading_system.log'),
+            'formatter': 'verbose',
+        },
+    },
+    'loggers': {
+        'grading': {
+            'handlers': ['console', 'file'],
+            'level': 'INFO',
+            'propagate': True,
+        },
+        'api': {
+            'handlers': ['console', 'file'],
+            'level': 'INFO',
+            'propagate': True,
+        },
+        'django.db.backends': {
+            'handlers': ['console'],
+            'level': 'WARNING',  # SQL query logging
+            'propagate': False,
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': 'INFO',
+    },
+}
 
 # Swagger JWT Settings
 SWAGGER_SETTINGS = {
@@ -294,37 +300,13 @@ CORS_ALLOW_HEADERS = [
     'dnt', 'origin', 'user-agent', 'x-csrftoken', 'x-requested-with',
     'x-file-name', 'x-file-size', 'x-file-type',
 ]
-
-
 #celery
 
-# ==========================================
-# CELERY CONFIGURATION - PostgreSQL Backend
-# ==========================================
-
-# Use SQLAlchemy database URL format for PostgreSQL
-CELERY_BROKER_URL = 'db+postgresql://postgres:almet2025@localhost:5432/almet_hris'
-
-# Result backend using django-celery-results
-CELERY_RESULT_BACKEND = 'django-db'
-
-# Task execution settings
-CELERY_TASK_ALWAYS_EAGER = False
-CELERY_TASK_EAGER_PROPAGATES = True
-
-# Serialization
+# Celery Configuration
+CELERY_BROKER_URL = 'redis://localhost:6379/0'  # or use 'memory://' for development
+CELERY_RESULT_BACKEND = 'redis://localhost:6379/0'
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
-
-# Timezone
 CELERY_TIMEZONE = 'Asia/Baku'
-CELERY_ENABLE_UTC = True
-
-# Beat scheduler
 CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
-
-# Connection settings
-CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
-CELERY_BROKER_CONNECTION_RETRY = True
-CELERY_BROKER_CONNECTION_MAX_RETRIES = 10

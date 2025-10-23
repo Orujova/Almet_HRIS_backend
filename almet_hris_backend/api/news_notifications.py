@@ -269,9 +269,7 @@ class NewsNotificationManager:
                     <h1> Company News</h1>
                     <p>Almet Trading Official Announcement</p>
                     <div class="category-badge">{category_name}</div>
-                    <div style="margin-top: 10px;">
-                        <span class="system-badge">SYSTEM EMAIL</span>
-                    </div>
+                  
                 </div>
                 
                 <div class="content">
@@ -298,7 +296,6 @@ class NewsNotificationManager:
                 </div>
                 
                 <div class="footer">
-                    <p><strong> Automatic System Email</strong></p>
                     <p>This email was sent automatically from {self.settings.company_news_sender_email}</p>
                     <p style="margin-top: 15px; opacity: 0.8;">© 2025 Almet Trading. All rights reserved.</p>
                 </div>

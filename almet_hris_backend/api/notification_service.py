@@ -15,6 +15,7 @@ class NotificationService:
     def __init__(self):
         self.graph_endpoint = "https://graph.microsoft.com/v1.0"
         self._settings = None
+        self._verified_mailboxes = {}  # Cache for verified mailboxes
     
     @property
     def settings(self):
@@ -28,10 +29,279 @@ class NotificationService:
                 self._settings = SimpleNamespace(
                     enable_email_notifications=True,
                     business_trip_subject_prefix='[BUSINESS TRIP]',
-                    vacation_subject_prefix='[VACATION]'
+                    vacation_subject_prefix='[VACATION]',
+                    company_news_subject_prefix='[COMPANY NEWS]',
+                    company_news_sender_email='shadmin@almettrading.com'
                 )
         return self._settings
     
+    def verify_shared_mailbox_access(self, shared_mailbox_email, access_token):
+        """
+        ✅ Verify if shared mailbox exists and is accessible
+        
+        Returns:
+            tuple: (success: bool, error_message: str)
+        """
+        # Check cache first
+        cache_key = f"{shared_mailbox_email}_{access_token[:20]}"
+        if cache_key in self._verified_mailboxes:
+            return self._verified_mailboxes[cache_key]
+        
+        try:
+            headers = {
+                'Authorization': f'Bearer {access_token}',
+                'Content-Type': 'application/json'
+            }
+            
+            # Try to get mailbox info
+            logger.info(f"🔍 Verifying access to mailbox: {shared_mailbox_email}")
+            
+            response = requests.get(
+                f"{self.graph_endpoint}/users/{shared_mailbox_email}",
+                headers=headers,
+                timeout=30
+            )
+            
+            if response.status_code == 200:
+                mailbox_info = response.json()
+                logger.info(f"✅ Mailbox verified: {mailbox_info.get('displayName')}")
+                result = (True, None)
+                self._verified_mailboxes[cache_key] = result
+                return result
+            
+            elif response.status_code == 404:
+                error = f"❌ Mailbox '{shared_mailbox_email}' not found in Exchange"
+                logger.error(error)
+                logger.error(f"Response: {response.text}")
+                result = (False, error)
+                self._verified_mailboxes[cache_key] = result
+                return result
+            
+            elif response.status_code == 403:
+                error = f"❌ Access denied to mailbox '{shared_mailbox_email}'"
+                logger.error(error)
+                logger.error(f"Response: {response.text}")
+                result = (False, error)
+                self._verified_mailboxes[cache_key] = result
+                return result
+            
+            else:
+                error = f"❌ Unexpected response ({response.status_code}): {response.text}"
+                logger.error(error)
+                result = (False, error)
+                return result
+                
+        except Exception as e:
+            error = f"❌ Exception verifying mailbox: {str(e)}"
+            logger.error(error)
+            return (False, error)
+    
+    def send_email_from_shared_mailbox(self, shared_mailbox_email, recipient_email, 
+                                     subject, body_html, body_text=None, 
+                                     access_token=None, related_model=None, 
+                                     related_object_id=None, sent_by=None, request=None):
+        """
+        📧 Send email from shared mailbox with verification and fallback
+        
+        Args:
+            shared_mailbox_email: The shared mailbox email address
+            recipient_email: Recipient's email
+            subject: Email subject
+            body_html: HTML body
+            body_text: Plain text body (optional)
+            access_token: Graph API token
+            related_model: Related model name
+            related_object_id: Related object ID
+            sent_by: User who triggered the email
+            request: Django request object
+        
+        Returns:
+            bool: Success status
+        """
+        
+        if not self.settings.enable_email_notifications:
+            logger.info("Email notifications are disabled")
+            return False
+        
+        if not access_token:
+            if request:
+                access_token = extract_graph_token_from_request(request)
+        
+        if not access_token:
+            logger.error("❌ Microsoft Graph token is required")
+            return False
+        
+        # Create notification log
+        notification_log = NotificationLog.objects.create(
+            notification_type='EMAIL',
+            recipient_email=recipient_email,
+            subject=subject,
+            body=body_html,
+            related_model=related_model or '',
+            related_object_id=str(related_object_id) if related_object_id else '',
+            status='PENDING',
+            sent_by=sent_by
+        )
+        
+        try:
+            # ✅ STEP 1: Verify shared mailbox access
+            is_accessible, error_message = self.verify_shared_mailbox_access(
+                shared_mailbox_email, 
+                access_token
+            )
+            
+            if not is_accessible:
+                logger.warning(f"⚠️ Shared mailbox not accessible: {error_message}")
+                logger.info("🔄 Falling back to user's own mailbox")
+                
+                # FALLBACK: Send from user's mailbox with clear indication
+                return self._send_from_user_mailbox_with_note(
+                    recipient_email=recipient_email,
+                    subject=subject,
+                    body_html=body_html,
+                    access_token=access_token,
+                    shared_mailbox_email=shared_mailbox_email,
+                    notification_log=notification_log
+                )
+            
+            # ✅ STEP 2: Shared mailbox is accessible, send normally
+            message = {
+                "message": {
+                    "subject": subject,
+                    "body": {
+                        "contentType": "HTML",
+                        "content": body_html
+                    },
+                    "toRecipients": [
+                        {
+                            "emailAddress": {
+                                "address": recipient_email
+                            }
+                        }
+                    ],
+                    "from": {
+                        "emailAddress": {
+                            "address": shared_mailbox_email
+                        }
+                    }
+                },
+                "saveToSentItems": "true"
+            }
+            
+            headers = {
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json"
+            }
+            
+            logger.info(f"📧 Sending email from {shared_mailbox_email} to {recipient_email}")
+            
+            # Use shared mailbox endpoint
+            response = requests.post(
+                f"{self.graph_endpoint}/users/{shared_mailbox_email}/sendMail",
+                headers=headers,
+                json=message,
+                timeout=30
+            )
+            
+            if response.status_code == 202:
+                logger.info(f"✅ Email sent successfully from shared mailbox")
+                notification_log.mark_as_sent()
+                return True
+            else:
+                error_msg = f"Failed: {response.status_code} - {response.text}"
+                logger.error(error_msg)
+                
+                # Try fallback
+                logger.info("🔄 Attempting fallback to user's mailbox")
+                return self._send_from_user_mailbox_with_note(
+                    recipient_email=recipient_email,
+                    subject=subject,
+                    body_html=body_html,
+                    access_token=access_token,
+                    shared_mailbox_email=shared_mailbox_email,
+                    notification_log=notification_log
+                )
+                
+        except Exception as e:
+            error_msg = f"Error: {str(e)}"
+            logger.error(error_msg)
+            
+            # Try fallback
+            logger.info("🔄 Exception occurred, attempting fallback")
+            return self._send_from_user_mailbox_with_note(
+                recipient_email=recipient_email,
+                subject=subject,
+                body_html=body_html,
+                access_token=access_token,
+                shared_mailbox_email=shared_mailbox_email,
+                notification_log=notification_log
+            )
+    
+    def _send_from_user_mailbox_with_note(self, recipient_email, subject, body_html, 
+                                         access_token, shared_mailbox_email, notification_log):
+        """
+        🔄 FALLBACK: Send from user's own mailbox with note about intended sender
+        """
+        try:
+            # Add note to email body
+            fallback_note = f"""
+            <div style="background-color: #fff3cd; border: 1px solid #ffc107; padding: 15px; margin-bottom: 20px; border-radius: 5px;">
+                <p style="margin: 0; color: #856404;">
+                    <strong>⚠️ Note:</strong> This email was intended to be sent from <strong>{shared_mailbox_email}</strong> 
+                    but is being sent from the user's mailbox due to access limitations.
+                </p>
+            </div>
+            """
+            
+            modified_body = fallback_note + body_html
+            
+            message = {
+                "message": {
+                    "subject": f"{subject}",
+                    "body": {
+                        "contentType": "HTML",
+                        "content": modified_body
+                    },
+                    "toRecipients": [
+                        {
+                            "emailAddress": {
+                                "address": recipient_email
+                            }
+                        }
+                    ]
+                },
+                "saveToSentItems": "true"
+            }
+            
+            headers = {
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json"
+            }
+            
+            logger.info(f"📧 Sending fallback email to {recipient_email}")
+            
+            response = requests.post(
+                f"{self.graph_endpoint}/me/sendMail",
+                headers=headers,
+                json=message,
+                timeout=30
+            )
+            
+            if response.status_code == 202:
+                logger.info(f"✅ Fallback email sent successfully")
+                notification_log.mark_as_sent()
+                return True
+            else:
+                error_msg = f"Fallback failed: {response.status_code} - {response.text}"
+                logger.error(error_msg)
+                notification_log.mark_as_failed(error_msg)
+                return False
+                
+        except Exception as e:
+            error_msg = f"Fallback error: {str(e)}"
+            logger.error(error_msg)
+            notification_log.mark_as_failed(error_msg)
+            return False
     def get_received_emails(self, access_token, subject_filter, top=50):
         """
         📥 RECEIVED EMAILS - Gələn mailləri gətir
@@ -351,7 +621,8 @@ class NotificationService:
                 results['failed'] += 1
         
         return results
-
-
+    
+    
+    
 # Singleton instance
 notification_service = NotificationService()
