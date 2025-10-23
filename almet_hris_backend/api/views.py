@@ -828,7 +828,6 @@ class DepartmentViewSet(viewsets.ModelViewSet):
     ordering = ['business_function__code']
     
     @swagger_auto_schema(
-        
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
             required=['name', 'business_function_id'],
@@ -883,69 +882,44 @@ class DepartmentViewSet(viewsets.ModelViewSet):
         FIXED: Enhanced create to support both single and bulk creation
         """
         try:
-            # CRITICAL FIX: Transform business_function_id properly
+            # CRITICAL FIX: DON'T transform the data here, let serializer handle it
             data = request.data.copy()
-            business_function_id = data.get('business_function_id')
             
-            if business_function_id is None:
-                return Response(
-                    {'error': 'business_function_id is required'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            
-            # FIXED: Check if it's an array or single value
-            if isinstance(business_function_id, list) and len(business_function_id) > 1:
-                # Bulk creation - multiple IDs
-                data['business_function'] = None  # Remove single field
-                data['business_function_ids'] = business_function_id
-                logger.info(f"Bulk department creation requested for BF IDs: {business_function_id}")
-            elif isinstance(business_function_id, list) and len(business_function_id) == 1:
-                # Single creation - array with one element
-                data['business_function'] = business_function_id[0]
-                data.pop('business_function_id', None)
-                logger.info(f"Single department creation requested for BF ID: {business_function_id[0]}")
-            else:
-                # Single creation - direct integer
-                data['business_function'] = business_function_id
-                data.pop('business_function_id', None)
-                logger.info(f"Single department creation requested for BF ID: {business_function_id}")
-            
+            # Just pass the data as-is to the serializer
             serializer = self.get_serializer(data=data)
             serializer.is_valid(raise_exception=True)
             
             # Check if this is a bulk operation
-            if 'business_function_ids' in data:
+            self.perform_create(serializer)
+            
+            # Get bulk result from serializer context
+            bulk_result = serializer.context.get('bulk_result', {})
+            
+            if bulk_result:
                 # Bulk creation
-                self.perform_create(serializer)
+                created_departments_data = DepartmentSerializer(
+                    bulk_result.get('created_departments', []),
+                    many=True,
+                    context={'request': request}
+                ).data
                 
-                # Get bulk result from serializer context
-                bulk_result = serializer.context.get('bulk_result', {})
+                logger.info(
+                    f"Bulk department creation completed: "
+                    f"{bulk_result['success_count']} successful, "
+                    f"{bulk_result['error_count']} failed"
+                )
                 
-                if bulk_result:
-                    created_departments_data = DepartmentSerializer(
-                        bulk_result.get('created_departments', []),
-                        many=True,
-                        context={'request': request}
-                    ).data
-                    
-                    logger.info(
-                        f"Bulk department creation completed: "
-                        f"{bulk_result['success_count']} successful, "
-                        f"{bulk_result['error_count']} failed"
-                    )
-                    
-                    return Response({
-                        'success': True,
-                        'message': f"Created {bulk_result['success_count']} departments, {bulk_result['error_count']} failed",
-                        'created_departments': created_departments_data,
-                        'success_count': bulk_result['success_count'],
-                        'error_count': bulk_result['error_count'],
-                        'errors': bulk_result.get('errors', []),
-                        'bulk_operation': True
-                    }, status=status.HTTP_201_CREATED if bulk_result['success_count'] > 0 else status.HTTP_400_BAD_REQUEST)
+                return Response({
+                    'success': True,
+                    'message': f"Created {bulk_result['success_count']} departments, {bulk_result['error_count']} failed",
+                    'created_departments': created_departments_data,
+                    'success_count': bulk_result['success_count'],
+                    'error_count': bulk_result['error_count'],
+                    'errors': bulk_result.get('errors', []),
+                    'bulk_operation': True
+                }, status=status.HTTP_201_CREATED if bulk_result['success_count'] > 0 else status.HTTP_400_BAD_REQUEST)
             
             # Single creation
-            self.perform_create(serializer)
             headers = self.get_success_headers(serializer.data)
             
             return Response({
@@ -963,8 +937,8 @@ class DepartmentViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
+# views.py - UPDATED: UnitViewSet
 
-# UPDATED: UnitViewSet with same fix
 class UnitViewSet(viewsets.ModelViewSet):
     """
     ENHANCED: Unit ViewSet with bulk creation for multiple departments
@@ -978,7 +952,6 @@ class UnitViewSet(viewsets.ModelViewSet):
     ordering = ['department__business_function__code']
     
     @swagger_auto_schema(
-       
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
             required=['name', 'department_id'],
@@ -1033,69 +1006,44 @@ class UnitViewSet(viewsets.ModelViewSet):
         FIXED: Enhanced create to support both single and bulk creation
         """
         try:
-            # CRITICAL FIX: Transform department_id properly
+            # CRITICAL FIX: DON'T transform the data here, let serializer handle it
             data = request.data.copy()
-            department_id = data.get('department_id')
             
-            if department_id is None:
-                return Response(
-                    {'error': 'department_id is required'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            
-            # FIXED: Check if it's an array or single value
-            if isinstance(department_id, list) and len(department_id) > 1:
-                # Bulk creation - multiple IDs
-                data['department'] = None  # Remove single field
-                data['department_ids'] = department_id
-                logger.info(f"Bulk unit creation requested for Dept IDs: {department_id}")
-            elif isinstance(department_id, list) and len(department_id) == 1:
-                # Single creation - array with one element
-                data['department'] = department_id[0]
-                data.pop('department_id', None)
-                logger.info(f"Single unit creation requested for Dept ID: {department_id[0]}")
-            else:
-                # Single creation - direct integer
-                data['department'] = department_id
-                data.pop('department_id', None)
-                logger.info(f"Single unit creation requested for Dept ID: {department_id}")
-            
+            # Just pass the data as-is to the serializer
             serializer = self.get_serializer(data=data)
             serializer.is_valid(raise_exception=True)
             
-            # Check if this is a bulk operation
-            if 'department_ids' in data:
+            # Check if this is a bulk operation by checking if serializer has bulk_result in context after save
+            self.perform_create(serializer)
+            
+            # Get bulk result from serializer context
+            bulk_result = serializer.context.get('bulk_result', {})
+            
+            if bulk_result:
                 # Bulk creation
-                self.perform_create(serializer)
+                created_units_data = UnitSerializer(
+                    bulk_result.get('created_units', []),
+                    many=True,
+                    context={'request': request}
+                ).data
                 
-                # Get bulk result from serializer context
-                bulk_result = serializer.context.get('bulk_result', {})
+                logger.info(
+                    f"Bulk unit creation completed: "
+                    f"{bulk_result['success_count']} successful, "
+                    f"{bulk_result['error_count']} failed"
+                )
                 
-                if bulk_result:
-                    created_units_data = UnitSerializer(
-                        bulk_result.get('created_units', []),
-                        many=True,
-                        context={'request': request}
-                    ).data
-                    
-                    logger.info(
-                        f"Bulk unit creation completed: "
-                        f"{bulk_result['success_count']} successful, "
-                        f"{bulk_result['error_count']} failed"
-                    )
-                    
-                    return Response({
-                        'success': True,
-                        'message': f"Created {bulk_result['success_count']} units, {bulk_result['error_count']} failed",
-                        'created_units': created_units_data,
-                        'success_count': bulk_result['success_count'],
-                        'error_count': bulk_result['error_count'],
-                        'errors': bulk_result.get('errors', []),
-                        'bulk_operation': True
-                    }, status=status.HTTP_201_CREATED if bulk_result['success_count'] > 0 else status.HTTP_400_BAD_REQUEST)
+                return Response({
+                    'success': True,
+                    'message': f"Created {bulk_result['success_count']} units, {bulk_result['error_count']} failed",
+                    'created_units': created_units_data,
+                    'success_count': bulk_result['success_count'],
+                    'error_count': bulk_result['error_count'],
+                    'errors': bulk_result.get('errors', []),
+                    'bulk_operation': True
+                }, status=status.HTTP_201_CREATED if bulk_result['success_count'] > 0 else status.HTTP_400_BAD_REQUEST)
             
             # Single creation
-            self.perform_create(serializer)
             headers = self.get_success_headers(serializer.data)
             
             return Response({
@@ -1112,6 +1060,7 @@ class UnitViewSet(viewsets.ModelViewSet):
                 {'error': f'Failed to create unit(s): {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
 class JobTitleViewSet(viewsets.ModelViewSet):
 
     queryset = JobTitle.objects.all()
