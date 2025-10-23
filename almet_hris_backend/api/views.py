@@ -45,7 +45,7 @@ from .models import (
     PositionGroup, EmployeeTag, EmployeeStatus,
     EmployeeActivity, VacantPosition, ContractTypeConfig,
     ContractStatusManager, EmployeeArchive,
-    UserGraphToken,  # ⭐ ADD THIS - Graph token model
+    UserGraphToken, JobTitle
 )
 
 from .serializers import (
@@ -60,7 +60,7 @@ from .serializers import (
     BulkEmployeeGradingUpdateSerializer, EmployeeExportSerializer,
     ContractTypeConfigSerializer, BulkContractExtensionSerializer, ContractExtensionSerializer,
     SingleEmployeeTagUpdateSerializer, SingleLineManagerAssignmentSerializer,
-    BulkEmployeeTagUpdateSerializer, 
+    BulkEmployeeTagUpdateSerializer, JobTitleSerializer,
     BulkLineManagerAssignmentSerializer,VacancyToEmployeeConversionSerializer,EmployeeJobDescriptionSerializer,ManagerJobDescriptionSerializer
 )
 
@@ -813,7 +813,12 @@ class BusinessFunctionViewSet(viewsets.ModelViewSet):
     search_fields = ['name', 'code']
     ordering = ['code']
 
+# views.py - UPDATED: DepartmentViewSet
+
 class DepartmentViewSet(viewsets.ModelViewSet):
+    """
+    ENHANCED: Department ViewSet with bulk creation for multiple business functions
+    """
     queryset = Department.objects.select_related('business_function').all()
     serializer_class = DepartmentSerializer
     permission_classes = [IsAuthenticated]
@@ -821,8 +826,149 @@ class DepartmentViewSet(viewsets.ModelViewSet):
     filterset_fields = ['business_function', 'is_active']
     search_fields = ['name']
     ordering = ['business_function__code']
+    
+    @swagger_auto_schema(
+        
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['name', 'business_function_id'],
+            properties={
+                'name': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description='Department name',
+                    example='IT Department'
+                ),
+                'business_function_id': openapi.Schema(
+                    type=openapi.TYPE_ARRAY,
+                    items=openapi.Schema(type=openapi.TYPE_INTEGER),
+                    description='Business function ID(s) - Single integer or array of integers for bulk creation',
+                    example=[1, 2, 3]
+                ),
+                'is_active': openapi.Schema(
+                    type=openapi.TYPE_BOOLEAN,
+                    default=True,
+                    description='Whether this department is active'
+                )
+            }
+        ),
+        responses={
+            201: openapi.Response(
+                description="Department(s) created successfully",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'success': openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                        'message': openapi.Schema(type=openapi.TYPE_STRING),
+                        'department': openapi.Schema(
+                            type=openapi.TYPE_OBJECT,
+                            description='Single department (for single creation)'
+                        ),
+                        'created_departments': openapi.Schema(
+                            type=openapi.TYPE_ARRAY,
+                            items=openapi.Schema(type=openapi.TYPE_OBJECT),
+                            description='Multiple departments (for bulk creation)'
+                        ),
+                        'success_count': openapi.Schema(type=openapi.TYPE_INTEGER),
+                        'error_count': openapi.Schema(type=openapi.TYPE_INTEGER),
+                        'errors': openapi.Schema(type=openapi.TYPE_ARRAY, items=openapi.Schema(type=openapi.TYPE_STRING)),
+                        'bulk_operation': openapi.Schema(type=openapi.TYPE_BOOLEAN)
+                    }
+                )
+            ),
+            400: openapi.Response(description="Bad request - validation errors")
+        }
+    )
+    def create(self, request, *args, **kwargs):
+        """
+        FIXED: Enhanced create to support both single and bulk creation
+        """
+        try:
+            # CRITICAL FIX: Transform business_function_id properly
+            data = request.data.copy()
+            business_function_id = data.get('business_function_id')
+            
+            if business_function_id is None:
+                return Response(
+                    {'error': 'business_function_id is required'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # FIXED: Check if it's an array or single value
+            if isinstance(business_function_id, list) and len(business_function_id) > 1:
+                # Bulk creation - multiple IDs
+                data['business_function'] = None  # Remove single field
+                data['business_function_ids'] = business_function_id
+                logger.info(f"Bulk department creation requested for BF IDs: {business_function_id}")
+            elif isinstance(business_function_id, list) and len(business_function_id) == 1:
+                # Single creation - array with one element
+                data['business_function'] = business_function_id[0]
+                data.pop('business_function_id', None)
+                logger.info(f"Single department creation requested for BF ID: {business_function_id[0]}")
+            else:
+                # Single creation - direct integer
+                data['business_function'] = business_function_id
+                data.pop('business_function_id', None)
+                logger.info(f"Single department creation requested for BF ID: {business_function_id}")
+            
+            serializer = self.get_serializer(data=data)
+            serializer.is_valid(raise_exception=True)
+            
+            # Check if this is a bulk operation
+            if 'business_function_ids' in data:
+                # Bulk creation
+                self.perform_create(serializer)
+                
+                # Get bulk result from serializer context
+                bulk_result = serializer.context.get('bulk_result', {})
+                
+                if bulk_result:
+                    created_departments_data = DepartmentSerializer(
+                        bulk_result.get('created_departments', []),
+                        many=True,
+                        context={'request': request}
+                    ).data
+                    
+                    logger.info(
+                        f"Bulk department creation completed: "
+                        f"{bulk_result['success_count']} successful, "
+                        f"{bulk_result['error_count']} failed"
+                    )
+                    
+                    return Response({
+                        'success': True,
+                        'message': f"Created {bulk_result['success_count']} departments, {bulk_result['error_count']} failed",
+                        'created_departments': created_departments_data,
+                        'success_count': bulk_result['success_count'],
+                        'error_count': bulk_result['error_count'],
+                        'errors': bulk_result.get('errors', []),
+                        'bulk_operation': True
+                    }, status=status.HTTP_201_CREATED if bulk_result['success_count'] > 0 else status.HTTP_400_BAD_REQUEST)
+            
+            # Single creation
+            self.perform_create(serializer)
+            headers = self.get_success_headers(serializer.data)
+            
+            return Response({
+                'success': True,
+                'message': 'Department created successfully',
+                'department': serializer.data,
+                'bulk_operation': False
+            }, status=status.HTTP_201_CREATED, headers=headers)
+            
+        except Exception as e:
+            logger.error(f"Department creation failed: {str(e)}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return Response(
+                {'error': f'Failed to create department(s): {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
+
+# UPDATED: UnitViewSet with same fix
 class UnitViewSet(viewsets.ModelViewSet):
+    """
+    ENHANCED: Unit ViewSet with bulk creation for multiple departments
+    """
     queryset = Unit.objects.select_related('department__business_function').all()
     serializer_class = UnitSerializer
     permission_classes = [IsAuthenticated]
@@ -830,6 +976,301 @@ class UnitViewSet(viewsets.ModelViewSet):
     filterset_fields = ['department', 'is_active']
     search_fields = ['name']
     ordering = ['department__business_function__code']
+    
+    @swagger_auto_schema(
+       
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['name', 'department_id'],
+            properties={
+                'name': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description='Unit name',
+                    example='Backend Team'
+                ),
+                'department_id': openapi.Schema(
+                    type=openapi.TYPE_ARRAY,
+                    items=openapi.Schema(type=openapi.TYPE_INTEGER),
+                    description='Department ID(s) - Single integer or array of integers for bulk creation',
+                    example=[1, 2, 3]
+                ),
+                'is_active': openapi.Schema(
+                    type=openapi.TYPE_BOOLEAN,
+                    default=True,
+                    description='Whether this unit is active'
+                )
+            }
+        ),
+        responses={
+            201: openapi.Response(
+                description="Unit(s) created successfully",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'success': openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                        'message': openapi.Schema(type=openapi.TYPE_STRING),
+                        'unit': openapi.Schema(
+                            type=openapi.TYPE_OBJECT,
+                            description='Single unit (for single creation)'
+                        ),
+                        'created_units': openapi.Schema(
+                            type=openapi.TYPE_ARRAY,
+                            items=openapi.Schema(type=openapi.TYPE_OBJECT),
+                            description='Multiple units (for bulk creation)'
+                        ),
+                        'success_count': openapi.Schema(type=openapi.TYPE_INTEGER),
+                        'error_count': openapi.Schema(type=openapi.TYPE_INTEGER),
+                        'errors': openapi.Schema(type=openapi.TYPE_ARRAY, items=openapi.Schema(type=openapi.TYPE_STRING)),
+                        'bulk_operation': openapi.Schema(type=openapi.TYPE_BOOLEAN)
+                    }
+                )
+            ),
+            400: openapi.Response(description="Bad request - validation errors")
+        }
+    )
+    def create(self, request, *args, **kwargs):
+        """
+        FIXED: Enhanced create to support both single and bulk creation
+        """
+        try:
+            # CRITICAL FIX: Transform department_id properly
+            data = request.data.copy()
+            department_id = data.get('department_id')
+            
+            if department_id is None:
+                return Response(
+                    {'error': 'department_id is required'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # FIXED: Check if it's an array or single value
+            if isinstance(department_id, list) and len(department_id) > 1:
+                # Bulk creation - multiple IDs
+                data['department'] = None  # Remove single field
+                data['department_ids'] = department_id
+                logger.info(f"Bulk unit creation requested for Dept IDs: {department_id}")
+            elif isinstance(department_id, list) and len(department_id) == 1:
+                # Single creation - array with one element
+                data['department'] = department_id[0]
+                data.pop('department_id', None)
+                logger.info(f"Single unit creation requested for Dept ID: {department_id[0]}")
+            else:
+                # Single creation - direct integer
+                data['department'] = department_id
+                data.pop('department_id', None)
+                logger.info(f"Single unit creation requested for Dept ID: {department_id}")
+            
+            serializer = self.get_serializer(data=data)
+            serializer.is_valid(raise_exception=True)
+            
+            # Check if this is a bulk operation
+            if 'department_ids' in data:
+                # Bulk creation
+                self.perform_create(serializer)
+                
+                # Get bulk result from serializer context
+                bulk_result = serializer.context.get('bulk_result', {})
+                
+                if bulk_result:
+                    created_units_data = UnitSerializer(
+                        bulk_result.get('created_units', []),
+                        many=True,
+                        context={'request': request}
+                    ).data
+                    
+                    logger.info(
+                        f"Bulk unit creation completed: "
+                        f"{bulk_result['success_count']} successful, "
+                        f"{bulk_result['error_count']} failed"
+                    )
+                    
+                    return Response({
+                        'success': True,
+                        'message': f"Created {bulk_result['success_count']} units, {bulk_result['error_count']} failed",
+                        'created_units': created_units_data,
+                        'success_count': bulk_result['success_count'],
+                        'error_count': bulk_result['error_count'],
+                        'errors': bulk_result.get('errors', []),
+                        'bulk_operation': True
+                    }, status=status.HTTP_201_CREATED if bulk_result['success_count'] > 0 else status.HTTP_400_BAD_REQUEST)
+            
+            # Single creation
+            self.perform_create(serializer)
+            headers = self.get_success_headers(serializer.data)
+            
+            return Response({
+                'success': True,
+                'message': 'Unit created successfully',
+                'unit': serializer.data,
+                'bulk_operation': False
+            }, status=status.HTTP_201_CREATED, headers=headers)
+            
+        except Exception as e:
+            logger.error(f"Unit creation failed: {str(e)}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return Response(
+                {'error': f'Failed to create unit(s): {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+class JobTitleViewSet(viewsets.ModelViewSet):
+
+    queryset = JobTitle.objects.all()
+    serializer_class = JobTitleSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_fields = [ 'is_active']
+    search_fields = ['name', 'description']
+    ordering_fields = ['name', 'created_at', 'updated_at']
+    ordering = ['name']
+    
+    @swagger_auto_schema(
+        operation_description="""
+        Create a new job title.
+        
+        Job titles must be linked to a job function and should be unique.
+        """,
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['name'],
+            properties={
+                'name': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description='Job title name (must be unique)',
+                    example='Senior Software Engineer'
+                ),
+                'description': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description='Description of the job title',
+                    example='Senior level software engineering position with 5+ years experience'
+                ),
+               
+                'is_active': openapi.Schema(
+                    type=openapi.TYPE_BOOLEAN,
+                    default=True,
+                    description='Whether this job title is active'
+                )
+            }
+        ),
+        responses={
+            201: openapi.Response(
+                description="Job title created successfully",
+                schema=JobTitleSerializer
+            ),
+            400: "Bad request - validation errors"
+        }
+    )
+    def create(self, request, *args, **kwargs):
+        """Create a new job title"""
+        try:
+            logger.info(f"Job title creation requested by {request.user.username}")
+            
+            serializer = self.get_serializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            self.perform_create(serializer)
+            
+            logger.info(f"Job title '{serializer.data['name']}' created successfully")
+            
+            headers = self.get_success_headers(serializer.data)
+            return Response({
+                'success': True,
+                'message': f"Job title '{serializer.data['name']}' created successfully",
+                'job_title': serializer.data
+            }, status=status.HTTP_201_CREATED, headers=headers)
+            
+        except Exception as e:
+            logger.error(f"Job title creation failed: {str(e)}")
+            return Response(
+                {'error': f'Failed to create job title: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    @swagger_auto_schema(
+        operation_description="""
+        Update an existing job title.
+        
+        You can update the name, description or active status.
+        """,
+        request_body=JobTitleSerializer,
+        responses={
+            200: openapi.Response(
+                description="Job title updated successfully",
+                schema=JobTitleSerializer
+            ),
+            400: "Bad request - validation errors",
+            404: "Job title not found"
+        }
+    )
+    def update(self, request, *args, **kwargs):
+        """Update a job title"""
+        try:
+            partial = kwargs.pop('partial', False)
+            instance = self.get_object()
+            old_name = instance.name
+            
+            serializer = self.get_serializer(instance, data=request.data, partial=partial)
+            serializer.is_valid(raise_exception=True)
+            self.perform_update(serializer)
+            
+            logger.info(f"Job title '{old_name}' updated to '{serializer.data['name']}' by {request.user.username}")
+            
+            return Response({
+                'success': True,
+                'message': f"Job title updated successfully",
+                'job_title': serializer.data
+            })
+            
+        except Exception as e:
+            logger.error(f"Job title update failed: {str(e)}")
+            return Response(
+                {'error': f'Failed to update job title: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    @swagger_auto_schema(
+        operation_description="""
+        Delete a job title (soft delete).
+        
+        Note: Job titles that are currently in use by employees cannot be deleted.
+        """,
+        responses={
+            204: "Job title deleted successfully",
+            400: "Cannot delete - job title is in use",
+            404: "Job title not found"
+        }
+    )
+    def destroy(self, request, *args, **kwargs):
+        """Soft delete a job title"""
+        try:
+            instance = self.get_object()
+            
+            # Check if any employees are using this job title
+            employees_using = Employee.objects.filter(
+                job_title=instance.name,
+                is_deleted=False
+            ).count()
+            
+            if employees_using > 0:
+                return Response({
+                    'error': f'Cannot delete job title. {employees_using} employee(s) are currently using this job title.',
+                    'employees_count': employees_using
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            job_title_name = instance.name
+            instance.soft_delete(user=request.user)
+            
+            logger.info(f"Job title '{job_title_name}' deleted by {request.user.username}")
+            
+            return Response({
+                'success': True,
+                'message': f"Job title '{job_title_name}' deleted successfully"
+            }, status=status.HTTP_204_NO_CONTENT)
+            
+        except Exception as e:
+            logger.error(f"Job title deletion failed: {str(e)}")
+            return Response(
+                {'error': f'Failed to delete job title: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 class JobFunctionViewSet(viewsets.ModelViewSet):
     """UPDATED: Employee count əlavə olundu"""

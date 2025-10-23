@@ -50,6 +50,7 @@ router.register(r'employee-roles', EmployeeRoleViewSet, basename='employee-role'
 # Business Structure URLs
 router.register(r'business-functions', views.BusinessFunctionViewSet, basename='businessfunction')
 router.register(r'departments', views.DepartmentViewSet, basename='department')
+router.register(r'job-titles', views.JobTitleViewSet, basename='job-title')
 router.register(r'units', views.UnitViewSet, basename='unit')
 router.register(r'job-functions', views.JobFunctionViewSet, basename='jobfunction')
 router.register(r'position-groups', views.PositionGroupViewSet, basename='positiongroup')

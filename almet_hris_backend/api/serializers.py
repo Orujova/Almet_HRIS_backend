@@ -8,7 +8,7 @@ from datetime import date, timedelta
 from .models import (
     Employee, BusinessFunction, Department, Unit, JobFunction,
     PositionGroup, EmployeeTag, EmployeeStatus, EmployeeDocument,
-    VacantPosition, EmployeeActivity,  ContractTypeConfig
+    VacantPosition, EmployeeActivity,  ContractTypeConfig,JobTitle
 )
 import logging
 import os
@@ -37,44 +37,267 @@ class BusinessFunctionSerializer(serializers.ModelSerializer):
     def get_employee_count(self, obj):
         return obj.employees.filter(status__affects_headcount=True).count()
 
+# Add JobTitle serializer
+class JobTitleSerializer(serializers.ModelSerializer):
+
+    employee_count = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = JobTitle
+        fields = [
+            'id', 'name', 'description',
+            'is_active', 'employee_count', 'created_at', 'updated_at'
+        ]
+    
+    def get_employee_count(self, obj):
+        return Employee.objects.filter(
+            job_title=obj.name,
+            status__affects_headcount=True,
+            is_deleted=False
+        ).count()
+
+# UPDATED: DepartmentSerializer - FIXED field handling
 class DepartmentSerializer(serializers.ModelSerializer):
     business_function_name = serializers.CharField(source='business_function.name', read_only=True)
     business_function_code = serializers.CharField(source='business_function.code', read_only=True)
-  
     employee_count = serializers.SerializerMethodField()
     unit_count = serializers.SerializerMethodField()
+    
+    # NEW: Accept both singular and plural forms
+    business_function_id = serializers.IntegerField(write_only=True, required=False)
+    business_function_ids = serializers.ListField(
+        child=serializers.IntegerField(),
+        write_only=True,
+        required=False,
+        help_text="List of business function IDs for bulk creation"
+    )
     
     class Meta:
         model = Department
         fields = [
-            'id', 'name', 'business_function', 'business_function_name', 
-            'business_function_code',
+            'id', 'name', 'business_function', 
+            'business_function_id', 'business_function_ids',  # Include both
+            'business_function_name', 'business_function_code',
             'is_active', 'employee_count', 'unit_count', 'created_at'
         ]
-    
     def get_employee_count(self, obj):
         return obj.employees.filter(status__affects_headcount=True).count()
     
     def get_unit_count(self, obj):
         return obj.units.filter(is_active=True).count()
+    def validate(self, data):
+        """FIXED: Handle both singular and array formats"""
+        business_function = data.get('business_function')
+        business_function_id = data.get('business_function_id')
+        business_function_ids = data.get('business_function_ids')
+        
+        # FIXED: Convert singular to plural if provided
+        if business_function_id is not None and not business_function_ids:
+            # Single ID provided - check if it's actually a list
+            if isinstance(business_function_id, list):
+                # It's an array, use as bulk
+                data['business_function_ids'] = business_function_id
+                data.pop('business_function_id', None)
+            else:
+                # Single integer - convert to business_function field
+                data['business_function'] = business_function_id
+                data.pop('business_function_id', None)
+        
+        # Now validate
+        business_function = data.get('business_function')
+        business_function_ids = data.get('business_function_ids')
+        
+        if not business_function and not business_function_ids:
+            raise serializers.ValidationError(
+                "Either business_function or business_function_id(s) must be provided"
+            )
+        
+        if business_function_ids:
+            # Validate all business functions exist
+            existing_count = BusinessFunction.objects.filter(
+                id__in=business_function_ids, 
+                is_active=True
+            ).count()
+            if existing_count != len(business_function_ids):
+                raise serializers.ValidationError(
+                    "Some business function IDs do not exist or are inactive"
+                )
+        
+        return data
+    
+    def create(self, validated_data):
+        """Handle both single and bulk creation"""
+        business_function_ids = validated_data.pop('business_function_ids', None)
+        # Remove the singular version if it exists
+        validated_data.pop('business_function_id', None)
+        
+        if business_function_ids:
+            # Bulk creation mode
+            name = validated_data['name']
+            is_active = validated_data.get('is_active', True)
+            
+            created_departments = []
+            errors = []
+            
+            for bf_id in business_function_ids:
+                try:
+                    business_function = BusinessFunction.objects.get(id=bf_id)
+                    
+                    # Check if already exists
+                    if Department.objects.filter(
+                        business_function=business_function,
+                        name=name
+                    ).exists():
+                        errors.append(f"Department '{name}' already exists for {business_function.name}")
+                        continue
+                    
+                    department = Department.objects.create(
+                        name=name,
+                        business_function=business_function,
+                        is_active=is_active
+                    )
+                    created_departments.append(department)
+                    
+                except Exception as e:
+                    errors.append(f"Error for BF {bf_id}: {str(e)}")
+            
+            # Store results for response
+            self.context['bulk_result'] = {
+                'created_departments': created_departments,
+                'errors': errors,
+                'success_count': len(created_departments),
+                'error_count': len(errors)
+            }
+            
+            # Return first created department (for serializer compatibility)
+            if created_departments:
+                return created_departments[0]
+            else:
+                raise serializers.ValidationError({"errors": errors})
+        else:
+            # Single creation mode (original behavior)
+            return super().create(validated_data)
 
+
+# UPDATED: UnitSerializer - FIXED field handling
 class UnitSerializer(serializers.ModelSerializer):
     department_name = serializers.CharField(source='department.name', read_only=True)
     business_function_name = serializers.CharField(source='department.business_function.name', read_only=True)
-
     employee_count = serializers.SerializerMethodField()
+    
+    # NEW: Accept both singular and plural forms
+    department_id = serializers.IntegerField(write_only=True, required=False)
+    department_ids = serializers.ListField(
+        child=serializers.IntegerField(),
+        write_only=True,
+        required=False,
+        help_text="List of department IDs for bulk creation"
+    )
     
     class Meta:
         model = Unit
         fields = [
-            'id', 'name', 'department', 'department_name',
-            'business_function_name',
+            'id', 'name', 'department',
+            'department_id', 'department_ids',  # Include both
+            'department_name', 'business_function_name',
             'is_active', 'employee_count', 'created_at'
         ]
     
     def get_employee_count(self, obj):
         return obj.employees.filter(status__affects_headcount=True).count()
-
+    
+    def validate(self, data):
+        """FIXED: Handle both singular and array formats"""
+        department = data.get('department')
+        department_id = data.get('department_id')
+        department_ids = data.get('department_ids')
+        
+        # FIXED: Convert singular to plural if provided
+        if department_id is not None and not department_ids:
+            # Single ID provided - check if it's actually a list
+            if isinstance(department_id, list):
+                # It's an array, use as bulk
+                data['department_ids'] = department_id
+                data.pop('department_id', None)
+            else:
+                # Single integer - convert to department field
+                data['department'] = department_id
+                data.pop('department_id', None)
+        
+        # Now validate
+        department = data.get('department')
+        department_ids = data.get('department_ids')
+        
+        if not department and not department_ids:
+            raise serializers.ValidationError(
+                "Either department or department_id(s) must be provided"
+            )
+        
+        if department_ids:
+            # Validate all departments exist
+            existing_count = Department.objects.filter(
+                id__in=department_ids,
+                is_active=True
+            ).count()
+            if existing_count != len(department_ids):
+                raise serializers.ValidationError(
+                    "Some department IDs do not exist or are inactive"
+                )
+        
+        return data
+    
+    def create(self, validated_data):
+        """Handle both single and bulk creation"""
+        department_ids = validated_data.pop('department_ids', None)
+        # Remove the singular version if it exists
+        validated_data.pop('department_id', None)
+        
+        if department_ids:
+            # Bulk creation mode
+            name = validated_data['name']
+            is_active = validated_data.get('is_active', True)
+            
+            created_units = []
+            errors = []
+            
+            for dept_id in department_ids:
+                try:
+                    department = Department.objects.get(id=dept_id)
+                    
+                    # Check if already exists
+                    if Unit.objects.filter(
+                        department=department,
+                        name=name
+                    ).exists():
+                        errors.append(f"Unit '{name}' already exists for {department.name}")
+                        continue
+                    
+                    unit = Unit.objects.create(
+                        name=name,
+                        department=department,
+                        is_active=is_active
+                    )
+                    created_units.append(unit)
+                    
+                except Exception as e:
+                    errors.append(f"Error for Department {dept_id}: {str(e)}")
+            
+            # Store results for response
+            self.context['bulk_result'] = {
+                'created_units': created_units,
+                'errors': errors,
+                'success_count': len(created_units),
+                'error_count': len(errors)
+            }
+            
+            # Return first created unit (for serializer compatibility)
+            if created_units:
+                return created_units[0]
+            else:
+                raise serializers.ValidationError({"errors": errors})
+        else:
+            # Single creation mode (original behavior)
+            return super().create(validated_data)
 class JobFunctionSerializer(serializers.ModelSerializer):
     employee_count = serializers.SerializerMethodField()
     

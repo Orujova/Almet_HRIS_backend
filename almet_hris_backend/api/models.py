@@ -251,6 +251,23 @@ class PositionGroup(SoftDeleteModel):
     class Meta:
         ordering = ['hierarchy_level']
 
+
+class JobTitle(SoftDeleteModel):
+    """Job Title model for standardized job titles"""
+    name = models.CharField(max_length=200, unique=True)
+    description = models.TextField(blank=True, help_text="Description of this job title")
+
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    def __str__(self):
+        return self.name
+    
+    class Meta:
+        ordering = ['name']
+        verbose_name = "Job Title"
+        verbose_name_plural = "Job Titles"
 class EmployeeTag(SoftDeleteModel):
   
     
