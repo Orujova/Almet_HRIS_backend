@@ -940,7 +940,9 @@ class JobDescriptionCreateUpdateSerializer(serializers.ModelSerializer):
         
         # FIXED: Extract reset_approval_status flag (only for updates)
         reset_approval = validated_data.pop('reset_approval_status', False)
-        
+        business_resources_data = validated_data.pop('business_resources_with_items', None)
+        access_rights_data = validated_data.pop('access_rights_with_items', None)
+        company_benefits_data = validated_data.pop('company_benefits_with_items', None)
         
         with transaction.atomic():
             
@@ -1070,29 +1072,78 @@ class JobDescriptionCreateUpdateSerializer(serializers.ModelSerializer):
               
                     )
             
-            if business_resources_ids is not None:
+            # 🔥 CRITICAL FIX: Update business resources with items
+            if business_resources_data is not None:
+                logger.info(f"🔄 Updating business resources...")
                 instance.business_resources.all().delete()
-                for resource_id in business_resources_ids:
-                    JobDescriptionBusinessResource.objects.create(
+                
+                for resource_data in business_resources_data:
+                    resource_id = resource_data.get('resource_id')
+                    item_ids = resource_data.get('item_ids', [])
+                    
+                    logger.info(f"  Adding resource {resource_id} with items {item_ids}")
+                    
+                    jd_resource = JobDescriptionBusinessResource.objects.create(
                         job_description=instance,
                         resource_id=resource_id
                     )
-            
-            if access_rights_ids is not None:
+                    
+                    if item_ids:
+                        items = JobBusinessResourceItem.objects.filter(
+                            id__in=item_ids,
+                            resource_id=resource_id,
+                            is_active=True
+                        )
+                        jd_resource.specific_items.set(items)
+                        logger.info(f"    Linked {items.count()} specific items")
+                
+                logger.info(f"✅ Updated {len(business_resources_data)} business resources")
+                        
+            if access_rights_data is not None:
+                logger.info(f"🔄 Updating {len(access_rights_data)} access rights...")
                 instance.access_rights.all().delete()
-                for access_id in access_rights_ids:
-                    JobDescriptionAccessMatrix.objects.create(
+                
+                for access_data in access_rights_data:
+                    access_matrix_id = access_data.get('access_matrix_id')
+                    item_ids = access_data.get('item_ids', [])
+                    
+                    jd_access = JobDescriptionAccessMatrix.objects.create(
                         job_description=instance,
-                        access_matrix_id=access_id
+                        access_matrix_id=access_matrix_id
                     )
-            
-            if company_benefits_ids is not None:
+                    
+                    if item_ids:
+                        items = AccessMatrixItem.objects.filter(
+                            id__in=item_ids,
+                            access_matrix_id=access_matrix_id,
+                            is_active=True
+                        )
+                        jd_access.specific_items.set(items)
+                
+                logger.info(f"✅ Updated access rights")
+                        
+            if company_benefits_data is not None:
+                logger.info(f"🔄 Updating {len(company_benefits_data)} company benefits...")
                 instance.company_benefits.all().delete()
-                for benefit_id in company_benefits_ids:
-                    JobDescriptionCompanyBenefit.objects.create(
+                
+                for benefit_data in company_benefits_data:
+                    benefit_id = benefit_data.get('benefit_id')
+                    item_ids = benefit_data.get('item_ids', [])
+                    
+                    jd_benefit = JobDescriptionCompanyBenefit.objects.create(
                         job_description=instance,
                         benefit_id=benefit_id
                     )
+                    
+                    if item_ids:
+                        items = CompanyBenefitItem.objects.filter(
+                            id__in=item_ids,
+                            benefit_id=benefit_id,
+                            is_active=True
+                        )
+                        jd_benefit.specific_items.set(items)
+                
+                logger.info(f"✅ Updated company benefits")
             
             # Enhanced activity logging
             updated_fields = list(validated_data.keys())
