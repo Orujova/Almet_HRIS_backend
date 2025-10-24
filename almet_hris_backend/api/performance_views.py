@@ -46,7 +46,7 @@ class PerformanceYearViewSet(viewsets.ModelViewSet):
         """Set year as active"""
         year = self.get_object()
         year.is_active = True
-        year.save()  # This will deactivate others
+        year.save()
         
         return Response({
             'success': True,
@@ -83,9 +83,6 @@ class DepartmentObjectiveViewSet(viewsets.ModelViewSet):
     
     def get_queryset(self):
         queryset = DepartmentObjective.objects.select_related('department')
-        
-  
-       
         
         department = self.request.query_params.get('department')
         if department:
@@ -198,12 +195,73 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
             return Response(detail_serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
+    # ============ OBJECTIVES SECTION ============
+    
+    @action(detail=True, methods=['post'])
+    def save_objectives_draft(self, request, pk=None):
+        """Save objectives as draft"""
+        performance = self.get_object()
+        objectives_data = request.data.get('objectives', [])
+        
+        with transaction.atomic():
+            # Update or create objectives
+            updated_ids = []
+            for idx, obj_data in enumerate(objectives_data):
+                obj_id = obj_data.get('id')
+                if obj_id:
+                    # Update existing
+                    EmployeeObjective.objects.filter(
+                        id=obj_id, 
+                        performance=performance
+                    ).update(
+                        title=obj_data.get('title', ''),
+                        description=obj_data.get('description', ''),
+                        linked_department_objective_id=obj_data.get('linked_department_objective'),
+                        weight=obj_data.get('weight', 0),
+                        progress=obj_data.get('progress', 0),
+                        status_id=obj_data.get('status'),
+                        display_order=idx
+                    )
+                    updated_ids.append(obj_id)
+                else:
+                    # Create new
+                    new_obj = EmployeeObjective.objects.create(
+                        performance=performance,
+                        title=obj_data.get('title', ''),
+                        description=obj_data.get('description', ''),
+                        linked_department_objective_id=obj_data.get('linked_department_objective'),
+                        weight=obj_data.get('weight', 0),
+                        progress=obj_data.get('progress', 0),
+                        status_id=obj_data.get('status'),
+                        display_order=idx
+                    )
+                    updated_ids.append(new_obj.id)
+            
+            # Delete objectives not in the list
+            performance.objectives.exclude(id__in=updated_ids).delete()
+            
+            # Update draft saved timestamp
+            performance.objectives_draft_saved_date = timezone.now()
+            performance.save()
+            
+            PerformanceActivityLog.objects.create(
+                performance=performance,
+                action='OBJECTIVES_DRAFT_SAVED',
+                description='Objectives saved as draft',
+                performed_by=request.user
+            )
+        
+        return Response({
+            'success': True,
+            'message': 'Objectives draft saved'
+        })
+    
     @action(detail=True, methods=['post'])
     def submit_objectives(self, request, pk=None):
-        """Employee submits objectives for manager approval"""
+        """Submit objectives for approval"""
         performance = self.get_object()
         
-        # Check if employee can submit
+        # Check period
         current_period = performance.performance_year.get_current_period()
         if current_period not in ['GOAL_SETTING', 'MID_YEAR_REVIEW']:
             return Response({
@@ -233,11 +291,10 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
         
         # Update status
         performance.objectives_employee_submitted = True
-        performance.objectives_set_date = timezone.now()
+        performance.objectives_employee_submitted_date = timezone.now()
         performance.approval_status = 'PENDING_MANAGER_APPROVAL'
         performance.save()
         
-        # Log activity
         PerformanceActivityLog.objects.create(
             performance=performance,
             action='OBJECTIVES_SUBMITTED',
@@ -256,6 +313,7 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
         performance = self.get_object()
         
         performance.objectives_employee_approved = True
+        performance.objectives_employee_approved_date = timezone.now()
         
         if performance.objectives_manager_approved:
             performance.approval_status = 'APPROVED'
@@ -277,6 +335,7 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
         performance = self.get_object()
         
         performance.objectives_manager_approved = True
+        performance.objectives_manager_approved_date = timezone.now()
         
         if performance.objectives_employee_approved:
             performance.approval_status = 'APPROVED'
@@ -293,245 +352,6 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
         )
         
         return Response({'success': True, 'message': 'Objectives approved by manager'})
-    
-    @action(detail=True, methods=['post'])
-    def request_clarification(self, request, pk=None):
-        """Request clarification on objectives or final performance"""
-        performance = self.get_object()
-        comment_text = request.data.get('comment')
-        comment_type = request.data.get('comment_type', 'OBJECTIVE_CLARIFICATION')
-        
-        if not comment_text:
-            return Response({
-                'error': 'Comment text required'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        # Create comment
-        comment = PerformanceComment.objects.create(
-            performance=performance,
-            comment_type=comment_type,
-            content=comment_text,
-            created_by=request.user
-        )
-        
-        # Update status
-        performance.approval_status = 'NEED_CLARIFICATION'
-        performance.save()
-        
-        PerformanceActivityLog.objects.create(
-            performance=performance,
-            action='CLARIFICATION_REQUESTED',
-            description=f'Clarification requested: {comment_type}',
-            performed_by=request.user,
-            metadata={'comment_id': comment.id}
-        )
-        
-        return Response({
-            'success': True,
-            'message': 'Clarification requested',
-            'comment': PerformanceCommentSerializer(comment).data
-        })
-    
-    @action(detail=True, methods=['post'])
-    def submit_mid_year_employee(self, request, pk=None):
-        """Employee submits mid-year review"""
-        performance = self.get_object()
-        
-        comment = request.data.get('comment', '')
-        performance.mid_year_employee_comment = comment
-        performance.mid_year_employee_submitted = timezone.now()
-        performance.save()
-        
-        PerformanceActivityLog.objects.create(
-            performance=performance,
-            action='MID_YEAR_EMPLOYEE_SUBMITTED',
-            description='Employee submitted mid-year review',
-            performed_by=request.user
-        )
-        
-        return Response({'success': True, 'message': 'Mid-year review submitted'})
-    
-    @action(detail=True, methods=['post'])
-    def submit_mid_year_manager(self, request, pk=None):
-        """Manager submits mid-year review"""
-        performance = self.get_object()
-        
-        comment = request.data.get('comment', '')
-        performance.mid_year_manager_comment = comment
-        performance.mid_year_manager_submitted = timezone.now()
-        performance.mid_year_completed = True
-        performance.save()
-        
-        PerformanceActivityLog.objects.create(
-            performance=performance,
-            action='MID_YEAR_MANAGER_SUBMITTED',
-            description='Manager submitted mid-year review',
-            performed_by=request.user
-        )
-        
-        return Response({'success': True, 'message': 'Mid-year review completed'})
-    
-    @action(detail=True, methods=['post'])
-    def submit_end_year_employee(self, request, pk=None):
-        """Employee submits end-year review"""
-        performance = self.get_object()
-        
-        comment = request.data.get('comment', '')
-        performance.end_year_employee_comment = comment
-        performance.end_year_employee_submitted = timezone.now()
-        performance.save()
-        
-        PerformanceActivityLog.objects.create(
-            performance=performance,
-            action='END_YEAR_EMPLOYEE_SUBMITTED',
-            description='Employee submitted end-year review',
-            performed_by=request.user
-        )
-        
-        return Response({'success': True, 'message': 'End-year review submitted'})
-    
-    @action(detail=True, methods=['post'])
-    def complete_end_year(self, request, pk=None):
-        """Manager completes end-year review and finalizes scores"""
-        performance = self.get_object()
-        
-        # Validate all objectives have ratings
-        objectives_without_rating = performance.objectives.filter(
-            is_cancelled=False,
-            end_year_rating__isnull=True
-        ).count()
-        
-        if objectives_without_rating > 0:
-            return Response({
-                'error': f'{objectives_without_rating} objectives missing end-year ratings'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        # Validate all competencies have ratings
-        competencies_without_rating = performance.competency_ratings.filter(
-            end_year_rating__isnull=True
-        ).count()
-        
-        if competencies_without_rating > 0:
-            return Response({
-                'error': f'{competencies_without_rating} competencies missing end-year ratings'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        # Get manager comment if provided
-        comment = request.data.get('comment', '')
-        if comment:
-            performance.end_year_manager_comment = comment
-        
-        # Calculate final scores
-        performance.calculate_scores()
-        
-        # Auto-create development needs for low-rated competencies
-        self._create_development_needs(performance)
-        
-        # Update status
-        performance.end_year_manager_submitted = timezone.now()
-        performance.end_year_completed = True
-        performance.approval_status = 'PENDING_EMPLOYEE_APPROVAL'  # Employee needs to approve final
-        performance.save()
-        
-        PerformanceActivityLog.objects.create(
-            performance=performance,
-            action='END_YEAR_COMPLETED',
-            description='Manager completed end-year review and scores calculated',
-            performed_by=request.user,
-            metadata={
-                'final_rating': performance.final_rating,
-                'overall_percentage': str(performance.overall_weighted_percentage)
-            }
-        )
-        
-        return Response({
-            'success': True,
-            'message': 'End-year review completed',
-            'final_scores': {
-                'objectives_score': str(performance.total_objectives_score),
-                'objectives_percentage': str(performance.objectives_percentage),
-                'competencies_score': str(performance.total_competencies_score),
-                'competencies_percentage': str(performance.competencies_percentage),
-                'overall_percentage': str(performance.overall_weighted_percentage),
-                'final_rating': performance.final_rating
-            }
-        })
-    
-    def _create_development_needs(self, performance):
-        """Create development needs for E-- and E- rated competencies"""
-        low_ratings = performance.competency_ratings.filter(
-            end_year_rating__name__in=['E--', 'E-']
-        )
-        
-        for rating in low_ratings:
-            # Check if development need already exists
-            existing = performance.development_needs.filter(
-                competency_gap=rating.competency.name
-            ).first()
-            
-            if not existing:
-                DevelopmentNeed.objects.create(
-                    performance=performance,
-                    competency_gap=rating.competency.name,
-                    development_activity='',
-                    progress=0
-                )
-    
-    @action(detail=True, methods=['post'])
-    def approve_final_employee(self, request, pk=None):
-        """Employee approves final performance results"""
-        performance = self.get_object()
-        
-        if not performance.end_year_completed:
-            return Response({
-                'error': 'End-year review not completed yet'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        performance.final_employee_approved = True
-        performance.final_employee_approval_date = timezone.now()
-        
-        if performance.final_manager_approved:
-            performance.approval_status = 'COMPLETED'
-        else:
-            performance.approval_status = 'PENDING_MANAGER_APPROVAL'
-        
-        performance.save()
-        
-        PerformanceActivityLog.objects.create(
-            performance=performance,
-            action='FINAL_APPROVED_EMPLOYEE',
-            description='Employee approved final performance results',
-            performed_by=request.user
-        )
-        
-        return Response({'success': True, 'message': 'Final performance approved by employee'})
-    
-    @action(detail=True, methods=['post'])
-    def approve_final_manager(self, request, pk=None):
-        """Manager final approval (publishes results)"""
-        performance = self.get_object()
-        
-        if not performance.end_year_completed:
-            return Response({
-                'error': 'End-year review not completed yet'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        performance.final_manager_approved = True
-        performance.final_manager_approval_date = timezone.now()
-        performance.approval_status = 'COMPLETED'
-        performance.save()
-        
-        PerformanceActivityLog.objects.create(
-            performance=performance,
-            action='FINAL_APPROVED_MANAGER',
-            description='Manager approved and published final performance results',
-            performed_by=request.user
-        )
-        
-        return Response({
-            'success': True,
-            'message': 'Final performance approved and published'
-        })
     
     @action(detail=True, methods=['post'])
     def cancel_objective(self, request, pk=None):
@@ -572,6 +392,433 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
             return Response({
                 'error': 'Objective not found'
             }, status=status.HTTP_404_NOT_FOUND)
+    
+    # ============ COMPETENCIES SECTION ============
+    
+    @action(detail=True, methods=['post'])
+    def save_competencies_draft(self, request, pk=None):
+        """Save competencies as draft"""
+        performance = self.get_object()
+        competencies_data = request.data.get('competencies', [])
+        
+        with transaction.atomic():
+            for comp_data in competencies_data:
+                comp_id = comp_data.get('id')
+                if comp_id:
+                    EmployeeCompetencyRating.objects.filter(
+                        id=comp_id,
+                        performance=performance
+                    ).update(
+                        end_year_rating_id=comp_data.get('end_year_rating'),
+                        notes=comp_data.get('notes', '')
+                    )
+            
+            performance.competencies_draft_saved_date = timezone.now()
+            performance.save()
+            
+            PerformanceActivityLog.objects.create(
+                performance=performance,
+                action='COMPETENCIES_DRAFT_SAVED',
+                description='Competencies saved as draft',
+                performed_by=request.user
+            )
+        
+        return Response({
+            'success': True,
+            'message': 'Competencies draft saved'
+        })
+    
+    @action(detail=True, methods=['post'])
+    def submit_competencies(self, request, pk=None):
+        """Submit competencies"""
+        performance = self.get_object()
+        
+        performance.competencies_submitted = True
+        performance.competencies_submitted_date = timezone.now()
+        performance.save()
+        
+        PerformanceActivityLog.objects.create(
+            performance=performance,
+            action='COMPETENCIES_SUBMITTED',
+            description='Competencies submitted',
+            performed_by=request.user
+        )
+        
+        return Response({
+            'success': True,
+            'message': 'Competencies submitted'
+        })
+    
+    # ============ MID-YEAR REVIEW SECTION ============
+    
+    @action(detail=True, methods=['post'])
+    def save_mid_year_draft(self, request, pk=None):
+        """Save mid-year review as draft"""
+        performance = self.get_object()
+        user_role = request.data.get('user_role', 'employee')  # 'employee' or 'manager'
+        comment = request.data.get('comment', '')
+        
+        if user_role == 'employee':
+            performance.mid_year_employee_comment = comment
+            performance.mid_year_employee_draft_saved = timezone.now()
+            log_msg = 'Employee saved mid-year review draft'
+        else:
+            performance.mid_year_manager_comment = comment
+            performance.mid_year_manager_draft_saved = timezone.now()
+            log_msg = 'Manager saved mid-year review draft'
+        
+        performance.save()
+        
+        PerformanceActivityLog.objects.create(
+            performance=performance,
+            action='MID_YEAR_DRAFT_SAVED',
+            description=log_msg,
+            performed_by=request.user
+        )
+        
+        return Response({
+            'success': True,
+            'message': 'Mid-year draft saved'
+        })
+    
+    @action(detail=True, methods=['post'])
+    def submit_mid_year_employee(self, request, pk=None):
+        """Employee submits mid-year review"""
+        performance = self.get_object()
+        comment = request.data.get('comment', '')
+        
+        performance.mid_year_employee_comment = comment
+        performance.mid_year_employee_submitted = timezone.now()
+        performance.save()
+        
+        PerformanceActivityLog.objects.create(
+            performance=performance,
+            action='MID_YEAR_EMPLOYEE_SUBMITTED',
+            description='Employee submitted mid-year review',
+            performed_by=request.user
+        )
+        
+        return Response({'success': True, 'message': 'Mid-year review submitted'})
+    
+    @action(detail=True, methods=['post'])
+    def submit_mid_year_manager(self, request, pk=None):
+        """Manager submits mid-year review"""
+        performance = self.get_object()
+        comment = request.data.get('comment', '')
+        
+        performance.mid_year_manager_comment = comment
+        performance.mid_year_manager_submitted = timezone.now()
+        performance.mid_year_completed = True
+        performance.save()
+        
+        PerformanceActivityLog.objects.create(
+            performance=performance,
+            action='MID_YEAR_MANAGER_SUBMITTED',
+            description='Manager submitted mid-year review',
+            performed_by=request.user
+        )
+        
+        return Response({'success': True, 'message': 'Mid-year review completed'})
+    
+    # ============ END-YEAR REVIEW SECTION ============
+    
+    @action(detail=True, methods=['post'])
+    def save_end_year_draft(self, request, pk=None):
+        """Save end-year review as draft"""
+        performance = self.get_object()
+        user_role = request.data.get('user_role', 'employee')
+        comment = request.data.get('comment', '')
+        
+        if user_role == 'employee':
+            performance.end_year_employee_comment = comment
+            performance.end_year_employee_draft_saved = timezone.now()
+            log_msg = 'Employee saved end-year review draft'
+        else:
+            performance.end_year_manager_comment = comment
+            performance.end_year_manager_draft_saved = timezone.now()
+            log_msg = 'Manager saved end-year review draft'
+        
+        performance.save()
+        
+        PerformanceActivityLog.objects.create(
+            performance=performance,
+            action='END_YEAR_DRAFT_SAVED',
+            description=log_msg,
+            performed_by=request.user
+        )
+        
+        return Response({
+            'success': True,
+            'message': 'End-year draft saved'
+        })
+    
+    @action(detail=True, methods=['post'])
+    def submit_end_year_employee(self, request, pk=None):
+        """Employee submits end-year review"""
+        performance = self.get_object()
+        comment = request.data.get('comment', '')
+        
+        performance.end_year_employee_comment = comment
+        performance.end_year_employee_submitted = timezone.now()
+        performance.save()
+        
+        PerformanceActivityLog.objects.create(
+            performance=performance,
+            action='END_YEAR_EMPLOYEE_SUBMITTED',
+            description='Employee submitted end-year review',
+            performed_by=request.user
+        )
+        
+        return Response({'success': True, 'message': 'End-year review submitted'})
+    
+    @action(detail=True, methods=['post'])
+    def complete_end_year(self, request, pk=None):
+        """Manager completes end-year review and finalizes scores"""
+        performance = self.get_object()
+        
+        # Validate all objectives have ratings
+        objectives_without_rating = performance.objectives.filter(
+            is_cancelled=False,
+            end_year_rating__isnull=True
+        ).count()
+        
+        if objectives_without_rating > 0:
+            return Response({
+                'error': f'{objectives_without_rating} objectives missing end-year ratings'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Validate all competencies have ratings
+        competencies_without_rating = performance.competency_ratings.filter(
+            end_year_rating__isnull=True
+        ).count()
+        
+        if competencies_without_rating > 0:
+            return Response({
+                'error': f'{competencies_without_rating} competencies missing end-year ratings'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Get manager comment
+        comment = request.data.get('comment', '')
+        if comment:
+            performance.end_year_manager_comment = comment
+        
+        # Calculate final scores
+        performance.calculate_scores()
+        
+        # Auto-create development needs
+        self._create_development_needs(performance)
+        
+        # Update status
+        performance.end_year_manager_submitted = timezone.now()
+        performance.end_year_completed = True
+        performance.approval_status = 'PENDING_EMPLOYEE_APPROVAL'
+        performance.save()
+        
+        PerformanceActivityLog.objects.create(
+            performance=performance,
+            action='END_YEAR_COMPLETED',
+            description='Manager completed end-year review and scores calculated',
+            performed_by=request.user,
+            metadata={
+                'final_rating': performance.final_rating,
+                'overall_percentage': str(performance.overall_weighted_percentage)
+            }
+        )
+        
+        return Response({
+            'success': True,
+            'message': 'End-year review completed',
+            'final_scores': {
+                'objectives_score': str(performance.total_objectives_score),
+                'objectives_percentage': str(performance.objectives_percentage),
+                'competencies_score': str(performance.total_competencies_score),
+                'competencies_percentage': str(performance.competencies_percentage),
+                'overall_percentage': str(performance.overall_weighted_percentage),
+                'final_rating': performance.final_rating
+            }
+        })
+    
+    def _create_development_needs(self, performance):
+        """Create development needs for E-- and E- rated competencies"""
+        low_ratings = performance.competency_ratings.filter(
+            end_year_rating__name__in=['E--', 'E-']
+        )
+        
+        for rating in low_ratings:
+            existing = performance.development_needs.filter(
+                competency_gap=rating.competency.name
+            ).first()
+            
+            if not existing:
+                DevelopmentNeed.objects.create(
+                    performance=performance,
+                    competency_gap=rating.competency.name,
+                    development_activity='',
+                    progress=0
+                )
+    
+    # ============ DEVELOPMENT NEEDS SECTION ============
+    
+    @action(detail=True, methods=['post'])
+    def save_development_needs_draft(self, request, pk=None):
+        """Save development needs as draft"""
+        performance = self.get_object()
+        needs_data = request.data.get('development_needs', [])
+        
+        with transaction.atomic():
+            updated_ids = []
+            for need_data in needs_data:
+                need_id = need_data.get('id')
+                if need_id:
+                    DevelopmentNeed.objects.filter(
+                        id=need_id,
+                        performance=performance
+                    ).update(
+                        development_activity=need_data.get('development_activity', ''),
+                        progress=need_data.get('progress', 0),
+                        comment=need_data.get('comment', '')
+                    )
+                    updated_ids.append(need_id)
+                else:
+                    new_need = DevelopmentNeed.objects.create(
+                        performance=performance,
+                        competency_gap=need_data.get('competency_gap', ''),
+                        development_activity=need_data.get('development_activity', ''),
+                        progress=need_data.get('progress', 0),
+                        comment=need_data.get('comment', '')
+                    )
+                    updated_ids.append(new_need.id)
+            
+            performance.development_needs_draft_saved = timezone.now()
+            performance.save()
+            
+            PerformanceActivityLog.objects.create(
+                performance=performance,
+                action='DEVELOPMENT_NEEDS_DRAFT_SAVED',
+                description='Development needs saved as draft',
+                performed_by=request.user
+            )
+        
+        return Response({
+            'success': True,
+            'message': 'Development needs draft saved'
+        })
+    
+    @action(detail=True, methods=['post'])
+    def submit_development_needs(self, request, pk=None):
+        """Submit development needs"""
+        performance = self.get_object()
+        
+        performance.development_needs_submitted = timezone.now()
+        performance.save()
+        
+        PerformanceActivityLog.objects.create(
+            performance=performance,
+            action='DEVELOPMENT_NEEDS_SUBMITTED',
+            description='Development needs submitted',
+            performed_by=request.user
+        )
+        
+        return Response({
+            'success': True,
+            'message': 'Development needs submitted'
+        })
+    
+    # ============ CLARIFICATION & APPROVAL ============
+    
+    @action(detail=True, methods=['post'])
+    def request_clarification(self, request, pk=None):
+        """Request clarification"""
+        performance = self.get_object()
+        comment_text = request.data.get('comment')
+        comment_type = request.data.get('comment_type', 'OBJECTIVE_CLARIFICATION')
+        
+        if not comment_text:
+            return Response({
+                'error': 'Comment text required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        comment = PerformanceComment.objects.create(
+            performance=performance,
+            comment_type=comment_type,
+            content=comment_text,
+            created_by=request.user
+        )
+        
+        performance.approval_status = 'NEED_CLARIFICATION'
+        performance.save()
+        
+        PerformanceActivityLog.objects.create(
+            performance=performance,
+            action='CLARIFICATION_REQUESTED',
+            description=f'Clarification requested: {comment_type}',
+            performed_by=request.user,
+            metadata={'comment_id': comment.id}
+        )
+        
+        return Response({
+            'success': True,
+            'message': 'Clarification requested',
+            'comment': PerformanceCommentSerializer(comment).data
+        })
+    
+    @action(detail=True, methods=['post'])
+    def approve_final_employee(self, request, pk=None):
+        """Employee approves final performance results"""
+        performance = self.get_object()
+        
+        if not performance.end_year_completed:
+            return Response({
+                'error': 'End-year review not completed yet'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        performance.final_employee_approved = True
+        performance.final_employee_approval_date = timezone.now()
+        
+        if performance.final_manager_approved:
+            performance.approval_status = 'COMPLETED'
+        else:
+            performance.approval_status = 'PENDING_MANAGER_APPROVAL'
+        
+        performance.save()
+        
+        PerformanceActivityLog.objects.create(
+            performance=performance,
+            action='FINAL_APPROVED_EMPLOYEE',
+            description='Employee approved final performance results',
+            performed_by=request.user
+        )
+        
+        return Response({'success': True, 'message': 'Final performance approved by employee'})
+    
+    @action(detail=True, methods=['post'])
+    def approve_final_manager(self, request, pk=None):
+        """Manager final approval"""
+        performance = self.get_object()
+        
+        if not performance.end_year_completed:
+            return Response({
+                'error': 'End-year review not completed yet'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        performance.final_manager_approved = True
+        performance.final_manager_approval_date = timezone.now()
+        performance.approval_status = 'COMPLETED'
+        performance.save()
+        
+        PerformanceActivityLog.objects.create(
+            performance=performance,
+            action='FINAL_APPROVED_MANAGER',
+            description='Manager approved and published final performance results',
+            performed_by=request.user
+        )
+        
+        return Response({
+            'success': True,
+            'message': 'Final performance approved and published'
+        })
+    
+    # ============ UTILITIES ============
     
     @action(detail=True, methods=['post'])
     def recalculate_scores(self, request, pk=None):
@@ -650,7 +897,6 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
             ws.merge_cells(f'A{row}:F{row}')
             row += 1
             
-            # Objectives header
             obj_headers = ['Title', 'Weight %', 'Progress %', 'Status', 'Rating', 'Score']
             for col, header in enumerate(obj_headers, start=1):
                 cell = ws.cell(row=row, column=col, value=header)
@@ -658,7 +904,6 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
                 cell.border = border
             row += 1
             
-            # Objectives data
             for obj in performance.objectives.filter(is_cancelled=False):
                 ws.cell(row=row, column=1, value=obj.title).border = border
                 ws.cell(row=row, column=2, value=obj.weight).border = border
@@ -668,7 +913,6 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
                 ws.cell(row=row, column=6, value=str(obj.calculated_score)).border = border
                 row += 1
             
-            # Objectives summary
             row += 1
             ws[f'A{row}'] = "Objectives Total Score:"
             ws[f'A{row}'].font = Font(bold=True)
@@ -682,7 +926,6 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
             ws.merge_cells(f'A{row}:E{row}')
             row += 1
             
-            # Competencies header
             comp_headers = ['Group', 'Competency', 'Rating', 'Score', 'Notes']
             for col, header in enumerate(comp_headers, start=1):
                 cell = ws.cell(row=row, column=col, value=header)
@@ -690,7 +933,6 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
                 cell.border = border
             row += 1
             
-            # Competencies data
             for comp in performance.competency_ratings.all():
                 ws.cell(row=row, column=1, value=comp.competency.group.name).border = border
                 ws.cell(row=row, column=2, value=comp.competency.name).border = border
@@ -699,7 +941,6 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
                 ws.cell(row=row, column=5, value=comp.notes).border = border
                 row += 1
             
-            # Competencies summary
             row += 1
             ws[f'A{row}'] = "Competencies Total Score:"
             ws[f'A{row}'].font = Font(bold=True)

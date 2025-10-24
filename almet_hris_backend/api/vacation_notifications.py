@@ -450,7 +450,7 @@ class VacationNotificationManager:
                         ''' if vacation_request.rejection_reason else ''}
                         
                         <center>
-                            <a href="https://myalmet.com/vacation/my-requests" class="button">
+                            <a href="https://www.myalmet.com/requests/vacation/" class="button">
                                 View Request Details
                             </a>
                         </center>

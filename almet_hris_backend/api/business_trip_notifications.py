@@ -563,7 +563,7 @@ class BusinessTripNotificationManager:
                         ''' if trip_request.rejection_reason else ''}
                         
                         <center>
-                            <a href="https://myalmet.com/business-trips/my-requests" class="button">
+                            <a href="https://www.myalmet.com/requests/business-trip/" class="button">
                                 View Request Details
                             </a>
                         </center>

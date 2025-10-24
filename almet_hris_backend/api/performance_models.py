@@ -9,7 +9,7 @@ import uuid
 import logging
 
 from .models import Employee, PositionGroup, Department
-from .competency_models import Skill, SkillGroup  # CORE COMPETENCIES
+from .competency_models import Skill, SkillGroup
 
 logger = logging.getLogger(__name__)
 
@@ -118,13 +118,10 @@ class DepartmentObjective(models.Model):
     """Department Level Objectives"""
     department = models.ForeignKey(Department, on_delete=models.CASCADE)
     title = models.CharField(max_length=300)
-  
     weight = models.IntegerField(
         validators=[MinValueValidator(0), MaxValueValidator(100)],
         help_text="Weight percentage"
     )
-    
-
     
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -145,7 +142,8 @@ class EvaluationScale(models.Model):
     value = models.IntegerField(help_text="Numeric value for calculations")
     range_min = models.IntegerField(help_text="Minimum percentage")
     range_max = models.IntegerField(help_text="Maximum percentage")
-  
+    description = models.TextField(blank=True)
+    
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     
@@ -194,14 +192,13 @@ class EvaluationTargetConfig(models.Model):
 class ObjectiveStatus(models.Model):
     """Objective Status Types"""
     label = models.CharField(max_length=50, unique=True)
-  
-  
+    value = models.CharField(max_length=50, unique=True)
+    
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     
     class Meta:
         db_table = 'performance_objective_statuses'
-     
     
     def __str__(self):
         return self.label
@@ -226,26 +223,42 @@ class EmployeePerformance(models.Model):
     # Approval workflow
     approval_status = models.CharField(max_length=30, choices=APPROVAL_STATUS_CHOICES, default='DRAFT')
     
-    # Objective Setting
-    objectives_set_date = models.DateTimeField(null=True, blank=True)
+    # Objective Setting - with separate draft/submit tracking
+    objectives_draft_saved_date = models.DateTimeField(null=True, blank=True)
     objectives_employee_submitted = models.BooleanField(default=False)
+    objectives_employee_submitted_date = models.DateTimeField(null=True, blank=True)
     objectives_employee_approved = models.BooleanField(default=False)
+    objectives_employee_approved_date = models.DateTimeField(null=True, blank=True)
     objectives_manager_approved = models.BooleanField(default=False)
+    objectives_manager_approved_date = models.DateTimeField(null=True, blank=True)
     objectives_deadline = models.DateField(null=True, blank=True)
     
-    # Mid-Year Review
+    # Competencies Setting - with separate draft/submit tracking
+    competencies_draft_saved_date = models.DateTimeField(null=True, blank=True)
+    competencies_submitted = models.BooleanField(default=False)
+    competencies_submitted_date = models.DateTimeField(null=True, blank=True)
+    
+    # Mid-Year Review - with separate draft/submit tracking
     mid_year_employee_comment = models.TextField(blank=True)
+    mid_year_employee_draft_saved = models.DateTimeField(null=True, blank=True)
     mid_year_employee_submitted = models.DateTimeField(null=True, blank=True)
     mid_year_manager_comment = models.TextField(blank=True)
+    mid_year_manager_draft_saved = models.DateTimeField(null=True, blank=True)
     mid_year_manager_submitted = models.DateTimeField(null=True, blank=True)
     mid_year_completed = models.BooleanField(default=False)
     
-    # End-Year Review
+    # End-Year Review - with separate draft/submit tracking
     end_year_employee_comment = models.TextField(blank=True)
+    end_year_employee_draft_saved = models.DateTimeField(null=True, blank=True)
     end_year_employee_submitted = models.DateTimeField(null=True, blank=True)
     end_year_manager_comment = models.TextField(blank=True)
+    end_year_manager_draft_saved = models.DateTimeField(null=True, blank=True)
     end_year_manager_submitted = models.DateTimeField(null=True, blank=True)
     end_year_completed = models.BooleanField(default=False)
+    
+    # Development Needs - with separate draft/submit tracking
+    development_needs_draft_saved = models.DateTimeField(null=True, blank=True)
+    development_needs_submitted = models.DateTimeField(null=True, blank=True)
     
     # Final employee approval of performance result
     final_employee_approved = models.BooleanField(default=False)
@@ -387,7 +400,7 @@ class EmployeeCompetencyRating(models.Model):
         on_delete=models.CASCADE, 
         related_name='competency_ratings'
     )
-    competency = models.ForeignKey(Skill, on_delete=models.CASCADE)  # CORE COMPETENCY
+    competency = models.ForeignKey(Skill, on_delete=models.CASCADE)
     
     # End-year rating
     end_year_rating = models.ForeignKey(

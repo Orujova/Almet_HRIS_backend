@@ -280,8 +280,9 @@ class NewsNotificationManager:
                         <span class="meta-item"><strong> By:</strong> {author_name}</span>
                     </div>
                     
+                    <div class="image-box">
                     {image_html}
-                    
+                    </div>
                     <div class="excerpt-box">
                         <p style="font-size: 17px; font-weight: 500; line-height: 1.6; color: #1f2937; margin: 0;">
                             {news.excerpt}

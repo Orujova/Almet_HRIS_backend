@@ -34,7 +34,6 @@ class GoalLimitConfigSerializer(serializers.ModelSerializer):
 
 class DepartmentObjectiveSerializer(serializers.ModelSerializer):
     department_name = serializers.CharField(source='department.name', read_only=True)
-  
     
     class Meta:
         model = DepartmentObjective
@@ -79,7 +78,7 @@ class EmployeeObjectiveSerializer(serializers.ModelSerializer):
         allow_null=True
     )
     status_label = serializers.CharField(source='status.label', read_only=True)
-    status_color = serializers.CharField(source='status.color', read_only=True)
+    status_value = serializers.CharField(source='status.value', read_only=True)
     end_year_rating_name = serializers.CharField(source='end_year_rating.name', read_only=True, allow_null=True)
     end_year_rating_value = serializers.IntegerField(source='end_year_rating.value', read_only=True, allow_null=True)
     
@@ -138,6 +137,13 @@ class EmployeePerformanceListSerializer(serializers.ModelSerializer):
     objectives_count = serializers.SerializerMethodField()
     competencies_count = serializers.SerializerMethodField()
     
+    # Draft status indicators
+    has_objectives_draft = serializers.SerializerMethodField()
+    has_competencies_draft = serializers.SerializerMethodField()
+    has_mid_year_draft = serializers.SerializerMethodField()
+    has_end_year_draft = serializers.SerializerMethodField()
+    has_dev_needs_draft = serializers.SerializerMethodField()
+    
     class Meta:
         model = EmployeePerformance
         fields = [
@@ -148,6 +154,8 @@ class EmployeePerformanceListSerializer(serializers.ModelSerializer):
             'mid_year_completed', 'end_year_completed',
             'final_employee_approved', 'final_manager_approved',
             'overall_weighted_percentage', 'final_rating',
+            'has_objectives_draft', 'has_competencies_draft', 'has_mid_year_draft', 
+            'has_end_year_draft', 'has_dev_needs_draft',
             'created_at', 'updated_at'
         ]
     
@@ -156,6 +164,21 @@ class EmployeePerformanceListSerializer(serializers.ModelSerializer):
     
     def get_competencies_count(self, obj):
         return obj.competency_ratings.count()
+    
+    def get_has_objectives_draft(self, obj):
+        return obj.objectives_draft_saved_date is not None
+    
+    def get_has_competencies_draft(self, obj):
+        return obj.competencies_draft_saved_date is not None
+    
+    def get_has_mid_year_draft(self, obj):
+        return obj.mid_year_employee_draft_saved is not None or obj.mid_year_manager_draft_saved is not None
+    
+    def get_has_end_year_draft(self, obj):
+        return obj.end_year_employee_draft_saved is not None or obj.end_year_manager_draft_saved is not None
+    
+    def get_has_dev_needs_draft(self, obj):
+        return obj.development_needs_draft_saved is not None
 
 
 class EmployeePerformanceDetailSerializer(serializers.ModelSerializer):
@@ -182,6 +205,12 @@ class EmployeePerformanceDetailSerializer(serializers.ModelSerializer):
     # Weight configuration
     weight_config = serializers.SerializerMethodField()
     
+    # Evaluation targets
+    evaluation_targets = serializers.SerializerMethodField()
+    
+    # Goal limits
+    goal_limits = serializers.SerializerMethodField()
+    
     class Meta:
         model = EmployeePerformance
         fields = '__all__'
@@ -196,6 +225,20 @@ class EmployeePerformanceDetailSerializer(serializers.ModelSerializer):
                 'competencies_weight': weight.competencies_weight
             }
         return None
+    
+    def get_evaluation_targets(self, obj):
+        config = EvaluationTargetConfig.get_active_config()
+        return {
+            'objective_score_target': config.objective_score_target,
+            'competency_score_target': config.competency_score_target
+        }
+    
+    def get_goal_limits(self, obj):
+        config = GoalLimitConfig.get_active_config()
+        return {
+            'min_goals': config.min_goals,
+            'max_goals': config.max_goals
+        }
 
 
 class EmployeePerformanceCreateUpdateSerializer(serializers.ModelSerializer):
@@ -268,7 +311,6 @@ class EmployeePerformanceCreateUpdateSerializer(serializers.ModelSerializer):
             
             # Update objectives if provided
             if objectives_data is not None:
-                # Keep track of updated IDs
                 updated_ids = []
                 for idx, obj_data in enumerate(objectives_data):
                     obj_id = obj_data.pop('id', None)
