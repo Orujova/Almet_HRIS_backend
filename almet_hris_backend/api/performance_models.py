@@ -9,7 +9,8 @@ import uuid
 import logging
 
 from .models import Employee, PositionGroup, Department
-from .competency_models import Skill, SkillGroup
+from .competency_models import BehavioralCompetency, SkillGroup  # CHANGED: Skill removed, BehavioralCompetency added
+from .competency_assessment_models import LetterGradeMapping  # ADDED
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +73,7 @@ class PerformanceWeightConfig(models.Model):
     )
     competencies_weight = models.IntegerField(
         validators=[MinValueValidator(0), MaxValueValidator(100)],
-        help_text="Competencies weight percentage"
+        help_text="Behavioral Competencies weight percentage"  # CHANGED: Description updated
     )
     
     is_active = models.BooleanField(default=True)
@@ -167,9 +168,9 @@ class EvaluationScale(models.Model):
 
 
 class EvaluationTargetConfig(models.Model):
-    """Evaluation Target Configuration"""
+    """Evaluation Target Configuration - REMOVED competency_score_target"""
     objective_score_target = models.IntegerField(default=21)
-    competency_score_target = models.IntegerField(default=25)
+    # competency_score_target REMOVED - artıq lazım deyil
     
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -179,7 +180,7 @@ class EvaluationTargetConfig(models.Model):
         db_table = 'performance_evaluation_targets'
     
     def __str__(self):
-        return f"Targets: Obj={self.objective_score_target}, Comp={self.competency_score_target}"
+        return f"Target: Obj={self.objective_score_target}"
     
     @classmethod
     def get_active_config(cls):
@@ -223,7 +224,7 @@ class EmployeePerformance(models.Model):
     # Approval workflow
     approval_status = models.CharField(max_length=30, choices=APPROVAL_STATUS_CHOICES, default='DRAFT')
     
-    # Objective Setting - with separate draft/submit tracking
+    # Objective Setting
     objectives_draft_saved_date = models.DateTimeField(null=True, blank=True)
     objectives_employee_submitted = models.BooleanField(default=False)
     objectives_employee_submitted_date = models.DateTimeField(null=True, blank=True)
@@ -233,12 +234,12 @@ class EmployeePerformance(models.Model):
     objectives_manager_approved_date = models.DateTimeField(null=True, blank=True)
     objectives_deadline = models.DateField(null=True, blank=True)
     
-    # Competencies Setting - with separate draft/submit tracking
+    # Competencies Setting
     competencies_draft_saved_date = models.DateTimeField(null=True, blank=True)
     competencies_submitted = models.BooleanField(default=False)
     competencies_submitted_date = models.DateTimeField(null=True, blank=True)
     
-    # Mid-Year Review - with separate draft/submit tracking
+    # Mid-Year Review
     mid_year_employee_comment = models.TextField(blank=True)
     mid_year_employee_draft_saved = models.DateTimeField(null=True, blank=True)
     mid_year_employee_submitted = models.DateTimeField(null=True, blank=True)
@@ -247,7 +248,7 @@ class EmployeePerformance(models.Model):
     mid_year_manager_submitted = models.DateTimeField(null=True, blank=True)
     mid_year_completed = models.BooleanField(default=False)
     
-    # End-Year Review - with separate draft/submit tracking
+    # End-Year Review
     end_year_employee_comment = models.TextField(blank=True)
     end_year_employee_draft_saved = models.DateTimeField(null=True, blank=True)
     end_year_employee_submitted = models.DateTimeField(null=True, blank=True)
@@ -256,11 +257,11 @@ class EmployeePerformance(models.Model):
     end_year_manager_submitted = models.DateTimeField(null=True, blank=True)
     end_year_completed = models.BooleanField(default=False)
     
-    # Development Needs - with separate draft/submit tracking
+    # Development Needs
     development_needs_draft_saved = models.DateTimeField(null=True, blank=True)
     development_needs_submitted = models.DateTimeField(null=True, blank=True)
     
-    # Final employee approval of performance result
+    # Final approvals
     final_employee_approved = models.BooleanField(default=False)
     final_employee_approval_date = models.DateTimeField(null=True, blank=True)
     final_manager_approved = models.BooleanField(default=False)
@@ -270,8 +271,17 @@ class EmployeePerformance(models.Model):
     total_objectives_score = models.DecimalField(max_digits=5, decimal_places=2, default=0)
     objectives_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=0)
     
-    total_competencies_score = models.DecimalField(max_digits=5, decimal_places=2, default=0)
-    competencies_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=0)
+    # CHANGED: Behavioral competency scores structure
+    total_competencies_required_score = models.IntegerField(default=0, help_text="Total required behavioral competency score from position assessment")
+    total_competencies_actual_score = models.IntegerField(default=0, help_text="Total actual behavioral competency score")
+    competencies_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=0, help_text="(actual/required) * 100")
+    competencies_letter_grade = models.CharField(max_length=10, blank=True, help_text="Letter grade based on percentage")
+    
+    # Group-level behavioral scores
+    group_competency_scores = models.JSONField(
+        default=dict,
+        help_text="Scores by behavioral competency group: {group_name: {required, actual, percentage, letter_grade}}"
+    )
     
     overall_weighted_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=0)
     final_rating = models.CharField(max_length=10, blank=True)
@@ -290,7 +300,12 @@ class EmployeePerformance(models.Model):
         return f"{self.employee.full_name} - {self.performance_year.year}"
     
     def calculate_scores(self):
-        """Calculate all performance scores"""
+        """
+        Calculate all performance scores
+        NEW LOGIC: Behavioral competencies hesablanması assessment sistemindən götürülür
+        """
+        from collections import defaultdict
+        
         eval_target = EvaluationTargetConfig.get_active_config()
         weight_config = PerformanceWeightConfig.objects.filter(
             position_group=self.employee.position_group
@@ -300,7 +315,7 @@ class EmployeePerformance(models.Model):
             logger.warning(f"No weight config for {self.employee.position_group}")
             return
         
-        # Calculate objectives score
+        # ========== OBJECTIVES CALCULATION (unchanged) ==========
         objectives = self.objectives.filter(is_cancelled=False)
         obj_score = sum([
             (obj.end_year_rating.value if obj.end_year_rating else 0) * 
@@ -314,26 +329,65 @@ class EmployeePerformance(models.Model):
             (self.total_objectives_score / eval_target.objective_score_target) * 100, 2
         ) if eval_target.objective_score_target > 0 else 0
         
-        # Calculate competencies score
-        competencies = self.competency_ratings.all()
-        comp_score = sum([
-            comp.end_year_rating.value if comp.end_year_rating else 0
-            for comp in competencies
-        ])
+        # ========== BEHAVIORAL COMPETENCIES CALCULATION (NEW LOGIC) ==========
+        competencies = self.competency_ratings.select_related('behavioral_competency__group').all()
         
-        self.total_competencies_score = round(comp_score, 2)
-        self.competencies_percentage = round(
-            (self.total_competencies_score / eval_target.competency_score_target) * 100, 2
-        ) if eval_target.competency_score_target > 0 else 0
+        # Group ratings by competency group
+        group_data = defaultdict(lambda: {'required_total': 0, 'actual_total': 0, 'count': 0})
+        total_required = 0
+        total_actual = 0
         
-        # Calculate overall weighted percentage
+        for comp in competencies:
+            group_name = comp.behavioral_competency.group.name
+            required = comp.required_level
+            actual = comp.end_year_rating.value if comp.end_year_rating else 0
+            
+            group_data[group_name]['required_total'] += required
+            group_data[group_name]['actual_total'] += actual
+            group_data[group_name]['count'] += 1
+            
+            total_required += required
+            total_actual += actual
+        
+        # Calculate group-level scores
+        group_scores = {}
+        for group_name, data in group_data.items():
+            if data['required_total'] > 0:
+                percentage = (data['actual_total'] / data['required_total']) * 100
+            else:
+                percentage = 0
+            
+            letter_grade = LetterGradeMapping.get_letter_grade(percentage)
+            
+            group_scores[group_name] = {
+                'required_total': data['required_total'],
+                'actual_total': data['actual_total'],
+                'percentage': round(percentage, 2),
+                'letter_grade': letter_grade,
+                'count': data['count']
+            }
+        
+        self.group_competency_scores = group_scores
+        
+        # Overall competency scores
+        self.total_competencies_required_score = total_required
+        self.total_competencies_actual_score = total_actual
+        
+        if total_required > 0:
+            self.competencies_percentage = round((total_actual / total_required) * 100, 2)
+        else:
+            self.competencies_percentage = 0
+        
+        self.competencies_letter_grade = LetterGradeMapping.get_letter_grade(self.competencies_percentage)
+        
+        # ========== OVERALL WEIGHTED CALCULATION ==========
         self.overall_weighted_percentage = round(
             (self.objectives_percentage * weight_config.objectives_weight / 100) +
             (self.competencies_percentage * weight_config.competencies_weight / 100),
             2
         )
         
-        # Determine final rating
+        # Determine final rating using EvaluationScale
         rating = EvaluationScale.get_rating_by_percentage(self.overall_weighted_percentage)
         self.final_rating = rating.name if rating else 'N/A'
         
@@ -341,7 +395,7 @@ class EmployeePerformance(models.Model):
 
 
 class EmployeeObjective(models.Model):
-    """Employee Objectives"""
+    """Employee Objectives - UNCHANGED"""
     performance = models.ForeignKey(EmployeePerformance, on_delete=models.CASCADE, related_name='objectives')
     
     title = models.CharField(max_length=300)
@@ -358,14 +412,12 @@ class EmployeeObjective(models.Model):
         help_text="Weight percentage"
     )
     
-    # Progress tracking
     progress = models.IntegerField(
         default=0,
         validators=[MinValueValidator(0), MaxValueValidator(100)]
     )
     status = models.ForeignKey(ObjectiveStatus, on_delete=models.PROTECT)
     
-    # End-year evaluation
     end_year_rating = models.ForeignKey(
         EvaluationScale, 
         on_delete=models.SET_NULL, 
@@ -375,7 +427,6 @@ class EmployeeObjective(models.Model):
     )
     calculated_score = models.DecimalField(max_digits=5, decimal_places=2, default=0)
     
-    # Manager can cancel/add mid-year
     is_cancelled = models.BooleanField(default=False)
     cancelled_date = models.DateTimeField(null=True, blank=True)
     cancellation_reason = models.TextField(blank=True)
@@ -394,21 +445,39 @@ class EmployeeObjective(models.Model):
 
 
 class EmployeeCompetencyRating(models.Model):
-    """Employee Competency Ratings - Uses CORE Competencies (Skill)"""
+    """
+    Employee Behavioral Competency Ratings
+    CHANGED: Uses Behavioral Competencies instead of Core Skills
+    """
     performance = models.ForeignKey(
         EmployeePerformance, 
         on_delete=models.CASCADE, 
         related_name='competency_ratings'
     )
-    competency = models.ForeignKey(Skill, on_delete=models.CASCADE)
+    behavioral_competency = models.ForeignKey(
+        BehavioralCompetency, 
+        on_delete=models.CASCADE,
+        help_text="Behavioral competency from competency framework",
+        null=True,  # Müvəqqəti
+        blank=True  # Müvəqqəti
+    )
     
-    # End-year rating
+    # ADDED: Required level from position assessment
+    required_level = models.IntegerField(
+        validators=[MinValueValidator(1), MaxValueValidator(10)],
+        help_text="Required level from position behavioral assessment",
+        null=True,  # Müvəqqəti
+        blank=True  # Müvəqqəti
+    )
+    
+    # End-year rating (actual performance)
     end_year_rating = models.ForeignKey(
         EvaluationScale,
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        related_name='competency_ratings'
+        related_name='competency_ratings',
+        help_text="Actual rating using Evaluation Scale (E++, E+, etc.)"
     )
     
     notes = models.TextField(blank=True)
@@ -418,22 +487,43 @@ class EmployeeCompetencyRating(models.Model):
     
     class Meta:
         db_table = 'employee_competency_ratings'
-        unique_together = ['performance', 'competency']
-        ordering = ['competency__group', 'competency__name']
+        # unique_together-i indi şərh edin
+        # unique_together = ['performance', 'behavioral_competency']
+        ordering = ['behavioral_competency__group', 'behavioral_competency__name']
     
     def __str__(self):
-        return f"{self.performance.employee.full_name} - {self.competency.name}"
-
+        comp_name = self.behavioral_competency.name if self.behavioral_competency else 'N/A'
+        return f"{self.performance.employee.full_name} - {comp_name}"
+    
+    @property
+    def actual_value(self):
+        """Get numeric value from end_year_rating"""
+        return self.end_year_rating.value if self.end_year_rating else 0
+    
+    @property
+    def gap(self):
+        """Calculate gap between actual and required"""
+        if self.required_level:
+            return self.actual_value - self.required_level
+        return 0
 
 class DevelopmentNeed(models.Model):
-    """Development Needs (for competencies with E-- or E-)"""
+    """
+    Development Needs
+    CHANGED: Now based on behavioral competencies with low ratings
+    """
     performance = models.ForeignKey(
         EmployeePerformance,
         on_delete=models.CASCADE,
         related_name='development_needs'
     )
-    competency_gap = models.CharField(max_length=200, help_text="Competency name with gap")
-    development_activity = models.TextField(help_text="Planned development activity")
+    competency_gap = models.CharField(
+        max_length=200, 
+        help_text="Behavioral competency name with gap"
+    )
+    development_activity = models.TextField(
+        help_text="Planned development activity"
+    )
     
     progress = models.IntegerField(
         default=0,
@@ -453,7 +543,7 @@ class DevelopmentNeed(models.Model):
 
 
 class PerformanceComment(models.Model):
-    """Comments and Clarifications"""
+    """Comments and Clarifications - UNCHANGED"""
     COMMENT_TYPE_CHOICES = [
         ('OBJECTIVE_CLARIFICATION', 'Objective Clarification'),
         ('FINAL_CLARIFICATION', 'Final Performance Clarification'),
@@ -472,7 +562,6 @@ class PerformanceComment(models.Model):
     created_by = models.ForeignKey(User, on_delete=models.CASCADE)
     created_at = models.DateTimeField(auto_now_add=True)
     
-    # Parent comment for threading
     parent_comment = models.ForeignKey(
         'self',
         on_delete=models.CASCADE,
@@ -490,7 +579,7 @@ class PerformanceComment(models.Model):
 
 
 class PerformanceNotificationTemplate(models.Model):
-    """Notification Templates"""
+    """Notification Templates - UNCHANGED"""
     TRIGGER_TYPE_CHOICES = [
         ('GOAL_SETTING_START', 'Goal Setting Period Started'),
         ('MID_YEAR_START', 'Mid-Year Review Started'),
@@ -523,7 +612,7 @@ class PerformanceNotificationTemplate(models.Model):
 
 
 class PerformanceActivityLog(models.Model):
-    """Activity Log for Performance Records"""
+    """Activity Log for Performance Records - UNCHANGED"""
     performance = models.ForeignKey(
         EmployeePerformance,
         on_delete=models.CASCADE,

@@ -14,11 +14,13 @@ import logging
 import io
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.utils import get_column_letter
 
 from .performance_models import *
 from .performance_serializers import *
 from .models import Employee
-from .competency_models import Skill
+from .competency_models import BehavioralCompetency
+from .competency_assessment_models import PositionBehavioralAssessment, LetterGradeMapping
 
 logger = logging.getLogger(__name__)
 
@@ -96,28 +98,6 @@ class EvaluationScaleViewSet(viewsets.ModelViewSet):
     queryset = EvaluationScale.objects.all()
     serializer_class = EvaluationScaleSerializer
     permission_classes = [IsAuthenticated]
-    
-    @action(detail=False, methods=['get'])
-    def by_percentage(self, request):
-        """Get rating by percentage"""
-        percentage = request.query_params.get('percentage')
-        if not percentage:
-            return Response({
-                'error': 'percentage parameter required'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        try:
-            pct = float(percentage)
-            rating = EvaluationScale.get_rating_by_percentage(pct)
-            if rating:
-                return Response(EvaluationScaleSerializer(rating).data)
-            return Response({
-                'error': 'No rating found for this percentage'
-            }, status=status.HTTP_404_NOT_FOUND)
-        except ValueError:
-            return Response({
-                'error': 'Invalid percentage value'
-            }, status=status.HTTP_400_BAD_REQUEST)
 
 
 class EvaluationTargetConfigViewSet(viewsets.ModelViewSet):
@@ -184,7 +164,9 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
     
     @action(detail=False, methods=['post'])
     def initialize(self, request):
-        """Initialize performance record with competencies"""
+        """
+        Initialize performance record with behavioral competencies from position assessment
+        """
         serializer = PerformanceInitializeSerializer(
             data=request.data,
             context={'request': request}
@@ -196,6 +178,212 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
     # ============ OBJECTIVES SECTION ============
+    def _create_development_needs(self, performance):
+        """
+        Create development needs for low-rated behavioral competencies
+        Uses evaluation scale ratings (E--, E- or ratings with value <= 2)
+        """
+        low_ratings = performance.competency_ratings.filter(
+            end_year_rating__value__lte=2
+        ).select_related('behavioral_competency')
+        
+        for rating in low_ratings:
+            existing = performance.development_needs.filter(
+                competency_gap=rating.behavioral_competency.name
+            ).first()
+            
+            if not existing:
+                DevelopmentNeed.objects.create(
+                    performance=performance,
+                    competency_gap=rating.behavioral_competency.name,
+                    development_activity='',
+                    progress=0
+                )
+    
+    # ============ DEVELOPMENT NEEDS SECTION ============
+    
+    @action(detail=True, methods=['post'])
+    def save_development_needs_draft(self, request, pk=None):
+        """Save development needs as draft"""
+        performance = self.get_object()
+        needs_data = request.data.get('development_needs', [])
+        
+        with transaction.atomic():
+            updated_ids = []
+            for need_data in needs_data:
+                need_id = need_data.get('id')
+                if need_id:
+                    DevelopmentNeed.objects.filter(
+                        id=need_id,
+                        performance=performance
+                    ).update(
+                        development_activity=need_data.get('development_activity', ''),
+                        progress=need_data.get('progress', 0),
+                        comment=need_data.get('comment', '')
+                    )
+                    updated_ids.append(need_id)
+                else:
+                    new_need = DevelopmentNeed.objects.create(
+                        performance=performance,
+                        competency_gap=need_data.get('competency_gap', ''),
+                        development_activity=need_data.get('development_activity', ''),
+                        progress=need_data.get('progress', 0),
+                        comment=need_data.get('comment', '')
+                    )
+                    updated_ids.append(new_need.id)
+            
+            performance.development_needs_draft_saved = timezone.now()
+            performance.save()
+            
+            PerformanceActivityLog.objects.create(
+                performance=performance,
+                action='DEVELOPMENT_NEEDS_DRAFT_SAVED',
+                description='Development needs saved as draft',
+                performed_by=request.user
+            )
+        
+        return Response({
+            'success': True,
+            'message': 'Development needs draft saved'
+        })
+    
+    @action(detail=True, methods=['post'])
+    def submit_development_needs(self, request, pk=None):
+        """Submit development needs"""
+        performance = self.get_object()
+        
+        performance.development_needs_submitted = timezone.now()
+        performance.save()
+        
+        PerformanceActivityLog.objects.create(
+            performance=performance,
+            action='DEVELOPMENT_NEEDS_SUBMITTED',
+            description='Development needs submitted',
+            performed_by=request.user
+        )
+        
+        return Response({
+            'success': True,
+            'message': 'Development needs submitted'
+        })
+    
+    # ============ CLARIFICATION & APPROVAL ============
+    
+    @action(detail=True, methods=['post'])
+    def request_clarification(self, request, pk=None):
+        """Request clarification"""
+        performance = self.get_object()
+        comment_text = request.data.get('comment')
+        comment_type = request.data.get('comment_type', 'OBJECTIVE_CLARIFICATION')
+        
+        if not comment_text:
+            return Response({
+                'error': 'Comment text required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        comment = PerformanceComment.objects.create(
+            performance=performance,
+            comment_type=comment_type,
+            content=comment_text,
+            created_by=request.user
+        )
+        
+        performance.approval_status = 'NEED_CLARIFICATION'
+        performance.save()
+        
+        PerformanceActivityLog.objects.create(
+            performance=performance,
+            action='CLARIFICATION_REQUESTED',
+            description=f'Clarification requested: {comment_type}',
+            performed_by=request.user,
+            metadata={'comment_id': comment.id}
+        )
+        
+        return Response({
+            'success': True,
+            'message': 'Clarification requested',
+            'comment': PerformanceCommentSerializer(comment).data
+        })
+    
+    @action(detail=True, methods=['post'])
+    def approve_final_employee(self, request, pk=None):
+        """Employee approves final performance results"""
+        performance = self.get_object()
+        
+        if not performance.end_year_completed:
+            return Response({
+                'error': 'End-year review not completed yet'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        performance.final_employee_approved = True
+        performance.final_employee_approval_date = timezone.now()
+        
+        if performance.final_manager_approved:
+            performance.approval_status = 'COMPLETED'
+        else:
+            performance.approval_status = 'PENDING_MANAGER_APPROVAL'
+        
+        performance.save()
+        
+        PerformanceActivityLog.objects.create(
+            performance=performance,
+            action='FINAL_APPROVED_EMPLOYEE',
+            description='Employee approved final performance results',
+            performed_by=request.user
+        )
+        
+        return Response({'success': True, 'message': 'Final performance approved by employee'})
+    
+    @action(detail=True, methods=['post'])
+    def approve_final_manager(self, request, pk=None):
+        """Manager final approval"""
+        performance = self.get_object()
+        
+        if not performance.end_year_completed:
+            return Response({
+                'error': 'End-year review not completed yet'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        performance.final_manager_approved = True
+        performance.final_manager_approval_date = timezone.now()
+        performance.approval_status = 'COMPLETED'
+        performance.save()
+        
+        PerformanceActivityLog.objects.create(
+            performance=performance,
+            action='FINAL_APPROVED_MANAGER',
+            description='Manager approved and published final performance results',
+            performed_by=request.user
+        )
+        
+        return Response({
+            'success': True,
+            'message': 'Final performance approved and published'
+        })
+    
+    # ============ UTILITIES ============
+    
+    @action(detail=True, methods=['post'])
+    def recalculate_scores(self, request, pk=None):
+        """Recalculate performance scores"""
+        performance = self.get_object()
+        performance.calculate_scores()
+        
+        return Response({
+            'success': True,
+            'message': 'Scores recalculated',
+            'scores': {
+                'objectives_score': str(performance.total_objectives_score),
+                'objectives_percentage': str(performance.objectives_percentage),
+                'competencies_required_score': performance.total_competencies_required_score,
+                'competencies_actual_score': performance.total_competencies_actual_score,
+                'competencies_percentage': str(performance.competencies_percentage),
+                'competencies_letter_grade': performance.competencies_letter_grade,
+                'group_scores': performance.group_competency_scores,
+                'overall_percentage': str(performance.overall_weighted_percentage),
+                'final_rating': performance.final_rating
+            }
+        })
     
     @action(detail=True, methods=['post'])
     def save_objectives_draft(self, request, pk=None):
@@ -393,11 +581,11 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
                 'error': 'Objective not found'
             }, status=status.HTTP_404_NOT_FOUND)
     
-    # ============ COMPETENCIES SECTION ============
+    # ============ BEHAVIORAL COMPETENCIES SECTION ============
     
     @action(detail=True, methods=['post'])
     def save_competencies_draft(self, request, pk=None):
-        """Save competencies as draft"""
+        """Save behavioral competencies as draft"""
         performance = self.get_object()
         competencies_data = request.data.get('competencies', [])
         
@@ -419,18 +607,18 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
             PerformanceActivityLog.objects.create(
                 performance=performance,
                 action='COMPETENCIES_DRAFT_SAVED',
-                description='Competencies saved as draft',
+                description='Behavioral competencies saved as draft',
                 performed_by=request.user
             )
         
         return Response({
             'success': True,
-            'message': 'Competencies draft saved'
+            'message': 'Behavioral competencies draft saved'
         })
     
     @action(detail=True, methods=['post'])
     def submit_competencies(self, request, pk=None):
-        """Submit competencies"""
+        """Submit behavioral competencies"""
         performance = self.get_object()
         
         performance.competencies_submitted = True
@@ -440,13 +628,13 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
         PerformanceActivityLog.objects.create(
             performance=performance,
             action='COMPETENCIES_SUBMITTED',
-            description='Competencies submitted',
+            description='Behavioral competencies submitted',
             performed_by=request.user
         )
         
         return Response({
             'success': True,
-            'message': 'Competencies submitted'
+            'message': 'Behavioral competencies submitted'
         })
     
     # ============ MID-YEAR REVIEW SECTION ============
@@ -573,7 +761,10 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
     
     @action(detail=True, methods=['post'])
     def complete_end_year(self, request, pk=None):
-        """Manager completes end-year review and finalizes scores"""
+        """
+        Manager completes end-year review and finalizes scores
+        NEW LOGIC: Uses behavioral competency scoring with letter grades
+        """
         performance = self.get_object()
         
         # Validate all objectives have ratings
@@ -587,14 +778,14 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
                 'error': f'{objectives_without_rating} objectives missing end-year ratings'
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        # Validate all competencies have ratings
+        # Validate all behavioral competencies have ratings
         competencies_without_rating = performance.competency_ratings.filter(
             end_year_rating__isnull=True
         ).count()
         
         if competencies_without_rating > 0:
             return Response({
-                'error': f'{competencies_without_rating} competencies missing end-year ratings'
+                'error': f'{competencies_without_rating} behavioral competencies missing end-year ratings'
             }, status=status.HTTP_400_BAD_REQUEST)
         
         # Get manager comment
@@ -602,10 +793,10 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
         if comment:
             performance.end_year_manager_comment = comment
         
-        # Calculate final scores
+        # Calculate final scores (NEW LOGIC in model)
         performance.calculate_scores()
         
-        # Auto-create development needs
+        # Auto-create development needs for low-rated competencies
         self._create_development_needs(performance)
         
         # Update status
@@ -621,7 +812,9 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
             performed_by=request.user,
             metadata={
                 'final_rating': performance.final_rating,
-                'overall_percentage': str(performance.overall_weighted_percentage)
+                'overall_percentage': str(performance.overall_weighted_percentage),
+                'competencies_letter_grade': performance.competencies_letter_grade,
+                'group_scores': performance.group_competency_scores
             }
         )
         
@@ -631,209 +824,11 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
             'final_scores': {
                 'objectives_score': str(performance.total_objectives_score),
                 'objectives_percentage': str(performance.objectives_percentage),
-                'competencies_score': str(performance.total_competencies_score),
+                'competencies_required_score': performance.total_competencies_required_score,
+                'competencies_actual_score': performance.total_competencies_actual_score,
                 'competencies_percentage': str(performance.competencies_percentage),
-                'overall_percentage': str(performance.overall_weighted_percentage),
-                'final_rating': performance.final_rating
-            }
-        })
-    
-    def _create_development_needs(self, performance):
-        """Create development needs for E-- and E- rated competencies"""
-        low_ratings = performance.competency_ratings.filter(
-            end_year_rating__name__in=['E--', 'E-']
-        )
-        
-        for rating in low_ratings:
-            existing = performance.development_needs.filter(
-                competency_gap=rating.competency.name
-            ).first()
-            
-            if not existing:
-                DevelopmentNeed.objects.create(
-                    performance=performance,
-                    competency_gap=rating.competency.name,
-                    development_activity='',
-                    progress=0
-                )
-    
-    # ============ DEVELOPMENT NEEDS SECTION ============
-    
-    @action(detail=True, methods=['post'])
-    def save_development_needs_draft(self, request, pk=None):
-        """Save development needs as draft"""
-        performance = self.get_object()
-        needs_data = request.data.get('development_needs', [])
-        
-        with transaction.atomic():
-            updated_ids = []
-            for need_data in needs_data:
-                need_id = need_data.get('id')
-                if need_id:
-                    DevelopmentNeed.objects.filter(
-                        id=need_id,
-                        performance=performance
-                    ).update(
-                        development_activity=need_data.get('development_activity', ''),
-                        progress=need_data.get('progress', 0),
-                        comment=need_data.get('comment', '')
-                    )
-                    updated_ids.append(need_id)
-                else:
-                    new_need = DevelopmentNeed.objects.create(
-                        performance=performance,
-                        competency_gap=need_data.get('competency_gap', ''),
-                        development_activity=need_data.get('development_activity', ''),
-                        progress=need_data.get('progress', 0),
-                        comment=need_data.get('comment', '')
-                    )
-                    updated_ids.append(new_need.id)
-            
-            performance.development_needs_draft_saved = timezone.now()
-            performance.save()
-            
-            PerformanceActivityLog.objects.create(
-                performance=performance,
-                action='DEVELOPMENT_NEEDS_DRAFT_SAVED',
-                description='Development needs saved as draft',
-                performed_by=request.user
-            )
-        
-        return Response({
-            'success': True,
-            'message': 'Development needs draft saved'
-        })
-    
-    @action(detail=True, methods=['post'])
-    def submit_development_needs(self, request, pk=None):
-        """Submit development needs"""
-        performance = self.get_object()
-        
-        performance.development_needs_submitted = timezone.now()
-        performance.save()
-        
-        PerformanceActivityLog.objects.create(
-            performance=performance,
-            action='DEVELOPMENT_NEEDS_SUBMITTED',
-            description='Development needs submitted',
-            performed_by=request.user
-        )
-        
-        return Response({
-            'success': True,
-            'message': 'Development needs submitted'
-        })
-    
-    # ============ CLARIFICATION & APPROVAL ============
-    
-    @action(detail=True, methods=['post'])
-    def request_clarification(self, request, pk=None):
-        """Request clarification"""
-        performance = self.get_object()
-        comment_text = request.data.get('comment')
-        comment_type = request.data.get('comment_type', 'OBJECTIVE_CLARIFICATION')
-        
-        if not comment_text:
-            return Response({
-                'error': 'Comment text required'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        comment = PerformanceComment.objects.create(
-            performance=performance,
-            comment_type=comment_type,
-            content=comment_text,
-            created_by=request.user
-        )
-        
-        performance.approval_status = 'NEED_CLARIFICATION'
-        performance.save()
-        
-        PerformanceActivityLog.objects.create(
-            performance=performance,
-            action='CLARIFICATION_REQUESTED',
-            description=f'Clarification requested: {comment_type}',
-            performed_by=request.user,
-            metadata={'comment_id': comment.id}
-        )
-        
-        return Response({
-            'success': True,
-            'message': 'Clarification requested',
-            'comment': PerformanceCommentSerializer(comment).data
-        })
-    
-    @action(detail=True, methods=['post'])
-    def approve_final_employee(self, request, pk=None):
-        """Employee approves final performance results"""
-        performance = self.get_object()
-        
-        if not performance.end_year_completed:
-            return Response({
-                'error': 'End-year review not completed yet'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        performance.final_employee_approved = True
-        performance.final_employee_approval_date = timezone.now()
-        
-        if performance.final_manager_approved:
-            performance.approval_status = 'COMPLETED'
-        else:
-            performance.approval_status = 'PENDING_MANAGER_APPROVAL'
-        
-        performance.save()
-        
-        PerformanceActivityLog.objects.create(
-            performance=performance,
-            action='FINAL_APPROVED_EMPLOYEE',
-            description='Employee approved final performance results',
-            performed_by=request.user
-        )
-        
-        return Response({'success': True, 'message': 'Final performance approved by employee'})
-    
-    @action(detail=True, methods=['post'])
-    def approve_final_manager(self, request, pk=None):
-        """Manager final approval"""
-        performance = self.get_object()
-        
-        if not performance.end_year_completed:
-            return Response({
-                'error': 'End-year review not completed yet'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        performance.final_manager_approved = True
-        performance.final_manager_approval_date = timezone.now()
-        performance.approval_status = 'COMPLETED'
-        performance.save()
-        
-        PerformanceActivityLog.objects.create(
-            performance=performance,
-            action='FINAL_APPROVED_MANAGER',
-            description='Manager approved and published final performance results',
-            performed_by=request.user
-        )
-        
-        return Response({
-            'success': True,
-            'message': 'Final performance approved and published'
-        })
-    
-    # ============ UTILITIES ============
-    
-    @action(detail=True, methods=['post'])
-    def recalculate_scores(self, request, pk=None):
-        """Recalculate performance scores"""
-        performance = self.get_object()
-        performance.calculate_scores()
-        
-        return Response({
-            'success': True,
-            'message': 'Scores recalculated',
-            'scores': {
-                'objectives_score': str(performance.total_objectives_score),
-                'objectives_percentage': str(performance.objectives_percentage),
-                'competencies_score': str(performance.total_competencies_score),
-                'competencies_percentage': str(performance.competencies_percentage),
+                'competencies_letter_grade': performance.competencies_letter_grade,
+                'group_scores': performance.group_competency_scores,
                 'overall_percentage': str(performance.overall_weighted_percentage),
                 'final_rating': performance.final_rating
             }
@@ -848,8 +843,60 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
     
     @action(detail=True, methods=['get'])
+    def competency_breakdown(self, request, pk=None):
+        """Get detailed competency breakdown with gaps"""
+        performance = self.get_object()
+        
+        # Overall summary
+        overall = {
+            'required': performance.total_competencies_required_score,
+            'actual': performance.total_competencies_actual_score,
+            'percentage': float(performance.competencies_percentage),
+            'letter_grade': performance.competencies_letter_grade
+        }
+        
+        # By group
+        by_group = performance.group_competency_scores
+        
+        # Gaps - competencies below required
+        gaps = []
+        for comp_rating in performance.competency_ratings.select_related('behavioral_competency').all():
+            if comp_rating.gap < 0:
+                gaps.append({
+                    'competency': comp_rating.behavioral_competency.name,
+                    'group': comp_rating.behavioral_competency.group.name,
+                    'gap': comp_rating.gap,
+                    'required': comp_rating.required_level,
+                    'actual': comp_rating.actual_value,
+                    'rating': comp_rating.end_year_rating.name if comp_rating.end_year_rating else 'N/A'
+                })
+        
+        # Strengths - competencies above required
+        strengths = []
+        for comp_rating in performance.competency_ratings.select_related('behavioral_competency').all():
+            if comp_rating.gap > 0:
+                strengths.append({
+                    'competency': comp_rating.behavioral_competency.name,
+                    'group': comp_rating.behavioral_competency.group.name,
+                    'gap': comp_rating.gap,
+                    'required': comp_rating.required_level,
+                    'actual': comp_rating.actual_value,
+                    'rating': comp_rating.end_year_rating.name if comp_rating.end_year_rating else 'N/A'
+                })
+        
+        return Response({
+            'overall': overall,
+            'by_group': by_group,
+            'gaps': sorted(gaps, key=lambda x: x['gap']),
+            'strengths': sorted(strengths, key=lambda x: x['gap'], reverse=True)
+        })
+    
+    @action(detail=True, methods=['get'])
     def export_excel(self, request, pk=None):
-        """Export performance to Excel"""
+        """
+        Export performance to Excel
+        UPDATED: Shows behavioral competencies with required/actual/letter grades
+        """
         performance = self.get_object()
         
         try:
@@ -861,6 +908,8 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
             header_font = Font(bold=True, size=14, color="FFFFFF")
             header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
             section_font = Font(bold=True, size=12)
+            section_fill = PatternFill(start_color="D3D3D3", end_color="D3D3D3", fill_type="solid")
+            table_header_font = Font(bold=True)
             border = Border(
                 left=Side(style='thin'), right=Side(style='thin'),
                 top=Side(style='thin'), bottom=Side(style='thin')
@@ -870,15 +919,22 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
             ws['A1'] = f"PERFORMANCE REVIEW - {performance.performance_year.year}"
             ws['A1'].font = header_font
             ws['A1'].fill = header_fill
-            ws.merge_cells('A1:F1')
+            ws.merge_cells('A1:G1')
             ws['A1'].alignment = Alignment(horizontal='center')
             
             # Employee Info
             row = 3
+            ws[f'A{row}'] = "Employee Information"
+            ws[f'A{row}'].font = section_font
+            ws[f'A{row}'].fill = section_fill
+            ws.merge_cells(f'A{row}:B{row}')
+            row += 1
+            
             info_data = [
                 ("Employee ID:", performance.employee.employee_id),
                 ("Name:", performance.employee.full_name),
                 ("Job Title:", performance.employee.job_title),
+                ("Grade Level:", performance.employee.grading_level),
                 ("Department:", performance.employee.department.name),
                 ("Manager:", performance.employee.line_manager.full_name if performance.employee.line_manager else "N/A"),
                 ("Status:", performance.get_approval_status_display()),
@@ -890,17 +946,19 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
                 ws[f'B{row}'] = value
                 row += 1
             
-            # Objectives
+            # Objectives Section
             row += 2
             ws[f'A{row}'] = "OBJECTIVES"
             ws[f'A{row}'].font = section_font
+            ws[f'A{row}'].fill = section_fill
             ws.merge_cells(f'A{row}:F{row}')
             row += 1
             
             obj_headers = ['Title', 'Weight %', 'Progress %', 'Status', 'Rating', 'Score']
             for col, header in enumerate(obj_headers, start=1):
                 cell = ws.cell(row=row, column=col, value=header)
-                cell.font = Font(bold=True)
+                cell.font = table_header_font
+                cell.fill = section_fill
                 cell.border = border
             row += 1
             
@@ -914,43 +972,123 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
                 row += 1
             
             row += 1
+            eval_target = EvaluationTargetConfig.get_active_config()
             ws[f'A{row}'] = "Objectives Total Score:"
             ws[f'A{row}'].font = Font(bold=True)
-            ws[f'B{row}'] = f"{performance.total_objectives_score} / {EvaluationTargetConfig.get_active_config().objective_score_target}"
+            ws[f'B{row}'] = f"{performance.total_objectives_score} / {eval_target.objective_score_target}"
             ws[f'C{row}'] = f"{performance.objectives_percentage}%"
             
-            # Competencies
+            # Behavioral Competencies Section
             row += 3
-            ws[f'A{row}'] = "CORE COMPETENCIES"
+            ws[f'A{row}'] = "BEHAVIORAL COMPETENCIES"
             ws[f'A{row}'].font = section_font
-            ws.merge_cells(f'A{row}:E{row}')
+            ws[f'A{row}'].fill = section_fill
+            ws.merge_cells(f'A{row}:G{row}')
             row += 1
             
-            comp_headers = ['Group', 'Competency', 'Rating', 'Score', 'Notes']
-            for col, header in enumerate(comp_headers, start=1):
+            # Group Summary
+            ws[f'A{row}'] = "Group Summary:"
+            ws[f'A{row}'].font = Font(bold=True, underline='single')
+            row += 1
+            
+            group_headers = ['Group', 'Required', 'Actual', 'Percentage', 'Grade']
+            for col, header in enumerate(group_headers, start=1):
                 cell = ws.cell(row=row, column=col, value=header)
-                cell.font = Font(bold=True)
+                cell.font = table_header_font
+                cell.fill = section_fill
                 cell.border = border
             row += 1
             
-            for comp in performance.competency_ratings.all():
-                ws.cell(row=row, column=1, value=comp.competency.group.name).border = border
-                ws.cell(row=row, column=2, value=comp.competency.name).border = border
-                ws.cell(row=row, column=3, value=comp.end_year_rating.name if comp.end_year_rating else 'N/A').border = border
-                ws.cell(row=row, column=4, value=comp.end_year_rating.value if comp.end_year_rating else 0).border = border
-                ws.cell(row=row, column=5, value=comp.notes).border = border
+            for group_name, scores in performance.group_competency_scores.items():
+                ws.cell(row=row, column=1, value=group_name).border = border
+                ws.cell(row=row, column=2, value=scores['required_total']).border = border
+                ws.cell(row=row, column=3, value=scores['actual_total']).border = border
+                ws.cell(row=row, column=4, value=f"{scores['percentage']}%").border = border
+                
+                grade_cell = ws.cell(row=row, column=5, value=scores['letter_grade'])
+                grade_cell.border = border
+                
+                # Color code based on grade
+                if scores['letter_grade'] in ['A+', 'A', 'A-']:
+                    grade_cell.fill = PatternFill(start_color="90EE90", end_color="90EE90", fill_type="solid")
+                elif scores['letter_grade'] in ['B+', 'B', 'B-']:
+                    grade_cell.fill = PatternFill(start_color="FFFF99", end_color="FFFF99", fill_type="solid")
+                elif scores['letter_grade'] in ['C+', 'C', 'C-']:
+                    grade_cell.fill = PatternFill(start_color="FFE4B5", end_color="FFE4B5", fill_type="solid")
+                else:
+                    grade_cell.fill = PatternFill(start_color="FFB6C1", end_color="FFB6C1", fill_type="solid")
+                
                 row += 1
             
             row += 1
-            ws[f'A{row}'] = "Competencies Total Score:"
+            ws[f'A{row}'] = "Overall Competencies:"
             ws[f'A{row}'].font = Font(bold=True)
-            ws[f'B{row}'] = f"{performance.total_competencies_score} / {EvaluationTargetConfig.get_active_config().competency_score_target}"
+            ws[f'B{row}'] = f"{performance.total_competencies_actual_score} / {performance.total_competencies_required_score}"
             ws[f'C{row}'] = f"{performance.competencies_percentage}%"
+            ws[f'D{row}'] = f"Grade: {performance.competencies_letter_grade}"
+            ws[f'D{row}'].font = Font(bold=True, size=12)
+            
+            # Detailed Competency Ratings
+            row += 2
+            ws[f'A{row}'] = "Detailed Competency Ratings:"
+            ws[f'A{row}'].font = Font(bold=True, underline='single')
+            row += 1
+            
+            comp_headers = ['Group', 'Competency', 'Required', 'Rating', 'Actual Value', 'Gap', 'Notes']
+            for col, header in enumerate(comp_headers, start=1):
+                cell = ws.cell(row=row, column=col, value=header)
+                cell.font = table_header_font
+                cell.fill = section_fill
+                cell.border = border
+            row += 1
+            
+            for comp in performance.competency_ratings.select_related('behavioral_competency__group').all():
+                ws.cell(row=row, column=1, value=comp.behavioral_competency.group.name).border = border
+                ws.cell(row=row, column=2, value=comp.behavioral_competency.name).border = border
+                ws.cell(row=row, column=3, value=comp.required_level).border = border
+                ws.cell(row=row, column=4, value=comp.end_year_rating.name if comp.end_year_rating else 'N/A').border = border
+                ws.cell(row=row, column=5, value=comp.actual_value).border = border
+                
+                # Gap with color coding
+                gap_cell = ws.cell(row=row, column=6, value=comp.gap)
+                gap_cell.border = border
+                if comp.gap > 0:
+                    gap_cell.fill = PatternFill(start_color="90EE90", end_color="90EE90", fill_type="solid")
+                elif comp.gap < 0:
+                    gap_cell.fill = PatternFill(start_color="FFB6C1", end_color="FFB6C1", fill_type="solid")
+                
+                ws.cell(row=row, column=7, value=comp.notes or '').border = border
+                row += 1
+            
+            # Development Needs Section
+            if performance.development_needs.exists():
+                row += 2
+                ws[f'A{row}'] = "DEVELOPMENT NEEDS"
+                ws[f'A{row}'].font = section_font
+                ws[f'A{row}'].fill = section_fill
+                ws.merge_cells(f'A{row}:E{row}')
+                row += 1
+                
+                dev_headers = ['Competency Gap', 'Development Activity', 'Progress %', 'Comment']
+                for col, header in enumerate(dev_headers, start=1):
+                    cell = ws.cell(row=row, column=col, value=header)
+                    cell.font = table_header_font
+                    cell.fill = section_fill
+                    cell.border = border
+                row += 1
+                
+                for dev_need in performance.development_needs.all():
+                    ws.cell(row=row, column=1, value=dev_need.competency_gap).border = border
+                    ws.cell(row=row, column=2, value=dev_need.development_activity).border = border
+                    ws.cell(row=row, column=3, value=dev_need.progress).border = border
+                    ws.cell(row=row, column=4, value=dev_need.comment or '').border = border
+                    row += 1
             
             # Final Scores
-            row += 3
+            row += 2
             ws[f'A{row}'] = "FINAL PERFORMANCE SUMMARY"
             ws[f'A{row}'].font = section_font
+            ws[f'A{row}'].fill = section_fill
             ws.merge_cells(f'A{row}:D{row}')
             row += 1
             
@@ -960,7 +1098,7 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
             
             final_data = [
                 ("Objectives Score:", f"{performance.objectives_percentage}%", f"Weight: {weight_config.objectives_weight if weight_config else 70}%"),
-                ("Competencies Score:", f"{performance.competencies_percentage}%", f"Weight: {weight_config.competencies_weight if weight_config else 30}%"),
+                ("Competencies Score:", f"{performance.competencies_percentage}% ({performance.competencies_letter_grade})", f"Weight: {weight_config.competencies_weight if weight_config else 30}%"),
                 ("Overall Weighted Score:", f"{performance.overall_weighted_percentage}%", ""),
                 ("Final Rating:", performance.final_rating, ""),
             ]
@@ -1082,6 +1220,9 @@ class PerformanceDashboardViewSet(viewsets.ViewSet):
         
         recent_activities = PerformanceActivityLogSerializer(recent_logs, many=True).data
         
+        # NEW: Competency grade distribution
+        competency_grade_distribution = self._get_grade_distribution(performances)
+        
         return Response({
             'total_employees': total_employees,
             'objectives_completed': objectives_completed,
@@ -1109,9 +1250,24 @@ class PerformanceDashboardViewSet(viewsets.ViewSet):
                 }
             },
             'by_department': by_department,
-            'recent_activities': recent_activities
+            'recent_activities': recent_activities,
+            'competency_grade_distribution': competency_grade_distribution
         })
-
+    
+    def _get_grade_distribution(self, performances):
+        """Get distribution of competency letter grades"""
+        from collections import Counter
+        
+        completed = performances.filter(end_year_completed=True)
+        grades = completed.values_list('competencies_letter_grade', flat=True)
+        distribution = Counter(grades)
+        
+        return {
+            'total': completed.count(),
+            'grades': dict(distribution)
+        }
+    
+    
 
 class PerformanceNotificationTemplateViewSet(viewsets.ModelViewSet):
     """Performance Notification Templates"""

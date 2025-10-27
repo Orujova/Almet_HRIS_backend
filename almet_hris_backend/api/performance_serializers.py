@@ -4,7 +4,8 @@ from rest_framework import serializers
 from django.db import transaction
 from .performance_models import *
 from .models import Employee
-from .competency_models import Skill, SkillGroup
+from .competency_models import BehavioralCompetency, BehavioralCompetencyGroup  # CHANGED
+from .competency_assessment_models import PositionBehavioralAssessment  # ADDED
 
 
 class PerformanceYearSerializer(serializers.ModelSerializer):
@@ -47,6 +48,7 @@ class EvaluationScaleSerializer(serializers.ModelSerializer):
 
 
 class EvaluationTargetConfigSerializer(serializers.ModelSerializer):
+    """UPDATED: Removed competency_score_target"""
     class Meta:
         model = EvaluationTargetConfig
         fields = '__all__'
@@ -58,17 +60,17 @@ class ObjectiveStatusSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 
-class SkillGroupWithSkillsSerializer(serializers.ModelSerializer):
-    """Skill Group with Skills for competencies"""
-    skills = serializers.SerializerMethodField()
+class BehavioralCompetencyGroupWithCompetenciesSerializer(serializers.ModelSerializer):
+    """NEW: Behavioral Competency Group with Competencies for performance"""
+    competencies = serializers.SerializerMethodField()
     
     class Meta:
-        model = SkillGroup
-        fields = ['id', 'name', 'skills']
+        model = BehavioralCompetencyGroup
+        fields = ['id', 'name', 'competencies']
     
-    def get_skills(self, obj):
-        skills = obj.skills.all()
-        return [{'id': s.id, 'name': s.name} for s in skills]
+    def get_competencies(self, obj):
+        competencies = obj.competencies.all()
+        return [{'id': c.id, 'name': c.name} for c in competencies]
 
 
 class EmployeeObjectiveSerializer(serializers.ModelSerializer):
@@ -88,14 +90,32 @@ class EmployeeObjectiveSerializer(serializers.ModelSerializer):
 
 
 class EmployeeCompetencyRatingSerializer(serializers.ModelSerializer):
-    competency_name = serializers.CharField(source='competency.name', read_only=True)
-    competency_group = serializers.CharField(source='competency.group.name', read_only=True)
+    """
+    UPDATED: Now uses Behavioral Competency instead of Skill
+    """
+    competency_name = serializers.CharField(source='behavioral_competency.name', read_only=True)
+    competency_group = serializers.CharField(source='behavioral_competency.group.name', read_only=True)
     end_year_rating_name = serializers.CharField(source='end_year_rating.name', read_only=True, allow_null=True)
     end_year_rating_value = serializers.IntegerField(source='end_year_rating.value', read_only=True, allow_null=True)
+    
+    # NEW: Show required level and gap
+    actual_value = serializers.IntegerField(read_only=True)
+    gap = serializers.IntegerField(read_only=True)
+    gap_status = serializers.SerializerMethodField()
     
     class Meta:
         model = EmployeeCompetencyRating
         fields = '__all__'
+    
+    def get_gap_status(self, obj):
+        """Get gap status: exceeds, meets, below"""
+        gap = obj.gap
+        if gap > 0:
+            return 'exceeds'
+        elif gap == 0:
+            return 'meets'
+        else:
+            return 'below'
 
 
 class DevelopmentNeedSerializer(serializers.ModelSerializer):
@@ -154,6 +174,7 @@ class EmployeePerformanceListSerializer(serializers.ModelSerializer):
             'mid_year_completed', 'end_year_completed',
             'final_employee_approved', 'final_manager_approved',
             'overall_weighted_percentage', 'final_rating',
+            'competencies_letter_grade',  # NEW
             'has_objectives_draft', 'has_competencies_draft', 'has_mid_year_draft', 
             'has_end_year_draft', 'has_dev_needs_draft',
             'created_at', 'updated_at'
@@ -191,6 +212,7 @@ class EmployeePerformanceDetailSerializer(serializers.ModelSerializer):
         source='employee.position_group.get_name_display', 
         read_only=True
     )
+    employee_grade_level = serializers.CharField(source='employee.grading_level', read_only=True)  # NEW
     line_manager_name = serializers.CharField(source='employee.line_manager.full_name', read_only=True, allow_null=True)
     
     year = serializers.IntegerField(source='performance_year.year', read_only=True)
@@ -211,6 +233,9 @@ class EmployeePerformanceDetailSerializer(serializers.ModelSerializer):
     # Goal limits
     goal_limits = serializers.SerializerMethodField()
     
+    # NEW: Group competency scores breakdown
+    group_scores_breakdown = serializers.SerializerMethodField()
+    
     class Meta:
         model = EmployeePerformance
         fields = '__all__'
@@ -230,7 +255,7 @@ class EmployeePerformanceDetailSerializer(serializers.ModelSerializer):
         config = EvaluationTargetConfig.get_active_config()
         return {
             'objective_score_target': config.objective_score_target,
-            'competency_score_target': config.competency_score_target
+            # competency_score_target removed
         }
     
     def get_goal_limits(self, obj):
@@ -239,6 +264,10 @@ class EmployeePerformanceDetailSerializer(serializers.ModelSerializer):
             'min_goals': config.min_goals,
             'max_goals': config.max_goals
         }
+    
+    def get_group_scores_breakdown(self, obj):
+        """Get detailed breakdown of competency scores by group"""
+        return obj.group_competency_scores
 
 
 class EmployeePerformanceCreateUpdateSerializer(serializers.ModelSerializer):
@@ -315,13 +344,11 @@ class EmployeePerformanceCreateUpdateSerializer(serializers.ModelSerializer):
                 for idx, obj_data in enumerate(objectives_data):
                     obj_id = obj_data.pop('id', None)
                     if obj_id:
-                        # Update existing
                         EmployeeObjective.objects.filter(id=obj_id, performance=instance).update(
                             display_order=idx, **obj_data
                         )
                         updated_ids.append(obj_id)
                     else:
-                        # Create new
                         new_obj = EmployeeObjective.objects.create(
                             performance=instance,
                             display_order=idx,
@@ -329,14 +356,13 @@ class EmployeePerformanceCreateUpdateSerializer(serializers.ModelSerializer):
                         )
                         updated_ids.append(new_obj.id)
                 
-                # Delete objectives not in the updated list
                 instance.objectives.exclude(id__in=updated_ids).delete()
             
             # Update competency ratings if provided
             if competency_ratings_data is not None:
                 for comp_data in competency_ratings_data:
                     comp_id = comp_data.pop('id', None)
-                    competency_id = comp_data.get('competency')
+                    behavioral_competency_id = comp_data.get('behavioral_competency')
                     
                     if comp_id:
                         EmployeeCompetencyRating.objects.filter(
@@ -346,7 +372,7 @@ class EmployeePerformanceCreateUpdateSerializer(serializers.ModelSerializer):
                     else:
                         EmployeeCompetencyRating.objects.update_or_create(
                             performance=instance,
-                            competency_id=competency_id,
+                            behavioral_competency_id=behavioral_competency_id,
                             defaults=comp_data
                         )
             
@@ -406,13 +432,37 @@ class PerformanceDashboardSerializer(serializers.Serializer):
 
 
 class PerformanceInitializeSerializer(serializers.Serializer):
-    """Serializer for initializing performance with competencies"""
+    """
+    UPDATED: Initializing performance now loads behavioral competencies from position assessment
+    """
     employee = serializers.PrimaryKeyRelatedField(queryset=Employee.objects.all())
     performance_year = serializers.PrimaryKeyRelatedField(queryset=PerformanceYear.objects.all())
+    
+    def validate(self, data):
+        """Validate that employee has a matching position behavioral assessment"""
+        employee = data['employee']
+        
+        # Check if position behavioral assessment exists
+        position_assessment = PositionBehavioralAssessment.objects.filter(
+            position_group=employee.position_group,
+            job_title=employee.job_title,
+            grade_levels__contains=[employee.grading_level],
+            is_active=True
+        ).first()
+        
+        if not position_assessment:
+            raise serializers.ValidationError(
+                f"No behavioral assessment template found for {employee.job_title} "
+                f"(Grade {employee.grading_level}). Please create position assessment first."
+            )
+        
+        data['position_assessment'] = position_assessment
+        return data
     
     def create(self, validated_data):
         employee = validated_data['employee']
         performance_year = validated_data['performance_year']
+        position_assessment = validated_data['position_assessment']
         
         # Check if already exists
         existing = EmployeePerformance.objects.filter(
@@ -431,19 +481,21 @@ class PerformanceInitializeSerializer(serializers.Serializer):
                 approval_status='DRAFT'
             )
             
-            # Auto-create competency ratings from all active core competencies
-            skills = Skill.objects.all()
-            for skill in skills:
+            # Auto-create competency ratings from position behavioral assessment
+            position_ratings = position_assessment.competency_ratings.all()
+            for position_rating in position_ratings:
                 EmployeeCompetencyRating.objects.create(
                     performance=performance,
-                    competency=skill
+                    behavioral_competency=position_rating.behavioral_competency,
+                    required_level=position_rating.required_level
                 )
             
             # Log activity
             PerformanceActivityLog.objects.create(
                 performance=performance,
                 action='INITIALIZED',
-                description=f'Performance initialized for {employee.full_name} - {performance_year.year}',
+                description=f'Performance initialized for {employee.full_name} - {performance_year.year} '
+                           f'with {position_ratings.count()} behavioral competencies from position assessment',
                 performed_by=self.context.get('request').user if self.context.get('request') else None
             )
             

@@ -56,7 +56,7 @@ class JobTitleSerializer(serializers.ModelSerializer):
             is_deleted=False
         ).count()
 
-# api/serializers.py - FINAL FIX
+
 
 class DepartmentSerializer(serializers.ModelSerializer):
     business_function_name = serializers.CharField(source='business_function.name', read_only=True)
@@ -909,6 +909,7 @@ class EmployeeListSerializer(serializers.ModelSerializer):
     position_group_id = serializers.IntegerField(source='position_group.id', read_only=True)
     line_manager_name = serializers.CharField(source='line_manager.full_name', read_only=True)
     line_manager_hc_number = serializers.CharField(source='line_manager.employee_id', read_only=True)
+    line_manager_email = serializers.CharField(source='line_manager.user.email', read_only=True)
     status_name = serializers.CharField(source='status.name', read_only=True)
     status_color = serializers.CharField(source='status.color', read_only=True)
     tag_names = serializers.SerializerMethodField()
@@ -940,7 +941,7 @@ class EmployeeListSerializer(serializers.ModelSerializer):
             'status_name', 'status_color', 'tag_names', 'years_of_service', 
             'current_status_display', 'is_visible_in_org_chart',
             'direct_reports_count', 'status_needs_update', 'created_at', 
-            'updated_at', 'profile_image_url', 'is_deleted', 'is_vacancy',
+            'updated_at', 'profile_image_url', 'is_deleted', 'is_vacancy','line_manager_email'
         ]
     
     def get_profile_image_url(self, obj):
@@ -1238,6 +1239,7 @@ class EmployeeDetailSerializer(serializers.ModelSerializer):
             return {
                 'id': obj.line_manager.id,
                 'employee_id': obj.line_manager.employee_id,
+    
                 'name': obj.line_manager.full_name,
                 'job_title': obj.line_manager.job_title,
                 'email': obj.line_manager.user.email if obj.line_manager.user else None
