@@ -1,0 +1,21 @@
+WARNING 2025-10-28 05:24:51,109 notification_views 33308 29232 No Graph token for user n.orujova
+INFO 2025-10-28 09:16:03,990 views 23680 31232 === Microsoft authentication request received ===
+INFO 2025-10-28 09:16:03,996 views 23680 31232 Token length: 1274, Graph token: True
+INFO 2025-10-28 09:16:03,998 auth 23680 31232 === Starting Microsoft token validation ===
+INFO 2025-10-28 09:16:04,854 auth 23680 31232    - Access token length: 228
+INFO 2025-10-28 09:16:04,855 auth 23680 31232    - Refresh token length: 229
+INFO 2025-10-28 09:17:53,764 views 23680 11524 User info request for user: n.orujova
+INFO 2025-10-28 09:17:54,100 views 23680 11524 [n.orujova] Employee profile found: HLD29
+INFO 2025-10-28 09:17:54,110 views 23680 11524 [n.orujova] User info response prepared successfully
+INFO 2025-10-28 09:24:07,903 views 23556 7148 User info request for user: n.orujova
+INFO 2025-10-28 09:24:08,030 views 23556 7148 [n.orujova] Employee profile found: HLD29
+INFO 2025-10-28 09:24:08,032 views 23556 7148 [n.orujova] User info response prepared successfully
+INFO 2025-10-28 09:29:40,563 views 23556 3936 User info request for user: n.orujova
+INFO 2025-10-28 09:29:40,931 views 23556 3936 [n.orujova] Employee profile found: HLD29
+INFO 2025-10-28 09:29:40,935 views 23556 3936 [n.orujova] User info response prepared successfully
+INFO 2025-10-28 09:33:42,363 views 23556 17912 User info request for user: n.orujova
+INFO 2025-10-28 09:33:42,630 views 23556 17912 [n.orujova] Employee profile found: HLD29
+INFO 2025-10-28 09:33:42,633 views 23556 17912 [n.orujova] User info response prepared successfully
+INFO 2025-10-28 09:36:18,883 views 34552 12504 User info request for user: n.orujova
+INFO 2025-10-28 09:36:19,265 views 34552 12504 [n.orujova] Employee profile found: HLD29
+INFO 2025-10-28 09:36:19,269 views 34552 12504 [n.orujova] User info response prepared successfully

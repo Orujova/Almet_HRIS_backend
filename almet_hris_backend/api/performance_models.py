@@ -37,26 +37,81 @@ class PerformanceYear(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
-    
+    sequential_mode = models.BooleanField(
+        default=True,
+        help_text='Enable sequential mode - allows all periods on same dates, processes happen based on status'
+    )
     class Meta:
         ordering = ['-year']
         db_table = 'performance_years'
     
     def __str__(self):
         return f"Performance Year {self.year}"
+     
     
     def get_current_period(self):
-        """Get current performance period"""
+        """
+        UPDATED: Get current active period
+        
+        If sequential_mode=True: Returns based on completion status, not dates
+        If sequential_mode=False: Returns based on dates (original behavior)
+        """
+        if self.sequential_mode:
+            # Sequential mode: Period based on completion status, not dates
+            return 'SEQUENTIAL'  # All periods available, controlled by status
+        
+        # Original date-based logic
+        from django.utils import timezone
         today = timezone.now().date()
         
-        if self.goal_setting_employee_start <= today <= self.goal_setting_manager_end:
+        # Priority 1: Goal Setting Employee Period
+        if self.goal_setting_employee_start <= today <= self.goal_setting_employee_end:
             return 'GOAL_SETTING'
-        elif self.mid_year_review_start <= today <= self.mid_year_review_end:
+        
+        # Priority 2: Goal Setting Manager Period  
+        if self.goal_setting_manager_start <= today <= self.goal_setting_manager_end:
+            return 'GOAL_SETTING'
+        
+        # Priority 3: Mid-Year Review Period
+        if self.mid_year_review_start <= today <= self.mid_year_review_end:
             return 'MID_YEAR_REVIEW'
-        elif self.end_year_review_start <= today <= self.end_year_review_end:
+        
+        # Priority 4: End-Year Review Period
+        if self.end_year_review_start <= today <= self.end_year_review_end:
             return 'END_YEAR_REVIEW'
-        else:
-            return 'CLOSED'
+        
+        return 'CLOSED'
+    
+    def is_goal_setting_active(self):
+        """Check if goal setting period is active"""
+        if self.sequential_mode:
+            return True  # Always allow in sequential mode
+        return self.get_current_period() == 'GOAL_SETTING'
+    
+    def is_mid_year_active(self):
+        """Check if mid-year review period is active"""
+        if self.sequential_mode:
+            return True  # Always allow in sequential mode
+        return self.get_current_period() == 'MID_YEAR_REVIEW'
+    
+    def is_end_year_active(self):
+        """Check if end-year review period is active"""
+        if self.sequential_mode:
+            return True  # Always allow in sequential mode
+        return self.get_current_period() == 'END_YEAR_REVIEW'
+
+    # def get_current_period(self):
+    #     """Get current performance period"""
+    #     today = timezone.now().date()
+        
+    #     if self.goal_setting_employee_start <= today <= self.goal_setting_manager_end:
+    #         return 'GOAL_SETTING'
+    #     elif self.mid_year_review_start <= today <= self.mid_year_review_end:
+    #         return 'MID_YEAR_REVIEW'
+    #     elif self.end_year_review_start <= today <= self.end_year_review_end:
+    #         return 'END_YEAR_REVIEW'
+    #     else:
+    #         return 'CLOSED'
     
     def save(self, *args, **kwargs):
         if self.is_active:
