@@ -1028,13 +1028,442 @@ class EmployeeDetailSerializer(serializers.ModelSerializer):
     assigned_assets = serializers.SerializerMethodField()
     pending_asset_approvals = serializers.SerializerMethodField()
     assets_summary = serializers.SerializerMethodField()
-    
+    performance_records = serializers.SerializerMethodField()
+    performance_summary = serializers.SerializerMethodField()
+    current_performance = serializers.SerializerMethodField()
+    performance_history = serializers.SerializerMethodField()
+    pending_performance_actions = serializers.SerializerMethodField()
+    team_performance_overview = serializers.SerializerMethodField()
     class Meta:
         model = Employee
         fields = '__all__'
     
     
+    def get_performance_records(self, obj):
+        """Get all performance records for this employee"""
+        try:
+            from .performance_models import EmployeePerformance
+            from .performance_serializers import EmployeePerformanceListSerializer
+            
+            performances = EmployeePerformance.objects.filter(
+                employee=obj
+            ).select_related(
+                'performance_year'
+            ).order_by('-performance_year__year')
+            
+            return EmployeePerformanceListSerializer(
+                performances, 
+                many=True, 
+                context=self.context
+            ).data
+            
+        except Exception as e:
+            logger.error(f"Error getting performance records for employee {obj.employee_id}: {e}")
+            return []
     
+    def get_performance_summary(self, obj):
+        """Get performance summary statistics"""
+        try:
+            from .performance_models import EmployeePerformance
+            
+            performances = EmployeePerformance.objects.filter(employee=obj)
+            
+            if not performances.exists():
+                return {
+                    'total_records': 0,
+                    'has_performance_data': False,
+                    'message': 'No performance records found'
+                }
+            
+            completed = performances.filter(
+                final_employee_approved=True,
+                final_manager_approved=True
+            )
+            
+            # Calculate averages from completed performances
+            avg_overall = completed.aggregate(
+                models.Avg('overall_weighted_percentage')
+            )['overall_weighted_percentage__avg']
+            
+            avg_objectives = completed.aggregate(
+                models.Avg('objectives_percentage')
+            )['objectives_percentage__avg']
+            
+            avg_competencies = completed.aggregate(
+                models.Avg('competencies_percentage')
+            )['competencies_percentage__avg']
+            
+            # Get rating distribution
+            ratings = completed.values('final_rating').annotate(
+                count=models.Count('id')
+            )
+            
+            return {
+                'total_records': performances.count(),
+                'completed_records': completed.count(),
+                'pending_records': performances.count() - completed.count(),
+                'has_performance_data': True,
+                
+                'averages': {
+                    'overall_percentage': round(avg_overall, 2) if avg_overall else 0,
+                    'objectives_percentage': round(avg_objectives, 2) if avg_objectives else 0,
+                    'competencies_percentage': round(avg_competencies, 2) if avg_competencies else 0,
+                },
+                
+                'rating_distribution': {
+                    rating['final_rating']: rating['count'] 
+                    for rating in ratings if rating['final_rating']
+                },
+                
+                'latest_rating': completed.first().final_rating if completed.exists() else None,
+                'latest_score': completed.first().overall_weighted_percentage if completed.exists() else None,
+            }
+            
+        except Exception as e:
+            logger.error(f"Error getting performance summary for employee {obj.employee_id}: {e}")
+            return {
+                'total_records': 0,
+                'has_performance_data': False,
+                'error': str(e)
+            }
+    
+    def get_current_performance(self, obj):
+        """Get current active performance record"""
+        try:
+            from .performance_models import EmployeePerformance, PerformanceYear
+            from .performance_serializers import EmployeePerformanceDetailSerializer
+            
+            # Get active performance year
+            active_year = PerformanceYear.objects.filter(is_active=True).first()
+            
+            if not active_year:
+                return {
+                    'has_current_performance': False,
+                    'message': 'No active performance year',
+                    'active_year': None,
+                    'current_period': None  # ADDED
+                }
+            
+            # Get performance for active year
+            current_perf = EmployeePerformance.objects.filter(
+                employee=obj,
+                performance_year=active_year
+            ).select_related('performance_year').first()
+            
+            if not current_perf:
+                return {
+                    'has_current_performance': False,
+                    'active_year': active_year.year,
+                    'current_period': active_year.get_current_period(),  # CRITICAL FIX
+                    'message': f'No performance record for {active_year.year}',
+                    'can_initialize': True
+                }
+            
+            # Return detailed current performance
+            serializer = EmployeePerformanceDetailSerializer(
+                current_perf, 
+                context=self.context
+            )
+            
+            return {
+                'has_current_performance': True,
+                'active_year': active_year.year,
+                'current_period': active_year.get_current_period(),  # CRITICAL FIX
+                'performance': serializer.data,
+                'can_initialize': False
+            }
+            
+        except Exception as e:
+            logger.error(f"Error getting current performance for employee {obj.employee_id}: {e}")
+            return {
+                'has_current_performance': False,
+                'active_year': None,
+                'current_period': None,  # ADDED
+                'error': str(e)
+            }
+    def get_performance_history(self, obj):
+        """Get performance history with trends"""
+        try:
+            from .performance_models import EmployeePerformance
+            
+            performances = EmployeePerformance.objects.filter(
+                employee=obj,
+                final_employee_approved=True,
+                final_manager_approved=True
+            ).select_related('performance_year').order_by('-performance_year__year')[:5]
+            
+            if not performances.exists():
+                return {
+                    'has_history': False,
+                    'message': 'No completed performance records'
+                }
+            
+            history = []
+            for perf in performances:
+                history.append({
+                    'year': perf.performance_year.year,
+                    'overall_percentage': float(perf.overall_weighted_percentage),
+                    'objectives_percentage': float(perf.objectives_percentage),
+                    'competencies_percentage': float(perf.competencies_percentage),
+                    'competencies_letter_grade': perf.competencies_letter_grade,
+                    'final_rating': perf.final_rating,
+                    'objectives_count': perf.objectives.filter(is_cancelled=False).count(),
+                    'competencies_count': perf.competency_ratings.count(),
+                })
+            
+            # Calculate trend
+            if len(history) >= 2:
+                latest = history[0]['overall_percentage']
+                previous = history[1]['overall_percentage']
+                trend = 'improving' if latest > previous else ('declining' if latest < previous else 'stable')
+                trend_value = round(latest - previous, 2)
+            else:
+                trend = 'insufficient_data'
+                trend_value = 0
+            
+            return {
+                'has_history': True,
+                'records_count': len(history),
+                'history': history,
+                'trend': trend,
+                'trend_value': trend_value,
+                'years_covered': [h['year'] for h in history]
+            }
+            
+        except Exception as e:
+            logger.error(f"Error getting performance history for employee {obj.employee_id}: {e}")
+            return {
+                'has_history': False,
+                'error': str(e)
+            }
+    
+    def get_pending_performance_actions(self, obj):
+        """Get pending performance actions for employee"""
+        try:
+            from .performance_models import EmployeePerformance, PerformanceYear
+            from django.utils import timezone
+            
+            active_year = PerformanceYear.objects.filter(is_active=True).first()
+            
+            if not active_year:
+                return {
+                    'has_pending_actions': False,
+                    'message': 'No active performance year'
+                }
+            
+            current_perf = EmployeePerformance.objects.filter(
+                employee=obj,
+                performance_year=active_year
+            ).first()
+            
+            if not current_perf:
+                return {
+                    'has_pending_actions': True,
+                    'actions': [{
+                        'type': 'INITIALIZE_PERFORMANCE',
+                        'title': 'Initialize Performance Record',
+                        'description': f'Create performance record for {active_year.year}',
+                        'priority': 'high',
+                        'deadline': active_year.goal_setting_employee_end
+                    }]
+                }
+            
+            actions = []
+            current_period = active_year.get_current_period()
+            
+            # Check objectives
+            if current_period == 'GOAL_SETTING' and not current_perf.objectives_employee_submitted:
+                actions.append({
+                    'type': 'SUBMIT_OBJECTIVES',
+                    'title': 'Submit Objectives',
+                    'description': 'Submit your objectives for employee approval',
+                    'priority': 'high',
+                    'deadline': active_year.goal_setting_employee_end,
+                    'performance_id': str(current_perf.id)
+                })
+            
+            # Check objectives manager approval
+            if current_perf.objectives_employee_approved and not current_perf.objectives_manager_approved:
+                if current_period == 'GOAL_SETTING':
+                    actions.append({
+                        'type': 'PENDING_MANAGER_APPROVAL',
+                        'title': 'Waiting for Manager Approval',
+                        'description': 'Your objectives are pending manager approval',
+                        'priority': 'medium',
+                        'deadline': active_year.goal_setting_manager_end,
+                        'performance_id': str(current_perf.id)
+                    })
+            
+            # Check mid-year review
+            if current_period == 'MID_YEAR_REVIEW' and not current_perf.mid_year_employee_submitted:
+                actions.append({
+                    'type': 'SUBMIT_MID_YEAR',
+                    'title': 'Submit Mid-Year Review',
+                    'description': 'Complete your mid-year self-assessment',
+                    'priority': 'high',
+                    'deadline': active_year.mid_year_review_end,
+                    'performance_id': str(current_perf.id)
+                })
+            
+            # Check end-year review
+            if current_period == 'END_YEAR_REVIEW' and not current_perf.end_year_employee_submitted:
+                actions.append({
+                    'type': 'SUBMIT_END_YEAR',
+                    'title': 'Submit End-Year Review',
+                    'description': 'Complete your end-year self-assessment',
+                    'priority': 'critical',
+                    'deadline': active_year.end_year_review_end,
+                    'performance_id': str(current_perf.id)
+                })
+            
+            # Check final approval
+            if current_perf.end_year_manager_submitted and not current_perf.final_employee_approved:
+                actions.append({
+                    'type': 'APPROVE_FINAL',
+                    'title': 'Approve Final Performance',
+                    'description': 'Review and approve your final performance rating',
+                    'priority': 'critical',
+                    'deadline': None,
+                    'performance_id': str(current_perf.id)
+                })
+            
+            # Check clarifications needed
+            if current_perf.approval_status == 'NEED_CLARIFICATION':
+                actions.append({
+                    'type': 'PROVIDE_CLARIFICATION',
+                    'title': 'Clarification Needed',
+                    'description': 'Your manager has requested clarification on your performance',
+                    'priority': 'critical',
+                    'deadline': None,
+                    'performance_id': str(current_perf.id)
+                })
+            
+            return {
+                'has_pending_actions': len(actions) > 0,
+                'actions_count': len(actions),
+                'actions': actions,
+                'current_period': current_period,
+                'active_year': active_year.year
+            }
+            
+        except Exception as e:
+            logger.error(f"Error getting pending performance actions for employee {obj.employee_id}: {e}")
+            return {
+                'has_pending_actions': False,
+                'error': str(e)
+            }
+    
+ 
+    
+    def get_team_performance_overview(self, obj):
+        """Get performance overview for direct reports (for managers)"""
+        try:
+            from .performance_models import EmployeePerformance, PerformanceYear
+            
+            # Check if this employee has direct reports
+            direct_reports = Employee.objects.filter(
+                line_manager=obj,
+                is_deleted=False,
+                status__affects_headcount=True
+            )
+            
+            if not direct_reports.exists():
+                return {
+                    'is_manager': False,
+                    'message': 'No direct reports'
+                }
+            
+            active_year = PerformanceYear.objects.filter(is_active=True).first()
+            
+            if not active_year:
+                return {
+                    'is_manager': True,
+                    'team_size': direct_reports.count(),
+                    'message': 'No active performance year'
+                }
+            
+            # Get performance records for team
+            team_performances = EmployeePerformance.objects.filter(
+                employee__in=direct_reports,
+                performance_year=active_year
+            ).select_related('employee')
+            
+            team_summary = {
+                'is_manager': True,
+                'team_size': direct_reports.count(),
+                'active_year': active_year.year,
+                'current_period': active_year.get_current_period(),
+                
+                'performance_initiated': team_performances.count(),
+                'not_initiated': direct_reports.count() - team_performances.count(),
+                
+                'objectives_submitted': team_performances.filter(
+                    objectives_employee_submitted=True
+                ).count(),
+                
+                'objectives_pending_approval': team_performances.filter(
+                    objectives_employee_approved=True,
+                    objectives_manager_approved=False
+                ).count(),
+                
+                'mid_year_completed': team_performances.filter(
+                    mid_year_completed=True
+                ).count(),
+                
+                'end_year_completed': team_performances.filter(
+                    end_year_completed=True
+                ).count(),
+                
+                'need_clarification': team_performances.filter(
+                    approval_status='NEED_CLARIFICATION'
+                ).count(),
+                
+                'fully_approved': team_performances.filter(
+                    final_employee_approved=True,
+                    final_manager_approved=True
+                ).count(),
+            }
+            
+            # Team members needing attention
+            needs_attention = []
+            
+            for perf in team_performances:
+                issues = []
+                
+                if not perf.objectives_employee_submitted:
+                    issues.append('objectives_not_submitted')
+                
+                if perf.objectives_employee_approved and not perf.objectives_manager_approved:
+                    issues.append('pending_manager_approval')
+                
+                if perf.approval_status == 'NEED_CLARIFICATION':
+                    issues.append('clarification_needed')
+                
+                if active_year.get_current_period() == 'MID_YEAR_REVIEW' and not perf.mid_year_employee_submitted:
+                    issues.append('mid_year_pending')
+                
+                if active_year.get_current_period() == 'END_YEAR_REVIEW' and not perf.end_year_employee_submitted:
+                    issues.append('end_year_pending')
+                
+                if issues:
+                    needs_attention.append({
+                        'employee_id': perf.employee.employee_id,
+                        'employee_name': perf.employee.full_name,
+                        'issues': issues,
+                        'performance_id': str(perf.id)
+                    })
+            
+            team_summary['needs_attention'] = needs_attention
+            team_summary['needs_attention_count'] = len(needs_attention)
+            
+            return team_summary
+            
+        except Exception as e:
+            logger.error(f"Error getting team performance overview for manager {obj.employee_id}: {e}")
+            return {
+                'is_manager': False,
+                'error': str(e)
+            }
     
     
     def get_assigned_assets(self, obj):

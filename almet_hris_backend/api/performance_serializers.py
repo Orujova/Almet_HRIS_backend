@@ -146,6 +146,8 @@ class PerformanceActivityLogSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 
+# performance_serializers.py - FIXED EmployeePerformanceListSerializer
+
 class EmployeePerformanceListSerializer(serializers.ModelSerializer):
     """Simplified serializer for list view"""
     employee_name = serializers.CharField(source='employee.full_name', read_only=True)
@@ -153,6 +155,9 @@ class EmployeePerformanceListSerializer(serializers.ModelSerializer):
     employee_job_title = serializers.CharField(source='employee.job_title', read_only=True)
     employee_department = serializers.CharField(source='employee.department.name', read_only=True)
     year = serializers.IntegerField(source='performance_year.year', read_only=True)
+    
+    # CRITICAL FIX: Add current_period
+    current_period = serializers.SerializerMethodField()
     
     objectives_count = serializers.SerializerMethodField()
     competencies_count = serializers.SerializerMethodField()
@@ -168,17 +173,26 @@ class EmployeePerformanceListSerializer(serializers.ModelSerializer):
         model = EmployeePerformance
         fields = [
             'id', 'employee', 'employee_name', 'employee_id', 'employee_job_title', 'employee_department',
-            'year', 'approval_status',
+            'year', 'current_period',  # ADDED
+            'approval_status',
             'objectives_count', 'competencies_count',
             'objectives_employee_submitted', 'objectives_employee_approved', 'objectives_manager_approved',
             'mid_year_completed', 'end_year_completed',
             'final_employee_approved', 'final_manager_approved',
             'overall_weighted_percentage', 'final_rating',
-            'competencies_letter_grade',  # NEW
+            'competencies_letter_grade',
             'has_objectives_draft', 'has_competencies_draft', 'has_mid_year_draft', 
             'has_end_year_draft', 'has_dev_needs_draft',
             'created_at', 'updated_at'
         ]
+    
+    # CRITICAL FIX: Add method to get current period
+    def get_current_period(self, obj):
+        """Get current period from performance year"""
+        try:
+            return obj.performance_year.get_current_period()
+        except:
+            return None
     
     def get_objectives_count(self, obj):
         return obj.objectives.filter(is_cancelled=False).count()

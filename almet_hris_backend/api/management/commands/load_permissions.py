@@ -230,6 +230,38 @@ class Command(BaseCommand):
             ('contract.config.update', 'Update Contract Config', 'Contracts'),
             ('contract.config.delete', 'Delete Contract Config', 'Contracts'),
             
+            # ==================== PERFORMANCE MANAGEMENT ====================
+            # Performance Dashboard & Reports
+            ('performance.dashboard.view', 'View Performance Dashboard', 'Performance'),
+            ('performance.dashboard.view_statistics', 'View Performance Statistics', 'Performance'),
+            
+            # Performance Records - View Permissions
+            ('performance.view_own', 'View Own Performance', 'Performance'),
+            ('performance.view_team', 'View Team Performance (Direct Reports)', 'Performance'),
+            ('performance.view_all', 'View All Performance Records', 'Performance'),
+            
+            # Performance Records - Edit Permissions
+            ('performance.edit_own', 'Edit Own Performance', 'Performance'),
+            ('performance.manage_team', 'Manage Team Performance (Direct Reports)', 'Performance'),
+            ('performance.manage_all', 'Manage All Performance Records', 'Performance'),
+            
+            # Performance Records - Actions
+            ('performance.initialize', 'Initialize Performance Record', 'Performance'),
+            ('performance.submit', 'Submit Performance for Approval', 'Performance'),
+            ('performance.approve_as_manager', 'Approve Performance as Manager', 'Performance'),
+            ('performance.approve_as_employee', 'Approve Performance as Employee', 'Performance'),
+            ('performance.request_clarification', 'Request Clarification', 'Performance'),
+            ('performance.complete_end_year', 'Complete End-Year Review', 'Performance'),
+            ('performance.recalculate_scores', 'Recalculate Performance Scores', 'Performance'),
+            ('performance.export', 'Export Performance Data', 'Performance'),
+            
+            # Performance Settings
+            ('performance.settings.view', 'View Performance Settings', 'Performance'),
+            ('performance.settings.manage_years', 'Manage Performance Years', 'Performance'),
+            ('performance.settings.manage_weights', 'Manage Weight Configs', 'Performance'),
+            ('performance.settings.manage_scales', 'Manage Evaluation Scales', 'Performance'),
+            ('performance.settings.manage_objectives', 'Manage Department Objectives', 'Performance'),
+            
             # BULK UPLOAD
             ('bulk_upload.upload', 'Upload Bulk Data', 'Bulk Operations'),
             ('bulk_upload.download_template', 'Download Templates', 'Bulk Operations'),
