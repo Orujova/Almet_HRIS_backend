@@ -743,13 +743,11 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
         })
     
     # ============ MID-YEAR REVIEW SECTION ============
-    # Flow: Manager submits → Employee approves
-    
     @action(detail=True, methods=['post'])
     def save_mid_year_draft(self, request, pk=None):
         """Save mid-year review as draft"""
         performance = self.get_object()
-        user_role = request.data.get('user_role', 'manager')  # Default manager
+        user_role = request.data.get('user_role', 'manager')  # 'employee' or 'manager'
         comment = request.data.get('comment', '')
         
         if user_role == 'employee':
@@ -788,12 +786,37 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
         })
     
     @action(detail=True, methods=['post'])
-    def submit_mid_year_manager(self, request, pk=None):
+    def submit_mid_year_employee(self, request, pk=None):
         """
-        STEP 1: Manager submits mid-year review (with updated objectives progress)
+        STEP 1: Employee submits mid-year self-review
+        PERMISSION: performance.midyear.submit_employee OR performance.edit_own
         """
         performance = self.get_object()
-        self._check_edit_access(performance)
+        
+        # Check if user is the employee or has permission
+        is_own_performance = False
+        try:
+            employee = Employee.objects.get(user=request.user, is_deleted=False)
+            is_own_performance = (performance.employee == employee)
+        except Employee.DoesNotExist:
+            pass
+        
+        # Permission check
+        if not is_admin_user(request.user):
+            if not is_own_performance:
+                return Response({
+                    'error': 'You can only submit your own mid-year review'
+                }, status=status.HTTP_403_FORBIDDEN)
+            
+            # Check if user has permission
+            has_permission = check_performance_permission(request.user, 'performance.midyear.submit_employee')[0] or \
+                            check_performance_permission(request.user, 'performance.edit_own')[0]
+            
+            if not has_permission:
+                return Response({
+                    'error': 'İcazə yoxdur',
+                    'detail': 'Mid-year self-review submit etmək üçün "performance.midyear.submit_employee" icazəsi lazımdır'
+                }, status=status.HTTP_403_FORBIDDEN)
         
         # Check mid-year period
         if not performance.performance_year.is_mid_year_active():
@@ -802,7 +825,116 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
                 'current_period': performance.performance_year.get_current_period()
             }, status=status.HTTP_400_BAD_REQUEST)
         
+        # Check if already submitted
+        if performance.mid_year_employee_submitted:
+            return Response({
+                'error': 'Mid-year self-review already submitted'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Get employee comment
         comment = request.data.get('comment', '')
+        if not comment.strip():
+            return Response({
+                'error': 'Comment is required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        performance.mid_year_employee_comment = comment
+        
+        # Update objectives progress if provided
+        objectives_data = request.data.get('objectives', [])
+        if objectives_data:
+            for obj_data in objectives_data:
+                obj_id = obj_data.get('id')
+                if obj_id:
+                    EmployeeObjective.objects.filter(
+                        id=obj_id,
+                        performance=performance
+                    ).update(
+                        progress=obj_data.get('progress', 0),
+                        status_id=obj_data.get('status')
+                    )
+        
+        # Submit employee review
+        performance.mid_year_employee_submitted = timezone.now()
+        performance.save()
+        
+        PerformanceActivityLog.objects.create(
+            performance=performance,
+            action='MID_YEAR_EMPLOYEE_SUBMITTED',
+            description='Employee submitted mid-year self-review',
+            performed_by=request.user
+        )
+        
+        return Response({
+            'success': True, 
+            'message': 'Mid-year self-review submitted successfully',
+            'next_step': 'Waiting for manager to complete mid-year assessment'
+        })
+    
+    
+    # Replace submit_mid_year_manager method:
+    
+    @action(detail=True, methods=['post'])
+    def submit_mid_year_manager(self, request, pk=None):
+        """
+        STEP 2: Manager completes mid-year assessment
+        PERMISSION: performance.midyear.submit_manager OR performance.manage_team
+        """
+        performance = self.get_object()
+        
+        # Check if user is the manager or has permission
+        is_line_manager = False
+        try:
+            manager_employee = Employee.objects.get(user=request.user, is_deleted=False)
+            is_line_manager = (performance.employee.line_manager == manager_employee)
+        except Employee.DoesNotExist:
+            pass
+        
+        # Permission check
+        if not is_admin_user(request.user):
+            if not is_line_manager:
+                return Response({
+                    'error': 'Only the line manager can complete mid-year review'
+                }, status=status.HTTP_403_FORBIDDEN)
+            
+            # Check if user has permission
+            has_permission = check_performance_permission(request.user, 'performance.midyear.submit_manager')[0] or \
+                            check_performance_permission(request.user, 'performance.manage_team')[0] or \
+                            check_performance_permission(request.user, 'performance.manage_all')[0]
+            
+            if not has_permission:
+                return Response({
+                    'error': 'İcazə yoxdur',
+                    'detail': 'Mid-year assessment complete etmək üçün "performance.midyear.submit_manager" icazəsi lazımdır'
+                }, status=status.HTTP_403_FORBIDDEN)
+        
+        # Check mid-year period
+        if not performance.performance_year.is_mid_year_active():
+            return Response({
+                'error': 'Mid-year review period is not active',
+                'current_period': performance.performance_year.get_current_period()
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Check if employee submitted first
+        if not performance.mid_year_employee_submitted:
+            return Response({
+                'error': 'Employee must submit self-review first',
+                'message': 'Waiting for employee to submit mid-year self-review'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Check if already completed
+        if performance.mid_year_completed:
+            return Response({
+                'error': 'Mid-year review already completed'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        comment = request.data.get('comment', '')
+        if not comment.strip():
+            return Response({
+                'error': 'Comment is required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        performance.mid_year_manager_comment = comment
         
         # Update objectives progress/status if provided
         objectives_data = request.data.get('objectives', [])
@@ -818,81 +950,33 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
                         status_id=obj_data.get('status')
                     )
         
-        performance.mid_year_manager_comment = comment
+        # Complete mid-year review
         performance.mid_year_manager_submitted = timezone.now()
-        performance.approval_status = 'PENDING_EMPLOYEE_APPROVAL'
-        performance.save()
-        
-        PerformanceActivityLog.objects.create(
-            performance=performance,
-            action='MID_YEAR_MANAGER_SUBMITTED',
-            description='Manager submitted mid-year review',
-            performed_by=request.user
-        )
-        
-        return Response({
-            'success': True, 
-            'message': 'Mid-year review submitted - waiting for employee approval',
-            'next_step': 'Employee needs to review and approve'
-        })
-    
-    @action(detail=True, methods=['post'])
-    def approve_mid_year_employee(self, request, pk=None):
-        """
-        STEP 2: Employee approves mid-year review
-        """
-        performance = self.get_object()
-        
-        # Check if user is the employee
-        try:
-            employee = Employee.objects.get(user=request.user)
-            if performance.employee != employee and not is_admin_user(request.user):
-                return Response({
-                    'error': 'You can only approve your own mid-year review'
-                }, status=status.HTTP_403_FORBIDDEN)
-        except Employee.DoesNotExist:
-            return Response({'error': 'Employee profile not found'}, status=status.HTTP_404_NOT_FOUND)
-        
-        # Check if manager submitted first
-        if not performance.mid_year_manager_submitted:
-            return Response({
-                'error': 'Manager must submit mid-year review first',
-                'message': 'Waiting for manager to submit mid-year review'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        # Check if already completed
-        if performance.mid_year_completed:
-            return Response({
-                'error': 'Mid-year review already completed'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        # Optional: Employee can add their own comment
-        employee_comment = request.data.get('comment', '')
-        if employee_comment:
-            performance.mid_year_employee_comment = employee_comment
-        
-        performance.mid_year_employee_submitted = timezone.now()
         performance.mid_year_completed = True
-        performance.approval_status = 'APPROVED'
+        
+        if performance.objectives_manager_approved:
+            performance.approval_status = 'APPROVED'
+        
         performance.save()
         
         PerformanceActivityLog.objects.create(
             performance=performance,
-            action='MID_YEAR_EMPLOYEE_APPROVED',
-            description='Employee approved mid-year review',
+            action='MID_YEAR_COMPLETED',
+            description='Manager completed mid-year review',
             performed_by=request.user
         )
         
         return Response({
             'success': True, 
-            'message': 'Mid-year review completed',
+            'message': 'Mid-year review completed successfully',
             'next_step': 'Wait for end-year review period'
         })
-    
+
     @action(detail=True, methods=['post'])
     def request_mid_year_clarification(self, request, pk=None):
         """
-        Employee requests clarification about mid-year review
+        Employee can request clarification about mid-year review
+        This allows manager to edit and resubmit
         """
         performance = self.get_object()
         
@@ -921,9 +1005,9 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
             created_by=request.user
         )
         
-        # Reset mid-year completion
+        # Reset mid-year completion so manager can edit
         performance.mid_year_completed = False
-        performance.mid_year_employee_submitted = None
+        performance.mid_year_manager_submitted = None
         performance.approval_status = 'NEED_CLARIFICATION'
         performance.save()
         
@@ -940,7 +1024,9 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
             'message': 'Clarification requested - Manager can edit and resubmit',
             'comment': PerformanceCommentSerializer(comment).data
         })
+   
     
+  
     # ============ END-YEAR REVIEW SECTION ============
     # Flow: Manager completes → Employee approves → Manager approves
     

@@ -232,6 +232,8 @@ class Command(BaseCommand):
             
             # ==================== PERFORMANCE MANAGEMENT ====================
             # Performance Dashboard & Reports
+              # ==================== PERFORMANCE MANAGEMENT ====================
+            # Performance Dashboard & Reports
             ('performance.dashboard.view', 'View Performance Dashboard', 'Performance'),
             ('performance.dashboard.view_statistics', 'View Performance Statistics', 'Performance'),
             
@@ -240,18 +242,35 @@ class Command(BaseCommand):
             ('performance.view_team', 'View Team Performance (Direct Reports)', 'Performance'),
             ('performance.view_all', 'View All Performance Records', 'Performance'),
             
-            # Performance Records - Edit Permissions
+            # Performance Records - Edit Permissions  
             ('performance.edit_own', 'Edit Own Performance', 'Performance'),
             ('performance.manage_team', 'Manage Team Performance (Direct Reports)', 'Performance'),
             ('performance.manage_all', 'Manage All Performance Records', 'Performance'),
             
             # Performance Records - Actions
             ('performance.initialize', 'Initialize Performance Record', 'Performance'),
-            ('performance.submit', 'Submit Performance for Approval', 'Performance'),
+            
+            # Objectives
+            ('performance.objectives.submit', 'Submit Objectives', 'Performance'),
+            ('performance.objectives.approve', 'Approve Objectives', 'Performance'),
+            
+            # Mid-Year Review - NEW PERMISSIONS
+            ('performance.midyear.submit_employee', 'Submit Mid-Year Self-Review (Employee)', 'Performance'),
+            ('performance.midyear.submit_manager', 'Complete Mid-Year Assessment (Manager)', 'Performance'),
+            ('performance.midyear.request_clarification', 'Request Mid-Year Clarification', 'Performance'),
+            
+            # End-Year Review
+            ('performance.endyear.submit_employee', 'Submit End-Year Self-Review (Employee)', 'Performance'),
+            ('performance.endyear.complete', 'Complete End-Year Review (Manager)', 'Performance'),
+            ('performance.endyear.approve_employee', 'Approve Final Performance (Employee)', 'Performance'),
+            ('performance.endyear.approve_manager', 'Approve Final Performance (Manager)', 'Performance'),
+            ('performance.endyear.request_clarification', 'Request End-Year Clarification', 'Performance'),
+             ('performance.submit', 'Submit Performance for Approval', 'Performance'),
             ('performance.approve_as_manager', 'Approve Performance as Manager', 'Performance'),
             ('performance.approve_as_employee', 'Approve Performance as Employee', 'Performance'),
+             ('performance.complete_end_year', 'Complete End-Year Review', 'Performance'),
+            # General Actions
             ('performance.request_clarification', 'Request Clarification', 'Performance'),
-            ('performance.complete_end_year', 'Complete End-Year Review', 'Performance'),
             ('performance.recalculate_scores', 'Recalculate Performance Scores', 'Performance'),
             ('performance.export', 'Export Performance Data', 'Performance'),
             
@@ -261,7 +280,6 @@ class Command(BaseCommand):
             ('performance.settings.manage_weights', 'Manage Weight Configs', 'Performance'),
             ('performance.settings.manage_scales', 'Manage Evaluation Scales', 'Performance'),
             ('performance.settings.manage_objectives', 'Manage Department Objectives', 'Performance'),
-            
             # BULK UPLOAD
             ('bulk_upload.upload', 'Upload Bulk Data', 'Bulk Operations'),
             ('bulk_upload.download_template', 'Download Templates', 'Bulk Operations'),
