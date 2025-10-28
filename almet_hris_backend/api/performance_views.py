@@ -409,14 +409,17 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
         objectives = performance.objectives.filter(is_cancelled=False)
         goal_config = GoalLimitConfig.get_active_config()
         
-        if objectives.count() < goal_config.min_goals:
+        objectives_count = objectives.count()  # FIX: Count-u bir dəfə hesabla
+        
+        # FIX: Düzgün minimum/maximum yoxlama
+        if objectives_count < goal_config.min_goals:
             return Response({
-                'error': f'Minimum {goal_config.min_goals} objectives required'
+                'error': f'Minimum {goal_config.min_goals} objectives required (currently {objectives_count})'
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        if objectives.count() > goal_config.max_goals:
+        if objectives_count > goal_config.max_goals:
             return Response({
-                'error': f'Maximum {goal_config.max_goals} objectives allowed'
+                'error': f'Maximum {goal_config.max_goals} objectives allowed (currently {objectives_count})'
             }, status=status.HTTP_400_BAD_REQUEST)
         
         # Check total weight
@@ -447,9 +450,9 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
             'success': True,
             'message': 'Objectives submitted for employee approval',
             'next_step': 'Waiting for employee to review and approve',
-            'was_resubmission': was_clarification_needed
+            'was_resubmission': was_clarification_needed,
+            'objectives_count': objectives_count  # FIX: Response-da göstər
         })
-    
     @action(detail=True, methods=['post'])
     def approve_objectives_employee(self, request, pk=None):
         """

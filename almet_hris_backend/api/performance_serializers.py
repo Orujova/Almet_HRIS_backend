@@ -146,7 +146,6 @@ class PerformanceActivityLogSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 
-# performance_serializers.py - FIXED EmployeePerformanceListSerializer
 
 class EmployeePerformanceListSerializer(serializers.ModelSerializer):
     """Simplified serializer for list view"""

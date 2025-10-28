@@ -77,97 +77,6 @@ class PerformanceYear(models.Model):
         if self.is_active:
             PerformanceYear.objects.filter(is_active=True).exclude(pk=self.pk).update(is_active=False)
         super().save(*args, **kwargs)
-# class PerformanceYear(models.Model):
-#     """Performance Year Configuration"""
-#     year = models.IntegerField(unique=True)
-#     is_active = models.BooleanField(default=False)
-    
-#     # Goal Setting Period
-#     goal_setting_employee_start = models.DateField()
-#     goal_setting_employee_end = models.DateField()
-#     goal_setting_manager_start = models.DateField()
-#     goal_setting_manager_end = models.DateField()
-    
-#     # Mid-Year Review Period
-#     mid_year_review_start = models.DateField()
-#     mid_year_review_end = models.DateField()
-    
-#     # End-Year Review Period
-#     end_year_review_start = models.DateField()
-#     end_year_review_end = models.DateField()
-    
-#     created_at = models.DateTimeField(auto_now_add=True)
-#     updated_at = models.DateTimeField(auto_now=True)
-#     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
-    
-#     # 🔧 NEW: Sequential mode flag
-#     sequential_mode = models.BooleanField(
-#         default=True,
-#         help_text='Enable sequential mode - all periods always active, controlled by status'
-#     )
-    
-#     class Meta:
-#         ordering = ['-year']
-#         db_table = 'performance_years'
-    
-#     def __str__(self):
-#         return f"Performance Year {self.year}"
-    
-#     def get_current_period(self):
-#         """
-#         🔧 UPDATED: Get current active period
-        
-#         If sequential_mode=True: Always return 'SEQUENTIAL' (all periods available)
-#         If sequential_mode=False: Return based on dates (original behavior)
-#         """
-#         if self.sequential_mode:
-#             # Sequential mode: All periods always available
-#             # Period is determined by performance status, not dates
-#             return 'SEQUENTIAL'
-        
-#         # Original date-based logic
-#         from django.utils import timezone
-#         today = timezone.now().date()
-        
-#         # Priority 1: Goal Setting Period
-#         if self.goal_setting_employee_start <= today <= self.goal_setting_employee_end:
-#             return 'GOAL_SETTING'
-        
-#         if self.goal_setting_manager_start <= today <= self.goal_setting_manager_end:
-#             return 'GOAL_SETTING'
-        
-#         # Priority 2: Mid-Year Review Period
-#         if self.mid_year_review_start <= today <= self.mid_year_review_end:
-#             return 'MID_YEAR_REVIEW'
-        
-#         # Priority 3: End-Year Review Period
-#         if self.end_year_review_start <= today <= self.end_year_review_end:
-#             return 'END_YEAR_REVIEW'
-        
-#         return 'CLOSED'
-    
-#     def is_goal_setting_active(self):
-#         """Check if goal setting period is active"""
-#         if self.sequential_mode:
-#             return True  # Always allow in sequential mode
-#         return self.get_current_period() == 'GOAL_SETTING'
-    
-#     def is_mid_year_active(self):
-#         """Check if mid-year review period is active"""
-#         if self.sequential_mode:
-#             return True  # Always allow in sequential mode
-#         return self.get_current_period() == 'MID_YEAR_REVIEW'
-    
-#     def is_end_year_active(self):
-#         """Check if end-year review period is active"""
-#         if self.sequential_mode:
-#             return True  # Always allow in sequential mode
-#         return self.get_current_period() == 'END_YEAR_REVIEW'
-    
-#     def save(self, *args, **kwargs):
-#         if self.is_active:
-#             PerformanceYear.objects.filter(is_active=True).exclude(pk=self.pk).update(is_active=False)
-#         super().save(*args, **kwargs)
 
 class PerformanceWeightConfig(models.Model):
     """Performance Weight Configuration by Position Group"""
@@ -224,6 +133,7 @@ class DepartmentObjective(models.Model):
     """Department Level Objectives"""
     department = models.ForeignKey(Department, on_delete=models.CASCADE)
     title = models.CharField(max_length=300)
+    description = models.TextField(blank=True)  # FIX: Əlavə edildi
     weight = models.IntegerField(
         validators=[MinValueValidator(0), MaxValueValidator(100)],
         help_text="Weight percentage"
@@ -240,7 +150,6 @@ class DepartmentObjective(models.Model):
     
     def __str__(self):
         return f"{self.department.name} - {self.title}"
-
 
 class EvaluationScale(models.Model):
     """Evaluation Scale Definition"""
