@@ -27,15 +27,29 @@ def has_performance_permission(permission_codename):
     """
     Decorator to check performance permissions
     Admin role bütün permission-lara sahib
+    
+    FIXED: Works with both function views and ViewSet methods
     """
     def decorator(view_func):
         @wraps(view_func)
-        def wrapper(request, *args, **kwargs):
+        def wrapper(self_or_request, *args, **kwargs):
+            # Determine if this is a ViewSet method or a function view
+            # ViewSet methods: first arg is 'self', second is 'request'
+            # Function views: first arg is 'request'
+            if hasattr(self_or_request, 'request'):
+                # This is a ViewSet instance (self)
+                request = self_or_request.request
+                view_func_args = (self_or_request,) + args
+            else:
+                # This is a request object (function view)
+                request = self_or_request
+                view_func_args = args
+            
             user = request.user
             
             # Admin role yoxla
             if is_admin_user(user):
-                return view_func(request, *args, **kwargs)
+                return view_func(*((self_or_request,) + args), **kwargs)
             
             # Employee tap
             try:
@@ -77,11 +91,10 @@ def has_performance_permission(permission_codename):
                     'your_roles': [er.role.name for er in employee_roles]
                 }, status=status.HTTP_403_FORBIDDEN)
             
-            return view_func(request, *args, **kwargs)
+            return view_func(*((self_or_request,) + args), **kwargs)
         
         return wrapper
     return decorator
-
 
 def check_performance_permission(user, permission_codename):
     """
