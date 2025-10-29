@@ -1,4 +1,4 @@
-# api/performance_views.py - COMPLETE WITH PROPER ACCESS CONTROL AND APPROVAL FLOWS
+# api/performance_views.py - COMPLETE FIXED VERSION
 
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
@@ -22,7 +22,6 @@ from .models import Employee
 from .competency_models import BehavioralCompetency
 from .competency_assessment_models import PositionBehavioralAssessment, LetterGradeMapping
 
-# ✅ IMPORT ACCESS CONTROL FUNCTIONS
 from .performance_permissions import (
     has_performance_permission,
     check_performance_permission,
@@ -36,7 +35,7 @@ from .performance_permissions import (
 logger = logging.getLogger(__name__)
 
 
-# ============ READ-ONLY VIEWSETS (No permission needed) ============
+# ============ READ-ONLY VIEWSETS ============
 
 class PerformanceYearViewSet(viewsets.ModelViewSet):
     """Performance Year Configuration"""
@@ -135,22 +134,16 @@ class ObjectiveStatusViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
 
-# ============ MAIN PERFORMANCE VIEWSET WITH ACCESS CONTROL ============
+# ============ MAIN PERFORMANCE VIEWSET ============
 
 class EmployeePerformanceViewSet(viewsets.ModelViewSet):
     """
     Employee Performance Management with Role-Based Access Control
     
-    Access Rules:
-    - Admin: Full access to all performances
-    - performance.view_all: Can view all performances
-    - performance.view_team: Can view direct reports' performances
-    - All users: Can view their own performance
-    
-    Approval Flow:
+    ✅ FIXED Approval Flow:
     GOAL SETTING: Manager submit → Employee approve → Manager approve
-    MID-YEAR: Manager submit → Employee approve
-    END-YEAR: Manager complete → Employee approve → Manager approve
+    MID-YEAR: Employee submit → Manager complete
+    END-YEAR: Manager complete (NO approval check) → Employee approve → Manager approve
     """
     permission_classes = [IsAuthenticated]
     
@@ -162,9 +155,7 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
         return EmployeePerformanceDetailSerializer
     
     def get_queryset(self):
-        """
-        ✅ MAIN ACCESS CONTROL: Filter queryset based on user permissions
-        """
+        """Filter queryset based on user permissions"""
         queryset = EmployeePerformance.objects.select_related(
             'employee', 'employee__department', 'employee__line_manager',
             'performance_year', 'created_by'
@@ -172,10 +163,8 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
             'objectives', 'competency_ratings', 'development_needs', 'comments'
         )
         
-        # ✅ Apply access control
         queryset = filter_viewable_performances(self.request.user, queryset)
         
-        # Apply additional filters
         employee_id = self.request.query_params.get('employee_id')
         if employee_id:
             queryset = queryset.filter(employee_id=employee_id)
@@ -188,7 +177,6 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
         if approval_status:
             queryset = queryset.filter(approval_status=approval_status)
         
-        # My team filter
         if self.request.query_params.get('my_team') == 'true':
             try:
                 manager_employee = Employee.objects.get(user=self.request.user)
@@ -199,12 +187,9 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
         return queryset.order_by('-performance_year__year', 'employee__employee_id')
     
     def retrieve(self, request, *args, **kwargs):
-        """
-        ✅ CHECK ACCESS on retrieve
-        """
+        """Check access on retrieve"""
         instance = self.get_object()
         
-        # Check if user can view this performance
         if not can_view_performance(request.user, instance):
             return Response({
                 'error': 'İcazə yoxdur',
@@ -214,11 +199,6 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(instance)
         return Response(serializer.data)
     
-    @swagger_auto_schema(
-        method='get',
-        operation_description="Get user's performance permissions",
-        responses={200: openapi.Response(description='User permissions')}
-    )
     @action(detail=False, methods=['get'])
     def my_permissions(self, request):
         """Get current user's performance permissions"""
@@ -248,9 +228,7 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['post'])
     @has_performance_permission('performance.initialize')
     def initialize(self, request):
-        """
-        Initialize performance record with behavioral competencies from position assessment
-        """
+        """Initialize performance record with behavioral competencies"""
         serializer = PerformanceInitializeSerializer(
             data=request.data,
             context={'request': request}
@@ -261,18 +239,13 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
             return Response(detail_serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
-    # ============ HELPER METHOD ============
+    # ============ HELPER METHODS ============
     
     def _check_edit_access(self, performance):
-        """
-        Helper to check if user can edit performance
-        UPDATED: Allow edit when NEED_CLARIFICATION
-        """
-        # Admin always allowed
+        """Helper to check if user can edit performance"""
         if is_admin_user(self.request.user):
             return True
         
-        # Employee can edit when NEED_CLARIFICATION (after manager requests clarification)
         try:
             employee = Employee.objects.get(user=self.request.user)
             if performance.employee == employee:
@@ -281,7 +254,6 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
         except Employee.DoesNotExist:
             pass
         
-        # Manager/admin edit check
         if not can_edit_performance(self.request.user, performance):
             return Response({
                 'error': 'İcazə yoxdur',
@@ -291,10 +263,7 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
         return True
     
     def _create_development_needs(self, performance):
-        """
-        Create development needs for low-rated behavioral competencies
-        Uses evaluation scale ratings (value <= 2)
-        """
+        """Create development needs for low-rated behavioral competencies"""
         low_ratings = performance.competency_ratings.filter(
             end_year_rating__value__lte=2
         ).select_related('behavioral_competency')
@@ -312,151 +281,12 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
                     progress=0
                 )
     
-    # ============ OBJECTIVES SECTION ============
-    # Flow: Manager submits → Employee approves → Manager approves
-    
-    @action(detail=True, methods=['post'])
-    def save_objectives_draft(self, request, pk=None):
-        """Save objectives as draft"""
-        performance = self.get_object()
-        self._check_edit_access(performance)
-        
-        objectives_data = request.data.get('objectives', [])
-        
-        with transaction.atomic():
-            # Update or create objectives
-            updated_ids = []
-            for idx, obj_data in enumerate(objectives_data):
-                obj_id = obj_data.get('id')
-                if obj_id:
-                    # Update existing
-                    EmployeeObjective.objects.filter(
-                        id=obj_id, 
-                        performance=performance
-                    ).update(
-                        title=obj_data.get('title', ''),
-                        description=obj_data.get('description', ''),
-                        linked_department_objective_id=obj_data.get('linked_department_objective'),
-                        weight=obj_data.get('weight', 0),
-                        progress=obj_data.get('progress', 0),
-                        status_id=obj_data.get('status'),
-                        display_order=idx
-                    )
-                    updated_ids.append(obj_id)
-                else:
-                    # Create new
-                    new_obj = EmployeeObjective.objects.create(
-                        performance=performance,
-                        title=obj_data.get('title', ''),
-                        description=obj_data.get('description', ''),
-                        linked_department_objective_id=obj_data.get('linked_department_objective'),
-                        weight=obj_data.get('weight', 0),
-                        progress=obj_data.get('progress', 0),
-                        status_id=obj_data.get('status'),
-                        display_order=idx
-                    )
-                    updated_ids.append(new_obj.id)
-            
-            # Delete objectives not in the list
-            performance.objectives.exclude(id__in=updated_ids).delete()
-            
-            # Update draft saved timestamp
-            performance.objectives_draft_saved_date = timezone.now()
-            performance.save()
-            
-            PerformanceActivityLog.objects.create(
-                performance=performance,
-                action='OBJECTIVES_DRAFT_SAVED',
-                description='Objectives saved as draft',
-                performed_by=request.user
-            )
-        
-        return Response({
-            'success': True,
-            'message': 'Objectives draft saved'
-        })
-    
-    @action(detail=True, methods=['post'])
-    def submit_objectives(self, request, pk=None):
-        """
-        STEP 1: Manager submits objectives for employee review
-        """
-        performance = self.get_object()
-        
-        # Only manager can submit objectives
-        if not is_admin_user(request.user):
-            try:
-                manager_employee = Employee.objects.get(user=request.user)
-                if performance.employee.line_manager != manager_employee:
-                    has_manage = check_performance_permission(request.user, 'performance.manage_team')[0] or \
-                                check_performance_permission(request.user, 'performance.manage_all')[0]
-                    if not has_manage:
-                        return Response({
-                            'error': 'Only manager can submit objectives',
-                            'detail': 'Objectives are created and submitted by the manager'
-                        }, status=status.HTTP_403_FORBIDDEN)
-            except Employee.DoesNotExist:
-                return Response({'error': 'Employee profile not found'}, status=status.HTTP_404_NOT_FOUND)
-        
-        # Check period
-        if not performance.performance_year.is_goal_setting_active():
-            return Response({
-                'error': 'Goal setting period is not active',
-                'current_period': performance.performance_year.get_current_period()
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        # Validate objectives
-        objectives = performance.objectives.filter(is_cancelled=False)
-        goal_config = GoalLimitConfig.get_active_config()
-        
-        objectives_count = objectives.count()  # FIX: Count-u bir dəfə hesabla
-        
-        # FIX: Düzgün minimum/maximum yoxlama
-        if objectives_count < goal_config.min_goals:
-            return Response({
-                'error': f'Minimum {goal_config.min_goals} objectives required (currently {objectives_count})'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        if objectives_count > goal_config.max_goals:
-            return Response({
-                'error': f'Maximum {goal_config.max_goals} objectives allowed (currently {objectives_count})'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        # Check total weight
-        total_weight = sum([obj.weight for obj in objectives])
-        if total_weight != 100:
-            return Response({
-                'error': f'Total objective weights must equal 100% (currently {total_weight}%)'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        # Update status - manager submits for employee approval
-        was_clarification_needed = performance.approval_status == 'NEED_CLARIFICATION'
-        
-        performance.objectives_employee_submitted = True
-        performance.objectives_employee_submitted_date = timezone.now()
-        performance.approval_status = 'PENDING_EMPLOYEE_APPROVAL'
-        performance.save()
-        
-        log_msg = 'Manager resubmitted objectives after clarification' if was_clarification_needed else 'Manager submitted objectives for employee approval'
-        
-        PerformanceActivityLog.objects.create(
-            performance=performance,
-            action='OBJECTIVES_SUBMITTED',
-            description=log_msg,
-            performed_by=request.user
-        )
-        
-        return Response({
-            'success': True,
-            'message': 'Objectives submitted for employee approval',
-            'next_step': 'Waiting for employee to review and approve',
-            'was_resubmission': was_clarification_needed,
-            'objectives_count': objectives_count  # FIX: Response-da göstər
-        })
+ 
+   
     @action(detail=True, methods=['post'])
     def approve_objectives_employee(self, request, pk=None):
         """
-        STEP 2: Employee reviews and approves objectives (after manager submits)
+        ✅ FIXED: STEP 2 - Employee approves objectives (first approval)
         """
         performance = self.get_object()
         
@@ -484,7 +314,7 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
                 'message': 'Waiting for manager to submit objectives'
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        # Employee approves
+        # ✅ Employee approves
         performance.objectives_employee_approved = True
         performance.objectives_employee_approved_date = timezone.now()
         performance.approval_status = 'PENDING_MANAGER_APPROVAL'
@@ -493,9 +323,8 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
         PerformanceActivityLog.objects.create(
             performance=performance,
             action='OBJECTIVES_APPROVED_EMPLOYEE',
-            description=f'Employee approved objectives - by {request.user.get_full_name()}',
-            performed_by=request.user,
-            metadata={'approved_as_admin': is_admin_user(request.user)}
+            description=f'Employee approved objectives',
+            performed_by=request.user
         )
         
         return Response({
@@ -508,7 +337,7 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'])
     def approve_objectives_manager(self, request, pk=None):
         """
-        STEP 3: Manager final approval (after employee approves)
+        ✅ FIXED: STEP 3 - Manager final approval (after employee approves)
         """
         performance = self.get_object()
         
@@ -533,14 +362,14 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
                 'error': 'Objectives already approved by manager'
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        # CRITICAL: Employee must approve FIRST
+        # ✅ Employee must approve FIRST
         if not performance.objectives_employee_approved:
             return Response({
                 'error': 'Employee must approve objectives first',
                 'message': 'Waiting for employee approval'
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        # Manager final approval
+        # ✅ Manager final approval
         performance.objectives_manager_approved = True
         performance.objectives_manager_approved_date = timezone.now()
         performance.approval_status = 'APPROVED'
@@ -549,9 +378,8 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
         PerformanceActivityLog.objects.create(
             performance=performance,
             action='OBJECTIVES_APPROVED_MANAGER',
-            description=f'Manager final approved objectives - by {request.user.get_full_name()}',
-            performed_by=request.user,
-            metadata={'approved_as_admin': is_admin_user(request.user)}
+            description=f'Manager final approved objectives',
+            performed_by=request.user
         )
         
         return Response({
@@ -563,18 +391,15 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
     
     @action(detail=True, methods=['post'])
     def request_clarification(self, request, pk=None):
-        """
-        Employee can request clarification from manager about objectives
-        """
+        """Employee can request clarification from manager"""
         performance = self.get_object()
         
-        # Employee can request clarification
         if not is_admin_user(request.user):
             try:
                 employee = Employee.objects.get(user=request.user)
                 if performance.employee != employee:
                     return Response({
-                        'error': 'Only employee can request clarification about their objectives'
+                        'error': 'Only employee can request clarification'
                     }, status=status.HTTP_403_FORBIDDEN)
             except Employee.DoesNotExist:
                 return Response({'error': 'Employee profile not found'}, status=status.HTTP_404_NOT_FOUND)
@@ -588,7 +413,6 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
                 'error': 'Comment text required'
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        # Create comment
         comment = PerformanceComment.objects.create(
             performance=performance,
             comment_type=comment_type,
@@ -596,13 +420,12 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
             created_by=request.user
         )
         
-        # CRITICAL: Reset approval flags - manager needs to resubmit
+        # Reset approval flags
         if section == 'objectives':
             performance.objectives_employee_approved = False
             performance.objectives_manager_approved = False
             performance.objectives_employee_approved_date = None
             performance.objectives_manager_approved_date = None
-            # Keep submitted flag so manager can edit and resubmit
         elif section == 'end_year':
             performance.final_employee_approved = False
             performance.final_manager_approved = False
@@ -615,7 +438,7 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
         PerformanceActivityLog.objects.create(
             performance=performance,
             action='CLARIFICATION_REQUESTED',
-            description=f'Employee requested clarification for {section}: {comment_type}',
+            description=f'Employee requested clarification for {section}',
             performed_by=request.user,
             metadata={
                 'comment_id': comment.id,
@@ -636,7 +459,6 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
         """Manager cancels an objective (mid-year only)"""
         performance = self.get_object()
         
-        # Check manager permission
         try:
             manager_employee = Employee.objects.get(user=request.user)
             if performance.employee.line_manager != manager_employee:
@@ -658,7 +480,6 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
                 'error': 'objective_id required'
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        # Check if mid-year period
         current_period = performance.performance_year.get_current_period()
         if current_period != 'MID_YEAR_REVIEW':
             return Response({
@@ -686,75 +507,17 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
                 'error': 'Objective not found'
             }, status=status.HTTP_404_NOT_FOUND)
     
-    # ============ BEHAVIORAL COMPETENCIES SECTION ============
-    
-    @action(detail=True, methods=['post'])
-    def save_competencies_draft(self, request, pk=None):
-        """Save behavioral competencies as draft"""
-        performance = self.get_object()
-        self._check_edit_access(performance)
-        
-        competencies_data = request.data.get('competencies', [])
-        
-        with transaction.atomic():
-            for comp_data in competencies_data:
-                comp_id = comp_data.get('id')
-                if comp_id:
-                    EmployeeCompetencyRating.objects.filter(
-                        id=comp_id,
-                        performance=performance
-                    ).update(
-                        end_year_rating_id=comp_data.get('end_year_rating'),
-                        notes=comp_data.get('notes', '')
-                    )
-            
-            performance.competencies_draft_saved_date = timezone.now()
-            performance.save()
-            
-            PerformanceActivityLog.objects.create(
-                performance=performance,
-                action='COMPETENCIES_DRAFT_SAVED',
-                description='Behavioral competencies saved as draft',
-                performed_by=request.user
-            )
-        
-        return Response({
-            'success': True,
-            'message': 'Behavioral competencies draft saved'
-        })
-    
-    @action(detail=True, methods=['post'])
-    def submit_competencies(self, request, pk=None):
-        """Submit behavioral competencies"""
-        performance = self.get_object()
-        self._check_edit_access(performance)
-        
-        performance.competencies_submitted = True
-        performance.competencies_submitted_date = timezone.now()
-        performance.save()
-        
-        PerformanceActivityLog.objects.create(
-            performance=performance,
-            action='COMPETENCIES_SUBMITTED',
-            description='Behavioral competencies submitted',
-            performed_by=request.user
-        )
-        
-        return Response({
-            'success': True,
-            'message': 'Behavioral competencies submitted'
-        })
-    
+
     # ============ MID-YEAR REVIEW SECTION ============
+    
     @action(detail=True, methods=['post'])
     def save_mid_year_draft(self, request, pk=None):
         """Save mid-year review as draft"""
         performance = self.get_object()
-        user_role = request.data.get('user_role', 'manager')  # 'employee' or 'manager'
+        user_role = request.data.get('user_role', 'manager')
         comment = request.data.get('comment', '')
         
         if user_role == 'employee':
-            # Employee can save their own mid-year self-review comments
             try:
                 employee = Employee.objects.get(user=request.user)
                 if performance.employee != employee and not is_admin_user(request.user):
@@ -768,7 +531,6 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
             performance.mid_year_employee_draft_saved = timezone.now()
             log_msg = 'Employee saved mid-year self-review draft'
         else:
-            # Manager saves mid-year review
             self._check_edit_access(performance)
             performance.mid_year_manager_comment = comment
             performance.mid_year_manager_draft_saved = timezone.now()
@@ -790,13 +552,9 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
     
     @action(detail=True, methods=['post'])
     def submit_mid_year_employee(self, request, pk=None):
-        """
-        STEP 1: Employee submits mid-year self-review
-        PERMISSION: performance.midyear.submit_employee OR performance.edit_own
-        """
+        """STEP 1: Employee submits mid-year self-review"""
         performance = self.get_object()
         
-        # Check if user is the employee or has permission
         is_own_performance = False
         try:
             employee = Employee.objects.get(user=request.user, is_deleted=False)
@@ -804,37 +562,32 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
         except Employee.DoesNotExist:
             pass
         
-        # Permission check
         if not is_admin_user(request.user):
             if not is_own_performance:
                 return Response({
                     'error': 'You can only submit your own mid-year review'
                 }, status=status.HTTP_403_FORBIDDEN)
             
-            # Check if user has permission
             has_permission = check_performance_permission(request.user, 'performance.midyear.submit_employee')[0] or \
                             check_performance_permission(request.user, 'performance.edit_own')[0]
             
             if not has_permission:
                 return Response({
                     'error': 'İcazə yoxdur',
-                    'detail': 'Mid-year self-review submit etmək üçün "performance.midyear.submit_employee" icazəsi lazımdır'
+                    'detail': 'Mid-year self-review submit etmək üçün icazə lazımdır'
                 }, status=status.HTTP_403_FORBIDDEN)
         
-        # Check mid-year period
         if not performance.performance_year.is_mid_year_active():
             return Response({
                 'error': 'Mid-year review period is not active',
                 'current_period': performance.performance_year.get_current_period()
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        # Check if already submitted
         if performance.mid_year_employee_submitted:
             return Response({
                 'error': 'Mid-year self-review already submitted'
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        # Get employee comment
         comment = request.data.get('comment', '')
         if not comment.strip():
             return Response({
@@ -843,7 +596,6 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
         
         performance.mid_year_employee_comment = comment
         
-        # Update objectives progress if provided
         objectives_data = request.data.get('objectives', [])
         if objectives_data:
             for obj_data in objectives_data:
@@ -857,7 +609,6 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
                         status_id=obj_data.get('status')
                     )
         
-        # Submit employee review
         performance.mid_year_employee_submitted = timezone.now()
         performance.save()
         
@@ -874,18 +625,11 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
             'next_step': 'Waiting for manager to complete mid-year assessment'
         })
     
-    
-    # Replace submit_mid_year_manager method:
-    
     @action(detail=True, methods=['post'])
     def submit_mid_year_manager(self, request, pk=None):
-        """
-        STEP 2: Manager completes mid-year assessment
-        PERMISSION: performance.midyear.submit_manager OR performance.manage_team
-        """
+        """STEP 2: Manager completes mid-year assessment"""
         performance = self.get_object()
         
-        # Check if user is the manager or has permission
         is_line_manager = False
         try:
             manager_employee = Employee.objects.get(user=request.user, is_deleted=False)
@@ -893,14 +637,12 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
         except Employee.DoesNotExist:
             pass
         
-        # Permission check
         if not is_admin_user(request.user):
             if not is_line_manager:
                 return Response({
                     'error': 'Only the line manager can complete mid-year review'
                 }, status=status.HTTP_403_FORBIDDEN)
             
-            # Check if user has permission
             has_permission = check_performance_permission(request.user, 'performance.midyear.submit_manager')[0] or \
                             check_performance_permission(request.user, 'performance.manage_team')[0] or \
                             check_performance_permission(request.user, 'performance.manage_all')[0]
@@ -908,24 +650,21 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
             if not has_permission:
                 return Response({
                     'error': 'İcazə yoxdur',
-                    'detail': 'Mid-year assessment complete etmək üçün "performance.midyear.submit_manager" icazəsi lazımdır'
+                    'detail': 'Mid-year assessment complete etmək üçün icazə lazımdır'
                 }, status=status.HTTP_403_FORBIDDEN)
         
-        # Check mid-year period
         if not performance.performance_year.is_mid_year_active():
             return Response({
                 'error': 'Mid-year review period is not active',
                 'current_period': performance.performance_year.get_current_period()
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        # Check if employee submitted first
         if not performance.mid_year_employee_submitted:
             return Response({
                 'error': 'Employee must submit self-review first',
                 'message': 'Waiting for employee to submit mid-year self-review'
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        # Check if already completed
         if performance.mid_year_completed:
             return Response({
                 'error': 'Mid-year review already completed'
@@ -939,7 +678,6 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
         
         performance.mid_year_manager_comment = comment
         
-        # Update objectives progress/status if provided
         objectives_data = request.data.get('objectives', [])
         if objectives_data:
             for obj_data in objectives_data:
@@ -953,7 +691,6 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
                         status_id=obj_data.get('status')
                     )
         
-        # Complete mid-year review
         performance.mid_year_manager_submitted = timezone.now()
         performance.mid_year_completed = True
         
@@ -974,16 +711,12 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
             'message': 'Mid-year review completed successfully',
             'next_step': 'Wait for end-year review period'
         })
-
+    
     @action(detail=True, methods=['post'])
     def request_mid_year_clarification(self, request, pk=None):
-        """
-        Employee can request clarification about mid-year review
-        This allows manager to edit and resubmit
-        """
+        """Employee can request clarification about mid-year review"""
         performance = self.get_object()
         
-        # Employee can request clarification
         if not is_admin_user(request.user):
             try:
                 employee = Employee.objects.get(user=request.user)
@@ -1000,7 +733,6 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
                 'error': 'Comment text required'
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        # Create comment
         comment = PerformanceComment.objects.create(
             performance=performance,
             comment_type='MID_YEAR_CLARIFICATION',
@@ -1008,7 +740,6 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
             created_by=request.user
         )
         
-        # Reset mid-year completion so manager can edit
         performance.mid_year_completed = False
         performance.mid_year_manager_submitted = None
         performance.approval_status = 'NEED_CLARIFICATION'
@@ -1027,17 +758,14 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
             'message': 'Clarification requested - Manager can edit and resubmit',
             'comment': PerformanceCommentSerializer(comment).data
         })
-   
     
-  
     # ============ END-YEAR REVIEW SECTION ============
-    # Flow: Manager completes → Employee approves → Manager approves
     
     @action(detail=True, methods=['post'])
     def save_end_year_draft(self, request, pk=None):
         """Save end-year review as draft"""
         performance = self.get_object()
-        user_role = request.data.get('user_role', 'manager')  # Default manager
+        user_role = request.data.get('user_role', 'manager')
         comment = request.data.get('comment', '')
         
         if user_role == 'employee':
@@ -1104,12 +832,13 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'])
     def complete_end_year(self, request, pk=None):
         """
-        STEP 1: Manager completes end-year review and finalizes scores
+        ✅ FIXED: STEP 1 - Manager completes end-year review
+        NO objectives approval check - only ratings check
         """
         performance = self.get_object()
         self._check_edit_access(performance)
         
-        # Validate all objectives have ratings
+        # ✅ ONLY check if ratings exist (NO approval check)
         objectives_without_rating = performance.objectives.filter(
             is_cancelled=False,
             end_year_rating__isnull=True
@@ -1120,7 +849,6 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
                 'error': f'{objectives_without_rating} objectives missing end-year ratings'
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        # Validate all behavioral competencies have ratings
         competencies_without_rating = performance.competency_ratings.filter(
             end_year_rating__isnull=True
         ).count()
@@ -1130,7 +858,6 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
                 'error': f'{competencies_without_rating} behavioral competencies missing end-year ratings'
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        # Get manager comment
         comment = request.data.get('comment', '')
         if comment:
             performance.end_year_manager_comment = comment
@@ -1138,7 +865,7 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
         # Calculate final scores
         performance.calculate_scores()
         
-        # Auto-create development needs for low-rated competencies
+        # Auto-create development needs
         self._create_development_needs(performance)
         
         # Update status
@@ -1179,12 +906,9 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
     
     @action(detail=True, methods=['post'])
     def approve_final_employee(self, request, pk=None):
-        """
-        STEP 2: Employee approves final performance results
-        """
+        """STEP 2: Employee approves final performance results"""
         performance = self.get_object()
         
-        # Admin or employee check
         if not is_admin_user(request.user):
             try:
                 employee = Employee.objects.get(user=request.user)
@@ -1195,20 +919,17 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
             except Employee.DoesNotExist:
                 return Response({'error': 'Employee profile not found'}, status=status.HTTP_404_NOT_FOUND)
         
-        # Check if end-year completed
         if not performance.end_year_completed:
             return Response({
                 'error': 'End-year review not completed yet',
                 'message': 'Manager must complete end-year review first'
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        # Check if already approved
         if performance.final_employee_approved:
             return Response({
                 'error': 'Already approved by employee'
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        # Approve
         performance.final_employee_approved = True
         performance.final_employee_approval_date = timezone.now()
         performance.approval_status = 'PENDING_MANAGER_APPROVAL'
@@ -1217,9 +938,8 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
         PerformanceActivityLog.objects.create(
             performance=performance,
             action='FINAL_APPROVED_EMPLOYEE',
-            description=f'Employee approved final performance - by {request.user.get_full_name()}',
-            performed_by=request.user,
-            metadata={'approved_as_admin': is_admin_user(request.user)}
+            description='Employee approved final performance',
+            performed_by=request.user
         )
         
         return Response({
@@ -1231,12 +951,9 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
     
     @action(detail=True, methods=['post'])
     def approve_final_manager(self, request, pk=None):
-        """
-        STEP 3: Manager final approval (publishes performance)
-        """
+        """STEP 3: Manager final approval (publishes performance)"""
         performance = self.get_object()
         
-        # Admin or manager check
         if not is_admin_user(request.user):
             try:
                 manager_employee = Employee.objects.get(user=request.user)
@@ -1250,25 +967,21 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
             except Employee.DoesNotExist:
                 return Response({'error': 'Employee profile not found'}, status=status.HTTP_404_NOT_FOUND)
         
-        # Check if end-year completed
         if not performance.end_year_completed:
             return Response({
                 'error': 'End-year review not completed yet'
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        # Check if employee approved
         if not performance.final_employee_approved:
             return Response({
                 'error': 'Employee must approve final performance first'
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        # Check if already approved
         if performance.final_manager_approved:
             return Response({
                 'error': 'Already approved by manager'
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        # Final approval
         performance.final_manager_approved = True
         performance.final_manager_approval_date = timezone.now()
         performance.approval_status = 'COMPLETED'
@@ -1277,9 +990,8 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
         PerformanceActivityLog.objects.create(
             performance=performance,
             action='FINAL_APPROVED_MANAGER',
-            description=f'Manager approved and published final performance - by {request.user.get_full_name()}',
-            performed_by=request.user,
-            metadata={'approved_as_admin': is_admin_user(request.user)}
+            description='Manager approved and published final performance',
+            performed_by=request.user
         )
         
         return Response({
@@ -1290,12 +1002,9 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
     
     @action(detail=True, methods=['post'])
     def request_end_year_clarification(self, request, pk=None):
-        """
-        Employee requests clarification about end-year review
-        """
+        """Employee requests clarification about end-year review"""
         performance = self.get_object()
         
-        # Employee can request clarification
         if not is_admin_user(request.user):
             try:
                 employee = Employee.objects.get(user=request.user)
@@ -1312,7 +1021,6 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
                 'error': 'Comment text required'
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        # Create comment
         comment = PerformanceComment.objects.create(
             performance=performance,
             comment_type='END_YEAR_CLARIFICATION',
@@ -1320,7 +1028,6 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
             created_by=request.user
         )
         
-        # Reset end-year approval
         performance.final_employee_approved = False
         performance.final_manager_approved = False
         performance.final_employee_approval_date = None
@@ -1436,13 +1143,407 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
                 'final_rating': performance.final_rating
             }
         })
+    # ==================== OBJECTIVES ENDPOINTS ====================
+
+    @action(detail=True, methods=['post'])
+    def save_objectives_draft(self, request, pk=None):
+        """
+        ✅ Save objectives draft - works in both GOAL_SETTING and END_YEAR periods
+        """
+        performance = self.get_object()
+        self._check_edit_access(performance)
+        
+        objectives_data = request.data.get('objectives', [])
+        
+        logger.info(f"💾 Saving objectives draft: {len(objectives_data)} objectives")
+        
+        with transaction.atomic():
+            updated_ids = []
+            for idx, obj_data in enumerate(objectives_data):
+                obj_id = obj_data.get('id')
+                
+                if obj_id:
+                    # ✅ UPDATE existing objective
+                    obj = EmployeeObjective.objects.filter(
+                        id=obj_id, 
+                        performance=performance
+                    ).first()
+                    
+                    if obj:
+                        obj.title = obj_data.get('title', obj.title)
+                        obj.description = obj_data.get('description', obj.description)
+                        obj.linked_department_objective_id = obj_data.get('linked_department_objective')
+                        obj.weight = obj_data.get('weight', obj.weight)
+                        obj.progress = obj_data.get('progress', obj.progress)
+                        obj.status_id = obj_data.get('status', obj.status_id)
+                        obj.display_order = idx
+                        
+                        # ✅ Save end_year_rating (can be null)
+                        if 'end_year_rating' in obj_data:
+                            obj.end_year_rating_id = obj_data.get('end_year_rating')
+                        
+                        # ✅ Save calculated_score
+                        if 'calculated_score' in obj_data:
+                            obj.calculated_score = obj_data.get('calculated_score', 0)
+                        
+                        obj.save()
+                        updated_ids.append(obj.id)
+                        
+                        logger.info(f"✅ Updated objective {obj.id}: {obj.title[:30]}, rating={obj.end_year_rating_id}, score={obj.calculated_score}")
+                else:
+                    # ✅ Create new objective
+                    new_obj = EmployeeObjective.objects.create(
+                        performance=performance,
+                        title=obj_data.get('title', ''),
+                        description=obj_data.get('description', ''),
+                        linked_department_objective_id=obj_data.get('linked_department_objective'),
+                        weight=obj_data.get('weight', 0),
+                        progress=obj_data.get('progress', 0),
+                        status_id=obj_data.get('status'),
+                        end_year_rating_id=obj_data.get('end_year_rating'),
+                        calculated_score=obj_data.get('calculated_score', 0),
+                        display_order=idx
+                    )
+                    updated_ids.append(new_obj.id)
+                    logger.info(f"➕ Created objective {new_obj.id}")
+            
+            # Delete objectives not in the list
+            deleted_count = performance.objectives.exclude(id__in=updated_ids).count()
+            performance.objectives.exclude(id__in=updated_ids).delete()
+            
+            if deleted_count > 0:
+                logger.info(f"🗑️ Deleted {deleted_count} objectives")
+            
+            # Update draft timestamp
+            performance.objectives_draft_saved_date = timezone.now()
+            performance.save()
+            
+            # ✅ Recalculate scores
+            performance.calculate_scores()
+            
+            PerformanceActivityLog.objects.create(
+                performance=performance,
+                action='OBJECTIVES_DRAFT_SAVED',
+                description=f'Objectives saved: {len(updated_ids)} updated, {deleted_count} deleted',
+                performed_by=request.user
+            )
+            
+            logger.info(f"✅ Draft saved - Total: {performance.total_objectives_score}, Percentage: {performance.objectives_percentage}%")
+        
+        return Response({
+            'success': True,
+            'message': 'Objectives draft saved successfully',
+            'objectives_count': len(updated_ids),
+            'total_objectives_score': str(performance.total_objectives_score),
+            'objectives_percentage': str(performance.objectives_percentage)
+        })
     
+    
+    @action(detail=True, methods=['post'])
+    def submit_objectives(self, request, pk=None):
+        """
+        ✅ Submit objectives for approval (GOAL_SETTING period only)
+        """
+        performance = self.get_object()
+        
+        # Only manager can submit objectives
+        if not is_admin_user(request.user):
+            try:
+                manager_employee = Employee.objects.get(user=request.user)
+                if performance.employee.line_manager != manager_employee:
+                    has_manage = check_performance_permission(request.user, 'performance.manage_team')[0] or \
+                                check_performance_permission(request.user, 'performance.manage_all')[0]
+                    if not has_manage:
+                        return Response({
+                            'error': 'Only manager can submit objectives'
+                        }, status=status.HTTP_403_FORBIDDEN)
+            except Employee.DoesNotExist:
+                return Response({'error': 'Employee profile not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        # Check period
+        if not performance.performance_year.is_goal_setting_active():
+            return Response({
+                'error': 'Goal setting period is not active',
+                'current_period': performance.performance_year.get_current_period()
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Validate objectives
+        objectives = performance.objectives.filter(is_cancelled=False)
+        goal_config = GoalLimitConfig.get_active_config()
+        
+        objectives_count = objectives.count()
+        
+        if objectives_count < goal_config.min_goals:
+            return Response({
+                'error': f'Minimum {goal_config.min_goals} objectives required (currently {objectives_count})'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        if objectives_count > goal_config.max_goals:
+            return Response({
+                'error': f'Maximum {goal_config.max_goals} objectives allowed (currently {objectives_count})'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Check total weight
+        total_weight = sum([obj.weight for obj in objectives])
+        if total_weight != 100:
+            return Response({
+                'error': f'Total objective weights must equal 100% (currently {total_weight}%)'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Update status
+        was_clarification_needed = performance.approval_status == 'NEED_CLARIFICATION'
+        
+        performance.objectives_employee_submitted = True
+        performance.objectives_employee_submitted_date = timezone.now()
+        performance.approval_status = 'PENDING_EMPLOYEE_APPROVAL'
+        performance.save()
+        
+        log_msg = 'Manager resubmitted objectives after clarification' if was_clarification_needed else 'Manager submitted objectives for employee approval'
+        
+        PerformanceActivityLog.objects.create(
+            performance=performance,
+            action='OBJECTIVES_SUBMITTED',
+            description=log_msg,
+            performed_by=request.user
+        )
+        
+        return Response({
+            'success': True,
+            'message': 'Objectives submitted for employee approval',
+            'next_step': 'Waiting for employee to review and approve',
+            'objectives_count': objectives_count
+        })
+    
+    
+    # ==================== COMPETENCIES ENDPOINTS ====================
+    
+    @action(detail=True, methods=['post'])
+    def save_competencies_draft(self, request, pk=None):
+        """
+        ✅ Save competencies draft - works in END_YEAR period
+        """
+        performance = self.get_object()
+        self._check_edit_access(performance)
+        
+        competencies_data = request.data.get('competencies', [])
+        
+        logger.info(f"💾 Saving competencies draft: {len(competencies_data)} competencies")
+        
+        with transaction.atomic():
+            updated_count = 0
+            for comp_data in competencies_data:
+                comp_id = comp_data.get('id')
+                end_year_rating = comp_data.get('end_year_rating')
+                notes = comp_data.get('notes', '')
+                
+                logger.info(f"📦 Processing competency ID={comp_id}, rating={end_year_rating}")
+                
+                if comp_id:
+                    competency = EmployeeCompetencyRating.objects.filter(
+                        id=comp_id,
+                        performance=performance
+                    ).first()
+                    
+                    if competency:
+                        # ✅ Save rating (can be null)
+                        competency.end_year_rating_id = end_year_rating
+                        competency.notes = notes
+                        competency.save()
+                        updated_count += 1
+                        
+                        actual_val = competency.actual_value
+                        logger.info(f"✅ Updated competency {comp_id}: {competency.behavioral_competency.name[:30]}, rating={end_year_rating}, actual={actual_val}")
+            
+            # Update timestamp
+            performance.competencies_draft_saved_date = timezone.now()
+            performance.save()
+            
+            # ✅ Recalculate scores
+            performance.calculate_scores()
+            
+            PerformanceActivityLog.objects.create(
+                performance=performance,
+                action='COMPETENCIES_DRAFT_SAVED',
+                description=f'Competencies saved: {updated_count} updated',
+                performed_by=request.user
+            )
+            
+            logger.info(f"✅ Draft saved - Score: {performance.total_competencies_actual_score}/{performance.total_competencies_required_score}, Grade: {performance.competencies_letter_grade}")
+        
+        return Response({
+            'success': True,
+            'message': 'Competencies draft saved successfully',
+            'updated_count': updated_count,
+            'competencies_percentage': str(performance.competencies_percentage),
+            'competencies_letter_grade': performance.competencies_letter_grade,
+            'total_competencies_required_score': performance.total_competencies_required_score,
+            'total_competencies_actual_score': performance.total_competencies_actual_score,
+            'group_competency_scores': performance.group_competency_scores,
+            'overall_weighted_percentage': str(performance.overall_weighted_percentage),
+            'final_rating': performance.final_rating
+        })
+    
+    
+    @action(detail=True, methods=['post'])
+    def submit_competencies(self, request, pk=None):
+        """
+        ✅ Submit competencies (END_YEAR period)
+        """
+        performance = self.get_object()
+        self._check_edit_access(performance)
+        
+        # Validate all have ratings
+        missing = performance.competency_ratings.filter(end_year_rating__isnull=True)
+        
+        if missing.exists():
+            missing_count = missing.count()
+            missing_names = list(missing.values_list('behavioral_competency__name', flat=True))
+            
+            logger.warning(f"❌ {missing_count} competencies missing ratings")
+            
+            return Response({
+                'error': f'{missing_count} competencies missing ratings',
+                'message': 'Please rate all competencies before submitting',
+                'missing_competencies': missing_names
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        with transaction.atomic():
+            # Recalculate
+            performance.calculate_scores()
+            
+            # Mark submitted
+            performance.competencies_submitted = True
+            performance.competencies_submitted_date = timezone.now()
+            performance.save()
+            
+            PerformanceActivityLog.objects.create(
+                performance=performance,
+                action='COMPETENCIES_SUBMITTED',
+                description=f'Competencies submitted - {performance.total_competencies_actual_score}/{performance.total_competencies_required_score} ({performance.competencies_percentage}% - {performance.competencies_letter_grade})',
+                performed_by=request.user
+            )
+            
+            logger.info(f"✅ Competencies submitted successfully")
+        
+        return Response({
+            'success': True,
+            'message': 'Competencies submitted successfully',
+            'scores': {
+                'required': performance.total_competencies_required_score,
+                'actual': performance.total_competencies_actual_score,
+                'percentage': str(performance.competencies_percentage),
+                'letter_grade': performance.competencies_letter_grade,
+                'group_scores': performance.group_competency_scores,
+                'overall_weighted_percentage': str(performance.overall_weighted_percentage),
+                'final_rating': performance.final_rating
+            }
+        })
+    
+    
+    # ==================== CALCULATE SCORES ====================
+    
+    def calculate_scores(self):
+        """
+        ✅ Calculate all scores
+        """
+        from collections import defaultdict
+        import logging
+        
+        logger = logging.getLogger(__name__)
+        
+        logger.info(f"📊 Calculating scores for performance {self.id}")
+        
+        eval_target = EvaluationTargetConfig.get_active_config()
+        weight_config = PerformanceWeightConfig.objects.filter(
+            position_group=self.employee.position_group
+        ).first()
+        
+        if not weight_config:
+            logger.warning(f"❌ No weight config for position group")
+            return
+        
+        # ========== OBJECTIVES ==========
+        objectives = self.objectives.filter(is_cancelled=False)
+        obj_score = 0
+        
+        for obj in objectives:
+            if obj.calculated_score and obj.calculated_score > 0:
+                obj_score += float(obj.calculated_score)
+        
+        self.total_objectives_score = round(obj_score, 2)
+        self.objectives_percentage = round(
+            (self.total_objectives_score / eval_target.objective_score_target) * 100, 2
+        ) if eval_target.objective_score_target > 0 else 0
+        
+        logger.info(f"✅ Objectives: {self.total_objectives_score}/{eval_target.objective_score_target} = {self.objectives_percentage}%")
+        
+        # ========== COMPETENCIES ==========
+        from .competency_assessment_models import LetterGradeMapping
+        
+        competencies = self.competency_ratings.select_related(
+            'behavioral_competency__group',
+            'end_year_rating'
+        ).all()
+        
+        group_data = defaultdict(lambda: {'required_total': 0, 'actual_total': 0, 'count': 0})
+        total_required = 0
+        total_actual = 0
+        
+        for comp in competencies:
+            if not comp.behavioral_competency:
+                continue
+                
+            group_name = comp.behavioral_competency.group.name
+            required = comp.required_level or 0
+            actual = comp.end_year_rating.value if comp.end_year_rating else 0
+            
+            group_data[group_name]['required_total'] += required
+            group_data[group_name]['actual_total'] += actual
+            group_data[group_name]['count'] += 1
+            
+            total_required += required
+            total_actual += actual
+        
+        # Group scores
+        group_scores = {}
+        for group_name, data in group_data.items():
+            percentage = (data['actual_total'] / data['required_total'] * 100) if data['required_total'] > 0 else 0
+            letter_grade = LetterGradeMapping.get_letter_grade(percentage)
+            
+            group_scores[group_name] = {
+                'required_total': data['required_total'],
+                'actual_total': data['actual_total'],
+                'percentage': round(percentage, 2),
+                'letter_grade': letter_grade,
+                'count': data['count']
+            }
+        
+        self.group_competency_scores = group_scores
+        self.total_competencies_required_score = total_required
+        self.total_competencies_actual_score = total_actual
+        self.competencies_percentage = round((total_actual / total_required * 100), 2) if total_required > 0 else 0
+        self.competencies_letter_grade = LetterGradeMapping.get_letter_grade(self.competencies_percentage)
+        
+        logger.info(f"✅ Competencies: {total_actual}/{total_required} = {self.competencies_percentage}% - {self.competencies_letter_grade}")
+        
+        # ========== OVERALL ==========
+        self.overall_weighted_percentage = round(
+            (self.objectives_percentage * weight_config.objectives_weight / 100) +
+            (self.competencies_percentage * weight_config.competencies_weight / 100),
+            2
+        )
+        
+        rating = EvaluationScale.get_rating_by_percentage(self.overall_weighted_percentage)
+        self.final_rating = rating.name if rating else 'N/A'
+        
+        logger.info(f"✅ Overall: {self.overall_weighted_percentage}% - {self.final_rating}")
+        
+        self.save()
     @action(detail=True, methods=['get'])
     def activity_log(self, request, pk=None):
         """Get performance activity log"""
         performance = self.get_object()
         
-        # Check view access
         if not can_view_performance(request.user, performance):
             return Response({
                 'error': 'İcazə yoxdur'
@@ -1457,13 +1558,11 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
         """Get detailed competency breakdown with gaps"""
         performance = self.get_object()
         
-        # Check view access
         if not can_view_performance(request.user, performance):
             return Response({
                 'error': 'İcazə yoxdur'
             }, status=status.HTTP_403_FORBIDDEN)
         
-        # Overall summary
         overall = {
             'required': performance.total_competencies_required_score,
             'actual': performance.total_competencies_actual_score,
@@ -1471,10 +1570,8 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
             'letter_grade': performance.competencies_letter_grade
         }
         
-        # By group
         by_group = performance.group_competency_scores
         
-        # Gaps - competencies below required
         gaps = []
         for comp_rating in performance.competency_ratings.select_related('behavioral_competency').all():
             if comp_rating.gap < 0:
@@ -1487,7 +1584,6 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
                     'rating': comp_rating.end_year_rating.name if comp_rating.end_year_rating else 'N/A'
                 })
         
-        # Strengths - competencies above required
         strengths = []
         for comp_rating in performance.competency_ratings.select_related('behavioral_competency').all():
             if comp_rating.gap > 0:
@@ -1510,21 +1606,16 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['get'])
     @has_performance_permission('performance.export')
     def export_excel(self, request, pk=None):
-        """
-        Export performance to Excel with full details
-        """
+        """Export performance to Excel"""
         performance = self.get_object()
         
-        # Check view access
         if not can_view_performance(request.user, performance):
             return Response({
                 'error': 'İcazə yoxdur'
             }, status=status.HTTP_403_FORBIDDEN)
         
-        # Create workbook
         wb = openpyxl.Workbook()
         
-        # Styles
         header_fill = PatternFill(start_color='366092', end_color='366092', fill_type='solid')
         header_font = Font(bold=True, color='FFFFFF', size=11)
         border = Border(
@@ -1534,11 +1625,9 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
             bottom=Side(style='thin')
         )
         
-        # Sheet 1: Summary
         ws_summary = wb.active
         ws_summary.title = 'Summary'
         
-        # Employee info
         ws_summary['A1'] = 'PERFORMANCE REVIEW SUMMARY'
         ws_summary['A1'].font = Font(bold=True, size=14)
         
@@ -1559,14 +1648,13 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
             ws_summary[f'B{row}'] = value
             row += 1
         
-        # Scores
         row += 2
         ws_summary[f'A{row}'] = 'PERFORMANCE SCORES'
         ws_summary[f'A{row}'].font = Font(bold=True, size=12)
         row += 1
         
         scores_data = [
-            ['Objectives Score:', f"{performance.total_objectives_score} / {performance.objectives.filter(is_cancelled=False).count() * 5}"],
+            ['Objectives Score:', f"{performance.total_objectives_score}"],
             ['Objectives Percentage:', f"{performance.objectives_percentage}%"],
             ['Competencies Score:', f"{performance.total_competencies_actual_score} / {performance.total_competencies_required_score}"],
             ['Competencies Percentage:', f"{performance.competencies_percentage}%"],
@@ -1581,9 +1669,8 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
             ws_summary[f'B{row}'] = value
             row += 1
         
-        # Sheet 2: Objectives
         ws_obj = wb.create_sheet('Objectives')
-        headers = ['#', 'Title', 'Description', 'Weight %', 'Progress %', 'Status', 'Mid-Year Rating', 'End-Year Rating', 'Score']
+        headers = ['#', 'Title', 'Description', 'Weight %', 'Progress %', 'Status', 'End-Year Rating', 'Score']
         for col, header in enumerate(headers, 1):
             cell = ws_obj.cell(row=1, column=col, value=header)
             cell.fill = header_fill
@@ -1598,11 +1685,9 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
             ws_obj.cell(row=idx+1, column=4, value=obj.weight)
             ws_obj.cell(row=idx+1, column=5, value=obj.progress)
             ws_obj.cell(row=idx+1, column=6, value=obj.status.label if obj.status else 'N/A')
-            ws_obj.cell(row=idx+1, column=7, value=obj.mid_year_rating.name if obj.mid_year_rating else 'N/A')
-            ws_obj.cell(row=idx+1, column=8, value=obj.end_year_rating.name if obj.end_year_rating else 'N/A')
-            ws_obj.cell(row=idx+1, column=9, value=obj.score if obj.score else 0)
+            ws_obj.cell(row=idx+1, column=7, value=obj.end_year_rating.name if obj.end_year_rating else 'N/A')
+            ws_obj.cell(row=idx+1, column=8, value=float(obj.calculated_score))
         
-        # Sheet 3: Competencies
         ws_comp = wb.create_sheet('Competencies')
         headers = ['Group', 'Competency', 'Required Level', 'End-Year Rating', 'Actual Value', 'Gap', 'Notes']
         for col, header in enumerate(headers, 1):
@@ -1621,7 +1706,6 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
             ws_comp.cell(row=idx+1, column=6, value=comp.gap)
             ws_comp.cell(row=idx+1, column=7, value=comp.notes or '')
         
-        # Sheet 4: Development Needs
         ws_dev = wb.create_sheet('Development Needs')
         headers = ['Competency Gap', 'Development Activity', 'Progress %', 'Comment']
         for col, header in enumerate(headers, 1):
@@ -1637,7 +1721,6 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
             ws_dev.cell(row=idx+1, column=3, value=need.progress)
             ws_dev.cell(row=idx+1, column=4, value=need.comment or '')
         
-        # Adjust column widths
         for ws in [ws_summary, ws_obj, ws_comp, ws_dev]:
             for column in ws.columns:
                 max_length = 0
@@ -1651,7 +1734,6 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
                 adjusted_width = min(max_length + 2, 50)
                 ws.column_dimensions[column_letter].width = adjusted_width
         
-        # Save to response
         output = io.BytesIO()
         wb.save(output)
         output.seek(0)
@@ -1666,7 +1748,7 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
         return response
 
 
-# ============ DASHBOARD WITH ACCESS CONTROL ============
+# ============ DASHBOARD VIEWSET ============
 
 class PerformanceDashboardViewSet(viewsets.ViewSet):
     """Performance Dashboard Statistics with Access Control"""
@@ -1694,13 +1776,11 @@ class PerformanceDashboardViewSet(viewsets.ViewSet):
                 'error': f'Performance year {year} not found'
             }, status=status.HTTP_404_NOT_FOUND)
         
-        # ✅ APPLY ACCESS CONTROL
         performances = EmployeePerformance.objects.filter(performance_year=perf_year)
         performances = filter_viewable_performances(request.user, performances)
         
         total_employees = performances.count()
         
-        # Stats
         objectives_completed = performances.filter(
             objectives_employee_approved=True,
             objectives_manager_approved=True
@@ -1721,7 +1801,6 @@ class PerformanceDashboardViewSet(viewsets.ViewSet):
             approval_status='NEED_CLARIFICATION'
         ).count()
         
-        # By department (only for accessible employees)
         by_department = []
         accessible_dept_names = performances.values_list(
             'employee__department__name', 
@@ -1743,7 +1822,6 @@ class PerformanceDashboardViewSet(viewsets.ViewSet):
                 'end_year_complete': dept_performances.filter(end_year_completed=True).count()
             })
         
-        # Recent activities (only for accessible performances)
         performance_ids = performances.values_list('id', flat=True)
         recent_logs = PerformanceActivityLog.objects.filter(
             performance_id__in=performance_ids
@@ -1751,10 +1829,8 @@ class PerformanceDashboardViewSet(viewsets.ViewSet):
         
         recent_activities = PerformanceActivityLogSerializer(recent_logs, many=True).data
         
-        # Competency grade distribution
         competency_grade_distribution = self._get_grade_distribution(performances)
         
-        # ✅ Check user access level
         accessible_ids, can_view_all = get_accessible_employees_for_performance(request.user)
         
         return Response({
