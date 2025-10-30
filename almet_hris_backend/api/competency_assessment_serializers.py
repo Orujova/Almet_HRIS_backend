@@ -11,7 +11,417 @@ from .competency_assessment_models import (
     EmployeeBehavioralAssessment, EmployeeBehavioralCompetencyRating
 )
 from .models import Employee
+# Add these serializers to competency_assessment_serializers.py
 
+from .competency_assessment_models import (
+    PositionLeadershipAssessment, PositionLeadershipCompetencyRating,
+    EmployeeLeadershipAssessment, EmployeeLeadershipCompetencyRating
+)
+
+# Position Leadership Assessment Serializers
+
+class PositionLeadershipCompetencyRatingSerializer(serializers.ModelSerializer):
+    item_name = serializers.CharField(source='leadership_item.name', read_only=True)
+    child_group_name = serializers.CharField(source='leadership_item.child_group.name', read_only=True)
+    main_group_name = serializers.CharField(source='leadership_item.child_group.main_group.name', read_only=True)
+    
+    class Meta:
+        model = PositionLeadershipCompetencyRating
+        fields = [
+            'id', 'leadership_item', 'item_name', 'child_group_name', 'main_group_name',
+            'required_level', 'created_at'
+        ]
+        read_only_fields = ['created_at']
+
+
+class PositionLeadershipAssessmentSerializer(serializers.ModelSerializer):
+    position_group_name = serializers.CharField(source='position_group.get_name_display', read_only=True)
+    competency_ratings = PositionLeadershipCompetencyRatingSerializer(many=True, read_only=True)
+    created_by_name = serializers.CharField(source='created_by.username', read_only=True)
+    grade_levels = serializers.ListField(
+        child=serializers.CharField(max_length=20),
+        required=True
+    )
+    grade_levels_display = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = PositionLeadershipAssessment
+        fields = [
+            'id', 'position_group', 'position_group_name', 'job_title',
+            'grade_levels', 'grade_levels_display',
+            'competency_ratings', 'is_active',
+            'created_at', 'updated_at', 'created_by', 'created_by_name'
+        ]
+        read_only_fields = ['created_at', 'updated_at', 'created_by']
+    
+    def get_grade_levels_display(self, obj):
+        """Format grade levels for display"""
+        if not obj.grade_levels:
+            return "No grades"
+        return f"Grades: {', '.join(map(str, sorted(obj.grade_levels)))}"
+
+
+class PositionLeadershipAssessmentCreateSerializer(serializers.ModelSerializer):
+    competency_ratings = serializers.ListField(
+        child=serializers.DictField(),
+        write_only=True,
+        help_text="List of {leadership_item_id: required_level} mappings"
+    )
+    grade_levels = serializers.ListField(
+        child=serializers.CharField(max_length=20),
+        required=True,
+        min_length=1,
+        help_text="List of grade levels for this position"
+    )
+    
+    class Meta:
+        model = PositionLeadershipAssessment
+        fields = [
+            'position_group', 'job_title', 'grade_levels', 'competency_ratings'
+        ]
+    
+    def validate_position_group(self, value):
+        """Validate that position group is a leadership position"""
+        leadership_positions = ['MANAGER', 'VICE_CHAIRMAN', 'DIRECTOR', 'VICE', 'HOD']
+        if value.name not in leadership_positions:
+            raise serializers.ValidationError(
+                f"Leadership assessments are only for Manager, Vice Chairman, Director, Vice, and HOD positions. "
+                f"Selected position: {value.get_name_display()}"
+            )
+        return value
+    
+    def validate_grade_levels(self, value):
+        """Validate grade levels"""
+        if not value or len(value) == 0:
+            raise serializers.ValidationError("At least one grade level must be selected")
+        
+        # Remove duplicates and sort
+        unique_grades = list(set(value))
+        return sorted(unique_grades)
+    
+    def validate(self, data):
+        """Validate that grade levels match employee job titles"""
+        position_group = data.get('position_group')
+        grade_levels = data.get('grade_levels', [])
+        job_title = data.get('job_title')
+        
+        if position_group and grade_levels and job_title:
+            # Check if there are employees with this combination
+            matching_employees = Employee.objects.filter(
+                position_group=position_group,
+                grading_level__in=grade_levels,
+                job_title=job_title
+            )
+            
+            if not matching_employees.exists():
+                raise serializers.ValidationError(
+                    f"No employees found with Position Group '{position_group.get_name_display()}', "
+                    f"Grade Levels {', '.join(grade_levels)}, and Job Title '{job_title}'"
+                )
+        
+        return data
+    
+    def validate_competency_ratings(self, value):
+        """Validate competency ratings format"""
+        if not value:
+            raise serializers.ValidationError("Competency ratings are required")
+        
+        for rating in value:
+            if 'leadership_item_id' not in rating or 'required_level' not in rating:
+                raise serializers.ValidationError(
+                    "Each rating must have leadership_item_id and required_level"
+                )
+            
+            level = rating.get('required_level')
+            if not isinstance(level, int) or level < 1 or level > 10:
+                raise serializers.ValidationError(
+                    "Required level must be integer between 1-10"
+                )
+        
+        return value
+    
+    @transaction.atomic
+    def create(self, validated_data):
+        competency_ratings = validated_data.pop('competency_ratings')
+        validated_data['created_by'] = self.context['request'].user
+        
+        position_assessment = super().create(validated_data)
+        
+        # Create competency ratings
+        for rating_data in competency_ratings:
+            PositionLeadershipCompetencyRating.objects.create(
+                position_assessment=position_assessment,
+                leadership_item_id=rating_data['leadership_item_id'],
+                required_level=rating_data['required_level']
+            )
+        
+        return position_assessment
+    
+    @transaction.atomic
+    def update(self, instance, validated_data):
+        """Update position assessment and its competency ratings"""
+        competency_ratings = validated_data.pop('competency_ratings', None)
+        
+        # Update basic fields
+        instance.position_group = validated_data.get('position_group', instance.position_group)
+        instance.job_title = validated_data.get('job_title', instance.job_title)
+        instance.grade_levels = validated_data.get('grade_levels', instance.grade_levels)
+        instance.save()
+        
+        # Update competency ratings if provided
+        if competency_ratings is not None:
+            # Delete existing ratings
+            instance.competency_ratings.all().delete()
+            
+            # Create new ratings
+            for rating_data in competency_ratings:
+                PositionLeadershipCompetencyRating.objects.create(
+                    position_assessment=instance,
+                    leadership_item_id=rating_data['leadership_item_id'],
+                    required_level=rating_data['required_level']
+                )
+        
+        return instance
+
+
+# Employee Leadership Assessment Serializers
+
+class EmployeeLeadershipCompetencyRatingSerializer(serializers.ModelSerializer):
+    item_name = serializers.CharField(source='leadership_item.name', read_only=True)
+    child_group_name = serializers.CharField(source='leadership_item.child_group.name', read_only=True)
+    main_group_name = serializers.CharField(source='leadership_item.child_group.main_group.name', read_only=True)
+    
+    class Meta:
+        model = EmployeeLeadershipCompetencyRating
+        fields = [
+            'id', 'leadership_item', 'item_name', 'child_group_name', 'main_group_name',
+            'required_level', 'actual_level', 'notes', 'created_at'
+        ]
+        read_only_fields = ['created_at']
+
+
+class EmployeeLeadershipAssessmentSerializer(serializers.ModelSerializer):
+    employee_name = serializers.CharField(source='employee.full_name', read_only=True)
+    employee_id = serializers.CharField(source='employee.employee_id', read_only=True)
+    position_assessment_title = serializers.CharField(source='position_assessment.job_title', read_only=True)
+    competency_ratings = EmployeeLeadershipCompetencyRatingSerializer(many=True, read_only=True)
+    
+    # Status display
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    can_edit = serializers.SerializerMethodField()
+    
+    # Score displays
+    main_group_scores_display = serializers.SerializerMethodField()
+    child_group_scores_display = serializers.SerializerMethodField()
+    overall_grade_info = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = EmployeeLeadershipAssessment
+        fields = [
+            'id', 'employee', 'employee_name', 'employee_id',
+            'position_assessment', 'position_assessment_title', 'assessment_date',
+            'status', 'status_display', 'can_edit', 'notes',
+            'main_group_scores', 'main_group_scores_display',
+            'child_group_scores', 'child_group_scores_display',
+            'overall_percentage', 'overall_letter_grade', 'overall_grade_info',
+            'competency_ratings', 'created_at', 'updated_at'
+        ]
+        read_only_fields = [
+            'main_group_scores', 'child_group_scores', 'overall_percentage',
+            'overall_letter_grade', 'created_at', 'updated_at'
+        ]
+    
+    def get_can_edit(self, obj):
+        """Check if assessment can be edited (only DRAFT status)"""
+        return obj.status == 'DRAFT'
+    
+    def get_main_group_scores_display(self, obj):
+        """Format main group scores for display"""
+        display_scores = {}
+        for main_group_name, scores in obj.main_group_scores.items():
+            letter_grade_obj = LetterGradeMapping.objects.filter(
+                letter_grade=scores['letter_grade']
+            ).first()
+            
+            display_scores[main_group_name] = {
+                **scores,
+                'description': letter_grade_obj.description if letter_grade_obj else ''
+            }
+        return display_scores
+    
+    def get_child_group_scores_display(self, obj):
+        """Format child group scores for display"""
+        display_scores = {}
+        for child_group_name, scores in obj.child_group_scores.items():
+            letter_grade_obj = LetterGradeMapping.objects.filter(
+                letter_grade=scores['letter_grade']
+            ).first()
+            
+            display_scores[child_group_name] = {
+                **scores,
+                'description': letter_grade_obj.description if letter_grade_obj else ''
+            }
+        return display_scores
+    
+    def get_overall_grade_info(self, obj):
+        """Get overall grade information with description"""
+        letter_grade_obj = LetterGradeMapping.objects.filter(
+            letter_grade=obj.overall_letter_grade
+        ).first()
+        
+        return {
+            'letter_grade': obj.overall_letter_grade,
+            'percentage': obj.overall_percentage,
+            'description': letter_grade_obj.description if letter_grade_obj else ''
+        }
+
+
+class EmployeeLeadershipAssessmentCreateSerializer(serializers.ModelSerializer):
+    competency_ratings = serializers.ListField(
+        child=serializers.DictField(),
+        write_only=True,
+        help_text="List of {leadership_item_id: actual_level} mappings",
+        required=False
+    )
+    
+    # Add action_type field to handle status transitions
+    action_type = serializers.ChoiceField(
+        choices=[('save_draft', 'Save Draft'), ('submit', 'Submit')],
+        write_only=True,
+        required=False,
+        default='save_draft'
+    )
+    
+    class Meta:
+        model = EmployeeLeadershipAssessment
+        fields = [
+            'employee', 'position_assessment', 'assessment_date',
+            'notes', 'competency_ratings', 'action_type'
+        ]
+    
+    def validate(self, data):
+        """Validate employee matches position assessment and is in leadership position"""
+        employee = data.get('employee')
+        position_assessment = data.get('position_assessment')
+        
+        if employee and position_assessment:
+            # Check if employee's position is leadership
+            leadership_positions = ['MANAGER', 'VICE_CHAIRMAN', 'DIRECTOR', 'VICE', 'HOD']
+            if employee.position_group.name not in leadership_positions:
+                raise serializers.ValidationError(
+                    f"Employee position '{employee.position_group.get_name_display()}' is not a leadership position. "
+                    f"Leadership assessments are only for Manager, Vice Chairman, Director, Vice, and HOD."
+                )
+            
+            # Check if employee's job title matches position assessment
+            if employee.job_title != position_assessment.job_title:
+                raise serializers.ValidationError(
+                    f"Employee job title '{employee.job_title}' doesn't match "
+                    f"position assessment '{position_assessment.job_title}'"
+                )
+        
+        return data
+    
+    def validate_competency_ratings(self, value):
+        """Validate competency ratings format"""
+        if not value:
+            return value  # Allow empty for draft saves
+        
+        for rating in value:
+            if 'leadership_item_id' not in rating or 'actual_level' not in rating:
+                raise serializers.ValidationError(
+                    "Each rating must have leadership_item_id and actual_level"
+                )
+            
+            level = rating.get('actual_level')
+            if not isinstance(level, int) or level < 1 or level > 10:
+                raise serializers.ValidationError(
+                    "Actual level must be integer between 1-10"
+                )
+        
+        return value
+    
+    @transaction.atomic
+    def create(self, validated_data):
+        competency_ratings = validated_data.pop('competency_ratings', [])
+        action_type = validated_data.pop('action_type', 'save_draft')
+        
+        # Set status based on action type
+        if action_type == 'submit':
+            validated_data['status'] = 'COMPLETED'
+        else:
+            validated_data['status'] = 'DRAFT'
+        
+        assessment = super().create(validated_data)
+        
+        # Create employee ratings if provided
+        if competency_ratings:
+            # Get position requirements
+            position_ratings = assessment.position_assessment.competency_ratings.all()
+            position_requirements = {pr.leadership_item_id: pr.required_level for pr in position_ratings}
+            
+            for rating_data in competency_ratings:
+                item_id = rating_data['leadership_item_id']
+                actual_level = rating_data['actual_level']
+                required_level = position_requirements.get(item_id, 1)
+                
+                EmployeeLeadershipCompetencyRating.objects.create(
+                    assessment=assessment,
+                    leadership_item_id=item_id,
+                    required_level=required_level,
+                    actual_level=actual_level,
+                    notes=rating_data.get('notes', '')
+                )
+        
+        # Calculate scores if submitting
+        if action_type == 'submit':
+            assessment.calculate_scores()
+        
+        return assessment
+    
+    @transaction.atomic
+    def update(self, instance, validated_data):
+        competency_ratings = validated_data.pop('competency_ratings', None)
+        action_type = validated_data.pop('action_type', 'save_draft')
+        
+        # Handle status transitions
+        if action_type == 'submit':
+            validated_data['status'] = 'COMPLETED'
+        elif action_type == 'save_draft':
+            validated_data['status'] = 'DRAFT'
+        
+        # Update the assessment
+        assessment = super().update(instance, validated_data)
+        
+        # Update competency ratings if provided
+        if competency_ratings is not None:
+            # Clear existing ratings
+            assessment.competency_ratings.all().delete()
+            
+            if competency_ratings:
+                # Get position requirements
+                position_ratings = assessment.position_assessment.competency_ratings.all()
+                position_requirements = {pr.leadership_item_id: pr.required_level for pr in position_ratings}
+                
+                # Create new ratings
+                for rating_data in competency_ratings:
+                    item_id = rating_data['leadership_item_id']
+                    actual_level = rating_data['actual_level']
+                    required_level = position_requirements.get(item_id, 1)
+                    
+                    EmployeeLeadershipCompetencyRating.objects.create(
+                        assessment=assessment,
+                        leadership_item_id=item_id,
+                        required_level=required_level,
+                        actual_level=actual_level,
+                        notes=rating_data.get('notes', '')
+                    )
+        
+        # Calculate scores if submitting or if completed
+        if action_type == 'submit' or assessment.status == 'COMPLETED':
+            assessment.calculate_scores()
+        
+        return assessment
 class CoreCompetencyScaleSerializer(serializers.ModelSerializer):
     created_by_name = serializers.CharField(source='created_by.username', read_only=True)
     

@@ -13,7 +13,283 @@ from .competency_models import Skill, BehavioralCompetency
 from .job_description_models import JobDescription
 
 logger = logging.getLogger(__name__)
+from .competency_models import (
+    LeadershipCompetencyMainGroup, 
+    LeadershipCompetencyChildGroup, 
+    LeadershipCompetencyItem
+)
 
+class PositionLeadershipAssessment(models.Model):
+    """Position-specific Leadership Competency Assessment Template for senior positions"""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    
+    # Position details
+    position_group = models.ForeignKey(
+        PositionGroup, 
+        on_delete=models.CASCADE,
+        help_text="Only Manager, Vice Chairman, Director, Vice, HOD positions"
+    )
+    job_title = models.CharField(max_length=200)
+    grade_levels = models.JSONField(
+        default=list,
+        help_text="List of grade levels for this position"
+    )
+    
+    # Status
+    is_active = models.BooleanField(default=True)
+    
+    # Metadata
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    
+    class Meta:
+        db_table = 'position_leadership_assessments'
+        unique_together = ['position_group', 'job_title']
+    
+    def clean(self):
+        """Validate that position group is a leadership position"""
+        leadership_positions = ['MANAGER', 'VICE_CHAIRMAN', 'DIRECTOR', 'VICE', 'HOD']
+        if self.position_group and self.position_group.name not in leadership_positions:
+            raise ValidationError(
+                f"Leadership assessments are only for Manager, Vice Chairman, Director, Vice, and HOD positions. "
+                f"Current position: {self.position_group.get_name_display()}"
+            )
+    
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
+    
+    def __str__(self):
+        grade_text = f" (Grades {', '.join(map(str, self.grade_levels))})" if self.grade_levels else ""
+        return f"{self.job_title}{grade_text} - Leadership Assessment"
+
+
+class PositionLeadershipCompetencyRating(models.Model):
+    """Individual leadership competency item ratings within position assessment"""
+    position_assessment = models.ForeignKey(
+        PositionLeadershipAssessment,
+        on_delete=models.CASCADE,
+        related_name='competency_ratings'
+    )
+    leadership_item = models.ForeignKey(
+        LeadershipCompetencyItem, 
+        on_delete=models.CASCADE,
+        help_text="Specific leadership competency item"
+    )
+    required_level = models.IntegerField(
+        validators=[MinValueValidator(1), MaxValueValidator(10)],
+        help_text="Required leadership competency level for this position"
+    )
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        db_table = 'position_leadership_ratings'
+        unique_together = ['position_assessment', 'leadership_item']
+    
+    def __str__(self):
+        return f"{self.position_assessment.job_title} - {self.leadership_item.name[:50]}: {self.required_level}"
+
+
+class EmployeeLeadershipAssessment(models.Model):
+    """Employee Leadership Competency Assessment for senior positions"""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    
+    # Assessment details
+    employee = models.ForeignKey(
+        Employee, 
+        on_delete=models.CASCADE, 
+        related_name='leadership_assessments'
+    )
+    position_assessment = models.ForeignKey(
+        PositionLeadershipAssessment, 
+        on_delete=models.CASCADE
+    )
+    assessment_date = models.DateTimeField(default=timezone.now)
+    
+    # Status
+    STATUS_CHOICES = [
+        ('DRAFT', 'Draft'),
+        ('COMPLETED', 'Completed'),
+    ]
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='DRAFT')
+    
+    # Assessment metadata
+    notes = models.TextField(blank=True)
+    
+    # Calculated scores by main group
+    main_group_scores = models.JSONField(
+        default=dict,
+        help_text="Scores by main leadership group: {main_group_name: {position_total, employee_total, percentage, letter_grade, child_groups: {...}}}"
+    )
+    
+    # Calculated scores by child group
+    child_group_scores = models.JSONField(
+        default=dict,
+        help_text="Scores by child leadership group: {child_group_name: {position_total, employee_total, percentage, letter_grade}}"
+    )
+    
+    # Overall score
+    overall_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=0)
+    overall_letter_grade = models.CharField(max_length=10, default='N/A')
+    
+    # Metadata
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        db_table = 'employee_leadership_assessments'
+        ordering = ['-created_at']
+    
+    def calculate_scores(self):
+        """Calculate leadership assessment scores by main and child groups"""
+        from collections import defaultdict
+        
+        ratings = self.competency_ratings.select_related(
+            'leadership_item__child_group__main_group'
+        ).all()
+        
+        # Group ratings by main group and child group
+        main_group_data = defaultdict(lambda: {
+            'position_total': 0, 
+            'employee_total': 0, 
+            'count': 0,
+            'child_groups': defaultdict(lambda: {'position_total': 0, 'employee_total': 0, 'count': 0})
+        })
+        
+        child_group_data = defaultdict(lambda: {'position_total': 0, 'employee_total': 0, 'count': 0})
+        
+        for rating in ratings:
+            main_group_name = rating.leadership_item.child_group.main_group.name
+            child_group_name = rating.leadership_item.child_group.name
+            
+            # Main group totals
+            main_group_data[main_group_name]['position_total'] += rating.required_level
+            main_group_data[main_group_name]['employee_total'] += rating.actual_level
+            main_group_data[main_group_name]['count'] += 1
+            
+            # Child group totals within main group
+            main_group_data[main_group_name]['child_groups'][child_group_name]['position_total'] += rating.required_level
+            main_group_data[main_group_name]['child_groups'][child_group_name]['employee_total'] += rating.actual_level
+            main_group_data[main_group_name]['child_groups'][child_group_name]['count'] += 1
+            
+            # Child group totals overall
+            child_group_data[child_group_name]['position_total'] += rating.required_level
+            child_group_data[child_group_name]['employee_total'] += rating.actual_level
+            child_group_data[child_group_name]['count'] += 1
+        
+        # Calculate main group scores with nested child groups
+        main_group_scores = {}
+        for main_group_name, main_data in main_group_data.items():
+            if main_data['position_total'] > 0:
+                main_percentage = (main_data['employee_total'] / main_data['position_total']) * 100
+            else:
+                main_percentage = 0
+            
+            # Calculate child group scores within this main group
+            child_scores = {}
+            for child_name, child_data in main_data['child_groups'].items():
+                if child_data['position_total'] > 0:
+                    child_percentage = (child_data['employee_total'] / child_data['position_total']) * 100
+                else:
+                    child_percentage = 0
+                
+                child_scores[child_name] = {
+                    'position_total': child_data['position_total'],
+                    'employee_total': child_data['employee_total'],
+                    'percentage': round(child_percentage, 2),
+                    'letter_grade': LetterGradeMapping.get_letter_grade(child_percentage)
+                }
+            
+            main_group_scores[main_group_name] = {
+                'position_total': main_data['position_total'],
+                'employee_total': main_data['employee_total'],
+                'percentage': round(main_percentage, 2),
+                'letter_grade': LetterGradeMapping.get_letter_grade(main_percentage),
+                'child_groups': child_scores
+            }
+        
+        # Calculate flat child group scores
+        child_group_scores = {}
+        total_percentage = 0
+        main_group_count = len(main_group_data)
+        
+        for child_group_name, child_data in child_group_data.items():
+            if child_data['position_total'] > 0:
+                percentage = (child_data['employee_total'] / child_data['position_total']) * 100
+            else:
+                percentage = 0
+            
+            child_group_scores[child_group_name] = {
+                'position_total': child_data['position_total'],
+                'employee_total': child_data['employee_total'],
+                'percentage': round(percentage, 2),
+                'letter_grade': LetterGradeMapping.get_letter_grade(percentage)
+            }
+        
+        # Calculate overall percentage from main groups
+        for main_data in main_group_scores.values():
+            total_percentage += main_data['percentage']
+        
+        if main_group_count > 0:
+            self.overall_percentage = round(total_percentage / main_group_count, 2)
+        else:
+            self.overall_percentage = 0
+        
+        self.overall_letter_grade = LetterGradeMapping.get_letter_grade(self.overall_percentage)
+        self.main_group_scores = main_group_scores
+        self.child_group_scores = child_group_scores
+        
+        self.save()
+    
+    def can_edit(self):
+        """Check if assessment can be edited"""
+        return self.status == 'DRAFT'
+    
+    def save(self, *args, **kwargs):
+        """Override save to handle status transitions"""
+        if self.pk:
+            try:
+                old_instance = EmployeeLeadershipAssessment.objects.get(pk=self.pk)
+                if old_instance.status == 'COMPLETED' and self.status == 'DRAFT':
+                    logger.info(f"Leadership assessment {self.pk} reopened for editing")
+            except EmployeeLeadershipAssessment.DoesNotExist:
+                pass
+        
+        super().save(*args, **kwargs)
+    
+    def __str__(self):
+        return f"{self.employee.full_name} - Leadership Assessment ({self.assessment_date})"
+
+
+class EmployeeLeadershipCompetencyRating(models.Model):
+    """Individual leadership competency item rating within employee assessment"""
+    assessment = models.ForeignKey(
+        EmployeeLeadershipAssessment,
+        on_delete=models.CASCADE,
+        related_name='competency_ratings'
+    )
+    leadership_item = models.ForeignKey(LeadershipCompetencyItem, on_delete=models.CASCADE)
+    required_level = models.IntegerField(validators=[MinValueValidator(1), MaxValueValidator(10)])
+    actual_level = models.IntegerField(validators=[MinValueValidator(1), MaxValueValidator(10)])
+    notes = models.TextField(blank=True)
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        db_table = 'employee_leadership_ratings'
+        unique_together = ['assessment', 'leadership_item']
+    
+    def __str__(self):
+        return f"{self.assessment.employee.full_name} - {self.leadership_item.name[:50]}: {self.actual_level}/{self.required_level}"
+
+
+# Helper function to check if position requires leadership assessment
+def requires_leadership_assessment(position_group):
+    """Check if position group requires leadership assessment instead of behavioral"""
+    leadership_positions = ['MANAGER', 'VICE_CHAIRMAN', 'DIRECTOR', 'VICE', 'HOD']
+    return position_group.name in leadership_positions if position_group else False
 class CoreCompetencyScale(models.Model):
     """Core Competency Assessment Scale Definition"""
     scale = models.IntegerField(unique=True, help_text="Scale number/level")
