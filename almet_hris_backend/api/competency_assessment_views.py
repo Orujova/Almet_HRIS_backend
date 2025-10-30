@@ -299,12 +299,43 @@ class PositionLeadershipAssessmentViewSet(viewsets.ModelViewSet):
         try:
             employee = Employee.objects.get(id=employee_id)
             
-            # Check if employee is in leadership position
-            leadership_positions = ['MANAGER', 'VICE_CHAIRMAN', 'DIRECTOR', 'VICE', 'HOD']
-            if employee.position_group.name not in leadership_positions:
+            # ✅ DÜZƏLDİLDİ: Position group name-i normalize et
+            position_name = employee.position_group.name.upper().replace('_', ' ').strip()
+            
+            # Leadership keywords (həm uppercase, həm də space/underscore ilə)
+            leadership_keywords = [
+                'MANAGER',
+                'VICE CHAIRMAN',
+                'VICE_CHAIRMAN',
+                'DIRECTOR',
+                'VICE',
+                'HOD'
+            ]
+            
+            # Check if position is leadership
+            is_leadership = any(
+                keyword.upper().replace('_', ' ') == position_name or 
+                keyword.upper() == employee.position_group.name.upper()
+                for keyword in leadership_keywords
+            )
+            
+            # Debug logging
+            print(f"🔍 Employee: {employee.full_name}")
+            print(f"🔍 Position Group Name: {employee.position_group.name}")
+            print(f"🔍 Position Group Display: {employee.position_group.get_name_display()}")
+            print(f"🔍 Normalized Name: {position_name}")
+            print(f"🔍 Is Leadership: {is_leadership}")
+            
+            if not is_leadership:
                 return Response({
                     'error': f'Employee position "{employee.position_group.get_name_display()}" is not a leadership position',
                     'info': 'Leadership assessments are only for Manager, Vice Chairman, Director, Vice, and HOD positions',
+                    'debug_info': {
+                        'position_name': employee.position_group.name,
+                        'position_display': employee.position_group.get_name_display(),
+                        'normalized': position_name,
+                        'checked_against': leadership_keywords
+                    },
                     'employee_info': {
                         'id': employee.id,
                         'name': employee.full_name,
@@ -1885,20 +1916,21 @@ class AssessmentDashboardViewSet(viewsets.ViewSet):
             'top_leadership_performers': top_leadership_data  # NEW
         })
     
+    
     @swagger_auto_schema(
-        method='get',
-        operation_description='Get comprehensive assessment overview for specific employee including leadership',
-        manual_parameters=[
-            openapi.Parameter(
-                'employee_id',
-                openapi.IN_QUERY,
-                description='The employee ID',
-                type=openapi.TYPE_INTEGER,
-                required=True,
-                example=63
-            )
-        ]
-    )
+    method='get',
+    operation_description='Get comprehensive assessment overview for specific employee including leadership',
+    manual_parameters=[
+        openapi.Parameter(
+            'employee_id',
+            openapi.IN_QUERY,
+            description='The employee ID',
+            type=openapi.TYPE_INTEGER,
+            required=True,
+            example=63
+        )
+    ]
+)
     @action(detail=False, methods=['get'])
     def employee_overview(self, request):
         """Get comprehensive assessment overview for specific employee including leadership"""
@@ -1912,9 +1944,32 @@ class AssessmentDashboardViewSet(viewsets.ViewSet):
         try:
             employee = Employee.objects.get(id=employee_id)
             
-            # Check if employee is in leadership position
-            leadership_positions = ['MANAGER', 'VICE_CHAIRMAN', 'DIRECTOR', 'VICE', 'HOD']
-            is_leadership_position = employee.position_group.name in leadership_positions
+            # ✅ DÜZƏLDİLDİ: Position group name-i normalize et
+            position_name = employee.position_group.name.upper().replace('_', ' ').strip()
+            
+            # Leadership keywords (həm uppercase, həm də space/underscore ilə)
+            leadership_keywords = [
+                'MANAGER',
+                'VICE CHAIRMAN',
+                'VICE_CHAIRMAN',
+                'DIRECTOR',
+                'VICE',
+                'HOD'
+            ]
+            
+            # Check if position is leadership
+            is_leadership_position = any(
+                keyword.upper().replace('_', ' ') == position_name or
+                keyword.upper() == employee.position_group.name.upper()
+                for keyword in leadership_keywords
+            )
+            
+            # Debug logging
+            print(f"🔍 Employee Overview - Employee: {employee.full_name}")
+            print(f"🔍 Position Group Name: {employee.position_group.name}")
+            print(f"🔍 Position Group Display: {employee.position_group.get_name_display()}")
+            print(f"🔍 Normalized Name: {position_name}")
+            print(f"🔍 Is Leadership Position: {is_leadership_position}")
             
             # Get all assessments for employee
             core_assessments = EmployeeCoreAssessment.objects.filter(
@@ -1988,6 +2043,7 @@ class AssessmentDashboardViewSet(viewsets.ViewSet):
                     'job_title': employee.job_title,
                     'grade_level': employee.grading_level,
                     'position_group': employee.position_group.get_name_display(),
+                    'position_group_raw': employee.position_group.name,  # ✅ ƏLAVƏ: debug üçün
                     'is_leadership_position': is_leadership_position,
                     'assessment_type': 'Leadership' if is_leadership_position else 'Behavioral',
                     'department': employee.department.name if employee.department else 'N/A',
@@ -2019,7 +2075,7 @@ class AssessmentDashboardViewSet(viewsets.ViewSet):
         except ValueError:
             return Response({'error': 'Invalid employee_id format'}, 
                           status=status.HTTP_400_BAD_REQUEST)
-    
+        
     @action(detail=False, methods=['get'])
     def scale_levels(self, request):
         """Get all available scale levels for assessments"""

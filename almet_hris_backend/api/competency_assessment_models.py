@@ -49,32 +49,32 @@ class PositionLeadershipAssessment(models.Model):
     
     def clean(self):
         """Validate that position group is a leadership position"""
-        # ✅ DÜZƏLDILDI: Daha çevik yoxlama
         if self.position_group:
-            # Position name-i normalize et (lowercase, spaces və underscores eyni)
-            position_name_normalized = self.position_group.name.lower().replace('_', ' ').strip()
+            # Position name-i normalize et
+            position_name = self.position_group.name.upper().replace('_', ' ').strip()
             
             # Leadership keywords
             leadership_keywords = [
-                'manager',
-                'vice chairman',
-                'director', 
-                'vice',
-                'hod'
+                'MANAGER',
+                'VICE CHAIRMAN',
+                'VICE_CHAIRMAN',
+                'DIRECTOR',
+                'VICE',
+                'HOD'
             ]
             
             # Check if any keyword matches
             is_leadership = any(
-                keyword.lower() in position_name_normalized 
+                keyword.upper().replace('_', ' ') == position_name or
+                keyword.upper() == self.position_group.name.upper()
                 for keyword in leadership_keywords
             )
             
             if not is_leadership:
                 raise ValidationError(
                     f"Leadership assessments are only for Manager, Vice Chairman, Director, Vice, and HOD positions. "
-                    f"Current position: {self.position_group.get_name_display()}"
+                    f"Current position: {self.position_group.get_name_display()} (DB: {self.position_group.name})"
                 )
-    
     def save(self, *args, **kwargs):
         self.full_clean()
         super().save(*args, **kwargs)

@@ -82,25 +82,38 @@ class PositionLeadershipAssessmentCreateSerializer(serializers.ModelSerializer):
     
     def validate_position_group(self, value):
         """Validate that position group is a leadership position"""
-        # ✅ DÜZƏLDILDI: Həm uppercase, həm də space ilə name-ləri yoxla
-        leadership_positions = ['MANAGER', 'VICE_CHAIRMAN', 'VICE CHAIRMAN', 'DIRECTOR', 'VICE', 'HOD']
-        
         # Position group name-ini normalize et
-        position_name = value.name.upper().replace('_', ' ')
+        position_name = value.name.upper().replace('_', ' ').strip()
         
-        # Yoxla
+        # Leadership keywords
+        leadership_keywords = [
+            'MANAGER',
+            'VICE CHAIRMAN',
+            'VICE_CHAIRMAN', 
+            'DIRECTOR',
+            'VICE',
+            'HOD'
+        ]
+        
+        # Check if position is leadership
         is_leadership = any(
-            lp.upper().replace('_', ' ') == position_name 
-            for lp in leadership_positions
+            keyword.upper().replace('_', ' ') == position_name or
+            keyword.upper() == value.name.upper()
+            for keyword in leadership_keywords
         )
+        
+        # Debug
+        print(f"🔍 Validating Position Group: {value.name}")
+        print(f"🔍 Display: {value.get_name_display()}")
+        print(f"🔍 Normalized: {position_name}")
+        print(f"🔍 Is Leadership: {is_leadership}")
         
         if not is_leadership:
             raise serializers.ValidationError(
                 f"Leadership assessments are only for Manager, Vice Chairman, Director, Vice, and HOD positions. "
-                f"Selected position: {value.get_name_display()}"
+                f"Selected position: {value.get_name_display()} (DB: {value.name})"
             )
         return value
-    
     def validate_grade_levels(self, value):
         """Validate grade levels"""
         if not value or len(value) == 0:
@@ -137,20 +150,39 @@ class PositionLeadershipAssessmentCreateSerializer(serializers.ModelSerializer):
         if not value:
             raise serializers.ValidationError("Competency ratings are required")
         
+        # ✅ ƏLAVƏ: Debug print
+        print("🔍 Received competency_ratings:", value)
+        print("🔍 Type:", type(value))
+        
+        # ✅ DÜZƏLİŞ: Check if it's a list with single dict containing all ratings
+        if len(value) == 1 and isinstance(value[0], dict):
+            # Check if the dict has numeric keys (this means frontend sent wrong format)
+            first_item = value[0]
+            if all(str(k).isdigit() or isinstance(k, int) for k in first_item.keys()):
+                # Convert {leadership_item_id: level} to list of dicts
+                converted_ratings = []
+                for item_id, level in first_item.items():
+                    converted_ratings.append({
+                        'leadership_item_id': int(item_id),
+                        'required_level': int(level)
+                    })
+                print("✅ Converted ratings:", converted_ratings)
+                return converted_ratings
+        
+        # Normal validation
         for rating in value:
             if 'leadership_item_id' not in rating or 'required_level' not in rating:
                 raise serializers.ValidationError(
-                    "Each rating must have leadership_item_id and required_level"
+                    f"Each rating must have leadership_item_id and required_level. Got: {rating}"
                 )
             
             level = rating.get('required_level')
             if not isinstance(level, int) or level < 1 or level > 10:
                 raise serializers.ValidationError(
-                    "Required level must be integer between 1-10"
+                    f"Required level must be integer between 1-10. Got: {level}"
                 )
         
         return value
-    
     @transaction.atomic
     def create(self, validated_data):
         competency_ratings = validated_data.pop('competency_ratings')
