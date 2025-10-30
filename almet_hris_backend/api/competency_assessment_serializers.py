@@ -82,8 +82,19 @@ class PositionLeadershipAssessmentCreateSerializer(serializers.ModelSerializer):
     
     def validate_position_group(self, value):
         """Validate that position group is a leadership position"""
-        leadership_positions = ['MANAGER', 'VICE_CHAIRMAN', 'DIRECTOR', 'VICE', 'HOD']
-        if value.name not in leadership_positions:
+        # ✅ DÜZƏLDILDI: Həm uppercase, həm də space ilə name-ləri yoxla
+        leadership_positions = ['MANAGER', 'VICE_CHAIRMAN', 'VICE CHAIRMAN', 'DIRECTOR', 'VICE', 'HOD']
+        
+        # Position group name-ini normalize et
+        position_name = value.name.upper().replace('_', ' ')
+        
+        # Yoxla
+        is_leadership = any(
+            lp.upper().replace('_', ' ') == position_name 
+            for lp in leadership_positions
+        )
+        
+        if not is_leadership:
             raise serializers.ValidationError(
                 f"Leadership assessments are only for Manager, Vice Chairman, Director, Vice, and HOD positions. "
                 f"Selected position: {value.get_name_display()}"
