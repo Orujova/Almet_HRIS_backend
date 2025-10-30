@@ -49,12 +49,31 @@ class PositionLeadershipAssessment(models.Model):
     
     def clean(self):
         """Validate that position group is a leadership position"""
-        leadership_positions = ['MANAGER', 'VICE_CHAIRMAN', 'DIRECTOR', 'VICE', 'HOD']
-        if self.position_group and self.position_group.name not in leadership_positions:
-            raise ValidationError(
-                f"Leadership assessments are only for Manager, Vice Chairman, Director, Vice, and HOD positions. "
-                f"Current position: {self.position_group.get_name_display()}"
+        # ✅ DÜZƏLDILDI: Daha çevik yoxlama
+        if self.position_group:
+            # Position name-i normalize et (lowercase, spaces və underscores eyni)
+            position_name_normalized = self.position_group.name.lower().replace('_', ' ').strip()
+            
+            # Leadership keywords
+            leadership_keywords = [
+                'manager',
+                'vice chairman',
+                'director', 
+                'vice',
+                'hod'
+            ]
+            
+            # Check if any keyword matches
+            is_leadership = any(
+                keyword.lower() in position_name_normalized 
+                for keyword in leadership_keywords
             )
+            
+            if not is_leadership:
+                raise ValidationError(
+                    f"Leadership assessments are only for Manager, Vice Chairman, Director, Vice, and HOD positions. "
+                    f"Current position: {self.position_group.get_name_display()}"
+                )
     
     def save(self, *args, **kwargs):
         self.full_clean()
