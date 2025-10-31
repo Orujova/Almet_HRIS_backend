@@ -28,7 +28,7 @@ from .competency_assessment_serializers import (
     EmployeeBehavioralAssessmentSerializer, EmployeeBehavioralAssessmentCreateSerializer,
     
 )
-from .models import Employee
+from .models import Employee,PositionGroup
 
 import logging
 
@@ -36,8 +36,8 @@ logger = logging.getLogger(__name__)
 # Add these imports and viewsets to competency_assessment_views.py
 
 from .competency_assessment_models import (
-    PositionLeadershipAssessment, PositionLeadershipCompetencyRating,
-    EmployeeLeadershipAssessment, EmployeeLeadershipCompetencyRating
+    PositionLeadershipAssessment, 
+    EmployeeLeadershipAssessment
 )
 from .competency_assessment_serializers import (
     PositionLeadershipAssessmentSerializer, PositionLeadershipAssessmentCreateSerializer,
@@ -142,100 +142,33 @@ class PositionLeadershipAssessmentViewSet(viewsets.ModelViewSet):
             }, status=status.HTTP_400_BAD_REQUEST)
         
         try:
-            # Get unique grade levels from employees in this position group
-            grade_levels = Employee.objects.filter(
-                position_group_id=position_group_id,
-                grading_level__isnull=False
-            ).values_list('grading_level', flat=True).distinct().order_by('grading_level')
+            # ✅ Sistemdə mövcud olan BÜTÜN grade level-ləri gətir
+            # Employee-lərlə əlaqəsi yoxdur, sistemin özündə olan grade level-lər
+            
+            # Option 1: Əgər PositionGroup modelində grade_levels field varsa
+            position_group = PositionGroup.objects.get(id=position_group_id)
+            if hasattr(position_group, 'grade_levels') and position_group.grade_levels:
+                grade_levels = position_group.grade_levels
+            else:
+                # Option 2: Bütün sistem üzrə mövcud grade level-ləri topla
+                grade_levels = Employee.objects.filter(
+                    grading_level__isnull=False
+                ).values_list('grading_level', flat=True).distinct().order_by('grading_level')
             
             return Response({
                 'position_group_id': position_group_id,
                 'grade_levels': list(grade_levels)
             })
+        except PositionGroup.DoesNotExist:
+            return Response({
+                'error': 'Position group not found'
+            }, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
             return Response({
                 'error': str(e)
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
-    @swagger_auto_schema(
-        method='get',
-        operation_description='Get job titles for specific leadership position group and grade level',
-        manual_parameters=[
-            openapi.Parameter(
-                'position_group_id',
-                openapi.IN_QUERY,
-                description='The position group ID',
-                type=openapi.TYPE_INTEGER,
-                required=True,
-                example=1
-            ),
-            openapi.Parameter(
-                'grade_level',
-                openapi.IN_QUERY,
-                description='The grade level',
-                type=openapi.TYPE_STRING,
-                required=True,
-                example='M'
-            )
-        ],
-        responses={
-            200: openapi.Response(
-                description='List of job titles',
-                examples={
-                    'application/json': {
-                        'position_group_id': 1,
-                        'grade_level': 'M',
-                        'job_titles': ['Senior Manager', 'Department Manager', 'Regional Manager']
-                    }
-                }
-            ),
-            400: openapi.Response(
-                description='Bad Request',
-                examples={
-                    'application/json': {
-                        'error': 'position_group_id and grade_level are required'
-                    }
-                }
-            ),
-            500: openapi.Response(
-                description='Internal Server Error',
-                examples={
-                    'application/json': {
-                        'error': 'Failed to fetch job titles'
-                    }
-                }
-            )
-        }
-    )
-    @action(detail=False, methods=['get'])
-    def get_job_titles(self, request):
-        """Get job titles for specific leadership position group and grade level"""
-        position_group_id = request.query_params.get('position_group_id')
-        grade_level = request.query_params.get('grade_level')
-        
-        if not position_group_id or not grade_level:
-            return Response({
-                'error': 'position_group_id and grade_level are required'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        try:
-            # Get unique job titles for this position group and grade level
-            job_titles = Employee.objects.filter(
-                position_group_id=position_group_id,
-                grading_level=grade_level,
-                job_title__isnull=False
-            ).values_list('job_title', flat=True).distinct().order_by('job_title')
-            
-            return Response({
-                'position_group_id': position_group_id,
-                'grade_level': grade_level,
-                'job_titles': list(job_titles)
-            })
-        except Exception as e:
-            return Response({
-                'error': str(e)
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-    
+
     @swagger_auto_schema(
         method='get',
         operation_description='Get leadership assessment template for specific employee',
@@ -339,7 +272,7 @@ class PositionLeadershipAssessmentViewSet(viewsets.ModelViewSet):
                     'employee_info': {
                         'id': employee.id,
                         'name': employee.full_name,
-                        'job_title': employee.job_title,
+                
                         'position_group': employee.position_group.get_name_display()
                     }
                 }, status=status.HTTP_400_BAD_REQUEST)
@@ -347,18 +280,18 @@ class PositionLeadershipAssessmentViewSet(viewsets.ModelViewSet):
             # Find matching position assessment
             assessment = PositionLeadershipAssessment.objects.filter(
                 position_group=employee.position_group,
-                job_title=employee.job_title,
+  
                 grade_levels__contains=[employee.grading_level],
                 is_active=True
             ).first()
             
             if not assessment:
                 return Response({
-                    'error': f'No leadership assessment template found for {employee.job_title} (Grade {employee.grading_level})',
+                    'error': f'No leadership assessment template found for {employee.position_group.get_name_display()} (Grade {employee.grading_level})',
                     'employee_info': {
                         'id': employee.id,
                         'name': employee.full_name,
-                        'job_title': employee.job_title,
+           
                         'grade_level': employee.grading_level,
                         'position_group': employee.position_group.get_name_display()
                     }
@@ -369,7 +302,7 @@ class PositionLeadershipAssessmentViewSet(viewsets.ModelViewSet):
                 'employee_info': {
                     'id': employee.id,
                     'name': employee.full_name,
-                    'job_title': employee.job_title,
+   
                     'grade_level': employee.grading_level,
                     'position_group': employee.position_group.get_name_display()
                 },
@@ -382,6 +315,7 @@ class PositionLeadershipAssessmentViewSet(viewsets.ModelViewSet):
         except ValueError:
             return Response({'error': 'Invalid employee_id format'}, 
                           status=status.HTTP_400_BAD_REQUEST)
+    
     @action(detail=True, methods=['post'])
     def duplicate(self, request, pk=None):
         """Duplicate leadership position assessment for new job title"""
@@ -760,6 +694,7 @@ class EmployeeLeadershipAssessmentViewSet(viewsets.ModelViewSet):
             return Response({
                 'error': f'Failed to export leadership assessment: {str(e)}'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 class CoreCompetencyScaleViewSet(viewsets.ModelViewSet):
     """Core Competency Scale Management"""
     queryset = CoreCompetencyScale.objects.all()
@@ -1050,15 +985,9 @@ class PositionBehavioralAssessmentViewSet(viewsets.ModelViewSet):
         if grade_level:
             queryset = queryset.filter(grade_levels__contains=[grade_level])  # JSON array-də axtarış
         
-        # Search by job title
-        search = self.request.query_params.get('search')
-        if search:
-            queryset = queryset.filter(job_title__icontains=search)
-        
-        return queryset.order_by('position_group__hierarchy_level', 'job_title')
+        return queryset.order_by('position_group__hierarchy_level')
     
-    
-    
+
     @action(detail=False, methods=['get'])
     def get_grade_levels(self, request):
         """Get available grade levels for a position group"""
@@ -1070,10 +999,9 @@ class PositionBehavioralAssessmentViewSet(viewsets.ModelViewSet):
             }, status=status.HTTP_400_BAD_REQUEST)
         
         try:
-            # Get unique grade levels from employees in this position group
+            # ✅ Bütün sistem üzrə mövcud grade level-lər
             grade_levels = Employee.objects.filter(
-                position_group_id=position_group_id,
-                grading_level__isnull=False  # DƏYİŞDİ: grade_level -> grading_level
+                grading_level__isnull=False
             ).values_list('grading_level', flat=True).distinct().order_by('grading_level')
             
             return Response({
@@ -1085,35 +1013,7 @@ class PositionBehavioralAssessmentViewSet(viewsets.ModelViewSet):
                 'error': str(e)
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
-    @action(detail=False, methods=['get'])
-    def get_job_titles(self, request):
-        """Get job titles for specific position group and grade level"""
-        position_group_id = request.query_params.get('position_group_id')
-        grade_level = request.query_params.get('grade_level')
-        
-        if not position_group_id or not grade_level:
-            return Response({
-                'error': 'position_group_id and grade_level are required'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        try:
-            # Get unique job titles for this position group and grade level
-            job_titles = Employee.objects.filter(
-                position_group_id=position_group_id,
-                grading_level=grade_level,  # DƏYİŞDİ: grade_level -> grading_level
-                job_title__isnull=False
-            ).values_list('job_title', flat=True).distinct().order_by('job_title')
-            
-            return Response({
-                'position_group_id': position_group_id,
-                'grade_level': grade_level,
-                'job_titles': list(job_titles)
-            })
-        except Exception as e:
-            return Response({
-                'error': str(e)
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-    
+   
     @action(detail=False, methods=['get'])
     def get_for_employee(self, request):
         """Get behavioral assessment template for specific employee"""
@@ -1127,21 +1027,20 @@ class PositionBehavioralAssessmentViewSet(viewsets.ModelViewSet):
         try:
             employee = Employee.objects.get(id=employee_id)
             
-            # Find matching position assessment - DƏYIŞDIRDIK
+            # ✅ Yalnız position_group və grade_level-ə görə axtarış
             assessment = PositionBehavioralAssessment.objects.filter(
                 position_group=employee.position_group,
-                job_title=employee.job_title,
-                grade_levels__contains=[employee.grading_level],  # JSON array-də axtarış
+                grade_levels__contains=[employee.grading_level],
                 is_active=True
             ).first()
             
             if not assessment:
                 return Response({
-                    'error': f'No behavioral assessment template found for {employee.job_title} (Grade {employee.grading_level})',
+                    'error': f'No behavioral assessment template found for {employee.position_group.get_name_display()} (Grade {employee.grading_level})',
                     'employee_info': {
                         'id': employee.id,
                         'name': employee.full_name,
-                        'job_title': employee.job_title,
+                      
                         'grade_level': employee.grading_level,
                         'position_group': employee.position_group.get_name_display()
                     }
@@ -1152,7 +1051,7 @@ class PositionBehavioralAssessmentViewSet(viewsets.ModelViewSet):
                 'employee_info': {
                     'id': employee.id,
                     'name': employee.full_name,
-                    'job_title': employee.job_title,
+            
                     'grade_level': employee.grading_level,
                     'position_group': employee.position_group.get_name_display()
                 },
@@ -1167,12 +1066,12 @@ class PositionBehavioralAssessmentViewSet(viewsets.ModelViewSet):
     def duplicate(self, request, pk=None):
         """Duplicate behavioral position assessment for new job title"""
         original = self.get_object()
-        new_job_title = request.data.get('job_title')
+    
         new_grade_level = request.data.get('grade_level')  # NEW
         
-        if not new_job_title or not new_grade_level:
+        if  not new_grade_level:
             return Response({
-                'error': 'job_title and grade_level are required'
+                'error': ' grade_level are required'
             }, status=status.HTTP_400_BAD_REQUEST)
         
         try:
@@ -1180,7 +1079,7 @@ class PositionBehavioralAssessmentViewSet(viewsets.ModelViewSet):
                 # Create new position assessment
                 new_assessment = PositionBehavioralAssessment.objects.create(
                     position_group=original.position_group,
-                    job_title=new_job_title,
+                 
                     grade_level=new_grade_level,  # NEW
                     created_by=request.user
                 )
@@ -1194,7 +1093,7 @@ class PositionBehavioralAssessmentViewSet(viewsets.ModelViewSet):
                 serializer = PositionBehavioralAssessmentSerializer(new_assessment)
                 return Response({
                     'success': True,
-                    'message': f'Behavioral position assessment duplicated for {new_job_title} (Grade {new_grade_level})',
+                    'message': f'Behavioral position assessment duplicated for (Grade {new_grade_level})',
                     'assessment': serializer.data
                 })
         except Exception as e:
@@ -1814,7 +1713,7 @@ class EmployeeBehavioralAssessmentViewSet(viewsets.ModelViewSet):
             'message': 'Behavioral scores recalculated successfully',
             'assessment': serializer.data
         })
-# Update the AssessmentDashboardViewSet in competency_assessment_views.py
+
 
 class AssessmentDashboardViewSet(viewsets.ViewSet):
     """Assessment Dashboard and Summary Statistics"""

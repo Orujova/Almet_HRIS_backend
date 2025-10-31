@@ -47,7 +47,7 @@ class PositionLeadershipAssessmentSerializer(serializers.ModelSerializer):
     class Meta:
         model = PositionLeadershipAssessment
         fields = [
-            'id', 'position_group', 'position_group_name', 'job_title',
+            'id', 'position_group', 'position_group_name',  
             'grade_levels', 'grade_levels_display',
             'competency_ratings', 'is_active',
             'created_at', 'updated_at', 'created_by', 'created_by_name'
@@ -77,8 +77,7 @@ class PositionLeadershipAssessmentCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = PositionLeadershipAssessment
         fields = [
-            'position_group', 'job_title', 'grade_levels', 'competency_ratings'
-        ]
+            'position_group', 'grade_levels', 'competency_ratings']
     
     def validate_position_group(self, value):
         """Validate that position group is a leadership position"""
@@ -227,7 +226,6 @@ class PositionLeadershipAssessmentCreateSerializer(serializers.ModelSerializer):
         return instance
 
 
-# Employee Leadership Assessment Serializers
 
 class EmployeeLeadershipCompetencyRatingSerializer(serializers.ModelSerializer):
     item_name = serializers.CharField(source='leadership_item.name', read_only=True)
@@ -645,17 +643,17 @@ class PositionBehavioralAssessmentSerializer(serializers.ModelSerializer):
     position_group_name = serializers.CharField(source='position_group.get_name_display', read_only=True)
     competency_ratings = PositionBehavioralCompetencyRatingSerializer(many=True, read_only=True)
     created_by_name = serializers.CharField(source='created_by.username', read_only=True)
-    grade_levels = serializers.ListField(  # ƏLAVƏ ETDIK
+    grade_levels = serializers.ListField(
         child=serializers.CharField(max_length=20),
         required=True
     )
-    grade_levels_display = serializers.SerializerMethodField()  # Display üçün
+    grade_levels_display = serializers.SerializerMethodField()
     
     class Meta:
         model = PositionBehavioralAssessment
         fields = [
-            'id', 'position_group', 'position_group_name', 'job_title', 
-            'grade_levels', 'grade_levels_display',  # DƏYIŞDIRDIK
+            'id', 'position_group', 'position_group_name',  # ❌ job_title silindi
+            'grade_levels', 'grade_levels_display',
             'competency_ratings', 'is_active',
             'created_at', 'updated_at', 'created_by', 'created_by_name'
         ]
@@ -668,23 +666,24 @@ class PositionBehavioralAssessmentSerializer(serializers.ModelSerializer):
         return f"Grades: {', '.join(map(str, sorted(obj.grade_levels)))}"
 
 
+# PositionBehavioralAssessmentCreateSerializer - job_title silinir
 class PositionBehavioralAssessmentCreateSerializer(serializers.ModelSerializer):
     competency_ratings = serializers.ListField(
         child=serializers.DictField(),
         write_only=True,
         help_text="List of {behavioral_competency_id: required_level} mappings"
     )
-    grade_levels = serializers.ListField(  # DƏYIŞDIRDIK: CharField-dən ListField-ə
+    grade_levels = serializers.ListField(
         child=serializers.CharField(max_length=20),
         required=True,
-        min_length=1,  # Ən azı 1 grade level seçilməlidir
+        min_length=1,
         help_text="List of grade levels for this position"
     )
     
     class Meta:
         model = PositionBehavioralAssessment
         fields = [
-            'position_group', 'job_title', 'grade_levels', 'competency_ratings'
+            'position_group', 'grade_levels', 'competency_ratings'  # ❌ job_title silindi
         ]
     
     def validate_grade_levels(self, value):
@@ -692,29 +691,30 @@ class PositionBehavioralAssessmentCreateSerializer(serializers.ModelSerializer):
         if not value or len(value) == 0:
             raise serializers.ValidationError("At least one grade level must be selected")
         
-        # Remove duplicates and sort
         unique_grades = list(set(value))
         return sorted(unique_grades)
     
     def validate(self, data):
-        """Validate that grade levels match employee job titles"""
+        """Validate that this position doesn't already have a template"""
         position_group = data.get('position_group')
-        grade_levels = data.get('grade_levels', [])
-        job_title = data.get('job_title')
         
-        if position_group and grade_levels and job_title:
-            # Check if there are employees with this combination
-            matching_employees = Employee.objects.filter(
+        # ✅ Check if template already exists for this position
+        if self.instance:  # Update zamanı
+            existing = PositionBehavioralAssessment.objects.filter(
                 position_group=position_group,
-                grading_level__in=grade_levels,  # DƏYIŞDIRDIK: __in istifadə edirik
-                job_title=job_title
+                is_active=True
+            ).exclude(id=self.instance.id)
+        else:  # Create zamanı
+            existing = PositionBehavioralAssessment.objects.filter(
+                position_group=position_group,
+                is_active=True
             )
-            
-            if not matching_employees.exists():
-                raise serializers.ValidationError(
-                    f"No employees found with Position Group '{position_group.get_name_display()}', "
-                    f"Grade Levels {', '.join(grade_levels)}, and Job Title '{job_title}'"
-                )
+        
+        if existing.exists():
+            raise serializers.ValidationError(
+                f"A behavioral assessment template already exists for position '{position_group.get_name_display()}'. "
+                f"Please edit the existing template instead."
+            )
         
         return data
     
@@ -744,7 +744,6 @@ class PositionBehavioralAssessmentCreateSerializer(serializers.ModelSerializer):
         
         position_assessment = super().create(validated_data)
         
-        # Create competency ratings
         for rating_data in competency_ratings:
             PositionBehavioralCompetencyRating.objects.create(
                 position_assessment=position_assessment,
@@ -759,18 +758,13 @@ class PositionBehavioralAssessmentCreateSerializer(serializers.ModelSerializer):
         """Update position assessment and its competency ratings"""
         competency_ratings = validated_data.pop('competency_ratings', None)
         
-        # Update basic fields including grade_level
         instance.position_group = validated_data.get('position_group', instance.position_group)
-        instance.job_title = validated_data.get('job_title', instance.job_title)
-        instance.grade_level = validated_data.get('grade_level', instance.grade_level)  # NEW
+        instance.grade_levels = validated_data.get('grade_levels', instance.grade_levels)
         instance.save()
         
-        # Update competency ratings if provided
         if competency_ratings is not None:
-            # Delete existing ratings
             instance.competency_ratings.all().delete()
             
-            # Create new ratings
             for rating_data in competency_ratings:
                 PositionBehavioralCompetencyRating.objects.create(
                     position_assessment=instance,
@@ -779,7 +773,6 @@ class PositionBehavioralAssessmentCreateSerializer(serializers.ModelSerializer):
                 )
         
         return instance
-
 
 
 class EmployeeCoreCompetencyRatingSerializer(serializers.ModelSerializer):
@@ -1019,10 +1012,13 @@ class EmployeeBehavioralCompetencyRatingSerializer(serializers.ModelSerializer):
         read_only_fields = ['created_at']
 
 
+# competency_assessment_serializers.py
+
 class EmployeeBehavioralAssessmentSerializer(serializers.ModelSerializer):
     employee_name = serializers.CharField(source='employee.full_name', read_only=True)
     employee_id = serializers.CharField(source='employee.employee_id', read_only=True)
-    position_assessment_title = serializers.CharField(source='position_assessment.job_title', read_only=True)
+    # ✅ job_title əvəzinə position_group_name
+    position_assessment_info = serializers.SerializerMethodField(read_only=True)
 
     competency_ratings = EmployeeBehavioralCompetencyRatingSerializer(many=True, read_only=True)
     
@@ -1038,9 +1034,9 @@ class EmployeeBehavioralAssessmentSerializer(serializers.ModelSerializer):
         model = EmployeeBehavioralAssessment
         fields = [
             'id', 'employee', 'employee_name', 'employee_id',
-            'position_assessment', 'position_assessment_title', 'assessment_date', 
+            'position_assessment', 'position_assessment_info', 'assessment_date', 
             'status', 'status_display', 'can_edit',
-          'notes',
+            'notes',
             'group_scores', 'group_scores_display', 'overall_percentage', 
             'overall_letter_grade', 'overall_grade_info', 'competency_ratings',
             'created_at', 'updated_at'
@@ -1049,6 +1045,15 @@ class EmployeeBehavioralAssessmentSerializer(serializers.ModelSerializer):
             'group_scores', 'overall_percentage', 'overall_letter_grade',
             'created_at', 'updated_at'
         ]
+    
+    def get_position_assessment_info(self, obj):
+        """Get position assessment information"""
+        if obj.position_assessment:
+            return {
+                'position_group': obj.position_assessment.position_group.get_name_display(),
+                'grade_levels': obj.position_assessment.grade_levels
+            }
+        return None
     
     def get_can_edit(self, obj):
         """Check if assessment can be edited (only DRAFT status)"""
@@ -1101,20 +1106,27 @@ class EmployeeBehavioralAssessmentCreateSerializer(serializers.ModelSerializer):
         model = EmployeeBehavioralAssessment
         fields = [
             'employee', 'position_assessment', 'assessment_date',
-           'notes', 'competency_ratings', 'action_type'
+            'notes', 'competency_ratings', 'action_type'
         ]
     
     def validate(self, data):
-        """Validate employee matches position assessment"""
+        """Validate employee matches position assessment - ✅ JOB_TITLE VALIDATION SİLİNDİ"""
         employee = data.get('employee')
         position_assessment = data.get('position_assessment')
         
         if employee and position_assessment:
-            # Check if employee's job title matches position assessment
-            if employee.job_title != position_assessment.job_title:
+            # ✅ Yalnız position_group və grade_level yoxlanır
+            if employee.position_group != position_assessment.position_group:
                 raise serializers.ValidationError(
-                    f"Employee job title '{employee.job_title}' doesn't match "
-                    f"position assessment '{position_assessment.job_title}'"
+                    f"Employee position group '{employee.position_group.get_name_display()}' doesn't match "
+                    f"position assessment '{position_assessment.position_group.get_name_display()}'"
+                )
+            
+            # ✅ Grade level yoxlanışı
+            if employee.grading_level not in position_assessment.grade_levels:
+                raise serializers.ValidationError(
+                    f"Employee grade level '{employee.grading_level}' is not included in "
+                    f"position assessment grade levels: {', '.join(position_assessment.grade_levels)}"
                 )
         
         return data
@@ -1219,6 +1231,5 @@ class EmployeeBehavioralAssessmentCreateSerializer(serializers.ModelSerializer):
             assessment.calculate_scores()
         
         return assessment
-
 
 

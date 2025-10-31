@@ -14,8 +14,7 @@ from .job_description_models import JobDescription
 
 logger = logging.getLogger(__name__)
 from .competency_models import (
-    LeadershipCompetencyMainGroup, 
-    LeadershipCompetencyChildGroup, 
+   
     LeadershipCompetencyItem
 )
 
@@ -29,7 +28,7 @@ class PositionLeadershipAssessment(models.Model):
         on_delete=models.CASCADE,
         help_text="Only Manager, Vice Chairman, Director, Vice, HOD positions"
     )
-    job_title = models.CharField(max_length=200)
+    # job_title = models.CharField(max_length=200)  # ❌ SILINDI
     grade_levels = models.JSONField(
         default=list,
         help_text="List of grade levels for this position"
@@ -45,15 +44,13 @@ class PositionLeadershipAssessment(models.Model):
     
     class Meta:
         db_table = 'position_leadership_assessments'
-        unique_together = ['position_group', 'job_title']
+        unique_together = ['position_group']  # ✅ DƏYİŞDİRİLDİ: yalnız position_group unique
     
     def clean(self):
         """Validate that position group is a leadership position"""
         if self.position_group:
-            # Position name-i normalize et
             position_name = self.position_group.name.upper().replace('_', ' ').strip()
             
-            # Leadership keywords
             leadership_keywords = [
                 'MANAGER',
                 'VICE CHAIRMAN',
@@ -63,7 +60,6 @@ class PositionLeadershipAssessment(models.Model):
                 'HOD'
             ]
             
-            # Check if any keyword matches
             is_leadership = any(
                 keyword.upper().replace('_', ' ') == position_name or
                 keyword.upper() == self.position_group.name.upper()
@@ -75,14 +71,14 @@ class PositionLeadershipAssessment(models.Model):
                     f"Leadership assessments are only for Manager, Vice Chairman, Director, Vice, and HOD positions. "
                     f"Current position: {self.position_group.get_name_display()} (DB: {self.position_group.name})"
                 )
+    
     def save(self, *args, **kwargs):
         self.full_clean()
         super().save(*args, **kwargs)
     
     def __str__(self):
         grade_text = f" (Grades {', '.join(map(str, self.grade_levels))})" if self.grade_levels else ""
-        return f"{self.job_title}{grade_text} - Leadership Assessment"
-
+        return f"{self.position_group.get_name_display()}{grade_text} - Leadership Assessment"
 
 class PositionLeadershipCompetencyRating(models.Model):
     """Individual leadership competency item ratings within position assessment"""
@@ -475,8 +471,8 @@ class PositionBehavioralAssessment(models.Model):
     
     # Position details
     position_group = models.ForeignKey(PositionGroup, on_delete=models.CASCADE)
-    job_title = models.CharField(max_length=200)
-    grade_levels = models.JSONField(  # DƏYIŞDIRDIK: CharField-dən JSONField-ə
+    # job_title = models.CharField(max_length=200)  # ❌ SILINDI
+    grade_levels = models.JSONField(
         default=list,
         help_text="List of grade levels for this position",
     )
@@ -491,11 +487,11 @@ class PositionBehavioralAssessment(models.Model):
     
     class Meta:
         db_table = 'position_behavioral_assessments'
-        unique_together = ['position_group', 'job_title']  # DƏYIŞDIRDIK: grade_level-i sildik
+        unique_together = ['position_group']  # ✅ DƏYİŞDİRİLDİ: yalnız position_group unique
     
     def __str__(self):
         grade_text = f" (Grades {', '.join(map(str, self.grade_levels))})" if self.grade_levels else ""
-        return f"{self.job_title}{grade_text} - Behavioral Assessment"
+        return f"{self.position_group.get_name_display()}{grade_text} - Behavioral Assessment"
 
 
 class PositionBehavioralCompetencyRating(models.Model):
