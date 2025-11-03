@@ -1032,6 +1032,9 @@ class EmployeeCoreAssessmentSerializer(serializers.ModelSerializer):
     can_edit = serializers.SerializerMethodField()
     
     # Gap analysis summary
+    group_scores_display = serializers.SerializerMethodField()
+    
+    # Gap analysis summary
     gap_analysis = serializers.SerializerMethodField()
     
     class Meta:
@@ -1042,17 +1045,45 @@ class EmployeeCoreAssessmentSerializer(serializers.ModelSerializer):
             'status', 'status_display', 'can_edit',
             'notes',
             'total_position_score', 'total_employee_score', 'gap_score',
-            'completion_percentage', 'competency_ratings', 'gap_analysis',
+            'completion_percentage', 
+            'group_scores', 'group_scores_display',  # ✅ NEW
+            'competency_ratings', 'gap_analysis',
             'created_at', 'updated_at'
         ]
         read_only_fields = [
             'total_position_score', 'total_employee_score', 'gap_score', 
-            'completion_percentage', 'created_at', 'updated_at'
+            'completion_percentage', 'group_scores', 'created_at', 'updated_at'
         ]
     
     def get_can_edit(self, obj):
         """Check if assessment can be edited (only DRAFT status)"""
         return obj.status == 'DRAFT'
+    
+    # ✅ NEW METHOD
+    def get_group_scores_display(self, obj):
+        """Format group scores for display with color coding"""
+        display_scores = {}
+        
+        for group_name, scores in obj.group_scores.items():
+            # Determine color based on gap
+            if scores['gap'] > 0:
+                status = 'exceeds'
+                color = '#10B981'  # Green
+            elif scores['gap'] == 0:
+                status = 'meets'
+                color = '#6B7280'  # Gray
+            else:
+                status = 'below'
+                color = '#EF4444'  # Red
+            
+            display_scores[group_name] = {
+                **scores,
+                'status': status,
+                'color': color,
+                'gap_text': f"+{scores['gap']}" if scores['gap'] > 0 else str(scores['gap'])
+            }
+        
+        return display_scores
     
     def get_gap_analysis(self, obj):
         """Get gap analysis summary by skill groups"""
@@ -1080,7 +1111,6 @@ class EmployeeCoreAssessmentSerializer(serializers.ModelSerializer):
                 group_analysis[group_name]['below_count'] += 1
         
         return dict(group_analysis)
-
 class EmployeeCoreAssessmentCreateSerializer(serializers.ModelSerializer):
     competency_ratings = serializers.ListField(
         child=serializers.DictField(),

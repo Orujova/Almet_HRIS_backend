@@ -299,8 +299,6 @@ class EmployeeLeadershipCompetencyRating(models.Model):
     def __str__(self):
         return f"{self.assessment.employee.full_name} - {self.leadership_item.name[:50]}: {self.actual_level}/{self.required_level}"
 
-
-# Helper function to check if position requires leadership assessment
 def requires_leadership_assessment(position_group):
     """Check if position group requires leadership assessment instead of behavioral"""
     leadership_positions = ['MANAGER', 'VICE_CHAIRMAN', 'DIRECTOR', 'VICE', 'HOD']
@@ -537,6 +535,11 @@ class EmployeeCoreAssessment(models.Model):
  
     notes = models.TextField(blank=True)
     
+    group_scores = models.JSONField(
+        default=dict,
+        help_text="Scores by skill group: {group_name: {position_total, employee_total, gap, completion_percentage}}"
+    )
+    
     # Calculated scores
     total_position_score = models.IntegerField(default=0, help_text="Total required score for position")
     total_employee_score = models.IntegerField(default=0, help_text="Total employee actual score")
@@ -552,9 +555,12 @@ class EmployeeCoreAssessment(models.Model):
         ordering = ['-created_at']
     
     def calculate_scores(self):
-        """Calculate assessment scores and gaps"""
+        """Calculate assessment scores and gaps - ✅ UPDATED"""
+        from collections import defaultdict
+        
         ratings = self.competency_ratings.all()
         
+        # Overall totals
         total_position = sum(r.required_level for r in ratings)
         total_employee = sum(r.actual_level for r in ratings)
         gap = total_employee - total_position
@@ -566,6 +572,36 @@ class EmployeeCoreAssessment(models.Model):
         if total_position > 0:
             self.completion_percentage = (total_employee / total_position) * 100
         
+        # ✅ NEW: Calculate scores by skill group
+        group_data = defaultdict(lambda: {'position_total': 0, 'employee_total': 0, 'count': 0})
+        
+        ratings_with_group = self.competency_ratings.select_related('skill__group').all()
+        
+        for rating in ratings_with_group:
+            group_name = rating.skill.group.name
+            group_data[group_name]['position_total'] += rating.required_level
+            group_data[group_name]['employee_total'] += rating.actual_level
+            group_data[group_name]['count'] += 1
+        
+        # Calculate group scores
+        group_scores = {}
+        for group_name, data in group_data.items():
+            gap = data['employee_total'] - data['position_total']
+            
+            if data['position_total'] > 0:
+                completion = (data['employee_total'] / data['position_total']) * 100
+            else:
+                completion = 0
+            
+            group_scores[group_name] = {
+                'position_total': data['position_total'],
+                'employee_total': data['employee_total'],
+                'gap': gap,
+                'completion_percentage': round(completion, 2),
+                'skills_count': data['count']
+            }
+        
+        self.group_scores = group_scores
         self.save()
     
     def can_edit(self):
