@@ -33,7 +33,7 @@ from .models import Employee,PositionGroup
 import logging
 
 logger = logging.getLogger(__name__)
-# Add these imports and viewsets to competency_assessment_views.py
+
 
 from .competency_assessment_models import (
     PositionLeadershipAssessment, 
@@ -55,26 +55,45 @@ class PositionLeadershipAssessmentViewSet(viewsets.ModelViewSet):
         return PositionLeadershipAssessmentSerializer
     
     def get_queryset(self):
+        # ✅ ALWAYS prefetch competency_ratings
         queryset = PositionLeadershipAssessment.objects.select_related(
             'position_group', 'created_by'
-        ).prefetch_related('competency_ratings__leadership_item__child_group__main_group')
+        ).prefetch_related(
+            'competency_ratings',
+            'competency_ratings__leadership_item',
+            'competency_ratings__leadership_item__child_group',
+            'competency_ratings__leadership_item__child_group__main_group'
+        )
         
-        # Filter by position group
         position_group = self.request.query_params.get('position_group')
         if position_group:
             queryset = queryset.filter(position_group_id=position_group)
         
-        # Filter by grade level
         grade_level = self.request.query_params.get('grade_level')
         if grade_level:
             queryset = queryset.filter(grade_levels__contains=[grade_level])
         
-        # Search by job title
         search = self.request.query_params.get('search')
         if search:
-            queryset = queryset.filter(job_title__icontains=search)
+            queryset = queryset.filter(position_group__name__icontains=search)
         
-        return queryset.order_by('position_group__hierarchy_level', 'job_title')
+        return queryset.order_by('position_group__hierarchy_level')
+    
+    # ✅ Override retrieve for detailed view
+    def retrieve(self, request, *args, **kwargs):
+        """Get single position assessment with full competency ratings"""
+        instance = self.get_object()
+        
+        # Force load competency_ratings
+        competency_ratings = list(instance.competency_ratings.select_related(
+            'leadership_item__child_group__main_group'
+        ).all())
+        
+        print(f"🔍 Position Assessment ID: {instance.id}")
+        print(f"🔍 Competency Ratings Count: {len(competency_ratings)}")
+        
+        serializer = self.get_serializer(instance)
+        return Response(serializer.data)
     
     @action(detail=False, methods=['get'])
     def get_leadership_positions(self, request):
@@ -190,12 +209,12 @@ class PositionLeadershipAssessmentViewSet(viewsets.ModelViewSet):
                         'employee_info': {
                             'id': 63,
                             'name': 'John Doe',
-                            'job_title': 'Director',
+                          
                             'position_group': 'Director'
                         },
                         'assessment_template': {
                             'id': 'uuid',
-                            'job_title': 'Director',
+                        
                             'competency_ratings': []
                         }
                     }
@@ -320,20 +339,17 @@ class PositionLeadershipAssessmentViewSet(viewsets.ModelViewSet):
     def duplicate(self, request, pk=None):
         """Duplicate leadership position assessment for new job title"""
         original = self.get_object()
-        new_job_title = request.data.get('job_title')
+
         new_grade_level = request.data.get('grade_level')
         
-        if not new_job_title or not new_grade_level:
-            return Response({
-                'error': 'job_title and grade_level are required'
-            }, status=status.HTTP_400_BAD_REQUEST)
+   
         
         try:
             with transaction.atomic():
                 # Create new position assessment
                 new_assessment = PositionLeadershipAssessment.objects.create(
                     position_group=original.position_group,
-                    job_title=new_job_title,
+              
                     grade_levels=[new_grade_level],
                     created_by=request.user
                 )
@@ -347,7 +363,7 @@ class PositionLeadershipAssessmentViewSet(viewsets.ModelViewSet):
                 serializer = PositionLeadershipAssessmentSerializer(new_assessment)
                 return Response({
                     'success': True,
-                    'message': f'Leadership position assessment duplicated for {new_job_title} (Grade {new_grade_level})',
+                    'message': f'Leadership position assessment duplicated for  (Grade {new_grade_level})',
                     'assessment': serializer.data
                 })
         except Exception as e:
