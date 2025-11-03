@@ -1391,7 +1391,7 @@ class EmployeeBehavioralAssessmentCreateSerializer(serializers.ModelSerializer):
                 )
             
             level = rating.get('actual_level')
-            if not isinstance(level, int) or level < 1 or level > 10:
+            if not isinstance(level, int) or level < 0 or level > 10:
                 raise serializers.ValidationError(
                     "Actual level must be integer between 1-10"
                 )

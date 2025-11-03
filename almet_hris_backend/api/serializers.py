@@ -2455,11 +2455,12 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
         # Track changes for activity log
         changes = []
         
-        # CHANGED: Update employee fields directly (not user fields)
+        # FIXED: Update employee fields directly (not user fields)
+        # Handle first_name, last_name, email directly on Employee model
         employee_fields = ['first_name', 'last_name', 'email', 'father_name']
         for field in employee_fields:
             if field in validated_data:
-                old_value = getattr(instance, field)
+                old_value = getattr(instance, field, None)
                 new_value = validated_data[field]
                 if old_value != new_value:
                     changes.append(f"{field}: {old_value} → {new_value}")
@@ -2488,19 +2489,44 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
         # OPTIONAL: Create user account if requested and doesn't exist
         if create_user_account and not employee.user:
             try:
-                employee.create_user_account()
+                # Use employee's own fields for user creation
+                user = User.objects.create_user(
+                    username=employee.email,
+                    email=employee.email,
+                    first_name=employee.first_name,
+                    last_name=employee.last_name
+                )
+                user.set_unusable_password()
+                user.save()
+                
+                employee.user = user
+                employee.save()
+                
                 changes.append("System user account created")
-            except ValueError as e:
+            except Exception as e:
                 logger.warning(f"Could not create user account for employee {employee.employee_id}: {e}")
         
-        # Update user account if it exists and employee email changed
-        if employee.user and 'email' in validated_data:
-            user = employee.user
-            if user.email != employee.email:
-                user.email = employee.email
-                user.username = employee.email  # Keep username in sync
-                user.save()
-                changes.append("User account email updated")
+        # FIXED: Update user account if it exists
+        if employee.user:
+            user_updated = False
+            
+            # Sync user fields with employee fields
+            if 'first_name' in validated_data and employee.user.first_name != employee.first_name:
+                employee.user.first_name = employee.first_name
+                user_updated = True
+            
+            if 'last_name' in validated_data and employee.user.last_name != employee.last_name:
+                employee.user.last_name = employee.last_name
+                user_updated = True
+            
+            if 'email' in validated_data and employee.user.email != employee.email:
+                employee.user.email = employee.email
+                employee.user.username = employee.email  # Keep username in sync
+                user_updated = True
+            
+            if user_updated:
+                employee.user.save()
+                changes.append("User account synced")
         
         # Update tags
         if tag_ids is not None:
