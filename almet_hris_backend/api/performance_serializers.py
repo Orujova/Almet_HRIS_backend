@@ -125,18 +125,25 @@ class DevelopmentNeedSerializer(serializers.ModelSerializer):
 
 
 class PerformanceCommentSerializer(serializers.ModelSerializer):
-    created_by_name = serializers.CharField(source='created_by.get_full_name', read_only=True)
+    created_by_name = serializers.SerializerMethodField()
+    created_by_username = serializers.CharField(source='created_by.username', read_only=True)
     replies = serializers.SerializerMethodField()
     
     class Meta:
         model = PerformanceComment
         fields = '__all__'
     
+    def get_created_by_name(self, obj):
+        """Get full name or username"""
+        if obj.created_by:
+            full_name = obj.created_by.get_full_name()
+            return full_name if full_name.strip() else obj.created_by.username
+        return 'Unknown'
+    
     def get_replies(self, obj):
         if obj.replies.exists():
             return PerformanceCommentSerializer(obj.replies.all(), many=True).data
         return []
-
 
 class PerformanceActivityLogSerializer(serializers.ModelSerializer):
     performed_by_name = serializers.CharField(source='performed_by.get_full_name', read_only=True)
@@ -225,7 +232,7 @@ class EmployeePerformanceDetailSerializer(serializers.ModelSerializer):
         source='employee.position_group.get_name_display', 
         read_only=True
     )
-    employee_grade_level = serializers.CharField(source='employee.grading_level', read_only=True)  # NEW
+    employee_grade_level = serializers.CharField(source='employee.grading_level', read_only=True)
     line_manager_name = serializers.CharField(source='employee.line_manager.full_name', read_only=True, allow_null=True)
     
     year = serializers.IntegerField(source='performance_year.year', read_only=True)
@@ -234,11 +241,17 @@ class EmployeePerformanceDetailSerializer(serializers.ModelSerializer):
     objectives = EmployeeObjectiveSerializer(many=True, read_only=True)
     competency_ratings = EmployeeCompetencyRatingSerializer(many=True, read_only=True)
     development_needs = DevelopmentNeedSerializer(many=True, read_only=True)
+    
+    # ✅ FIX #4: Add clarification_comments field
+    clarification_comments = serializers.SerializerMethodField()
+    
     comments = PerformanceCommentSerializer(many=True, read_only=True)
     activity_logs = PerformanceActivityLogSerializer(many=True, read_only=True)
     
     # Weight configuration
     weight_config = serializers.SerializerMethodField()
+    objectives_weight = serializers.SerializerMethodField()
+    competencies_weight = serializers.SerializerMethodField()
     
     # Evaluation targets
     evaluation_targets = serializers.SerializerMethodField()
@@ -246,12 +259,22 @@ class EmployeePerformanceDetailSerializer(serializers.ModelSerializer):
     # Goal limits
     goal_limits = serializers.SerializerMethodField()
     
-    # NEW: Group competency scores breakdown
+    # Group competency scores breakdown
     group_scores_breakdown = serializers.SerializerMethodField()
     
     class Meta:
         model = EmployeePerformance
         fields = '__all__'
+    
+    def get_clarification_comments(self, obj):
+        """
+        ✅ FIX #4: Get all clarification-related comments
+        """
+        clarification_comments = obj.comments.filter(
+            comment_type__in=['OBJECTIVE_CLARIFICATION', 'FINAL_CLARIFICATION']
+        ).select_related('created_by').order_by('-created_at')
+        
+        return PerformanceCommentSerializer(clarification_comments, many=True).data
     
     def get_weight_config(self, obj):
         weight = PerformanceWeightConfig.objects.filter(
@@ -264,11 +287,24 @@ class EmployeePerformanceDetailSerializer(serializers.ModelSerializer):
             }
         return None
     
+    def get_objectives_weight(self, obj):
+        """Get objectives weight percentage"""
+        weight = PerformanceWeightConfig.objects.filter(
+            position_group=obj.employee.position_group
+        ).first()
+        return weight.objectives_weight if weight else 70
+    
+    def get_competencies_weight(self, obj):
+        """Get competencies weight percentage"""
+        weight = PerformanceWeightConfig.objects.filter(
+            position_group=obj.employee.position_group
+        ).first()
+        return weight.competencies_weight if weight else 30
+    
     def get_evaluation_targets(self, obj):
         config = EvaluationTargetConfig.get_active_config()
         return {
             'objective_score_target': config.objective_score_target,
-            # competency_score_target removed
         }
     
     def get_goal_limits(self, obj):
@@ -281,7 +317,6 @@ class EmployeePerformanceDetailSerializer(serializers.ModelSerializer):
     def get_group_scores_breakdown(self, obj):
         """Get detailed breakdown of competency scores by group"""
         return obj.group_competency_scores
-
 
 class EmployeePerformanceCreateUpdateSerializer(serializers.ModelSerializer):
     """Serializer for creating/updating performance with nested data"""

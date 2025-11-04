@@ -620,11 +620,13 @@ class TimeOffRequestViewSet(viewsets.ModelViewSet):
         })
     
     @action(detail=False, methods=['get'])
-    @has_timeoff_permission('timeoff.request.view_team')
+    @has_any_timeoff_permission(['timeoff.request.view_team', 'timeoff.request.approve_as_manager', 'timeoff.request.approve_as_hr'])
     def pending_approvals(self, request):
         """
-        Get pending approvals for line manager
-        Required: timeoff.request.view_team
+        Get pending approvals
+        - HR/Admin: All pending requests
+        - Line Manager: Only their team's pending requests
+        Required: timeoff.request.view_team OR timeoff.request.approve_as_manager OR timeoff.request.approve_as_hr
         """
         if not hasattr(request.user, 'employee_profile'):
             return Response(
@@ -633,16 +635,60 @@ class TimeOffRequestViewSet(viewsets.ModelViewSet):
             )
         
         employee = request.user.employee_profile
-        requests = TimeOffRequest.get_pending_for_manager(employee)
+        
+        # Check if user has HR approval permission or is admin
+        from .business_trip_permissions import is_admin_user
+        has_hr_perm, _ = check_timeoff_permission(request.user, 'timeoff.request.approve_as_hr')
+        is_admin = is_admin_user(request.user)
+        
+        # Debug log
+        logger.info(f"Pending approvals request by: {employee.employee_id} - {employee.full_name}")
+        logger.info(f"Is Admin: {is_admin}, Has HR Perm: {has_hr_perm}")
+        
+        if is_admin or has_hr_perm:
+            # Admin/HR can see ALL pending requests
+            requests = TimeOffRequest.objects.filter(
+                status='PENDING'
+            ).select_related(
+                'employee', 
+                'employee__user',
+                'employee__department',
+                'line_manager'
+            ).order_by('-created_at')
+            
+            logger.info(f"Admin/HR view: Found {requests.count()} total pending requests")
+        else:
+            # Line manager can only see their team's pending requests
+            requests = TimeOffRequest.objects.filter(
+                line_manager=employee,
+                status='PENDING'
+            ).select_related(
+                'employee', 
+                'employee__user',
+                'employee__department',
+                'line_manager'
+            ).order_by('-created_at')
+            
+            logger.info(f"Line manager view: Found {requests.count()} pending requests for their team")
         
         serializer = self.get_serializer(requests, many=True)
+        
         return Response({
             'count': requests.count(),
-            'requests': serializer.data
-        })
-    
-    
-    
+            'requests': serializer.data,
+            'view_type': 'admin_or_hr' if (is_admin or has_hr_perm) else 'line_manager',
+            'debug_info': {
+                'user_id': employee.employee_id,
+                'user_name': employee.full_name,
+                'is_admin': is_admin,
+                'has_hr_permission': has_hr_perm,
+                'is_line_manager_for': Employee.objects.filter(
+                    line_manager=employee,
+                    is_deleted=False
+                ).count()
+            }
+        })    
+        
   
     # ==================== NOTIFICATION HELPERS ====================
     

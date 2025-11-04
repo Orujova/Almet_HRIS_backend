@@ -235,18 +235,31 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
     # ============ HELPER METHODS ============
     
     def _check_edit_access(self, performance):
-        """Helper to check if user can edit performance"""
+   
         if is_admin_user(self.request.user):
             return True
         
         try:
             employee = Employee.objects.get(user=self.request.user)
+            
+            # ✅ FIX #2: Employee can edit their own performance if clarification needed
             if performance.employee == employee:
                 if performance.approval_status == 'NEED_CLARIFICATION':
                     return True
+            
+            # ✅ FIX #2: Manager can edit if clarification needed (to respond)
+            if performance.employee.line_manager == employee:
+                if performance.approval_status == 'NEED_CLARIFICATION':
+                    return True
+                
+                # Manager can also edit during goal setting period
+                if performance.performance_year.is_goal_setting_active():
+                    return True
+        
         except Employee.DoesNotExist:
             pass
         
+        # Default permission check
         if not can_edit_performance(self.request.user, performance):
             return Response({
                 'error': 'İcazə yoxdur',
@@ -254,7 +267,6 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
             }, status=status.HTTP_403_FORBIDDEN)
         
         return True
-    
     def _create_development_needs(self, performance):
         """Create development needs for low-rated behavioral competencies"""
         low_ratings = performance.competency_ratings.filter(
@@ -1141,7 +1153,7 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'])
     def submit_objectives(self, request, pk=None):
         """
-        ✅ Submit objectives for approval (GOAL_SETTING period only)
+        ✅ FIX #1: Submit objectives for approval (saves AND submits in one action)
         """
         performance = self.get_object()
         
@@ -1166,6 +1178,58 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
                 'current_period': performance.performance_year.get_current_period()
             }, status=status.HTTP_400_BAD_REQUEST)
         
+        # ✅ FIX #1: Get objectives data from request (if provided) and save them first
+        objectives_data = request.data.get('objectives', [])
+        
+        if objectives_data:
+            with transaction.atomic():
+                updated_ids = []
+                for idx, obj_data in enumerate(objectives_data):
+                    obj_id = obj_data.get('id')
+                    
+                    if obj_id:
+                        # Update existing objective
+                        obj = EmployeeObjective.objects.filter(
+                            id=obj_id, 
+                            performance=performance
+                        ).first()
+                        
+                        if obj:
+                            obj.title = obj_data.get('title', obj.title)
+                            obj.description = obj_data.get('description', obj.description)
+                            obj.linked_department_objective_id = obj_data.get('linked_department_objective')
+                            obj.weight = obj_data.get('weight', obj.weight)
+                            obj.progress = obj_data.get('progress', obj.progress)
+                            obj.status_id = obj_data.get('status', obj.status_id)
+                            obj.display_order = idx
+                            
+                            if 'end_year_rating' in obj_data:
+                                obj.end_year_rating_id = obj_data.get('end_year_rating')
+                            
+                            if 'calculated_score' in obj_data:
+                                obj.calculated_score = obj_data.get('calculated_score', 0)
+                            
+                            obj.save()
+                            updated_ids.append(obj.id)
+                    else:
+                        # Create new objective
+                        new_obj = EmployeeObjective.objects.create(
+                            performance=performance,
+                            title=obj_data.get('title', ''),
+                            description=obj_data.get('description', ''),
+                            linked_department_objective_id=obj_data.get('linked_department_objective'),
+                            weight=obj_data.get('weight', 0),
+                            progress=obj_data.get('progress', 0),
+                            status_id=obj_data.get('status'),
+                            end_year_rating_id=obj_data.get('end_year_rating'),
+                            calculated_score=obj_data.get('calculated_score', 0),
+                            display_order=idx
+                        )
+                        updated_ids.append(new_obj.id)
+                
+                # Delete objectives not in the list
+                performance.objectives.exclude(id__in=updated_ids).delete()
+        
         # Validate objectives
         objectives = performance.objectives.filter(is_cancelled=False)
         goal_config = GoalLimitConfig.get_active_config()
@@ -1188,6 +1252,23 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
             return Response({
                 'error': f'Total objective weights must equal 100% (currently {total_weight}%)'
             }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # ✅ Check that all objectives have required fields
+        for obj in objectives:
+            if not obj.title or not obj.title.strip():
+                return Response({
+                    'error': 'All objectives must have a title'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            if not obj.status:
+                return Response({
+                    'error': 'All objectives must have a status'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            if obj.weight <= 0:
+                return Response({
+                    'error': 'All objectives must have weight > 0'
+                }, status=status.HTTP_400_BAD_REQUEST)
         
         # Update status
         was_clarification_needed = performance.approval_status == 'NEED_CLARIFICATION'
@@ -1212,8 +1293,7 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
             'next_step': 'Waiting for employee to review and approve',
             'objectives_count': objectives_count
         })
-    
-    
+        
     # ==================== COMPETENCIES ENDPOINTS ====================
     
     @action(detail=True, methods=['post'])
