@@ -137,14 +137,7 @@ class ObjectiveStatusViewSet(viewsets.ModelViewSet):
 # ============ MAIN PERFORMANCE VIEWSET ============
 
 class EmployeePerformanceViewSet(viewsets.ModelViewSet):
-    """
-    Employee Performance Management with Role-Based Access Control
-    
-    ✅ FIXED Approval Flow:
-    GOAL SETTING: Manager submit → Employee approve → Manager approve
-    MID-YEAR: Employee submit → Manager complete
-    END-YEAR: Manager complete (NO approval check) → Employee approve → Manager approve
-    """
+  
     permission_classes = [IsAuthenticated]
     
     def get_serializer_class(self):
@@ -712,53 +705,7 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
             'next_step': 'Wait for end-year review period'
         })
     
-    @action(detail=True, methods=['post'])
-    def request_mid_year_clarification(self, request, pk=None):
-        """Employee can request clarification about mid-year review"""
-        performance = self.get_object()
-        
-        if not is_admin_user(request.user):
-            try:
-                employee = Employee.objects.get(user=request.user)
-                if performance.employee != employee:
-                    return Response({
-                        'error': 'Only employee can request clarification'
-                    }, status=status.HTTP_403_FORBIDDEN)
-            except Employee.DoesNotExist:
-                return Response({'error': 'Employee profile not found'}, status=status.HTTP_404_NOT_FOUND)
-        
-        comment_text = request.data.get('comment')
-        if not comment_text:
-            return Response({
-                'error': 'Comment text required'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        comment = PerformanceComment.objects.create(
-            performance=performance,
-            comment_type='MID_YEAR_CLARIFICATION',
-            content=comment_text,
-            created_by=request.user
-        )
-        
-        performance.mid_year_completed = False
-        performance.mid_year_manager_submitted = None
-        performance.approval_status = 'NEED_CLARIFICATION'
-        performance.save()
-        
-        PerformanceActivityLog.objects.create(
-            performance=performance,
-            action='MID_YEAR_CLARIFICATION_REQUESTED',
-            description='Employee requested clarification on mid-year review',
-            performed_by=request.user,
-            metadata={'comment_id': comment.id}
-        )
-        
-        return Response({
-            'success': True,
-            'message': 'Clarification requested - Manager can edit and resubmit',
-            'comment': PerformanceCommentSerializer(comment).data
-        })
-    
+
     # ============ END-YEAR REVIEW SECTION ============
     
     @action(detail=True, methods=['post'])
@@ -1000,55 +947,7 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
             'approval_status': 'COMPLETED'
         })
     
-    @action(detail=True, methods=['post'])
-    def request_end_year_clarification(self, request, pk=None):
-        """Employee requests clarification about end-year review"""
-        performance = self.get_object()
-        
-        if not is_admin_user(request.user):
-            try:
-                employee = Employee.objects.get(user=request.user)
-                if performance.employee != employee:
-                    return Response({
-                        'error': 'Only employee can request clarification'
-                    }, status=status.HTTP_403_FORBIDDEN)
-            except Employee.DoesNotExist:
-                return Response({'error': 'Employee profile not found'}, status=status.HTTP_404_NOT_FOUND)
-        
-        comment_text = request.data.get('comment')
-        if not comment_text:
-            return Response({
-                'error': 'Comment text required'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        comment = PerformanceComment.objects.create(
-            performance=performance,
-            comment_type='END_YEAR_CLARIFICATION',
-            content=comment_text,
-            created_by=request.user
-        )
-        
-        performance.final_employee_approved = False
-        performance.final_manager_approved = False
-        performance.final_employee_approval_date = None
-        performance.final_manager_approval_date = None
-        performance.approval_status = 'NEED_CLARIFICATION'
-        performance.save()
-        
-        PerformanceActivityLog.objects.create(
-            performance=performance,
-            action='END_YEAR_CLARIFICATION_REQUESTED',
-            description='Employee requested clarification on end-year review',
-            performed_by=request.user,
-            metadata={'comment_id': comment.id}
-        )
-        
-        return Response({
-            'success': True,
-            'message': 'Clarification requested - Manager can edit and resubmit',
-            'comment': PerformanceCommentSerializer(comment).data
-        })
-    
+
     # ============ DEVELOPMENT NEEDS SECTION ============
     
     @action(detail=True, methods=['post'])

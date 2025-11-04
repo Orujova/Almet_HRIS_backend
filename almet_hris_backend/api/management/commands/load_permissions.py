@@ -307,6 +307,47 @@ class Command(BaseCommand):
             ('news.target_group.add_members', 'Add Members to Target Group', 'Company News'),
             ('news.target_group.remove_members', 'Remove Members from Target Group', 'Company News'),
             ('news.target_group.view_statistics', 'View Target Group Statistics', 'Company News'),
+            
+            
+             ('timeoff.dashboard.view', 'View Time Off Dashboard', 'Time Off'),
+    ('timeoff.dashboard.view_own', 'View Own Time Off Dashboard', 'Time Off'),
+    ('timeoff.dashboard.view_team', 'View Team Time Off Dashboard', 'Time Off'),
+    ('timeoff.dashboard.view_statistics', 'View Time Off Statistics', 'Time Off'),
+    
+    # Balance Management
+    ('timeoff.balance.view_own', 'View Own Balance', 'Time Off'),
+    ('timeoff.balance.view_all', 'View All Balances', 'Time Off'),
+    ('timeoff.balance.update', 'Update Employee Balance', 'Time Off'),
+    ('timeoff.balance.reset', 'Reset Monthly Balances', 'Time Off'),
+   
+    
+    # Request Management - View
+    ('timeoff.request.view_own', 'View Own Time Off Requests', 'Time Off'),
+    ('timeoff.request.view_team', 'View Team Time Off Requests', 'Time Off'),
+    ('timeoff.request.view_all', 'View All Time Off Requests', 'Time Off'),
+    
+    # Request Management - Create/Update
+    ('timeoff.request.create_own', 'Create Own Time Off Request', 'Time Off'),
+    ('timeoff.request.create_for_employee', 'Create Time Off Request for Employee', 'Time Off'),
+    ('timeoff.request.update_own', 'Update Own Time Off Request', 'Time Off'),
+    ('timeoff.request.delete_own', 'Delete Own Time Off Request', 'Time Off'),
+    
+    # Request Management - Actions
+    ('timeoff.request.cancel_own', 'Cancel Own Time Off Request', 'Time Off'),
+    ('timeoff.request.approve_as_manager', 'Approve as Line Manager', 'Time Off'),
+    ('timeoff.request.approve_as_hr', 'Approve as HR', 'Time Off'),
+    ('timeoff.request.reject_as_manager', 'Reject as Line Manager', 'Time Off'),
+    
+
+    
+    # Settings Management
+    ('timeoff.settings.view', 'View Time Off Settings', 'Time Off'),
+    ('timeoff.settings.update', 'Update Time Off Settings', 'Time Off'),
+    ('timeoff.settings.manage_hr_emails', 'Manage HR Notification Emails', 'Time Off'),
+    
+    # Activity & History
+    ('timeoff.activity.view_own', 'View Own Activity History', 'Time Off'),
+    ('timeoff.activity.view_all', 'View All Activity History', 'Time Off'),
         ]
         
         created_count = 0

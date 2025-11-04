@@ -43,7 +43,20 @@ from .role_views import RoleViewSet, PermissionViewSet, EmployeeRoleViewSet
 
 router = DefaultRouter()
 
+from .timeoff_views import (
+    TimeOffBalanceViewSet,
+    TimeOffRequestViewSet,
+    TimeOffSettingsViewSet,
+    TimeOffActivityViewSet,
+    TimeOffDashboardViewSet
+)
 
+router = DefaultRouter()
+router.register(r'timeoff/balances', TimeOffBalanceViewSet, basename='timeoff-balance')
+router.register(r'timeoff/requests', TimeOffRequestViewSet, basename='timeoff-request')
+router.register(r'timeoff/settings', TimeOffSettingsViewSet, basename='timeoff-settings')
+router.register(r'timeoff/activity', TimeOffActivityViewSet, basename='timeoff-activity')
+router.register(r'timeoff/dashboard', TimeOffDashboardViewSet, basename='timeoff-dashboard')
 # ==================== ROLE & PERMISSION MANAGEMENT ====================
 router.register(r'roles', RoleViewSet, basename='role')
 router.register(r'permissions', PermissionViewSet, basename='permission')
