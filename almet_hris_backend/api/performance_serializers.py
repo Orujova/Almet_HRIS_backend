@@ -158,7 +158,7 @@ class EmployeePerformanceListSerializer(serializers.ModelSerializer):
     """Simplified serializer for list view"""
     employee_name = serializers.CharField(source='employee.full_name', read_only=True)
     employee_id = serializers.CharField(source='employee.employee_id', read_only=True)
-    employee_job_title = serializers.CharField(source='employee.job_title', read_only=True)
+    employee_position_group = serializers.CharField(source='employee.position_group', read_only=True)
     employee_department = serializers.CharField(source='employee.department.name', read_only=True)
     year = serializers.IntegerField(source='performance_year.year', read_only=True)
     
@@ -178,7 +178,7 @@ class EmployeePerformanceListSerializer(serializers.ModelSerializer):
     class Meta:
         model = EmployeePerformance
         fields = [
-            'id', 'employee', 'employee_name', 'employee_id', 'employee_job_title', 'employee_department',
+            'id', 'employee', 'employee_name', 'employee_id', 'employee_position_group', 'employee_department',
             'year', 'current_period',  # ADDED
             'approval_status',
             'objectives_count', 'competencies_count',
@@ -226,7 +226,7 @@ class EmployeePerformanceDetailSerializer(serializers.ModelSerializer):
     """Detailed serializer with all related data"""
     employee_name = serializers.CharField(source='employee.full_name', read_only=True)
     employee_id = serializers.CharField(source='employee.employee_id', read_only=True)
-    employee_job_title = serializers.CharField(source='employee.job_title', read_only=True)
+  
     employee_department = serializers.CharField(source='employee.department.name', read_only=True)
     employee_position_group = serializers.CharField(
         source='employee.position_group.get_name_display', 
@@ -493,14 +493,14 @@ class PerformanceInitializeSerializer(serializers.Serializer):
         # Check if position behavioral assessment exists
         position_assessment = PositionBehavioralAssessment.objects.filter(
             position_group=employee.position_group,
-            job_title=employee.job_title,
+     
             grade_levels__contains=[employee.grading_level],
             is_active=True
         ).first()
         
         if not position_assessment:
             raise serializers.ValidationError(
-                f"No behavioral assessment template found for {employee.job_title} "
+                f"No behavioral assessment template found for {employee.position_group} "
                 f"(Grade {employee.grading_level}). Please create position assessment first."
             )
         

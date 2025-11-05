@@ -1615,7 +1615,7 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
             ['Employee Name:', performance.employee.full_name],
             ['Employee ID:', performance.employee.employee_id],
             ['Department:', performance.employee.department.name if performance.employee.department else 'N/A'],
-            ['Position:', performance.employee.job_title],
+            ['Position:', performance.employee.position_group],
             ['Manager:', performance.employee.line_manager.full_name if performance.employee.line_manager else 'N/A'],
             ['Performance Year:', str(performance.performance_year.year)],
             ['Status:', performance.get_approval_status_display()],
