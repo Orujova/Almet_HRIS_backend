@@ -704,7 +704,7 @@ class TimeOffRequestViewSet(viewsets.ModelViewSet):
                 logger.error("No Graph token for notification")
                 return
             
-            subject = f"[TIME OFF REQUEST] {request_obj.employee.full_name} - {request_obj.date}"
+            subject = f"[TIME OFF] {request_obj.employee.full_name} - {request_obj.date}"
             
             body_html = f"""
             <div style="font-family: Arial, sans-serif; max-width: 600px;">
@@ -758,7 +758,7 @@ class TimeOffRequestViewSet(viewsets.ModelViewSet):
                 logger.error("No Graph token for HR notification")
                 return
             
-            subject = f"[TIME OFF APPROVED] {request_obj.employee.full_name} - {request_obj.date}"
+            subject = f"[TIME OFF] {request_obj.employee.full_name} - {request_obj.date}"
             
             body_html = f"""
             <div style="font-family: Arial, sans-serif; max-width: 600px;">
@@ -823,12 +823,12 @@ class TimeOffRequestViewSet(viewsets.ModelViewSet):
                 return
             
             if notification_type == 'approved':
-                subject = f"[TIME OFF APPROVED] Your request for {request_obj.date}"
+                subject = f"[TIME OFF] Your request for {request_obj.date}"
                 color = "#10B981"
                 status_text = "APPROVED ✓"
                 message = "Your time off request has been approved by your line manager."
             else:  # rejected
-                subject = f"[TIME OFF REJECTED] Your request for {request_obj.date}"
+                subject = f"[TIME OFF] Your request for {request_obj.date}"
                 color = "#EF4444"
                 status_text = "REJECTED ✗"
                 message = "Your time off request has been rejected by your line manager."

@@ -1052,7 +1052,14 @@ class EmployeeDetailSerializer(serializers.ModelSerializer):
         return periods.get(period, period)
     
     def _calculate_available_actions(self, performance, current_user, employee_obj):
-        """Calculate which actions are available for this performance"""
+        """
+        ✅ FIXED: Calculate which actions are available for THIS USER viewing THIS PERFORMANCE
+        
+        CRITICAL RULES:
+        - If viewing OWN performance → show ONLY employee actions
+        - If viewing TEAM MEMBER's performance → show ONLY manager actions
+        - Admin can see both, but context-aware
+        """
         if not current_user:
             return []
         
@@ -1065,102 +1072,72 @@ class EmployeeDetailSerializer(serializers.ModelSerializer):
             is_admin = is_admin_user(current_user)
             is_own = False
             is_manager = False
+            current_emp = None
             
             try:
                 current_emp = Employee.objects.get(user=current_user, is_deleted=False)
                 is_own = (performance.employee == current_emp)
                 is_manager = (performance.employee.line_manager == current_emp)
-            except:
+            except Employee.DoesNotExist:
                 pass
             
             current_period = performance.performance_year.get_current_period()
             
-            # GOAL SETTING PERIOD
-            if current_period == 'GOAL_SETTING':
-                if (is_own or is_admin) and performance.objectives_employee_submitted and not performance.objectives_employee_approved:
-                    actions.append({
-                        'type': 'approve_objectives_employee',
-                        'label': 'Approve Objectives',
-                        'description': 'Review and approve your objectives',
-                        'icon': 'CheckSquare',
-                        'color': 'green',
-                        'priority': 'high',
-                        'requires_comment': False,
-                    })
+            # ==================== EMPLOYEE ACTIONS (viewing OWN performance) ====================
+            if is_own:
+                # GOAL SETTING - Employee Approval
+                if current_period == 'GOAL_SETTING':
+                    if performance.objectives_employee_submitted and not performance.objectives_employee_approved:
+                        actions.append({
+                            'type': 'approve_objectives_employee',
+                            'label': 'Approve Objectives',
+                            'description': 'Review and approve your objectives',
+                            'icon': 'CheckSquare',
+                            'color': 'green',
+                            'priority': 'high',
+                            'requires_comment': False,
+                        })
+                    
+                    # Request Clarification (only if submitted)
+                    if performance.objectives_employee_submitted and performance.approval_status != 'NEED_CLARIFICATION':
+                        actions.append({
+                            'type': 'request_clarification',
+                            'label': 'Request Clarification',
+                            'description': 'Request changes to objectives',
+                            'icon': 'MessageSquare',
+                            'color': 'orange',
+                            'priority': 'medium',
+                            'requires_comment': True,
+                        })
                 
-                if (is_manager or is_admin) and performance.objectives_employee_approved and not performance.objectives_manager_approved:
-                    actions.append({
-                        'type': 'approve_objectives_manager',
-                        'label': 'Manager Final Approval',
-                        'description': 'Give final approval to objectives',
-                        'icon': 'CheckSquare',
-                        'color': 'green',
-                        'priority': 'high',
-                        'requires_comment': False,
-                    })
+                # MID-YEAR - Employee Self-Review
+                if current_period == 'MID_YEAR_REVIEW':
+                    if not performance.mid_year_employee_submitted:
+                        actions.append({
+                            'type': 'submit_mid_year_employee',
+                            'label': 'Submit Mid-Year Review',
+                            'description': 'Submit your mid-year self-assessment',
+                            'icon': 'Send',
+                            'color': 'blue',
+                            'priority': 'high',
+                            'requires_comment': True,
+                        })
                 
-                if (is_own or is_admin) and performance.objectives_employee_submitted:
-                    actions.append({
-                        'type': 'request_clarification',
-                        'label': 'Request Clarification',
-                        'description': 'Request changes to objectives',
-                        'icon': 'MessageSquare',
-                        'color': 'orange',
-                        'priority': 'medium',
-                        'requires_comment': True,
-                    })
-            
-            # MID-YEAR PERIOD
-            if current_period == 'MID_YEAR_REVIEW':
-                if (is_own or is_admin) and not performance.mid_year_employee_submitted:
-                    actions.append({
-                        'type': 'submit_mid_year_employee',
-                        'label': 'Submit Mid-Year Review',
-                        'description': 'Submit your mid-year self-assessment',
-                        'icon': 'Send',
-                        'color': 'blue',
-                        'priority': 'high',
-                        'requires_comment': True,
-                    })
+                # END-YEAR - Employee Self-Review
+                if current_period == 'END_YEAR_REVIEW':
+                    if not performance.end_year_employee_submitted:
+                        actions.append({
+                            'type': 'submit_end_year_employee',
+                            'label': 'Submit End-Year Review',
+                            'description': 'Submit your end-year self-assessment',
+                            'icon': 'Send',
+                            'color': 'purple',
+                            'priority': 'critical',
+                            'requires_comment': True,
+                        })
                 
-                if (is_manager or is_admin) and performance.mid_year_employee_submitted and not performance.mid_year_completed:
-                    actions.append({
-                        'type': 'submit_mid_year_manager',
-                        'label': 'Complete Mid-Year',
-                        'description': 'Complete mid-year assessment',
-                        'icon': 'Send',
-                        'color': 'blue',
-                        'priority': 'high',
-                        'requires_comment': True,
-                    })
-            
-            # END-YEAR PERIOD
-            if current_period == 'END_YEAR_REVIEW':
-                if (is_own or is_admin) and not performance.end_year_employee_submitted:
-                    actions.append({
-                        'type': 'submit_end_year_employee',
-                        'label': 'Submit End-Year Review',
-                        'description': 'Submit your end-year self-assessment',
-                        'icon': 'Send',
-                        'color': 'purple',
-                        'priority': 'critical',
-                        'requires_comment': True,
-                    })
-                
-                if (is_manager or is_admin) and not performance.end_year_completed:
-                    actions.append({
-                        'type': 'complete_end_year',
-                        'label': 'Complete End-Year',
-                        'description': 'Finalize all ratings and scores',
-                        'icon': 'CheckCircle',
-                        'color': 'purple',
-                        'priority': 'critical',
-                        'requires_comment': True,
-                    })
-            
-            # FINAL APPROVALS
-            if performance.end_year_completed:
-                if (is_own or is_admin) and not performance.final_employee_approved:
+                # FINAL APPROVAL - Employee
+                if performance.end_year_completed and not performance.final_employee_approved:
                     actions.append({
                         'type': 'approve_final_employee',
                         'label': 'Approve Final Results',
@@ -1170,26 +1147,73 @@ class EmployeeDetailSerializer(serializers.ModelSerializer):
                         'priority': 'critical',
                         'requires_comment': False,
                     })
+            
+            # ==================== MANAGER ACTIONS (viewing TEAM MEMBER's performance) ====================
+            elif is_manager or (is_admin and not is_own):
+                # ✅ CRITICAL: Only show manager actions when viewing SOMEONE ELSE's performance
                 
-                if (is_manager or is_admin) and performance.final_employee_approved and not performance.final_manager_approved:
-                    actions.append({
-                        'type': 'approve_final_manager',
-                        'label': 'Publish Performance',
-                        'description': 'Final approval and publish results',
-                        'icon': 'CheckSquare',
-                        'color': 'green',
-                        'priority': 'critical',
-                        'requires_comment': False,
-                    })
+                # GOAL SETTING - Manager Final Approval
+                if current_period == 'GOAL_SETTING':
+                    if performance.objectives_employee_approved and not performance.objectives_manager_approved:
+                        actions.append({
+                            'type': 'approve_objectives_manager',
+                            'label': 'Manager Final Approval',
+                            'description': 'Give final approval to objectives',
+                            'icon': 'CheckSquare',
+                            'color': 'green',
+                            'priority': 'high',
+                            'requires_comment': False,
+                        })
+                
+                # MID-YEAR - Manager Complete Review
+                if current_period == 'MID_YEAR_REVIEW':
+                    if performance.mid_year_employee_submitted and not performance.mid_year_completed:
+                        actions.append({
+                            'type': 'submit_mid_year_manager',
+                            'label': 'Complete Mid-Year',
+                            'description': 'Complete mid-year assessment',
+                            'icon': 'Send',
+                            'color': 'blue',
+                            'priority': 'high',
+                            'requires_comment': True,
+                        })
+                
+                # END-YEAR - Manager Complete
+                if current_period == 'END_YEAR_REVIEW':
+                    if not performance.end_year_completed:
+                        actions.append({
+                            'type': 'complete_end_year',
+                            'label': 'Complete End-Year',
+                            'description': 'Finalize all ratings and scores',
+                            'icon': 'CheckCircle',
+                            'color': 'purple',
+                            'priority': 'critical',
+                            'requires_comment': True,
+                        })
+                
+                # FINAL APPROVAL - Manager Publish
+                if performance.end_year_completed:
+                    if performance.final_employee_approved and not performance.final_manager_approved:
+                        actions.append({
+                            'type': 'approve_final_manager',
+                            'label': 'Publish Performance',
+                            'description': 'Final approval and publish results',
+                            'icon': 'CheckSquare',
+                            'color': 'green',
+                            'priority': 'critical',
+                            'requires_comment': False,
+                        })
+            
+            # ==================== ADMIN OVERRIDE (if needed) ====================
+            # Admin can perform both employee and manager actions
+            # But when viewing OWN performance, show ONLY employee actions
+            # When viewing TEAM performance, show ONLY manager actions
             
             return actions
             
         except Exception as e:
             logger.error(f"Error calculating actions: {e}")
             return []
-    
-    # ==================== PERFORMANCE PUBLIC METHODS ====================
-    
     def get_performance_records(self, obj):
         """Get all performance records with real-time data"""
         try:

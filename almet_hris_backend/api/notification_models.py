@@ -31,7 +31,11 @@ class NotificationSettings(models.Model):
         default=5,
         help_text="Delay in minutes between retry attempts"
     )
-    
+    timeoff_subject_prefix = models.CharField(
+        max_length=50, 
+        default='[TIME OFF]',
+        help_text="Subject prefix for time off emails"
+    )
     # Business Trip specific settings
     business_trip_subject_prefix = models.CharField(
         max_length=50, 

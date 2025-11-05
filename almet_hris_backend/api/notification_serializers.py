@@ -10,11 +10,14 @@ class NotificationSettingsSerializer(serializers.ModelSerializer):
         model = NotificationSettings
         fields = [
             'id', 
-           
             'enable_email_notifications', 'email_retry_attempts',
-            'email_retry_delay_minutes', 'business_trip_subject_prefix',
-            'is_active', 'created_at', 'updated_at','vacation_subject_prefix'       'company_news_subject_prefix',  # ✅ NEW
-            'company_news_sender_email',    # ✅ NEW
+            'email_retry_delay_minutes', 
+            'business_trip_subject_prefix',
+            'vacation_subject_prefix',
+            'timeoff_subject_prefix',  # ✅ NEW
+            'company_news_subject_prefix',
+            'company_news_sender_email',
+            'is_active', 'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
 

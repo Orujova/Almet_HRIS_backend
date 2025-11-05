@@ -84,6 +84,7 @@ class EmailTemplateViewSet(viewsets.ModelViewSet):
 
 # ==================== OUTLOOK INTEGRATION WITH SENT/RECEIVED ====================
 
+
 @swagger_auto_schema(
     method='get',
     operation_description="Get emails from Outlook with sent/received separation",
@@ -94,19 +95,19 @@ class EmailTemplateViewSet(viewsets.ModelViewSet):
             'module',
             openapi.IN_QUERY,
             type=openapi.TYPE_STRING,
-            enum=['business_trip', 'vacation', 'all'],
+            enum=['business_trip', 'vacation', 'timeoff', 'company_news', 'all'],  # ✅ timeoff əlavə edildi
             required=False,
             default='all',
-            description='Filter by module: business_trip, vacation, or all'
+            description='Filter by module'
         ),
         openapi.Parameter(
             'email_type',
             openapi.IN_QUERY,
             type=openapi.TYPE_STRING,
-             enum=['business_trip', 'vacation', 'company_news', 'all'],
+            enum=['received', 'sent', 'all'],
             required=False,
             default='all',
-            description='📬 Email type: received (gələn), sent (göndərilən), or all'
+            description='📬 Email type: received, sent, or all'
         ),
         openapi.Parameter(
             'top',
@@ -122,11 +123,10 @@ class EmailTemplateViewSet(viewsets.ModelViewSet):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_outlook_emails(request):
-
     try:
         # Get parameters
         module = request.GET.get('module', 'all')
-        email_type = request.GET.get('email_type', 'all')  # NEW: received/sent/all
+        email_type = request.GET.get('email_type', 'all')
         top = int(request.GET.get('top', 50))
         
         # Get Graph token
@@ -173,18 +173,20 @@ def get_outlook_emails(request):
             subject_filters = [settings.business_trip_subject_prefix]
         elif module == 'vacation':
             subject_filters = [settings.vacation_subject_prefix]
-        elif module == 'company_news':  # ✅ NEW
+        elif module == 'timeoff':  # ✅ NEW
+            subject_filters = [getattr(settings, 'timeoff_subject_prefix', '[TIME OFF]')]
+        elif module == 'company_news':
             subject_filters = [settings.company_news_subject_prefix]
         else:  # all
             subject_filters = [
                 settings.business_trip_subject_prefix,
                 settings.vacation_subject_prefix,
-                settings.company_news_subject_prefix  # ✅ NEW
+                getattr(settings, 'timeoff_subject_prefix', '[TIME OFF]'),  # ✅ NEW
+                settings.company_news_subject_prefix
             ]
         
         # Fetch emails for each subject filter
         for subject_filter in subject_filters:
-            
             emails_by_type = notification_service.get_all_emails_by_type(
                 access_token=graph_token,
                 subject_filter=subject_filter,
@@ -266,7 +268,7 @@ def get_outlook_emails(request):
 
 
 def format_email(email, settings, email_type):
-
+    """Format email with module detection - TIME OFF SUPPORT"""
     subject = email.get('subject', '')
     
     # Determine module from subject
@@ -275,18 +277,18 @@ def format_email(email, settings, email_type):
         email_module = 'business_trip'
     elif settings.vacation_subject_prefix in subject:
         email_module = 'vacation'
-    elif settings.company_news_subject_prefix in subject:  # ✅ NEW
-        email_module = 'company_news'    
+    elif getattr(settings, 'timeoff_subject_prefix', '[TIME OFF]') in subject:  # ✅ NEW
+        email_module = 'timeoff'
+    elif settings.company_news_subject_prefix in subject:
+        email_module = 'company_news'
     
     # Get sender/recipient info based on type
     if email_type == 'SENT':
-        # For sent emails, show recipient
         to_recipients = email.get('toRecipients', [])
         primary_recipient = to_recipients[0] if to_recipients else {}
         contact_email = primary_recipient.get('emailAddress', {}).get('address')
         contact_name = primary_recipient.get('emailAddress', {}).get('name')
     else:
-        # For received emails, show sender
         from_info = email.get('from', {}).get('emailAddress', {})
         contact_email = from_info.get('address')
         contact_name = from_info.get('name')
@@ -295,8 +297,8 @@ def format_email(email, settings, email_type):
         'id': email.get('id'),
         'subject': subject,
         'module': email_module,
-        'email_type': email_type,  # 📬 NEW: SENT or RECEIVED
-        'contact_email': contact_email,  # Sender (received) or Recipient (sent)
+        'email_type': email_type,
+        'contact_email': contact_email,
         'contact_name': contact_name,
         'received_at': email.get('receivedDateTime'),
         'sent_at': email.get('sentDateTime'),
@@ -318,7 +320,7 @@ def format_email(email, settings, email_type):
         properties={
             'module': openapi.Schema(
                 type=openapi.TYPE_STRING,
-                enum=['business_trip', 'vacation', 'all'],
+                enum=['business_trip', 'vacation', 'timeoff', 'company_news', 'all'],  # ✅ timeoff əlavə edildi
                 description='Module filter'
             ),
             'email_type': openapi.Schema(
@@ -337,7 +339,7 @@ def mark_all_emails_read(request):
     """Mark all emails as read filtered by module and type"""
     try:
         module = request.data.get('module', 'all')
-        email_type = request.data.get('email_type', 'all')  # NEW: received/sent/all
+        email_type = request.data.get('email_type', 'all')
         
         graph_token = get_graph_token_from_request(request)
         
@@ -357,6 +359,10 @@ def mark_all_emails_read(request):
             subject_filters.append(settings.business_trip_subject_prefix)
         if module in ['vacation', 'all']:
             subject_filters.append(settings.vacation_subject_prefix)
+        if module in ['timeoff', 'all']:  # ✅ NEW
+            subject_filters.append(getattr(settings, 'timeoff_subject_prefix', '[TIME OFF]'))
+        if module in ['company_news', 'all']:
+            subject_filters.append(settings.company_news_subject_prefix)
         
         # Collect unread emails
         for subject_filter in subject_filters:
@@ -409,7 +415,6 @@ def mark_all_emails_read(request):
         return Response({
             'error': str(e)
         }, status=status.HTTP_400_BAD_REQUEST)
-
 
 @swagger_auto_schema(
     method='post',

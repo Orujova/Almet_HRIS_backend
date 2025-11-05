@@ -164,20 +164,51 @@ class EvaluationScale(models.Model):
     
     class Meta:
         db_table = 'performance_evaluation_scales'
-        ordering = ['-range_min']
+        ordering = ['-range_min']  # ✅ Highest range first
     
     def __str__(self):
         return f"{self.name} ({self.range_min}-{self.range_max}%)"
     
     @classmethod
     def get_rating_by_percentage(cls, percentage):
+        """
+        ✅ FIXED: Find the correct rating scale for given percentage
+        Handles edge cases and percentages above 100%
+        """
         try:
-            return cls.objects.filter(
+            # Convert to float to handle Decimal types
+            percentage = float(percentage)
+            
+            # ✅ FIX: Handle percentages above 100% - assign highest grade
+            if percentage > 100:
+                # Get the scale with highest range_max
+                highest_scale = cls.objects.filter(is_active=True).order_by('-range_max').first()
+                if highest_scale:
+                    return highest_scale
+            
+            # Normal lookup: find scale where percentage falls within range
+            rating = cls.objects.filter(
                 range_min__lte=percentage,
                 range_max__gte=percentage,
                 is_active=True
             ).first()
-        except:
+            
+            # ✅ Fallback: If no exact match, find closest scale
+            if not rating:
+                # Try to find the closest scale
+                all_scales = cls.objects.filter(is_active=True).order_by('-range_min')
+                
+                for scale in all_scales:
+                    if percentage >= scale.range_min:
+                        return scale
+                
+                # If still not found, return lowest scale
+                return all_scales.last()
+            
+            return rating
+            
+        except Exception as e:
+            logger.error(f"❌ Error getting rating for {percentage}%: {e}")
             return None
 
 
@@ -316,9 +347,11 @@ class EmployeePerformance(models.Model):
     def calculate_scores(self):
         """
         Calculate all performance scores
-        NEW LOGIC: Behavioral competencies hesablanması assessment sistemindən götürülür
+        ✅ FIXED: Proper final rating calculation with better logging
         """
         from collections import defaultdict
+        
+        logger.info(f"📊 Starting score calculation for performance {self.id}")
         
         eval_target = EvaluationTargetConfig.get_active_config()
         weight_config = PerformanceWeightConfig.objects.filter(
@@ -326,34 +359,40 @@ class EmployeePerformance(models.Model):
         ).first()
         
         if not weight_config:
-            logger.warning(f"No weight config for {self.employee.position_group}")
+            logger.warning(f"❌ No weight config for {self.employee.position_group}")
             return
         
-        # ========== OBJECTIVES CALCULATION (unchanged) ==========
+        # ========== OBJECTIVES CALCULATION ==========
         objectives = self.objectives.filter(is_cancelled=False)
-        obj_score = sum([
-            (obj.end_year_rating.value if obj.end_year_rating else 0) * 
-            (obj.weight / 100) * 
-            (eval_target.objective_score_target / 5)
-            for obj in objectives
-        ])
+        obj_score = 0
+        
+        for obj in objectives:
+            if obj.calculated_score and obj.calculated_score > 0:
+                obj_score += float(obj.calculated_score)
         
         self.total_objectives_score = round(obj_score, 2)
         self.objectives_percentage = round(
             (self.total_objectives_score / eval_target.objective_score_target) * 100, 2
         ) if eval_target.objective_score_target > 0 else 0
         
-        # ========== BEHAVIORAL COMPETENCIES CALCULATION (NEW LOGIC) ==========
-        competencies = self.competency_ratings.select_related('behavioral_competency__group').all()
+        logger.info(f"✅ Objectives: {self.total_objectives_score}/{eval_target.objective_score_target} = {self.objectives_percentage}%")
         
-        # Group ratings by competency group
+        # ========== BEHAVIORAL COMPETENCIES CALCULATION ==========
+        competencies = self.competency_ratings.select_related(
+            'behavioral_competency__group',
+            'end_year_rating'
+        ).all()
+        
         group_data = defaultdict(lambda: {'required_total': 0, 'actual_total': 0, 'count': 0})
         total_required = 0
         total_actual = 0
         
         for comp in competencies:
+            if not comp.behavioral_competency:
+                continue
+                
             group_name = comp.behavioral_competency.group.name
-            required = comp.required_level
+            required = comp.required_level or 0
             actual = comp.end_year_rating.value if comp.end_year_rating else 0
             
             group_data[group_name]['required_total'] += required
@@ -366,11 +405,7 @@ class EmployeePerformance(models.Model):
         # Calculate group-level scores
         group_scores = {}
         for group_name, data in group_data.items():
-            if data['required_total'] > 0:
-                percentage = (data['actual_total'] / data['required_total']) * 100
-            else:
-                percentage = 0
-            
+            percentage = (data['actual_total'] / data['required_total'] * 100) if data['required_total'] > 0 else 0
             letter_grade = LetterGradeMapping.get_letter_grade(percentage)
             
             group_scores[group_name] = {
@@ -382,17 +417,12 @@ class EmployeePerformance(models.Model):
             }
         
         self.group_competency_scores = group_scores
-        
-        # Overall competency scores
         self.total_competencies_required_score = total_required
         self.total_competencies_actual_score = total_actual
-        
-        if total_required > 0:
-            self.competencies_percentage = round((total_actual / total_required) * 100, 2)
-        else:
-            self.competencies_percentage = 0
-        
+        self.competencies_percentage = round((total_actual / total_required * 100), 2) if total_required > 0 else 0
         self.competencies_letter_grade = LetterGradeMapping.get_letter_grade(self.competencies_percentage)
+        
+        logger.info(f"✅ Competencies: {total_actual}/{total_required} = {self.competencies_percentage}% - {self.competencies_letter_grade}")
         
         # ========== OVERALL WEIGHTED CALCULATION ==========
         self.overall_weighted_percentage = round(
@@ -401,13 +431,25 @@ class EmployeePerformance(models.Model):
             2
         )
         
-        # Determine final rating using EvaluationScale
+        logger.info(f"📊 Overall Weighted: {self.overall_weighted_percentage}% (Obj: {self.objectives_percentage}% × {weight_config.objectives_weight}% + Comp: {self.competencies_percentage}% × {weight_config.competencies_weight}%)")
+        
+        # ✅ FIX: Determine final rating using FIXED EvaluationScale
         rating = EvaluationScale.get_rating_by_percentage(self.overall_weighted_percentage)
-        self.final_rating = rating.name if rating else 'N/A'
+        
+        if rating:
+            self.final_rating = rating.name
+            logger.info(f"✅ Final rating: {self.final_rating} (range: {rating.range_min}-{rating.range_max}%)")
+        else:
+            self.final_rating = 'N/A'
+            logger.error(f"❌ No rating found for {self.overall_weighted_percentage}%")
+            
+            # Debug all scales
+            all_scales = EvaluationScale.objects.filter(is_active=True).order_by('-range_min')
+            logger.error(f"Available scales: {[(s.name, s.range_min, s.range_max) for s in all_scales]}")
         
         self.save()
-
-
+        
+        logger.info(f"✅ Final scores saved - Rating: {self.final_rating}, Overall: {self.overall_weighted_percentage}%")
 class EmployeeObjective(models.Model):
     """Employee Objectives - UNCHANGED"""
     performance = models.ForeignKey(EmployeePerformance, on_delete=models.CASCADE, related_name='objectives')
