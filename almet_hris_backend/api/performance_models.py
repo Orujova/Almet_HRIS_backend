@@ -46,10 +46,13 @@ class PerformanceYear(models.Model):
         return f"Performance Year {self.year}"
     
     def get_current_period(self):
-        """Get current performance period"""
+        """✅ FIXED: Get current performance period"""
         today = timezone.now().date()
         
-        if self.goal_setting_employee_start <= today <= self.goal_setting_manager_end:
+        # ✅ FIX: Check periods in correct order (manager THEN employee)
+        if self.goal_setting_manager_start <= today <= self.goal_setting_manager_end:
+            return 'GOAL_SETTING'
+        elif self.goal_setting_employee_start <= today <= self.goal_setting_employee_end:
             return 'GOAL_SETTING'
         elif self.mid_year_review_start <= today <= self.mid_year_review_end:
             return 'MID_YEAR_REVIEW'
@@ -58,10 +61,20 @@ class PerformanceYear(models.Model):
         else:
             return 'CLOSED'
     
-    def is_goal_setting_active(self):
-        """Check if goal setting period is active"""
+    def is_goal_setting_manager_active(self):
+        """Check if MANAGER goal setting period is active"""
         today = timezone.now().date()
-        return self.goal_setting_employee_start <= today <= self.goal_setting_manager_end
+        return self.goal_setting_manager_start <= today <= self.goal_setting_manager_end
+    
+    def is_goal_setting_employee_active(self):
+        """Check if EMPLOYEE review period is active"""
+        today = timezone.now().date()
+        return self.goal_setting_employee_start <= today <= self.goal_setting_employee_end
+    
+    def is_goal_setting_active(self):
+        """Check if ANY goal setting period is active (manager OR employee)"""
+        today = timezone.now().date()
+        return self.goal_setting_manager_start <= today <= self.goal_setting_employee_end
     
     def is_mid_year_active(self):
         """Check if mid-year review period is active"""

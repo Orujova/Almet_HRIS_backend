@@ -1084,9 +1084,10 @@ class EmployeeDetailSerializer(serializers.ModelSerializer):
             current_period = performance.performance_year.get_current_period()
             
             # ==================== EMPLOYEE ACTIONS (viewing OWN performance) ====================
-            if is_own:
+            if is_own or is_admin:
                 # GOAL SETTING - Employee Approval
                 if current_period == 'GOAL_SETTING':
+                    # ✅ FIX: Only show if manager submitted AND employee NOT approved yet
                     if performance.objectives_employee_submitted and not performance.objectives_employee_approved:
                         actions.append({
                             'type': 'approve_objectives_employee',
@@ -1154,16 +1155,7 @@ class EmployeeDetailSerializer(serializers.ModelSerializer):
                 
                 # GOAL SETTING - Manager Final Approval
                 if current_period == 'GOAL_SETTING':
-                    if performance.objectives_employee_approved and not performance.objectives_manager_approved:
-                        actions.append({
-                            'type': 'approve_objectives_manager',
-                            'label': 'Manager Final Approval',
-                            'description': 'Give final approval to objectives',
-                            'icon': 'CheckSquare',
-                            'color': 'green',
-                            'priority': 'high',
-                            'requires_comment': False,
-                        })
+                    pass 
                 
                 # MID-YEAR - Manager Complete Review
                 if current_period == 'MID_YEAR_REVIEW':
@@ -1214,6 +1206,8 @@ class EmployeeDetailSerializer(serializers.ModelSerializer):
         except Exception as e:
             logger.error(f"Error calculating actions: {e}")
             return []
+    
+    
     def get_performance_records(self, obj):
         """Get all performance records with real-time data"""
         try:
@@ -1256,9 +1250,10 @@ class EmployeeDetailSerializer(serializers.ModelSerializer):
                             'employee_submitted_date': perf.objectives_employee_submitted_date,
                             'employee_approved': perf.objectives_employee_approved,
                             'employee_approved_date': perf.objectives_employee_approved_date,
-                            'manager_approved': perf.objectives_manager_approved,
+                            'manager_approved': perf.objectives_manager_approved,  # ✅ Auto-set when employee approves
                             'manager_approved_date': perf.objectives_manager_approved_date,
-                            'is_complete': perf.objectives_manager_approved,
+                            'is_complete': perf.objectives_employee_approved,  # ✅ Complete when employee approves
+                            'description': 'Employee approval is final - no manager approval needed'  # ✅ NEW
                         },
                         'mid_year': {
                             'employee_submitted': perf.mid_year_employee_submitted,

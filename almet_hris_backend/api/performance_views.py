@@ -235,7 +235,9 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
     # ============ HELPER METHODS ============
     
     def _check_edit_access(self, performance):
-   
+        """
+        ✅ FIXED: Check if user can edit performance
+        """
         if is_admin_user(self.request.user):
             return True
         
@@ -249,12 +251,26 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
             
             # ✅ FIX #2: Manager can edit if clarification needed (to respond)
             if performance.employee.line_manager == employee:
+                # Always allow if clarification needed
                 if performance.approval_status == 'NEED_CLARIFICATION':
                     return True
                 
-                # Manager can also edit during goal setting period
-                if performance.performance_year.is_goal_setting_active():
-                    return True
+                # ✅ Manager can ONLY edit during MANAGER period AND before submit
+                if performance.performance_year.is_goal_setting_manager_active():
+                    if not performance.objectives_employee_submitted:
+                        return True
+                    else:
+                        return Response({
+                            'error': 'Objectives already submitted',
+                            'message': 'Cannot edit after submission unless employee requests clarification'
+                        }, status=status.HTTP_403_FORBIDDEN)
+                
+                # After manager period ends
+                return Response({
+                    'error': 'Manager goal setting period has ended',
+                    'message': f'Manager period was {performance.performance_year.goal_setting_manager_start} to {performance.performance_year.goal_setting_manager_end}',
+                    'current_date': timezone.now().date()
+                }, status=status.HTTP_403_FORBIDDEN)
         
         except Employee.DoesNotExist:
             pass
@@ -291,7 +307,7 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'])
     def approve_objectives_employee(self, request, pk=None):
         """
-        ✅ FIXED: STEP 2 - Employee approves objectives (first approval)
+        ✅ FIXED: Employee approval is FINAL - no manager approval needed
         """
         performance = self.get_object()
         
@@ -306,6 +322,14 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
             except Employee.DoesNotExist:
                 return Response({'error': 'Employee profile not found'}, status=status.HTTP_404_NOT_FOUND)
         
+        # Check if EMPLOYEE period is active
+        if not performance.performance_year.is_goal_setting_employee_active():
+            return Response({
+                'error': 'Employee review period is not active',
+                'message': f'Employee can only review objectives between {performance.performance_year.goal_setting_employee_start} and {performance.performance_year.goal_setting_employee_end}',
+                'current_date': timezone.now().date(),
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
         # Check if already approved
         if performance.objectives_employee_approved:
             return Response({
@@ -319,79 +343,26 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
                 'message': 'Waiting for manager to submit objectives'
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        # ✅ Employee approves
+        # ✅ FIX: Employee approval is FINAL
         performance.objectives_employee_approved = True
         performance.objectives_employee_approved_date = timezone.now()
-        performance.approval_status = 'PENDING_MANAGER_APPROVAL'
+        performance.objectives_manager_approved = True  # ✅ Auto-approve for manager
+        performance.objectives_manager_approved_date = timezone.now()
+        performance.approval_status = 'APPROVED'  # ✅ Status is APPROVED immediately
         performance.save()
         
         PerformanceActivityLog.objects.create(
             performance=performance,
             action='OBJECTIVES_APPROVED_EMPLOYEE',
-            description=f'Employee approved objectives',
+            description=f'Employee approved objectives - Goal setting complete',
             performed_by=request.user
         )
         
         return Response({
             'success': True, 
-            'message': 'Objectives approved by employee',
-            'next_step': 'Waiting for final manager approval',
-            'approval_status': performance.approval_status
-        })
-    
-    @action(detail=True, methods=['post'])
-    def approve_objectives_manager(self, request, pk=None):
-        """
-        ✅ FIXED: STEP 3 - Manager final approval (after employee approves)
-        """
-        performance = self.get_object()
-        
-        # Admin or manager check
-        if not is_admin_user(request.user):
-            try:
-                manager_employee = Employee.objects.get(user=request.user)
-                if performance.employee.line_manager != manager_employee:
-                    has_manage = check_performance_permission(request.user, 'performance.manage_team')[0] or \
-                                check_performance_permission(request.user, 'performance.manage_all')[0]
-                    
-                    if not has_manage:
-                        return Response({
-                            'error': 'You are not authorized to approve these objectives'
-                        }, status=status.HTTP_403_FORBIDDEN)
-            except Employee.DoesNotExist:
-                return Response({'error': 'Employee profile not found'}, status=status.HTTP_404_NOT_FOUND)
-        
-        # Check if already approved
-        if performance.objectives_manager_approved:
-            return Response({
-                'error': 'Objectives already approved by manager'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        # ✅ Employee must approve FIRST
-        if not performance.objectives_employee_approved:
-            return Response({
-                'error': 'Employee must approve objectives first',
-                'message': 'Waiting for employee approval'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        # ✅ Manager final approval
-        performance.objectives_manager_approved = True
-        performance.objectives_manager_approved_date = timezone.now()
-        performance.approval_status = 'APPROVED'
-        performance.save()
-        
-        PerformanceActivityLog.objects.create(
-            performance=performance,
-            action='OBJECTIVES_APPROVED_MANAGER',
-            description=f'Manager final approved objectives',
-            performed_by=request.user
-        )
-        
-        return Response({
-            'success': True, 
-            'message': 'Objectives approved by manager - Goals are now finalized',
-            'next_step': 'Objectives fully approved. Wait for mid-year review period.',
-            'approval_status': performance.approval_status
+            'message': 'Objectives approved successfully!',
+            'next_step': 'Goal setting complete. Wait for mid-year review period.',  # ✅ Fixed
+            'approval_status': 'APPROVED'
         })
     
     @action(detail=True, methods=['post'])
@@ -408,6 +379,14 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
                     }, status=status.HTTP_403_FORBIDDEN)
             except Employee.DoesNotExist:
                 return Response({'error': 'Employee profile not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        # ✅ FIX: Check if EMPLOYEE period is active
+        if not performance.performance_year.is_goal_setting_employee_active():
+            return Response({
+                'error': 'Employee review period is not active',
+                'message': f'Can only request clarification between {performance.performance_year.goal_setting_employee_start} and {performance.performance_year.goal_setting_employee_end}',
+                'current_date': timezone.now().date()
+            }, status=status.HTTP_400_BAD_REQUEST)
         
         comment_text = request.data.get('comment')
         comment_type = request.data.get('comment_type', 'OBJECTIVE_CLARIFICATION')
@@ -458,6 +437,7 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
             'comment': PerformanceCommentSerializer(comment).data,
             'section': section
         })
+
     
     @action(detail=True, methods=['post'])
     def cancel_objective(self, request, pk=None):
@@ -1172,10 +1152,15 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
                 return Response({'error': 'Employee profile not found'}, status=status.HTTP_404_NOT_FOUND)
         
         # Check period
-        if not performance.performance_year.is_goal_setting_active():
+        if not performance.performance_year.is_goal_setting_manager_active():
             return Response({
-                'error': 'Goal setting period is not active',
-                'current_period': performance.performance_year.get_current_period()
+                'error': 'Manager goal setting period has ended',
+                'message': f'Manager can only submit objectives between {performance.performance_year.goal_setting_manager_start} and {performance.performance_year.goal_setting_manager_end}',
+                'current_date': timezone.now().date(),
+                'manager_period': {
+                    'start': performance.performance_year.goal_setting_manager_start,
+                    'end': performance.performance_year.goal_setting_manager_end
+                }
             }, status=status.HTTP_400_BAD_REQUEST)
         
         # ✅ FIX #1: Get objectives data from request (if provided) and save them first
