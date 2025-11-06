@@ -1308,13 +1308,218 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
     })   
     # ==================== COMPETENCIES ENDPOINTS ====================
     
+    def _sync_to_behavioral_assessment(self, employee, competencies_data):
+        """
+        ✅ FIXED: Sync to BOTH DRAFT and COMPLETED behavioral assessments
+        Convert PerformanceEvaluationScale to integer level for behavioral assessment
+        """
+        from .competency_assessment_models import EmployeeBehavioralAssessment
+        from .performance_models import EvaluationScale
+        
+        try:
+            # Find active behavioral assessment
+            assessment = EmployeeBehavioralAssessment.objects.filter(
+                employee=employee,
+                status__in=['DRAFT', 'COMPLETED']
+            ).order_by('-assessment_date').first()
+            
+            if not assessment:
+                logger.info(f"ℹ️ No behavioral assessment found for {employee.full_name}")
+                return {
+                    'synced': False, 
+                    'reason': 'no_assessment',
+                    'message': 'No behavioral assessment found'
+                }
+            
+            # Store original status
+            original_status = assessment.status
+            was_completed = original_status == 'COMPLETED'
+            
+            synced_count = 0
+            updated_count = 0
+            
+            for comp_data in competencies_data:
+                behavioral_competency_id = comp_data['behavioral_competency_id']
+                actual_level_scale_id = comp_data['actual_level_id']  # ✅ This is PerformanceEvaluationScale ID
+                notes = comp_data['notes']
+                
+                # Skip if no rating provided
+                if not actual_level_scale_id:
+                    continue
+                
+                # ✅ Convert PerformanceEvaluationScale ID to integer level
+                try:
+                    performance_scale = EvaluationScale.objects.get(id=actual_level_scale_id)
+                    actual_level_value = int(performance_scale.value)  # Get the integer value (1-10)
+                except EvaluationScale.DoesNotExist:
+                    logger.warning(f"⚠️ PerformanceEvaluationScale ID {actual_level_scale_id} not found, skipping")
+                    continue
+                except (ValueError, TypeError):
+                    logger.warning(f"⚠️ Invalid scale value for ID {actual_level_scale_id}, skipping")
+                    continue
+                
+                # Update or create rating in behavioral assessment
+                rating, created = assessment.competency_ratings.update_or_create(
+                    behavioral_competency_id=behavioral_competency_id,
+                    defaults={
+                        'actual_level': actual_level_value,  # ✅ Use actual_level (integer)
+                        'notes': notes
+                    }
+                )
+                
+                if created:
+                    synced_count += 1
+                else:
+                    updated_count += 1
+            
+            # Recalculate assessment scores
+            assessment.calculate_scores()
+            assessment.save()
+            
+            log_message = (
+                f"Synced from Performance to Behavioral Assessment: "
+                f"{synced_count} created, {updated_count} updated"
+            )
+            
+            if was_completed:
+                log_message += " (assessment was COMPLETED - updated anyway)"
+            
+            logger.info(f"✅ {log_message} - Assessment ID: {assessment.id}")
+            
+            return {
+                'synced': True,
+                'assessment_id': str(assessment.id),
+                'assessment_status': original_status,
+                'was_completed': was_completed,
+                'synced_count': synced_count,
+                'updated_count': updated_count,
+                'message': f'Synced {synced_count + updated_count} ratings to {original_status} behavioral assessment'
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ Error syncing to behavioral assessment: {e}")
+            import traceback
+            traceback.print_exc()
+            
+            return {
+                'synced': False,
+                'reason': 'error',
+                'error': str(e),
+                'message': f'Error syncing: {str(e)}'
+            }
+    
+    def _sync_to_leadership_assessment(self, employee, competencies_data):
+        """
+        ✅ NEW: Sync to leadership assessment instead of behavioral
+        Convert PerformanceEvaluationScale to integer level
+        """
+        from .competency_assessment_models import EmployeeLeadershipAssessment
+        from .performance_models import EvaluationScale
+        
+        try:
+            # Find active leadership assessment
+            assessment = EmployeeLeadershipAssessment.objects.filter(
+                employee=employee,
+                status__in=['DRAFT', 'COMPLETED']
+            ).order_by('-assessment_date').first()
+            
+            if not assessment:
+                logger.info(f"ℹ️ No leadership assessment found for {employee.full_name}")
+                return {
+                    'synced': False, 
+                    'reason': 'no_assessment',
+                    'message': 'No leadership assessment found'
+                }
+            
+            # Store original status
+            original_status = assessment.status
+            was_completed = original_status == 'COMPLETED'
+            
+            synced_count = 0
+            updated_count = 0
+            
+            for comp_data in competencies_data:
+                leadership_item_id = comp_data['leadership_item_id']
+                actual_level_scale_id = comp_data['actual_level_id']  # ✅ PerformanceEvaluationScale ID
+                notes = comp_data['notes']
+                
+                # Skip if no rating provided
+                if not actual_level_scale_id:
+                    continue
+                
+                # ✅ Convert PerformanceEvaluationScale ID to integer level
+                try:
+                    performance_scale = EvaluationScale.objects.get(id=actual_level_scale_id)
+                    actual_level_value = int(performance_scale.value)
+                except EvaluationScale.DoesNotExist:
+                    logger.warning(f"⚠️ PerformanceEvaluationScale ID {actual_level_scale_id} not found, skipping")
+                    continue
+                except (ValueError, TypeError):
+                    logger.warning(f"⚠️ Invalid scale value for ID {actual_level_scale_id}, skipping")
+                    continue
+                
+                # Update or create rating in leadership assessment
+                rating, created = assessment.competency_ratings.update_or_create(
+                    leadership_item_id=leadership_item_id,
+                    defaults={
+                        'actual_level': actual_level_value,  # ✅ Integer value
+                        'notes': notes
+                    }
+                )
+                
+                if created:
+                    synced_count += 1
+                else:
+                    updated_count += 1
+            
+            # Recalculate assessment scores
+            assessment.calculate_scores()
+            assessment.save()
+            
+            log_message = (
+                f"Synced from Performance to Leadership Assessment: "
+                f"{synced_count} created, {updated_count} updated"
+            )
+            
+            if was_completed:
+                log_message += " (assessment was COMPLETED - updated anyway)"
+            
+            logger.info(f"✅ {log_message} - Assessment ID: {assessment.id}")
+            
+            return {
+                'synced': True,
+                'assessment_id': str(assessment.id),
+                'assessment_status': original_status,
+                'was_completed': was_completed,
+                'synced_count': synced_count,
+                'updated_count': updated_count,
+                'message': f'Synced {synced_count + updated_count} ratings to {original_status} leadership assessment'
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ Error syncing to leadership assessment: {e}")
+            import traceback
+            traceback.print_exc()
+            
+            return {
+                'synced': False,
+                'reason': 'error',
+                'error': str(e),
+                'message': f'Error syncing: {str(e)}'
+            }
+    
+    
     @action(detail=True, methods=['post'])
     def save_competencies_draft(self, request, pk=None):
         """
-        ✅ Save competencies draft - works in END_YEAR period
+        ✅ Save competencies AND sync to appropriate assessment (behavioral OR leadership)
         """
         performance = self.get_object()
-        self._check_edit_access(performance)
+        
+        # Check edit access
+        access_check = self._check_edit_access(performance)
+        if access_check is not True:
+            return access_check
         
         competencies_data = request.data.get('competencies', [])
         
@@ -1322,12 +1527,13 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
         
         with transaction.atomic():
             updated_count = 0
+            sync_data = []
+            is_leadership = False
+            
             for comp_data in competencies_data:
                 comp_id = comp_data.get('id')
                 end_year_rating = comp_data.get('end_year_rating')
                 notes = comp_data.get('notes', '')
-                
-                logger.info(f"📦 Processing competency ID={comp_id}, rating={end_year_rating}")
                 
                 if comp_id:
                     competency = EmployeeCompetencyRating.objects.filter(
@@ -1336,40 +1542,69 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
                     ).first()
                     
                     if competency:
-                        # ✅ Save rating (can be null)
+                        # Save rating
                         competency.end_year_rating_id = end_year_rating
                         competency.notes = notes
                         competency.save()
                         updated_count += 1
                         
-                        actual_val = competency.actual_value
-                        logger.info(f"✅ Updated competency {comp_id}: {competency.behavioral_competency.name[:30]}, rating={end_year_rating}, actual={actual_val}")
+                        # ✅ Collect for sync - check type
+                        if competency.leadership_item:
+                            is_leadership = True
+                            sync_data.append({
+                                'leadership_item_id': competency.leadership_item_id,
+                                'actual_level_id': end_year_rating,
+                                'notes': notes
+                            })
+                        elif competency.behavioral_competency:
+                            sync_data.append({
+                                'behavioral_competency_id': competency.behavioral_competency_id,
+                                'actual_level_id': end_year_rating,
+                                'notes': notes
+                            })
             
             # Update timestamp
             performance.competencies_draft_saved_date = timezone.now()
             performance.save()
             
-            # ✅ Recalculate scores
+            # ✅ Sync to appropriate assessment type
+            if is_leadership:
+                sync_result = self._sync_to_leadership_assessment(
+                    performance.employee,
+                    sync_data
+                )
+            else:
+                sync_result = self._sync_to_behavioral_assessment(
+                    performance.employee,
+                    sync_data
+                )
+            
+            # Recalculate scores
             performance.calculate_scores()
             
             PerformanceActivityLog.objects.create(
                 performance=performance,
                 action='COMPETENCIES_DRAFT_SAVED',
                 description=f'Competencies saved: {updated_count} updated',
-                performed_by=request.user
+                performed_by=request.user,
+                metadata={
+                    'synced_to_assessment': sync_result['synced'],
+                    'assessment_type': 'LEADERSHIP' if is_leadership else 'BEHAVIORAL',
+                    'assessment_id': sync_result.get('assessment_id')
+                }
             )
             
-            logger.info(f"✅ Draft saved - Score: {performance.total_competencies_actual_score}/{performance.total_competencies_required_score}, Grade: {performance.competencies_letter_grade}")
+            logger.info(f"✅ Draft saved - Type: {'LEADERSHIP' if is_leadership else 'BEHAVIORAL'}, Synced: {sync_result['synced']}")
         
         return Response({
             'success': True,
             'message': 'Competencies draft saved successfully',
             'updated_count': updated_count,
+            'assessment_type': 'LEADERSHIP' if is_leadership else 'BEHAVIORAL',
+            'synced_to_assessment': sync_result['synced'],
+            'sync_result': sync_result,
             'competencies_percentage': str(performance.competencies_percentage),
             'competencies_letter_grade': performance.competencies_letter_grade,
-            'total_competencies_required_score': performance.total_competencies_required_score,
-            'total_competencies_actual_score': performance.total_competencies_actual_score,
-            'group_competency_scores': performance.group_competency_scores,
             'overall_weighted_percentage': str(performance.overall_weighted_percentage),
             'final_rating': performance.final_rating
         })
@@ -1378,27 +1613,89 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'])
     def submit_competencies(self, request, pk=None):
         """
-        ✅ Submit competencies (END_YEAR period)
+        ✅ Submit competencies AND sync to appropriate assessment
         """
         performance = self.get_object()
-        self._check_edit_access(performance)
         
-        # Validate all have ratings
-        missing = performance.competency_ratings.filter(end_year_rating__isnull=True)
+        access_check = self._check_edit_access(performance)
+        if access_check is not True:
+            return access_check
         
-        if missing.exists():
-            missing_count = missing.count()
-            missing_names = list(missing.values_list('behavioral_competency__name', flat=True))
-            
-            logger.warning(f"❌ {missing_count} competencies missing ratings")
-            
-            return Response({
-                'error': f'{missing_count} competencies missing ratings',
-                'message': 'Please rate all competencies before submitting',
-                'missing_competencies': missing_names
-            }, status=status.HTTP_400_BAD_REQUEST)
+        competencies_data = request.data.get('competencies', [])
         
         with transaction.atomic():
+            sync_data = []
+            is_leadership = False
+            
+            # ✅ Save competencies if provided
+            if competencies_data:
+                for comp_data in competencies_data:
+                    comp_id = comp_data.get('id')
+                    end_year_rating = comp_data.get('end_year_rating')
+                    notes = comp_data.get('notes', '')
+                    
+                    if comp_id:
+                        competency = EmployeeCompetencyRating.objects.filter(
+                            id=comp_id,
+                            performance=performance
+                        ).first()
+                        
+                        if competency:
+                            competency.end_year_rating_id = end_year_rating
+                            competency.notes = notes
+                            competency.save()
+                            
+                            # Collect for sync
+                            if competency.leadership_item:
+                                is_leadership = True
+                                sync_data.append({
+                                    'leadership_item_id': competency.leadership_item_id,
+                                    'actual_level_id': end_year_rating,
+                                    'notes': notes
+                                })
+                            elif competency.behavioral_competency:
+                                sync_data.append({
+                                    'behavioral_competency_id': competency.behavioral_competency_id,
+                                    'actual_level_id': end_year_rating,
+                                    'notes': notes
+                                })
+            
+            # Validate all have ratings
+            missing = performance.competency_ratings.filter(end_year_rating__isnull=True)
+            
+            if missing.exists():
+                missing_count = missing.count()
+                return Response({
+                    'error': f'{missing_count} competencies missing ratings',
+                    'message': 'Please rate all competencies before submitting'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # ✅ Sync to appropriate assessment
+            if is_leadership:
+                sync_result = self._sync_to_leadership_assessment(
+                    performance.employee,
+                    sync_data if sync_data else [
+                        {
+                            'leadership_item_id': c.leadership_item_id,
+                            'actual_level_id': c.end_year_rating_id,
+                            'notes': c.notes or ''
+                        }
+                        for c in performance.competency_ratings.all() if c.leadership_item
+                    ]
+                )
+            else:
+                sync_result = self._sync_to_behavioral_assessment(
+                    performance.employee,
+                    sync_data if sync_data else [
+                        {
+                            'behavioral_competency_id': c.behavioral_competency_id,
+                            'actual_level_id': c.end_year_rating_id,
+                            'notes': c.notes or ''
+                        }
+                        for c in performance.competency_ratings.all() if c.behavioral_competency
+                    ]
+                )
+            
             # Recalculate
             performance.calculate_scores()
             
@@ -1410,26 +1707,30 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
             PerformanceActivityLog.objects.create(
                 performance=performance,
                 action='COMPETENCIES_SUBMITTED',
-                description=f'Competencies submitted - {performance.total_competencies_actual_score}/{performance.total_competencies_required_score} ({performance.competencies_percentage}% - {performance.competencies_letter_grade})',
-                performed_by=request.user
+                description=f'Competencies submitted - {performance.competencies_letter_grade}',
+                performed_by=request.user,
+                metadata={
+                    'assessment_type': 'LEADERSHIP' if is_leadership else 'BEHAVIORAL',
+                    'synced_to_assessment': sync_result['synced'],
+                    'assessment_id': sync_result.get('assessment_id')
+                }
             )
             
-            logger.info(f"✅ Competencies submitted successfully")
+            logger.info(f"✅ Competencies submitted - Type: {'LEADERSHIP' if is_leadership else 'BEHAVIORAL'}, Synced: {sync_result['synced']}")
         
         return Response({
             'success': True,
             'message': 'Competencies submitted successfully',
+            'assessment_type': 'LEADERSHIP' if is_leadership else 'BEHAVIORAL',
+            'synced_to_assessment': sync_result['synced'],
+            'sync_result': sync_result,
             'scores': {
-                'required': performance.total_competencies_required_score,
-                'actual': performance.total_competencies_actual_score,
                 'percentage': str(performance.competencies_percentage),
                 'letter_grade': performance.competencies_letter_grade,
-                'group_scores': performance.group_competency_scores,
-                'overall_weighted_percentage': str(performance.overall_weighted_percentage),
+                'overall_percentage': str(performance.overall_weighted_percentage),
                 'final_rating': performance.final_rating
             }
         })
-    
     
     # ==================== CALCULATE SCORES ====================
     

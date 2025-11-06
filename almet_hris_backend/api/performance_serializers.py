@@ -91,21 +91,61 @@ class EmployeeObjectiveSerializer(serializers.ModelSerializer):
 
 class EmployeeCompetencyRatingSerializer(serializers.ModelSerializer):
     """
-    UPDATED: Now uses Behavioral Competency instead of Skill
+    UPDATED: Shows both behavioral and leadership competency data
     """
-    competency_name = serializers.CharField(source='behavioral_competency.name', read_only=True)
-    competency_group = serializers.CharField(source='behavioral_competency.group.name', read_only=True)
+    # ✅ Behavioral fields
+    competency_name = serializers.SerializerMethodField()
+    competency_group = serializers.SerializerMethodField()
+    
+    # ✅ Leadership fields
+    main_group_name = serializers.SerializerMethodField()
+    child_group_name = serializers.SerializerMethodField()
+    
+    # Common fields
     end_year_rating_name = serializers.CharField(source='end_year_rating.name', read_only=True, allow_null=True)
     end_year_rating_value = serializers.IntegerField(source='end_year_rating.value', read_only=True, allow_null=True)
-    
-    # NEW: Show required level and gap
     actual_value = serializers.IntegerField(read_only=True)
     gap = serializers.IntegerField(read_only=True)
     gap_status = serializers.SerializerMethodField()
+    competency_type = serializers.SerializerMethodField()
     
     class Meta:
         model = EmployeeCompetencyRating
         fields = '__all__'
+    
+    def get_competency_name(self, obj):
+        """Get competency name (works for both types)"""
+        if obj.leadership_item:
+            return obj.leadership_item.name
+        elif obj.behavioral_competency:
+            return obj.behavioral_competency.name
+        return 'N/A'
+    
+    def get_competency_group(self, obj):
+        """Get group name (behavioral only)"""
+        if obj.behavioral_competency:
+            return obj.behavioral_competency.group.name
+        return None
+    
+    def get_main_group_name(self, obj):
+        """Get main group name (leadership only)"""
+        if obj.leadership_item:
+            return obj.leadership_item.child_group.main_group.name
+        return None
+    
+    def get_child_group_name(self, obj):
+        """Get child group name (leadership only)"""
+        if obj.leadership_item:
+            return obj.leadership_item.child_group.name
+        return None
+    
+    def get_competency_type(self, obj):
+        """Get competency type"""
+        if obj.leadership_item:
+            return 'LEADERSHIP'
+        elif obj.behavioral_competency:
+            return 'BEHAVIORAL'
+        return 'UNKNOWN'
     
     def get_gap_status(self, obj):
         """Get gap status: exceeds, meets, below"""
@@ -261,10 +301,34 @@ class EmployeePerformanceDetailSerializer(serializers.ModelSerializer):
     
     # Group competency scores breakdown
     group_scores_breakdown = serializers.SerializerMethodField()
+    metadata = serializers.SerializerMethodField()
     
     class Meta:
         model = EmployeePerformance
         fields = '__all__'
+    
+    def get_metadata(self, obj):
+        """Get metadata about competency type"""
+        first_rating = obj.competency_ratings.first()
+        
+        if not first_rating:
+            return {
+                'has_competencies': False,
+                'competency_type': None,
+                'is_leadership_position': False
+            }
+        
+        is_leadership = bool(first_rating.leadership_item)
+        
+        return {
+            'has_competencies': True,
+            'competency_type': 'LEADERSHIP' if is_leadership else 'BEHAVIORAL',
+            'is_leadership_position': is_leadership,
+            'had_existing_ratings': obj.competency_ratings.filter(
+                end_year_rating__isnull=False
+            ).exists()
+        }
+  
     
     def get_clarification_comments(self, obj):
         """
@@ -477,40 +541,98 @@ class PerformanceDashboardSerializer(serializers.Serializer):
     pending_employee_approval = serializers.IntegerField()
     pending_manager_approval = serializers.IntegerField()
     need_clarification = serializers.IntegerField()
-
-
+# api/performance_serializers.py
 class PerformanceInitializeSerializer(serializers.Serializer):
     """
-    UPDATED: Initializing performance now loads behavioral competencies from position assessment
+    ✅ UPDATED: Load leadership OR behavioral competencies based on position
+    Also loads existing ratings from employee assessments if available
     """
     employee = serializers.PrimaryKeyRelatedField(queryset=Employee.objects.all())
     performance_year = serializers.PrimaryKeyRelatedField(queryset=PerformanceYear.objects.all())
     
     def validate(self, data):
-        """Validate that employee has a matching position behavioral assessment"""
+        """Validate and determine which assessment type to use"""
         employee = data['employee']
         
-        # Check if position behavioral assessment exists
-        position_assessment = PositionBehavioralAssessment.objects.filter(
-            position_group=employee.position_group,
-     
-            grade_levels__contains=[employee.grading_level],
-            is_active=True
-        ).first()
+        # ✅ Check if this is a leadership position
+        position_name = employee.position_group.name.upper().replace('_', ' ').strip()
         
-        if not position_assessment:
-            raise serializers.ValidationError(
-                f"No behavioral assessment template found for {employee.position_group} "
-                f"(Grade {employee.grading_level}). Please create position assessment first."
-            )
+        leadership_keywords = [
+            'MANAGER',
+            'VICE CHAIRMAN',
+            'VICE_CHAIRMAN',
+            'DIRECTOR',
+            'VICE',
+            'HOD'
+        ]
+        
+        is_leadership = any(
+            keyword.upper().replace('_', ' ') == position_name or
+            keyword.upper() == employee.position_group.name.upper()
+            for keyword in leadership_keywords
+        )
+        
+        data['is_leadership_position'] = is_leadership
+        
+        if is_leadership:
+            # ✅ Load leadership position assessment
+            from .competency_assessment_models import PositionLeadershipAssessment
+            
+            position_assessment = PositionLeadershipAssessment.objects.filter(
+                position_group=employee.position_group,
+                grade_levels__contains=[employee.grading_level],
+                is_active=True
+            ).first()
+            
+            if not position_assessment:
+                raise serializers.ValidationError(
+                    f"No leadership assessment template found for {employee.position_group.get_name_display()} "
+                    f"(Grade {employee.grading_level}). Please create position assessment first."
+                )
+            
+            # ✅ Get employee leadership assessment if exists
+            from .competency_assessment_models import EmployeeLeadershipAssessment
+            
+            employee_assessment = EmployeeLeadershipAssessment.objects.filter(
+                employee=employee,
+                status__in=['DRAFT', 'COMPLETED']
+            ).order_by('-assessment_date').first()
+            
+        else:
+            # ✅ Load behavioral position assessment
+            from .competency_assessment_models import PositionBehavioralAssessment
+            
+            position_assessment = PositionBehavioralAssessment.objects.filter(
+                position_group=employee.position_group,
+                grade_levels__contains=[employee.grading_level],
+                is_active=True
+            ).first()
+            
+            if not position_assessment:
+                raise serializers.ValidationError(
+                    f"No behavioral assessment template found for {employee.position_group.get_name_display()} "
+                    f"(Grade {employee.grading_level}). Please create position assessment first."
+                )
+            
+            # ✅ Get employee behavioral assessment if exists
+            from .competency_assessment_models import EmployeeBehavioralAssessment
+            
+            employee_assessment = EmployeeBehavioralAssessment.objects.filter(
+                employee=employee,
+                status__in=['DRAFT', 'COMPLETED']
+            ).order_by('-assessment_date').first()
         
         data['position_assessment'] = position_assessment
+        data['employee_assessment'] = employee_assessment
+        
         return data
     
     def create(self, validated_data):
         employee = validated_data['employee']
         performance_year = validated_data['performance_year']
         position_assessment = validated_data['position_assessment']
+        employee_assessment = validated_data.get('employee_assessment')
+        is_leadership = validated_data['is_leadership_position']
         
         # Check if already exists
         existing = EmployeePerformance.objects.filter(
@@ -529,22 +651,92 @@ class PerformanceInitializeSerializer(serializers.Serializer):
                 approval_status='DRAFT'
             )
             
-            # Auto-create competency ratings from position behavioral assessment
-            position_ratings = position_assessment.competency_ratings.all()
-            for position_rating in position_ratings:
-                EmployeeCompetencyRating.objects.create(
-                    performance=performance,
-                    behavioral_competency=position_rating.behavioral_competency,
-                    required_level=position_rating.required_level
+            # ✅ CRITICAL: Use PerformanceEvaluationScale instead of BehavioralScale
+            from .performance_models import EvaluationScale
+            
+            if is_leadership:
+                # ✅ LEADERSHIP: Load from PositionLeadershipAssessment
+                position_ratings = position_assessment.competency_ratings.all()
+                
+                for position_rating in position_ratings:
+                    # Find existing rating from employee assessment
+                    existing_rating = None
+                    end_year_rating_id = None
+                    
+                    if employee_assessment:
+                        existing_rating = employee_assessment.competency_ratings.filter(
+                            leadership_item=position_rating.leadership_item
+                        ).first()
+                        
+                        # ✅ Convert actual_level (integer) to PerformanceEvaluationScale ID
+                        if existing_rating and existing_rating.actual_level:
+                            performance_scale = EvaluationScale.objects.filter(
+                                value=existing_rating.actual_level,
+                                is_active=True
+                            ).first()
+                            if performance_scale:
+                                end_year_rating_id = performance_scale.id
+                    
+                    # ✅ Create competency rating with leadership_item
+                    EmployeeCompetencyRating.objects.create(
+                        performance=performance,
+                        leadership_item=position_rating.leadership_item,  # ✅ Leadership item
+                        required_level=position_rating.required_level,
+                        end_year_rating_id=end_year_rating_id,
+                        notes=existing_rating.notes if existing_rating else ''
+                    )
+                
+                log_message = (
+                    f'Performance initialized with {position_ratings.count()} leadership competencies'
+                )
+                
+            else:
+                # ✅ BEHAVIORAL: Load from PositionBehavioralAssessment (existing code)
+                position_ratings = position_assessment.competency_ratings.all()
+                
+                for position_rating in position_ratings:
+                    existing_rating = None
+                    end_year_rating_id = None
+                    
+                    if employee_assessment:
+                        existing_rating = employee_assessment.competency_ratings.filter(
+                            behavioral_competency=position_rating.behavioral_competency
+                        ).first()
+                        
+                        if existing_rating and existing_rating.actual_level:
+                            performance_scale = EvaluationScale.objects.filter(
+                                value=existing_rating.actual_level,
+                                is_active=True
+                            ).first()
+                            if performance_scale:
+                                end_year_rating_id = performance_scale.id
+                    
+                    EmployeeCompetencyRating.objects.create(
+                        performance=performance,
+                        behavioral_competency=position_rating.behavioral_competency,
+                        required_level=position_rating.required_level,
+                        end_year_rating_id=end_year_rating_id,
+                        notes=existing_rating.notes if existing_rating else ''
+                    )
+                
+                log_message = (
+                    f'Performance initialized with {position_ratings.count()} behavioral competencies'
                 )
             
-            # Log activity
+            if employee_assessment:
+                log_message += f' (loaded existing ratings from assessment {employee_assessment.id})'
+            
             PerformanceActivityLog.objects.create(
                 performance=performance,
                 action='INITIALIZED',
-                description=f'Performance initialized for {employee.full_name} - {performance_year.year} '
-                           f'with {position_ratings.count()} behavioral competencies from position assessment',
-                performed_by=self.context.get('request').user if self.context.get('request') else None
+                description=log_message,
+                performed_by=self.context.get('request').user if self.context.get('request') else None,
+                metadata={
+                    'position_assessment_id': str(position_assessment.id),
+                    'employee_assessment_id': str(employee_assessment.id) if employee_assessment else None,
+                    'had_existing_ratings': bool(employee_assessment),
+                    'is_leadership_position': is_leadership
+                }
             )
             
             return performance

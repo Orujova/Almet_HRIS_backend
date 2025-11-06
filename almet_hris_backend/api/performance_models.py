@@ -9,7 +9,7 @@ import uuid
 import logging
 
 from .models import Employee, PositionGroup, Department
-from .competency_models import BehavioralCompetency, SkillGroup  # CHANGED: Skill removed, BehavioralCompetency added
+from .competency_models import BehavioralCompetency, LeadershipCompetencyItem 
 from .competency_assessment_models import LetterGradeMapping  # ADDED
 
 logger = logging.getLogger(__name__)
@@ -515,28 +515,38 @@ class EmployeeObjective(models.Model):
 
 class EmployeeCompetencyRating(models.Model):
     """
-    Employee Behavioral Competency Ratings
-    CHANGED: Uses Behavioral Competencies instead of Core Skills
+    Employee Competency Ratings - SUPPORTS BOTH BEHAVIORAL AND LEADERSHIP
     """
     performance = models.ForeignKey(
         EmployeePerformance, 
         on_delete=models.CASCADE, 
         related_name='competency_ratings'
     )
+    
+    # ✅ BEHAVIORAL COMPETENCY (for non-leadership positions)
     behavioral_competency = models.ForeignKey(
         BehavioralCompetency, 
         on_delete=models.CASCADE,
         help_text="Behavioral competency from competency framework",
-        null=True,  # Müvəqqəti
-        blank=True  # Müvəqqəti
+        null=True,
+        blank=True
     )
     
-    # ADDED: Required level from position assessment
+    # ✅ LEADERSHIP COMPETENCY (for leadership positions)
+    leadership_item = models.ForeignKey(
+        LeadershipCompetencyItem,
+        on_delete=models.CASCADE,
+        help_text="Leadership competency item for senior positions",
+        null=True,
+        blank=True
+    )
+    
+    # Required level from position assessment
     required_level = models.IntegerField(
         validators=[MinValueValidator(1), MaxValueValidator(10)],
-        help_text="Required level from position behavioral assessment",
-        null=True,  # Müvəqqəti
-        blank=True  # Müvəqqəti
+        help_text="Required level from position assessment",
+        null=True,
+        blank=True
     )
     
     # End-year rating (actual performance)
@@ -556,12 +566,28 @@ class EmployeeCompetencyRating(models.Model):
     
     class Meta:
         db_table = 'employee_competency_ratings'
-        # unique_together-i indi şərh edin
-        # unique_together = ['performance', 'behavioral_competency']
-        ordering = ['behavioral_competency__group', 'behavioral_competency__name']
+        ordering = ['id']  # ✅ Simple ordering
+    
+    def clean(self):
+        """Validate that either behavioral_competency OR leadership_item is set, not both"""
+        if not self.behavioral_competency and not self.leadership_item:
+            raise ValidationError("Either behavioral_competency or leadership_item must be set")
+        
+        if self.behavioral_competency and self.leadership_item:
+            raise ValidationError("Cannot set both behavioral_competency and leadership_item")
+    
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
     
     def __str__(self):
-        comp_name = self.behavioral_competency.name if self.behavioral_competency else 'N/A'
+        if self.leadership_item:
+            comp_name = self.leadership_item.name[:50]
+        elif self.behavioral_competency:
+            comp_name = self.behavioral_competency.name
+        else:
+            comp_name = 'N/A'
+        
         return f"{self.performance.employee.full_name} - {comp_name}"
     
     @property
@@ -575,7 +601,24 @@ class EmployeeCompetencyRating(models.Model):
         if self.required_level:
             return self.actual_value - self.required_level
         return 0
-
+    
+    @property
+    def competency_name(self):
+        """Get competency name (works for both types)"""
+        if self.leadership_item:
+            return self.leadership_item.name
+        elif self.behavioral_competency:
+            return self.behavioral_competency.name
+        return 'N/A'
+    
+    @property
+    def competency_type(self):
+        """Get competency type"""
+        if self.leadership_item:
+            return 'LEADERSHIP'
+        elif self.behavioral_competency:
+            return 'BEHAVIORAL'
+        return 'UNKNOWN'
 class DevelopmentNeed(models.Model):
     """
     Development Needs
