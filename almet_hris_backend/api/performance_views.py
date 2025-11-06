@@ -237,6 +237,7 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
     def _check_edit_access(self, performance):
         """
         ✅ FIXED: Check if user can edit performance
+        Allows editing when clarification is requested even if period ended
         """
         if is_admin_user(self.request.user):
             return True
@@ -244,18 +245,25 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
         try:
             employee = Employee.objects.get(user=self.request.user)
             
+            # ✅ FIX #1: Check if clarification requested - allow edit
+            if performance.approval_status == 'NEED_CLARIFICATION':
+                # Manager can edit when clarification requested
+                if performance.employee.line_manager == employee:
+                    logger.info(f"✅ Allowing edit - Clarification requested")
+                    return True
+                
+                # Employee can edit their own performance if clarification needed
+                if performance.employee == employee:
+                    return True
+            
             # ✅ FIX #2: Employee can edit their own performance if clarification needed
             if performance.employee == employee:
                 if performance.approval_status == 'NEED_CLARIFICATION':
                     return True
             
-            # ✅ FIX #2: Manager can edit if clarification needed (to respond)
+            # ✅ FIX #3: Manager can ONLY edit during MANAGER period AND before submit
             if performance.employee.line_manager == employee:
-                # Always allow if clarification needed
-                if performance.approval_status == 'NEED_CLARIFICATION':
-                    return True
-                
-                # ✅ Manager can ONLY edit during MANAGER period AND before submit
+                # Check if manager period is active
                 if performance.performance_year.is_goal_setting_manager_active():
                     if not performance.objectives_employee_submitted:
                         return True
@@ -265,11 +273,13 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
                             'message': 'Cannot edit after submission unless employee requests clarification'
                         }, status=status.HTTP_403_FORBIDDEN)
                 
-                # After manager period ends
+                # Manager period ended - only allow if clarification
+                # (already handled above)
                 return Response({
                     'error': 'Manager goal setting period has ended',
                     'message': f'Manager period was {performance.performance_year.goal_setting_manager_start} to {performance.performance_year.goal_setting_manager_end}',
-                    'current_date': timezone.now().date()
+                    'current_date': timezone.now().date(),
+                    'note': 'Can only edit now if employee requests clarification'
                 }, status=status.HTTP_403_FORBIDDEN)
         
         except Employee.DoesNotExist:
@@ -283,6 +293,7 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
             }, status=status.HTTP_403_FORBIDDEN)
         
         return True
+    
     def _create_development_needs(self, performance):
         """Create development needs for low-rated behavioral competencies"""
         low_ratings = performance.competency_ratings.filter(
@@ -1040,9 +1051,14 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
     def save_objectives_draft(self, request, pk=None):
         """
         ✅ Save objectives draft - works in both GOAL_SETTING and END_YEAR periods
+        Also allows saving when clarification is requested
         """
         performance = self.get_object()
-        self._check_edit_access(performance)
+        
+        # ✅ Check edit access
+        access_check = self._check_edit_access(performance)
+        if access_check is not True:
+            return access_check
         
         objectives_data = request.data.get('objectives', [])
         
@@ -1133,7 +1149,7 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'])
     def submit_objectives(self, request, pk=None):
         """
-        ✅ FIX #1: Submit objectives for approval (saves AND submits in one action)
+        ✅ FIX: Submit objectives for approval (allows resubmit during clarification)
         """
         performance = self.get_object()
         
@@ -1151,19 +1167,26 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
             except Employee.DoesNotExist:
                 return Response({'error': 'Employee profile not found'}, status=status.HTTP_404_NOT_FOUND)
         
-        # Check period
-        if not performance.performance_year.is_goal_setting_manager_active():
-            return Response({
-                'error': 'Manager goal setting period has ended',
-                'message': f'Manager can only submit objectives between {performance.performance_year.goal_setting_manager_start} and {performance.performance_year.goal_setting_manager_end}',
-                'current_date': timezone.now().date(),
-                'manager_period': {
-                    'start': performance.performance_year.goal_setting_manager_start,
-                    'end': performance.performance_year.goal_setting_manager_end
-                }
-            }, status=status.HTTP_400_BAD_REQUEST)
+        # ✅ FIX: Check period - allow if clarification requested even if period ended
+        is_clarification = performance.approval_status == 'NEED_CLARIFICATION'
         
-        # ✅ FIX #1: Get objectives data from request (if provided) and save them first
+        if not is_clarification:
+            # Normal case - check if manager period is active
+            if not performance.performance_year.is_goal_setting_manager_active():
+                return Response({
+                    'error': 'Manager goal setting period has ended',
+                    'message': f'Manager can only submit objectives between {performance.performance_year.goal_setting_manager_start} and {performance.performance_year.goal_setting_manager_end}',
+                    'current_date': timezone.now().date(),
+                    'manager_period': {
+                        'start': performance.performance_year.goal_setting_manager_start,
+                        'end': performance.performance_year.goal_setting_manager_end
+                    }
+                }, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            # ✅ Clarification case - allow submit even if period ended
+            logger.info(f"✅ Allowing submit during clarification - Period ended but clarification active")
+        
+        # ✅ Get objectives data from request (if provided) and save them first
         objectives_data = request.data.get('objectives', [])
         
         if objectives_data:
@@ -1238,7 +1261,7 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
                 'error': f'Total objective weights must equal 100% (currently {total_weight}%)'
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        # ✅ Check that all objectives have required fields
+        # Check that all objectives have required fields
         for obj in objectives:
             if not obj.title or not obj.title.strip():
                 return Response({
@@ -1269,16 +1292,20 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
             performance=performance,
             action='OBJECTIVES_SUBMITTED',
             description=log_msg,
-            performed_by=request.user
+            performed_by=request.user,
+            metadata={
+                'was_clarification': was_clarification_needed,
+                'objectives_count': objectives_count
+            }
         )
         
         return Response({
-            'success': True,
-            'message': 'Objectives submitted for employee approval',
-            'next_step': 'Waiting for employee to review and approve',
-            'objectives_count': objectives_count
-        })
-        
+        'success': True,
+        'message': 'Objectives resubmitted successfully - Waiting for employee review' if was_clarification_needed else 'Objectives submitted for employee approval',
+        'next_step': 'Waiting for employee to review and approve',
+        'objectives_count': objectives_count,
+        'was_clarification_response': was_clarification_needed
+    })   
     # ==================== COMPETENCIES ENDPOINTS ====================
     
     @action(detail=True, methods=['post'])
