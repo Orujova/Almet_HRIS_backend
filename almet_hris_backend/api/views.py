@@ -813,7 +813,7 @@ class BusinessFunctionViewSet(viewsets.ModelViewSet):
     search_fields = ['name', 'code']
     ordering = ['code']
 
-# views.py - UPDATED: DepartmentViewSet
+
 
 class DepartmentViewSet(viewsets.ModelViewSet):
     """
@@ -936,8 +936,6 @@ class DepartmentViewSet(viewsets.ModelViewSet):
                 {'error': f'Failed to create department(s): {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-
-# views.py - UPDATED: UnitViewSet
 
 class UnitViewSet(viewsets.ModelViewSet):
     """
@@ -2396,177 +2394,24 @@ class EmployeeViewSet(viewsets.ModelViewSet):
     }
 )
     def update(self, request, *args, **kwargs):
-        """Update an existing employee with optional document and profile photo - FIXED BOOLEAN HANDLING"""
+        """✅ SIMPLIFIED: Let serializer handle everything"""
         try:
-            # Get the employee instance
-            employee = self.get_object()
+            # Get the employee
+            partial = kwargs.pop('partial', False)
+            instance = self.get_object()
             
-            # Log incoming request
-            logger.info(f"Employee update request for {employee.employee_id} from user: {request.user}")
-            logger.info(f"Request data: {list(request.data.keys())}")
+            logger.info(f"Employee update request for {instance.employee_id}")
             
-            # FIXED: Clean all form data comprehensively
-            cleaned_data = self._clean_form_data(dict(request.data))
+            # ✅ FIX: Use serializer's update method - it handles everything
+            serializer = self.get_serializer(instance, data=request.data, partial=True)
+            serializer.is_valid(raise_exception=True)
             
-            # Create serializer for validation with cleaned data
-            serializer = self.get_serializer(employee, data=cleaned_data, partial=True)
+            # Save via serializer (calls serializer's update method)
+            self.perform_update(serializer)
             
-            if not serializer.is_valid():
-                logger.error(f"Employee update validation failed: {serializer.errors}")
-                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            logger.info(f"Employee {instance.employee_id} updated successfully")
             
-            # Manual update process with proper boolean handling
-            with transaction.atomic():
-                # Track changes for logging
-                changes = []
-                
-                # Update user fields if provided
-                user_fields = ['first_name', 'last_name', 'email']
-                user_updated = False
-                
-                for field in user_fields:
-                    if field in cleaned_data:
-                        old_value = getattr(employee.user, field)
-                        new_value = cleaned_data[field]
-                        if old_value != new_value:
-                            setattr(employee.user, field, new_value)
-                            changes.append(f"{field}: {old_value} → {new_value}")
-                            user_updated = True
-                
-                if user_updated:
-                    # Update username to match email if email changed
-                    if 'email' in cleaned_data:
-                        employee.user.username = cleaned_data['email']
-                    employee.user.save()
-                
-                # Update employee fields with cleaned data
-                employee_fields = [
-                    'date_of_birth', 'gender', 'father_name', 'address', 'phone', 'emergency_contact',
-                    'business_function', 'department', 'unit', 'job_function', 'job_title',
-                    'position_group', 'grading_level', 'start_date', 'end_date',
-                    'contract_duration', 'contract_start_date', 'line_manager',
-                    'is_visible_in_org_chart', 'notes'
-                ]
-                
-                for field in employee_fields:
-                    if field in cleaned_data and cleaned_data[field] is not None:
-                        old_value = getattr(employee, field)
-                        new_value = cleaned_data[field]
-                        
-                        # Handle foreign key fields
-                        if field in ['business_function', 'department', 'unit', 'job_function', 'position_group', 'line_manager']:
-                            if new_value:
-                                try:
-                                    # Get the actual object
-                                    model_map = {
-                                        'business_function': BusinessFunction,
-                                        'department': Department,
-                                        'unit': Unit,
-                                        'job_function': JobFunction,
-                                        'position_group': PositionGroup,
-                                        'line_manager': Employee
-                                    }
-                                    new_value = model_map[field].objects.get(id=new_value)
-                                except (ValueError, models.ObjectDoesNotExist):
-                                    logger.warning(f"Invalid {field} ID: {new_value}")
-                                    continue
-                            else:
-                                new_value = None
-                        
-                        # Handle date fields
-                        elif field in ['date_of_birth', 'start_date', 'end_date', 'contract_start_date']:
-                            if new_value and isinstance(new_value, str):
-                                try:
-                                    from datetime import datetime
-                                    new_value = datetime.strptime(new_value, '%Y-%m-%d').date()
-                                except ValueError:
-                                    logger.warning(f"Invalid date format for {field}: {new_value}")
-                                    continue
-                        
-                        # Update the field if value has changed
-                        if old_value != new_value:
-                            setattr(employee, field, new_value)
-                            old_display = str(old_value) if old_value else 'None'
-                            new_display = str(new_value) if new_value else 'None'
-                            changes.append(f"{field}: {old_display} → {new_display}")
-                
-                # Handle profile photo upload
-                if 'profile_photo' in request.FILES:
-                    # Delete old profile image if exists
-                    if employee.profile_image:
-                        try:
-                            if hasattr(employee.profile_image, 'path') and os.path.exists(employee.profile_image.path):
-                                os.remove(employee.profile_image.path)
-                        except Exception as e:
-                            logger.warning(f"Could not delete old profile image: {e}")
-                    
-                    employee.profile_image = request.FILES['profile_photo']
-                    changes.append("Profile photo updated")
-                
-                # Set updated_by
-                employee.updated_by = request.user
-                
-                # Save employee
-                employee.save()
-                
-                # Handle tags update
-                if 'tag_ids' in cleaned_data:
-                    try:
-                        tag_ids = cleaned_data['tag_ids']
-                        if isinstance(tag_ids, str):
-                            tag_ids = [int(id.strip()) for id in tag_ids.split(',') if id.strip()]
-                        elif not isinstance(tag_ids, list):
-                            tag_ids = [tag_ids] if tag_ids else []
-                        
-                        old_tags = set(employee.tags.values_list('id', flat=True))
-                        new_tags = set(int(id) for id in tag_ids if id)
-                        
-                        if old_tags != new_tags:
-                            employee.tags.set(tag_ids)
-                            changes.append("Tags updated")
-                    except Exception as e:
-                        logger.warning(f"Error updating tags: {e}")
-                
-                # Handle document upload
-                if 'document' in request.FILES:
-                    document = request.FILES['document']
-                    document_type = cleaned_data.get('document_type', 'OTHER')
-                    document_name = cleaned_data.get('document_name', document.name)
-                    
-                    try:
-                        from .models import EmployeeDocument
-                        EmployeeDocument.objects.create(
-                            employee=employee,
-                            name=document_name,
-                            document_type=document_type,
-                            document_file=document,
-                            uploaded_by=request.user,
-                            document_status='ACTIVE',
-                            version=1,
-                            is_current_version=True
-                        )
-                        changes.append(f"Document '{document_name}' uploaded")
-                    except Exception as e:
-                        logger.error(f"Error uploading document: {e}")
-                
-                # Log activity if there were changes
-                if changes:
-                    EmployeeActivity.objects.create(
-                        employee=employee,
-                        activity_type='UPDATED',
-                        description=f"Employee {employee.full_name} updated: {'; '.join(changes)}",
-                        performed_by=request.user,
-                        metadata={
-                            'changes': changes,
-                            'manual_update': True,
-                            'update_method': 'comprehensive_data_cleaning'
-                        }
-                    )
-            
-            # Return updated employee data
-            serializer = EmployeeDetailSerializer(employee, context={'request': request})
-            
-            logger.info(f"Employee {employee.employee_id} updated successfully with {len(changes)} changes")
+            # Return updated data
             return Response(serializer.data)
             
         except Exception as e:
@@ -2576,6 +2421,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 {'error': f'Employee update failed: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+        
     @swagger_auto_schema(
         method='post',
         operation_description="Toggle org chart visibility for single employee",
