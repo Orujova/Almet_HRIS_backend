@@ -2612,10 +2612,11 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
             except Exception as e:
                 logger.warning(f"Could not create user account for employee {employee.employee_id}: {e}")
         
-        # Sync user account if it exists
+        # ✅ FIX: Sync user account if it exists - NULL CHECK
         if employee.user:
             user_updated = False
             
+            # ✅ Only update if values are provided and different
             if first_name and employee.user.first_name != employee.first_name:
                 employee.user.first_name = employee.first_name
                 user_updated = True
@@ -2630,8 +2631,11 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
                 user_updated = True
             
             if user_updated:
-                employee.user.save()
-                changes.append("User account synced")
+                try:
+                    employee.user.save()
+                    changes.append("User account synced")
+                except Exception as e:
+                    logger.warning(f"Could not sync user account: {e}")
         
         # Update tags
         if tag_ids is not None:
