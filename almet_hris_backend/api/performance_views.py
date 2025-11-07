@@ -136,8 +136,9 @@ class ObjectiveStatusViewSet(viewsets.ModelViewSet):
 
 # ============ MAIN PERFORMANCE VIEWSET ============
 
+# api/performance_views.py
+
 class EmployeePerformanceViewSet(viewsets.ModelViewSet):
-  
     permission_classes = [IsAuthenticated]
     
     def get_serializer_class(self):
@@ -148,16 +149,25 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
         return EmployeePerformanceDetailSerializer
     
     def get_queryset(self):
-        """Filter queryset based on user permissions"""
+        """Filter queryset based on user permissions - FIXED"""
         queryset = EmployeePerformance.objects.select_related(
-            'employee', 'employee__department', 'employee__line_manager',
-            'performance_year', 'created_by'
+            'employee',
+            'employee__department',
+            'employee__line_manager',
+            'employee__position_group',  # ✅ ADD
+            'performance_year',
+            'created_by'
         ).prefetch_related(
-            'objectives', 'competency_ratings', 'development_needs', 'comments'
+            'objectives',
+            'competency_ratings',
+            'development_needs',
+            'comments'
         )
         
+        # ✅ Filter viewable performances
         queryset = filter_viewable_performances(self.request.user, queryset)
         
+        # ✅ Additional filters
         employee_id = self.request.query_params.get('employee_id')
         if employee_id:
             queryset = queryset.filter(employee_id=employee_id)
@@ -179,6 +189,26 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
         
         return queryset.order_by('-performance_year__year', 'employee__employee_id')
     
+    def list(self, request, *args, **kwargs):
+        """Override list to add error handling"""
+        try:
+            queryset = self.filter_queryset(self.get_queryset())
+            
+            page = self.paginate_queryset(queryset)
+            if page is not None:
+                serializer = self.get_serializer(page, many=True)
+                return self.get_paginated_response(serializer.data)
+            
+            serializer = self.get_serializer(queryset, many=True)
+            return Response(serializer.data)
+        except Exception as e:
+            logger.error(f"❌ Error in list view: {e}")
+            import traceback
+            traceback.print_exc()
+            return Response({
+                'error': 'Error loading performances',
+                'detail': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     def retrieve(self, request, *args, **kwargs):
         """Check access on retrieve"""
         instance = self.get_object()

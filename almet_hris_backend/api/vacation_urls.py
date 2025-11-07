@@ -64,10 +64,12 @@ urlpatterns = [
     # ============= BALANCE MANAGEMENT (GET/POST/PUT) =============
     path('balances/bulk-upload/', views.bulk_upload_balances, name='vacation-bulk-upload-balances'),
     path('balances/template/', views.download_balance_template, name='vacation-download-balance-template'),
-    path('balances/export/', views.export_balances, name='vacation-export-balances'),
-    path('balances/update/', views.update_individual_balance, name='vacation-update-individual-balance'),
+ 
 
-    
+    path('balances/', views.get_all_balances, name='get_all_balances'),
+    path('balances/export/',  views.export_all_balances, name='export_all_balances'),
+    path('balances/update/',  views.update_employee_balance, name='update_employee_balance'),
+    path('balances/reset/',  views.reset_balances, name='reset_balances'),
     path(
     'vacation-requests/<str:request_id>/attachments/',
     views.list_vacation_request_attachments,

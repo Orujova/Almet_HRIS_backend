@@ -88,30 +88,29 @@ class EmployeeObjectiveSerializer(serializers.ModelSerializer):
         model = EmployeeObjective
         fields = '__all__'
 
-
-# api/performance_serializers.py - LEADERSHIP DETAIL FIELDS
+# api/performance_serializers.py
 
 class EmployeeCompetencyRatingSerializer(serializers.ModelSerializer):
     """
-    UPDATED: Shows both behavioral and leadership competency data
+    ✅ FIXED: Safe handling of None values
     """
-    # ✅ PRIMARY: Universal competency name (works for both)
+    # ✅ PRIMARY: Universal competency name
     competency_name = serializers.SerializerMethodField()
     
-    # ✅ BEHAVIORAL fields
-    behavioral_competency_id = serializers.IntegerField(source='behavioral_competency.id', read_only=True, allow_null=True)
-    behavioral_competency_name = serializers.CharField(source='behavioral_competency.name', read_only=True, allow_null=True)
+    # ✅ BEHAVIORAL fields - with null handling
+    behavioral_competency_id = serializers.SerializerMethodField()
+    behavioral_competency_name = serializers.SerializerMethodField()
     competency_group_name = serializers.SerializerMethodField()
     
-    # ✅ LEADERSHIP fields  
-    leadership_item_id = serializers.IntegerField(source='leadership_item.id', read_only=True, allow_null=True)
-    leadership_item_name = serializers.CharField(source='leadership_item.name', read_only=True, allow_null=True)
+    # ✅ LEADERSHIP fields - with null handling
+    leadership_item_id = serializers.SerializerMethodField()
+    leadership_item_name = serializers.SerializerMethodField()
     main_group_name = serializers.SerializerMethodField()
     child_group_name = serializers.SerializerMethodField()
     
     # Common fields
-    end_year_rating_name = serializers.CharField(source='end_year_rating.name', read_only=True, allow_null=True)
-    end_year_rating_value = serializers.IntegerField(source='end_year_rating.value', read_only=True, allow_null=True)
+    end_year_rating_name = serializers.SerializerMethodField()
+    end_year_rating_value = serializers.SerializerMethodField()
     actual_value = serializers.IntegerField(read_only=True)
     gap = serializers.IntegerField(read_only=True)
     gap_status = serializers.SerializerMethodField()
@@ -150,56 +149,115 @@ class EmployeeCompetencyRatingSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['created_at', 'updated_at', 'actual_value', 'gap']
     
+    # ✅ SAFE METHODS with None handling
+    
     def get_competency_name(self, obj):
-        """Get competency name (works for both types) - PRIMARY FIELD"""
-        if obj.leadership_item:
-            return obj.leadership_item.name
-        elif obj.behavioral_competency:
-            return obj.behavioral_competency.name
-        return 'N/A'
+        """Get competency name - safe"""
+        try:
+            if obj.leadership_item:
+                return obj.leadership_item.name
+            elif obj.behavioral_competency:
+                return obj.behavioral_competency.name
+        except Exception as e:
+            logger.warning(f"Error getting competency name: {e}")
+        return 'Unknown Competency'
+    
+    def get_behavioral_competency_id(self, obj):
+        """Safe get behavioral competency ID"""
+        try:
+            return obj.behavioral_competency.id if obj.behavioral_competency else None
+        except:
+            return None
+    
+    def get_behavioral_competency_name(self, obj):
+        """Safe get behavioral competency name"""
+        try:
+            return obj.behavioral_competency.name if obj.behavioral_competency else None
+        except:
+            return None
     
     def get_competency_group_name(self, obj):
-        """Get group name (behavioral only)"""
-        if obj.behavioral_competency and hasattr(obj.behavioral_competency, 'group'):
-            return obj.behavioral_competency.group.name
+        """Get group name (behavioral only) - safe"""
+        try:
+            if obj.behavioral_competency and hasattr(obj.behavioral_competency, 'group'):
+                return obj.behavioral_competency.group.name
+        except Exception as e:
+            logger.warning(f"Error getting competency group name: {e}")
         return None
     
+    def get_leadership_item_id(self, obj):
+        """Safe get leadership item ID"""
+        try:
+            return obj.leadership_item.id if obj.leadership_item else None
+        except:
+            return None
+    
+    def get_leadership_item_name(self, obj):
+        """Safe get leadership item name"""
+        try:
+            return obj.leadership_item.name if obj.leadership_item else None
+        except:
+            return None
+    
     def get_main_group_name(self, obj):
-        """Get main group name (leadership only)"""
+        """Get main group name (leadership only) - safe"""
         try:
             if obj.leadership_item and hasattr(obj.leadership_item, 'child_group'):
-                if hasattr(obj.leadership_item.child_group, 'main_group'):
-                    return obj.leadership_item.child_group.main_group.name
-        except:
-            pass
+                child_group = obj.leadership_item.child_group
+                if child_group and hasattr(child_group, 'main_group'):
+                    return child_group.main_group.name
+        except Exception as e:
+            logger.warning(f"Error getting main group name: {e}")
         return None
     
     def get_child_group_name(self, obj):
-        """Get child group name (leadership only)"""
+        """Get child group name (leadership only) - safe"""
         try:
             if obj.leadership_item and hasattr(obj.leadership_item, 'child_group'):
-                return obj.leadership_item.child_group.name
-        except:
-            pass
+                child_group = obj.leadership_item.child_group
+                if child_group:
+                    return child_group.name
+        except Exception as e:
+            logger.warning(f"Error getting child group name: {e}")
         return None
     
+    def get_end_year_rating_name(self, obj):
+        """Safe get rating name"""
+        try:
+            return obj.end_year_rating.name if obj.end_year_rating else None
+        except:
+            return None
+    
+    def get_end_year_rating_value(self, obj):
+        """Safe get rating value"""
+        try:
+            return obj.end_year_rating.value if obj.end_year_rating else None
+        except:
+            return None
+    
     def get_competency_type(self, obj):
-        """Get competency type"""
-        if obj.leadership_item:
-            return 'LEADERSHIP'
-        elif obj.behavioral_competency:
-            return 'BEHAVIORAL'
+        """Get competency type - safe"""
+        try:
+            if obj.leadership_item:
+                return 'LEADERSHIP'
+            elif obj.behavioral_competency:
+                return 'BEHAVIORAL'
+        except:
+            pass
         return 'UNKNOWN'
     
     def get_gap_status(self, obj):
-        """Get gap status: exceeds, meets, below"""
-        gap = obj.gap
-        if gap > 0:
-            return 'exceeds'
-        elif gap == 0:
-            return 'meets'
-        else:
-            return 'below'
+        """Get gap status - safe"""
+        try:
+            gap = obj.gap
+            if gap > 0:
+                return 'exceeds'
+            elif gap == 0:
+                return 'meets'
+            else:
+                return 'below'
+        except:
+            return 'unknown'
 
 class DevelopmentNeedSerializer(serializers.ModelSerializer):
     class Meta:
@@ -237,13 +295,18 @@ class PerformanceActivityLogSerializer(serializers.ModelSerializer):
 
 
 
+# api/performance_serializers.py
+
+import logging
+logger = logging.getLogger(__name__)
+
 class EmployeePerformanceListSerializer(serializers.ModelSerializer):
-    """Simplified serializer for list view"""
-    employee_name = serializers.CharField(source='employee.full_name', read_only=True)
-    employee_id = serializers.CharField(source='employee.employee_id', read_only=True)
-    employee_position_group = serializers.CharField(source='employee.position_group', read_only=True)
-    employee_department = serializers.CharField(source='employee.department.name', read_only=True)
-    year = serializers.IntegerField(source='performance_year.year', read_only=True)
+    """Simplified serializer for list view - FIXED"""
+    employee_name = serializers.SerializerMethodField()
+    employee_id = serializers.SerializerMethodField()
+    employee_position_group = serializers.SerializerMethodField()
+    employee_department = serializers.SerializerMethodField()
+    year = serializers.SerializerMethodField()
     
     # CRITICAL FIX: Add current_period
     current_period = serializers.SerializerMethodField()
@@ -261,62 +324,141 @@ class EmployeePerformanceListSerializer(serializers.ModelSerializer):
     class Meta:
         model = EmployeePerformance
         fields = [
-            'id', 'employee', 'employee_name', 'employee_id', 'employee_position_group', 'employee_department',
-            'year', 'current_period',  # ADDED
+            'id', 'employee', 'employee_name', 'employee_id', 
+            'employee_position_group', 'employee_department',
+            'year', 'current_period',
             'approval_status',
             'objectives_count', 'competencies_count',
-            'objectives_employee_submitted', 'objectives_employee_approved', 'objectives_manager_approved',
+            'objectives_employee_submitted', 'objectives_employee_approved', 
+            'objectives_manager_approved',
             'mid_year_completed', 'end_year_completed',
             'final_employee_approved', 'final_manager_approved',
             'overall_weighted_percentage', 'final_rating',
             'competencies_letter_grade',
-            'has_objectives_draft', 'has_competencies_draft', 'has_mid_year_draft', 
-            'has_end_year_draft', 'has_dev_needs_draft',
+            'has_objectives_draft', 'has_competencies_draft', 
+            'has_mid_year_draft', 'has_end_year_draft', 'has_dev_needs_draft',
             'created_at', 'updated_at'
         ]
     
-    # CRITICAL FIX: Add method to get current period
-    def get_current_period(self, obj):
-        """Get current period from performance year"""
+    # ✅ ALL SAFE METHODS
+    
+    def get_employee_name(self, obj):
+        """Safe get employee name"""
         try:
-            return obj.performance_year.get_current_period()
-        except:
+            return obj.employee.full_name if obj.employee else 'Unknown'
+        except Exception as e:
+            logger.warning(f"Error getting employee name: {e}")
+            return 'Unknown'
+    
+    def get_employee_id(self, obj):
+        """Safe get employee ID"""
+        try:
+            return obj.employee.employee_id if obj.employee else None
+        except Exception as e:
+            logger.warning(f"Error getting employee_id: {e}")
+            return None
+    
+    def get_employee_position_group(self, obj):
+        """Safe get position group"""
+        try:
+            if obj.employee and obj.employee.position_group:
+                return obj.employee.position_group.get_name_display()
+            return 'Unknown'
+        except Exception as e:
+            logger.warning(f"Error getting position_group: {e}")
+            return 'Unknown'
+    
+    def get_employee_department(self, obj):
+        """Safe get department"""
+        try:
+            if obj.employee and obj.employee.department:
+                return obj.employee.department.name
+            return 'N/A'
+        except Exception as e:
+            logger.warning(f"Error getting department: {e}")
+            return 'N/A'
+    
+    def get_year(self, obj):
+        """Safe get year"""
+        try:
+            return obj.performance_year.year if obj.performance_year else None
+        except Exception as e:
+            logger.warning(f"Error getting year: {e}")
+            return None
+    
+    def get_current_period(self, obj):
+        """Get current period from performance year - CRITICAL FIX"""
+        try:
+            if obj.performance_year:
+                return obj.performance_year.get_current_period()
+            return None
+        except Exception as e:
+            logger.warning(f"Error getting current_period: {e}")
             return None
     
     def get_objectives_count(self, obj):
-        return obj.objectives.filter(is_cancelled=False).count()
+        """Safe get objectives count"""
+        try:
+            return obj.objectives.filter(is_cancelled=False).count()
+        except Exception as e:
+            logger.warning(f"Error getting objectives_count: {e}")
+            return 0
     
     def get_competencies_count(self, obj):
-        return obj.competency_ratings.count()
+        """Safe get competencies count"""
+        try:
+            return obj.competency_ratings.count()
+        except Exception as e:
+            logger.warning(f"Error getting competencies_count: {e}")
+            return 0
     
     def get_has_objectives_draft(self, obj):
-        return obj.objectives_draft_saved_date is not None
+        """Safe check objectives draft"""
+        try:
+            return obj.objectives_draft_saved_date is not None
+        except:
+            return False
     
     def get_has_competencies_draft(self, obj):
-        return obj.competencies_draft_saved_date is not None
+        """Safe check competencies draft"""
+        try:
+            return obj.competencies_draft_saved_date is not None
+        except:
+            return False
     
     def get_has_mid_year_draft(self, obj):
-        return obj.mid_year_employee_draft_saved is not None or obj.mid_year_manager_draft_saved is not None
+        """Safe check mid year draft"""
+        try:
+            return (obj.mid_year_employee_draft_saved is not None or 
+                    obj.mid_year_manager_draft_saved is not None)
+        except:
+            return False
     
     def get_has_end_year_draft(self, obj):
-        return obj.end_year_employee_draft_saved is not None or obj.end_year_manager_draft_saved is not None
+        """Safe check end year draft"""
+        try:
+            return (obj.end_year_employee_draft_saved is not None or 
+                    obj.end_year_manager_draft_saved is not None)
+        except:
+            return False
     
     def get_has_dev_needs_draft(self, obj):
-        return obj.development_needs_draft_saved is not None
-
-
+        """Safe check dev needs draft"""
+        try:
+            return obj.development_needs_draft_saved is not None
+        except:
+            return False
 class EmployeePerformanceDetailSerializer(serializers.ModelSerializer):
     """Detailed serializer with all related data"""
     employee_name = serializers.CharField(source='employee.full_name', read_only=True)
     employee_id = serializers.CharField(source='employee.employee_id', read_only=True)
-  
-    employee_department = serializers.CharField(source='employee.department.name', read_only=True)
+    employee_department = serializers.SerializerMethodField()  # ✅ Changed to safe method
     employee_position_group = serializers.CharField(
         source='employee.position_group.get_name_display', 
         read_only=True
     )
     employee_grade_level = serializers.CharField(source='employee.grading_level', read_only=True)
-    line_manager_name = serializers.CharField(source='employee.line_manager.full_name', read_only=True, allow_null=True)
+    line_manager_name = serializers.SerializerMethodField()  # ✅ Changed to safe method
     
     year = serializers.IntegerField(source='performance_year.year', read_only=True)
     current_period = serializers.CharField(source='performance_year.get_current_period', read_only=True)
@@ -325,7 +467,7 @@ class EmployeePerformanceDetailSerializer(serializers.ModelSerializer):
     competency_ratings = EmployeeCompetencyRatingSerializer(many=True, read_only=True)
     development_needs = DevelopmentNeedSerializer(many=True, read_only=True)
     
-    # ✅ FIX #4: Add clarification_comments field
+    # ✅ Clarification comments
     clarification_comments = serializers.SerializerMethodField()
     
     comments = PerformanceCommentSerializer(many=True, read_only=True)
@@ -350,81 +492,131 @@ class EmployeePerformanceDetailSerializer(serializers.ModelSerializer):
         model = EmployeePerformance
         fields = '__all__'
     
+    # ✅ SAFE METHODS
+    
+    def get_employee_department(self, obj):
+        """Safe get department name"""
+        try:
+            return obj.employee.department.name if obj.employee.department else 'N/A'
+        except:
+            return 'N/A'
+    
+    def get_line_manager_name(self, obj):
+        """Safe get line manager name"""
+        try:
+            return obj.employee.line_manager.full_name if obj.employee.line_manager else None
+        except:
+            return None
+    
     def get_metadata(self, obj):
-        """Get metadata about competency type"""
-        first_rating = obj.competency_ratings.first()
-        
-        if not first_rating:
+        """Get metadata about competency type - safe"""
+        try:
+            first_rating = obj.competency_ratings.first()
+            
+            if not first_rating:
+                return {
+                    'has_competencies': False,
+                    'competency_type': None,
+                    'is_leadership_position': False
+                }
+            
+            is_leadership = bool(first_rating.leadership_item)
+            
+            return {
+                'has_competencies': True,
+                'competency_type': 'LEADERSHIP' if is_leadership else 'BEHAVIORAL',
+                'is_leadership_position': is_leadership,
+                'had_existing_ratings': obj.competency_ratings.filter(
+                    end_year_rating__isnull=False
+                ).exists()
+            }
+        except Exception as e:
+            logger.warning(f"Error getting metadata: {e}")
             return {
                 'has_competencies': False,
                 'competency_type': None,
                 'is_leadership_position': False
             }
-        
-        is_leadership = bool(first_rating.leadership_item)
-        
-        return {
-            'has_competencies': True,
-            'competency_type': 'LEADERSHIP' if is_leadership else 'BEHAVIORAL',
-            'is_leadership_position': is_leadership,
-            'had_existing_ratings': obj.competency_ratings.filter(
-                end_year_rating__isnull=False
-            ).exists()
-        }
-  
     
     def get_clarification_comments(self, obj):
-        """
-        ✅ FIX #4: Get all clarification-related comments
-        """
-        clarification_comments = obj.comments.filter(
-            comment_type__in=['OBJECTIVE_CLARIFICATION', 'FINAL_CLARIFICATION']
-        ).select_related('created_by').order_by('-created_at')
-        
-        return PerformanceCommentSerializer(clarification_comments, many=True).data
+        """Get all clarification-related comments - safe"""
+        try:
+            clarification_comments = obj.comments.filter(
+                comment_type__in=['OBJECTIVE_CLARIFICATION', 'FINAL_CLARIFICATION']
+            ).select_related('created_by').order_by('-created_at')
+            
+            return PerformanceCommentSerializer(clarification_comments, many=True).data
+        except Exception as e:
+            logger.warning(f"Error getting clarification comments: {e}")
+            return []
     
     def get_weight_config(self, obj):
-        weight = PerformanceWeightConfig.objects.filter(
-            position_group=obj.employee.position_group
-        ).first()
-        if weight:
-            return {
-                'objectives_weight': weight.objectives_weight,
-                'competencies_weight': weight.competencies_weight
-            }
+        """Safe get weight config"""
+        try:
+            weight = PerformanceWeightConfig.objects.filter(
+                position_group=obj.employee.position_group
+            ).first()
+            if weight:
+                return {
+                    'objectives_weight': weight.objectives_weight,
+                    'competencies_weight': weight.competencies_weight
+                }
+        except Exception as e:
+            logger.warning(f"Error getting weight config: {e}")
         return None
     
     def get_objectives_weight(self, obj):
-        """Get objectives weight percentage"""
-        weight = PerformanceWeightConfig.objects.filter(
-            position_group=obj.employee.position_group
-        ).first()
-        return weight.objectives_weight if weight else 70
+        """Get objectives weight percentage - safe"""
+        try:
+            weight = PerformanceWeightConfig.objects.filter(
+                position_group=obj.employee.position_group
+            ).first()
+            return weight.objectives_weight if weight else 70
+        except:
+            return 70
     
     def get_competencies_weight(self, obj):
-        """Get competencies weight percentage"""
-        weight = PerformanceWeightConfig.objects.filter(
-            position_group=obj.employee.position_group
-        ).first()
-        return weight.competencies_weight if weight else 30
+        """Get competencies weight percentage - safe"""
+        try:
+            weight = PerformanceWeightConfig.objects.filter(
+                position_group=obj.employee.position_group
+            ).first()
+            return weight.competencies_weight if weight else 30
+        except:
+            return 30
     
     def get_evaluation_targets(self, obj):
-        config = EvaluationTargetConfig.get_active_config()
-        return {
-            'objective_score_target': config.objective_score_target,
-        }
+        """Safe get evaluation targets"""
+        try:
+            config = EvaluationTargetConfig.get_active_config()
+            return {
+                'objective_score_target': config.objective_score_target,
+            }
+        except:
+            return {
+                'objective_score_target': 21,
+            }
     
     def get_goal_limits(self, obj):
-        config = GoalLimitConfig.get_active_config()
-        return {
-            'min_goals': config.min_goals,
-            'max_goals': config.max_goals
-        }
+        """Safe get goal limits"""
+        try:
+            config = GoalLimitConfig.get_active_config()
+            return {
+                'min_goals': config.min_goals,
+                'max_goals': config.max_goals
+            }
+        except:
+            return {
+                'min_goals': 3,
+                'max_goals': 7
+            }
     
     def get_group_scores_breakdown(self, obj):
-        """Get detailed breakdown of competency scores by group"""
-        return obj.group_competency_scores
-
+        """Get detailed breakdown of competency scores by group - safe"""
+        try:
+            return obj.group_competency_scores or {}
+        except:
+            return {}
 class EmployeePerformanceCreateUpdateSerializer(serializers.ModelSerializer):
     """Serializer for creating/updating performance with nested data"""
     objectives_data = serializers.ListField(write_only=True, required=False)
@@ -584,7 +776,6 @@ class PerformanceDashboardSerializer(serializers.Serializer):
     pending_employee_approval = serializers.IntegerField()
     pending_manager_approval = serializers.IntegerField()
     need_clarification = serializers.IntegerField()
-# api/performance_serializers.py - LEADERSHIP INTEGRATION
 # api/performance_serializers.py - PerformanceInitializeSerializer
 
 class PerformanceInitializeSerializer(serializers.Serializer):
@@ -615,7 +806,6 @@ class PerformanceInitializeSerializer(serializers.Serializer):
             'HEAD OF DEPARTMENT'
         ]
         
-        # ✅ Check multiple ways to match
         is_leadership = any(
             keyword.upper().replace('_', ' ') == position_name or
             keyword.upper() == employee.position_group.name.upper() or
@@ -626,9 +816,12 @@ class PerformanceInitializeSerializer(serializers.Serializer):
         
         print(f"✅ [Backend] Is Leadership: {is_leadership}")
         
+        # ✅ CRITICAL FIX: Initialize employee_assessment to None
+        employee_assessment = None
+        
         if is_leadership:
             # ✅ Load leadership position assessment
-            from .competency_assessment_models import PositionLeadershipAssessment
+            from .competency_assessment_models import PositionLeadershipAssessment, EmployeeLeadershipAssessment
             
             position_assessment = PositionLeadershipAssessment.objects.filter(
                 position_group=employee.position_group,
@@ -654,13 +847,10 @@ class PerformanceInitializeSerializer(serializers.Serializer):
                     f"  4. Add all required leadership competencies\n"
                 )
             
-            # ✅ DEBUG: Check what we got
             print(f"✅ [Backend] Found leadership template: ID {position_assessment.id}")
             print(f"✅ [Backend] Template has {position_assessment.competency_ratings.count()} ratings")
             
             # Get employee leadership assessment if exists
-            from .competency_assessment_models import EmployeeLeadershipAssessment
-            
             employee_assessment = EmployeeLeadershipAssessment.objects.filter(
                 employee=employee,
                 status__in=['DRAFT', 'COMPLETED']
@@ -668,7 +858,7 @@ class PerformanceInitializeSerializer(serializers.Serializer):
             
         else:
             # ✅ Load behavioral position assessment
-            from .competency_assessment_models import PositionBehavioralAssessment
+            from .competency_assessment_models import PositionBehavioralAssessment, EmployeeBehavioralAssessment
             
             position_assessment = PositionBehavioralAssessment.objects.filter(
                 position_group=employee.position_group,
@@ -690,15 +880,13 @@ class PerformanceInitializeSerializer(serializers.Serializer):
             print(f"✅ [Backend] Template has {position_assessment.competency_ratings.count()} ratings")
             
             # Get employee behavioral assessment if exists
-            from .competency_assessment_models import EmployeeBehavioralAssessment
-            
             employee_assessment = EmployeeBehavioralAssessment.objects.filter(
                 employee=employee,
                 status__in=['DRAFT', 'COMPLETED']
             ).order_by('-assessment_date').first()
         
         data['position_assessment'] = position_assessment
-        data['employee_assessment'] = employee_assessment
+        data['employee_assessment'] = employee_assessment  # ✅ Always set (can be None)
         data['is_leadership_position'] = is_leadership
         
         return data
@@ -707,7 +895,7 @@ class PerformanceInitializeSerializer(serializers.Serializer):
         employee = validated_data['employee']
         performance_year = validated_data['performance_year']
         position_assessment = validated_data['position_assessment']
-        employee_assessment = validated_data.get('employee_assessment')
+        employee_assessment = validated_data.get('employee_assessment')  # ✅ Use .get() for safety
         is_leadership = validated_data['is_leadership_position']
         
         # Check if already exists
@@ -730,7 +918,7 @@ class PerformanceInitializeSerializer(serializers.Serializer):
             
             print(f"✅ [Backend] Created performance: ID {performance.id}")
             
-            # ✅ CRITICAL: Use PerformanceEvaluationScale instead of BehavioralScale
+            # ✅ CRITICAL: Use PerformanceEvaluationScale
             from .performance_models import EvaluationScale
             
             if is_leadership:
@@ -752,16 +940,16 @@ class PerformanceInitializeSerializer(serializers.Serializer):
                         print(f"⚠️ [Backend] Position rating {position_rating.id} has NULL leadership_item!")
                         continue
                     
-                    # Find existing rating from employee assessment
+                    # Find existing rating from employee assessment (if exists)
                     existing_rating = None
                     end_year_rating_id = None
                     
-                    if employee_assessment:
+                    if employee_assessment:  # ✅ Check if not None
                         existing_rating = employee_assessment.competency_ratings.filter(
                             leadership_item=position_rating.leadership_item
                         ).first()
                         
-                        # ✅ Convert actual_level (integer) to PerformanceEvaluationScale ID
+                        # ✅ Convert actual_level to PerformanceEvaluationScale ID
                         if existing_rating and existing_rating.actual_level:
                             performance_scale = EvaluationScale.objects.filter(
                                 value=existing_rating.actual_level,
@@ -773,7 +961,7 @@ class PerformanceInitializeSerializer(serializers.Serializer):
                     # ✅ Create competency rating with leadership_item
                     rating = EmployeeCompetencyRating.objects.create(
                         performance=performance,
-                        leadership_item=position_rating.leadership_item,  # ✅ Leadership item
+                        leadership_item=position_rating.leadership_item,
                         required_level=position_rating.required_level,
                         end_year_rating_id=end_year_rating_id,
                         notes=existing_rating.notes if existing_rating else ''
@@ -781,7 +969,8 @@ class PerformanceInitializeSerializer(serializers.Serializer):
                     
                     created_count += 1
                     
-                    print(f"  ✅ Created rating {created_count}: {position_rating.leadership_item.name[:50]}")
+                    if created_count <= 3:  # Only log first 3
+                        print(f"  ✅ Created rating {created_count}: {position_rating.leadership_item.name[:50]}")
                 
                 log_message = (
                     f'Performance initialized with {created_count} leadership competencies'
@@ -809,7 +998,7 @@ class PerformanceInitializeSerializer(serializers.Serializer):
                     existing_rating = None
                     end_year_rating_id = None
                     
-                    if employee_assessment:
+                    if employee_assessment:  # ✅ Check if not None
                         existing_rating = employee_assessment.competency_ratings.filter(
                             behavioral_competency=position_rating.behavioral_competency
                         ).first()
@@ -832,7 +1021,8 @@ class PerformanceInitializeSerializer(serializers.Serializer):
                     
                     created_count += 1
                     
-                    print(f"  ✅ Created rating {created_count}: {position_rating.behavioral_competency.name}")
+                    if created_count <= 3:
+                        print(f"  ✅ Created rating {created_count}: {position_rating.behavioral_competency.name}")
                 
                 log_message = (
                     f'Performance initialized with {created_count} behavioral competencies'

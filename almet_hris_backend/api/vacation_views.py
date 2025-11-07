@@ -33,6 +33,18 @@ from .vacation_permissions import (
     check_vacation_permission,
     get_user_vacation_permissions
 )
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework import status
+from django.db.models import Q, Sum, Count
+from .vacation_models import EmployeeVacationBalance
+from .vacation_serializers import EmployeeVacationBalanceSerializer
+from .vacation_permissions import has_vacation_permission, is_admin_user, check_vacation_permission
+from datetime import datetime
+import openpyxl
+from openpyxl.styles import Font, Alignment, PatternFill
+from django.http import HttpResponse
 
 import logging
 from django.shortcuts import get_object_or_404
@@ -840,140 +852,6 @@ def get_hr_representatives(request):
     except Exception as e:
         return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
-# ==================== BULK BALANCE UPDATE - PUT ====================
-@swagger_auto_schema(
-    method='put',
-    operation_description="Mövcud employee balanslarını fərdi yenilə",
-    operation_summary="Update Individual Balance",
-    tags=['Vacation - Settings'],
-    request_body=openapi.Schema(
-        type=openapi.TYPE_OBJECT,
-        required=['employee_id', 'year'],
-        properties={
-            'employee_id': openapi.Schema(
-                type=openapi.TYPE_INTEGER,
-                description='Employee ID',
-                example=15
-            ),
-            'year': openapi.Schema(
-                type=openapi.TYPE_INTEGER,
-                description='İl (məsələn: 2025)',
-                example=2025
-            ),
-            'start_balance': openapi.Schema(
-                type=openapi.TYPE_NUMBER,
-                description='Əvvəlki ildən qalan balans',
-                example=5.0
-            ),
-            'yearly_balance': openapi.Schema(
-                type=openapi.TYPE_NUMBER,
-                description='İllik məzuniyyət balansı',
-                example=28.0
-            ),
-        }
-    ),
-    responses={
-        200: openapi.Response(
-            description='Balans yeniləndi',
-            examples={
-                'application/json': {
-                    'message': 'Employee balansı uğurla yeniləndi',
-                    'employee': {
-                        'id': 15,
-                        'name': 'John Doe',
-                        'employee_id': 'EMP015'
-                    },
-                    'balance': {
-                        'year': 2025,
-                        'start_balance': 5.0,
-                        'yearly_balance': 28.0,
-                        'total_balance': 33.0,
-                        'used_days': 0.0,
-                        'scheduled_days': 0.0,
-                        'remaining_balance': 33.0
-                    },
-                    'updated_at': '2025-09-25T10:30:00Z',
-                    'updated_by': 'HR Manager'
-                }
-            }
-        )
-    }
-)
-@api_view(['PUT'])
-@has_vacation_permission('vacation.balance.update')
-@permission_classes([IsAuthenticated])
-def update_individual_balance(request):
-    """Fərdi employee balansını yenilə"""
-    try:
-        # Validate required fields
-        required_fields = ['employee_id', 'year']
-        for field in required_fields:
-            if field not in request.data:
-                return Response({'error': f'{field} mütləqdir'}, status=status.HTTP_400_BAD_REQUEST)
-        
-        employee_id = request.data['employee_id']
-        year = int(request.data['year'])
-        
-        # Employee tap
-        try:
-            employee = Employee.objects.get(id=employee_id, is_deleted=False)
-        except Employee.DoesNotExist:
-            return Response({'error': 'Employee tapılmadı'}, status=status.HTTP_404_NOT_FOUND)
-        
-        # Balance tap və ya yarat
-        balance, created = EmployeeVacationBalance.objects.get_or_create(
-            employee=employee,
-            year=year,
-            defaults={
-                'start_balance': 0,
-                'yearly_balance': 28,  # Default
-                'updated_by': request.user
-            }
-        )
-        
-        # Əvvəlki məlumatları saxla
-        previous_data = {
-            'start_balance': float(balance.start_balance),
-            'yearly_balance': float(balance.yearly_balance),
-            'total_balance': float(balance.total_balance)
-        }
-        
-        # Yenilə (əgər göndərilmişsə)
-        if 'start_balance' in request.data:
-            balance.start_balance = float(request.data['start_balance'])
-        
-        if 'yearly_balance' in request.data:
-            balance.yearly_balance = float(request.data['yearly_balance'])
-        
-        balance.updated_by = request.user
-        balance.save()
-        
-        return Response({
-            'message': 'Employee balansı uğurla yeniləndi',
-            'action': 'created' if created else 'updated',
-            'employee': {
-                'id': employee.id,
-                'name': employee.full_name,
-                'employee_id': getattr(employee, 'employee_id', '')
-            },
-            'previous_data': None if created else previous_data,
-            'current_balance': {
-                'year': balance.year,
-                'start_balance': float(balance.start_balance),
-                'yearly_balance': float(balance.yearly_balance),
-                'total_balance': float(balance.total_balance),
-                'used_days': float(balance.used_days),
-                'scheduled_days': float(balance.scheduled_days),
-                'remaining_balance': float(balance.remaining_balance)
-            },
-            'updated_at': balance.updated_at,
-            'updated_by': request.user.get_full_name() or request.user.username
-        })
-        
-    except ValueError as e:
-        return Response({'error': f'Məlumat formatı səhvdir: {str(e)}'}, status=status.HTTP_400_BAD_REQUEST)
-    except Exception as e:
-        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 
 
@@ -1198,262 +1076,269 @@ def download_balance_template(request):
     wb.save(response)
     return response
 
-@swagger_auto_schema(
-    method='get',
-    operation_description="Employee balanslarını Excel formatında export et",
-    operation_summary="Export Balances",
-    tags=['Vacation - Settings'],
-    manual_parameters=[
-        openapi.Parameter(
-            'year',
-            openapi.IN_QUERY,
-            description="İl (məsələn: 2025)",
-            type=openapi.TYPE_INTEGER,
-            required=False
-        ),
-        openapi.Parameter(
-            'department_id',
-            openapi.IN_QUERY,
-            description="Department ID (optional)",
-            type=openapi.TYPE_INTEGER,
-            required=False
-        )
-    ],
-    responses={
-        200: openapi.Response(
-            description='Excel file',
-            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-        )
-    }
-)
+
 @api_view(['GET'])
-@has_vacation_permission('vacation.balance.export')
 @permission_classes([IsAuthenticated])
-def export_balances(request):
-    """Enhanced balance export with statistics and charts"""
-    year = int(request.GET.get('year', date.today().year))
-    department_id = request.GET.get('department_id')
-    include_charts = request.GET.get('include_charts', 'true').lower() == 'true'
+@has_vacation_permission('vacation.balance.view_all')
+def get_all_balances(request):
+    """
+    GET /vacation/balances/
+    Get all employee vacation balances with filters
+    Permission: vacation.balance.view_all or admin
+    """
+    user = request.user
     
-    try:
-        balances = EmployeeVacationBalance.objects.filter(year=year, is_deleted=False)
+    # Get filters
+    year = request.GET.get('year', datetime.now().year)
+    department = request.GET.get('department', '')
+    min_remaining = request.GET.get('min_remaining', '')
+    max_remaining = request.GET.get('max_remaining', '')
+    
+    # Build queryset
+    queryset = EmployeeVacationBalance.objects.filter(
+        is_deleted=False,
+        year=year
+    ).select_related('employee', 'employee__department')
+    
+    # Apply filters
+    if department:
+        queryset = queryset.filter(
+            employee__department__name__icontains=department
+        )
+    
+    # Calculate filtered balances
+    balances_list = []
+    for balance in queryset:
+        # Apply remaining balance filters
+        if min_remaining and balance.remaining_balance < float(min_remaining):
+            continue
+        if max_remaining and balance.remaining_balance > float(max_remaining):
+            continue
+        balances_list.append(balance)
+    
+    # Serialize
+    serializer = EmployeeVacationBalanceSerializer(balances_list, many=True)
+    balances = serializer.data
+    
+    # Calculate summary
+    total_allocated = sum(float(b.total_balance) for b in balances_list)
+    total_used = sum(float(b.used_days) for b in balances_list)
+    total_scheduled = sum(float(b.scheduled_days) for b in balances_list)
+    total_remaining = sum(float(b.remaining_balance) for b in balances_list)
+    employee_count = len(balances_list)
+    
+    summary = {
+        'total_employees': employee_count,
+        'total_allocated': round(total_allocated, 1),
+        'total_used': round(total_used, 1),
+        'total_scheduled': round(total_scheduled, 1),
+        'total_remaining': round(total_remaining, 1)
+    }
+    
+    return Response({
+        'balances': balances,
+        'summary': summary,
+        'filters_applied': {
+            'year': year,
+            'department': department,
+            'min_remaining': min_remaining,
+            'max_remaining': max_remaining
+        }
+    })
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+@has_vacation_permission('vacation.balance.export')
+def export_all_balances(request):
+    """
+    GET /vacation/balances/export/
+    Export all balances to Excel
+    Permission: vacation.balance.export or admin
+    """
+    user = request.user
+    
+    # Get filters
+    year = request.GET.get('year', datetime.now().year)
+    department = request.GET.get('department', '')
+    min_remaining = request.GET.get('min_remaining', '')
+    max_remaining = request.GET.get('max_remaining', '')
+    
+    queryset = EmployeeVacationBalance.objects.filter(
+        is_deleted=False,
+        year=year
+    ).select_related('employee', 'employee__department').order_by(
+        'employee__department__name', 'employee__full_name'
+    )
+    
+    if department:
+        queryset = queryset.filter(employee__department__name__icontains=department)
+    
+    # Apply remaining balance filters
+    balances_list = []
+    for balance in queryset:
+        if min_remaining and balance.remaining_balance < float(min_remaining):
+            continue
+        if max_remaining and balance.remaining_balance > float(max_remaining):
+            continue
+        balances_list.append(balance)
+    
+    # Create workbook
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = f'Vacation Balances {year}'
+    
+    # Header style
+    header_fill = PatternFill(start_color='366092', end_color='366092', fill_type='solid')
+    header_font = Font(bold=True, color='FFFFFF', size=11)
+    header_alignment = Alignment(horizontal='center', vertical='center')
+    
+    # Headers
+    headers = [
+        'Employee Name', 'Employee ID', 'Department', 'Year',
+        'Start Balance', 'Yearly Balance', 'Total Balance',
+        'Used Days', 'Scheduled Days', 'Remaining Balance', 'To Plan'
+    ]
+    
+    for col_num, header in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col_num, value=header)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = header_alignment
+    
+    # Data rows
+    for row_num, balance in enumerate(balances_list, 2):
+        ws.cell(row=row_num, column=1, value=balance.employee.full_name)
+        ws.cell(row=row_num, column=2, value=getattr(balance.employee, 'employee_id', ''))
+        ws.cell(row=row_num, column=3, value=balance.employee.department.name if balance.employee.department else '')
+        ws.cell(row=row_num, column=4, value=balance.year)
+        ws.cell(row=row_num, column=5, value=float(balance.start_balance))
+        ws.cell(row=row_num, column=6, value=float(balance.yearly_balance))
+        ws.cell(row=row_num, column=7, value=float(balance.total_balance))
+        ws.cell(row=row_num, column=8, value=float(balance.used_days))
+        ws.cell(row=row_num, column=9, value=float(balance.scheduled_days))
+        ws.cell(row=row_num, column=10, value=float(balance.remaining_balance))
+        ws.cell(row=row_num, column=11, value=float(balance.should_be_planned))
         
-        if department_id:
-            balances = balances.filter(employee__department_id=department_id)
-        
-        balances = balances.select_related('employee', 'employee__department', 'employee__business_function')
-        
-        wb = Workbook()
-        
-        # Summary sheet
-        ws_summary = wb.active
-        ws_summary.title = "Summary"
-        
-        # Define styles
-        title_font = Font(size=16, bold=True, color="2B4C7E")
-        header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
-        header_font = Font(color="FFFFFF", bold=True, size=11)
-        stat_fill = PatternFill(start_color="E6F3FF", end_color="E6F3FF", fill_type="solid")
-        warning_fill = PatternFill(start_color="FFE6E6", end_color="FFE6E6", fill_type="solid")
-        good_fill = PatternFill(start_color="E6FFE6", end_color="E6FFE6", fill_type="solid")
-        
-        # Title
-        ws_summary['A1'] = f'VACATION BALANCE SUMMARY - {year}'
-        ws_summary['A1'].font = title_font
-        ws_summary.merge_cells('A1:D1')
-        
-        # Statistics
-        total_employees = balances.count()
-        total_balance = sum(float(b.total_balance) for b in balances)
-        total_used = sum(float(b.used_days) for b in balances)
-        total_scheduled = sum(float(b.scheduled_days) for b in balances)
-        total_remaining = sum(float(b.remaining_balance) for b in balances)
-        
-        negative_balance_count = balances.filter(used_days__gt=models.F('start_balance') + models.F('yearly_balance')).count()
-        low_balance_count = balances.filter(
-            used_days__gt=(models.F('start_balance') + models.F('yearly_balance')) - 5
-        ).count()
-        
-        stats = [
-            ['Statistic', 'Value', 'Status'],
-            ['Total Employees', total_employees, ''],
-            ['Total Balance (Days)', f'{total_balance:.1f}', ''],
-            ['Total Used (Days)', f'{total_used:.1f}', ''],
-            ['Total Scheduled (Days)', f'{total_scheduled:.1f}', ''],
-            ['Total Remaining (Days)', f'{total_remaining:.1f}', ''],
-            ['Negative Balance Employees', negative_balance_count, 'Warning' if negative_balance_count > 0 else 'OK'],
-            ['Low Balance Employees (<5 days)', low_balance_count, 'Warning' if low_balance_count > 0 else 'OK'],
-            ['Average Balance per Employee', f'{total_balance/total_employees:.1f}' if total_employees > 0 else '0', ''],
-            ['Balance Utilization %', f'{(total_used/total_balance)*100:.1f}%' if total_balance > 0 else '0%', '']
-        ]
-        
-        for row, (stat, value, status) in enumerate(stats, 3):
-            ws_summary[f'A{row}'] = stat
-            ws_summary[f'B{row}'] = value
-            ws_summary[f'C{row}'] = status
-            
-            if row == 3:  # Header row
-                for col in ['A', 'B', 'C']:
-                    cell = ws_summary[f'{col}{row}']
-                    cell.fill = header_fill
-                    cell.font = header_font
-            else:
-                if status == 'Warning':
-                    for col in ['A', 'B', 'C']:
-                        ws_summary[f'{col}{row}'].fill = warning_fill
-                elif status == 'OK':
-                    for col in ['A', 'B', 'C']:
-                        ws_summary[f'{col}{row}'].fill = good_fill
-                else:
-                    for col in ['A', 'B']:
-                        ws_summary[f'{col}{row}'].fill = stat_fill
-        
-        # Detailed data sheet
-        ws_data = wb.create_sheet("Detailed Data")
-        
-        # Headers for detailed sheet
-        detailed_headers = [
-            'Employee ID', 'Employee Name', 'Department', 'Business Function',
-            'Start Balance', 'Yearly Balance', 'Total Balance', 'Used Days', 
-            'Scheduled Days', 'Remaining Balance', 'Should Plan', 'Utilization %',
-            'Status', 'Last Updated'
-        ]
-        
-        for col, header in enumerate(detailed_headers, 1):
-            cell = ws_data.cell(row=1, column=col, value=header)
-            cell.fill = header_fill
-            cell.font = header_font
-        
-        # Data rows
-        for row, balance in enumerate(balances, 2):
-            utilization = (float(balance.used_days) / float(balance.total_balance)) * 100 if balance.total_balance > 0 else 0
-            
-            # Determine status
-            if float(balance.remaining_balance) < 0:
-                status = "Over-utilized"
-                status_fill = warning_fill
-            elif float(balance.remaining_balance) < 5:
-                status = "Low Balance"
-                status_fill = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid")
-            else:
-                status = "Normal"
-                status_fill = good_fill
-            
-            data = [
-                getattr(balance.employee, 'employee_id', ''),
-                balance.employee.full_name,
-                balance.employee.department.name if balance.employee.department else '',
-                balance.employee.business_function.name if balance.employee.business_function else '',
-                float(balance.start_balance),
-                float(balance.yearly_balance),
-                float(balance.total_balance),
-                float(balance.used_days),
-                float(balance.scheduled_days),
-                float(balance.remaining_balance),
-                float(balance.should_be_planned),
-                f'{utilization:.1f}%',
-                status,
-                balance.updated_at.strftime('%Y-%m-%d') if balance.updated_at else ''
-            ]
-            
-            for col, value in enumerate(data, 1):
-                cell = ws_data.cell(row=row, column=col, value=value)
-                if col == 13:  # Status column
-                    cell.fill = status_fill
-                if col in [5, 6, 7, 8, 9, 10, 11]:  # Numeric columns
-                    cell.alignment = Alignment(horizontal='right')
-        
-        # Create table
-        table_range = f"A1:{get_column_letter(len(detailed_headers))}{len(balances) + 1}"
-        table = Table(displayName="BalanceTable", ref=table_range)
-        style = TableStyleInfo(name="TableStyleMedium2", showFirstColumn=False,
-                              showLastColumn=False, showRowStripes=True, showColumnStripes=False)
-        table.tableStyleInfo = style
-        ws_data.add_table(table)
-        
-        # Department breakdown sheet
-        ws_dept = wb.create_sheet("Department Breakdown")
-        
-        # Department statistics
-        dept_stats = balances.values('employee__department__name').annotate(
-            employee_count=Count('employee'),
-            total_balance=Sum('yearly_balance'),
-            total_used=Sum('used_days'),
-            total_remaining=Sum(models.F('start_balance') + models.F('yearly_balance') - models.F('used_days') - models.F('scheduled_days'))
-        ).order_by('-total_balance')
-        
-        dept_headers = ['Department', 'Employees', 'Total Balance', 'Used Days', 'Remaining', 'Utilization %']
-        for col, header in enumerate(dept_headers, 1):
-            cell = ws_dept.cell(row=1, column=col, value=header)
-            cell.fill = header_fill
-            cell.font = header_font
-        
-        for row, dept in enumerate(dept_stats, 2):
-            utilization = (dept['total_used'] / dept['total_balance']) * 100 if dept['total_balance'] > 0 else 0
-            data = [
-                dept['employee__department__name'] or 'No Department',
-                dept['employee_count'],
-                float(dept['total_balance']),
-                float(dept['total_used']),
-                float(dept['total_remaining']),
-                f'{utilization:.1f}%'
-            ]
-            
-            for col, value in enumerate(data, 1):
-                ws_dept.cell(row=row, column=col, value=value)
-        
-        # Add chart if requested
-        if include_charts and dept_stats.exists():
-            chart = BarChart()
-            chart.type = "col"
-            chart.style = 10
-            chart.title = "Balance by Department"
-            chart.y_axis.title = 'Days'
-            chart.x_axis.title = 'Department'
-            
-            data = Reference(ws_dept, min_col=3, min_row=1, max_row=len(dept_stats) + 1, max_col=5)
-            cats = Reference(ws_dept, min_col=1, min_row=2, max_row=len(dept_stats) + 1)
-            chart.add_data(data, titles_from_data=True)
-            chart.set_categories(cats)
-            
-            ws_dept.add_chart(chart, "H2")
-        
-        # Auto-adjust all column widths
-        for ws_current in [ws_summary, ws_data, ws_dept]:
-            for column in ws_current.columns:
-                max_length = 0
-                column_letter = get_column_letter(column[0].column)
-                for cell in column:
-                    try:
-                        if len(str(cell.value)) > max_length:
-                            max_length = len(str(cell.value))
-                    except:
-                        pass
-                adjusted_width = min(max_length + 2, 50)
-                ws_current.column_dimensions[column_letter].width = adjusted_width
-        
-        # Generate filename
-        dept_name = ""
-        if department_id:
+        # Center align numeric columns
+        for col in range(4, 12):
+            ws.cell(row=row_num, column=col).alignment = Alignment(horizontal='center')
+    
+    # Auto-adjust column widths
+    for column in ws.columns:
+        max_length = 0
+        column = [cell for cell in column]
+        for cell in column:
             try:
-                from .models import Department
-                dept = Department.objects.get(id=department_id)
-                dept_name = f"_{dept.name.replace(' ', '_')}"
+                if len(str(cell.value)) > max_length:
+                    max_length = len(cell.value)
             except:
                 pass
-        
-        filename = f'vacation_balances_enhanced_{year}{dept_name}_{date.today().strftime("%Y%m%d")}.xlsx'
-        
-        response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-        response['Content-Disposition'] = f'attachment; filename={filename}'
-        wb.save(response)
-        
-        return response
-        
-    except Exception as e:
-        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        adjusted_width = (max_length + 2)
+        ws.column_dimensions[column[0].column_letter].width = adjusted_width
+    
+    # Create response
+    response = HttpResponse(
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+    response['Content-Disposition'] = f'attachment; filename=vacation_balances_{year}.xlsx'
+    wb.save(response)
+    
+    return response
 
 
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+@has_vacation_permission('vacation.balance.update')
+def update_employee_balance(request):
+    """
+    PUT /vacation/balances/update/
+    Update individual employee balance
+    Permission: vacation.balance.update or admin
+    """
+    employee_id = request.data.get('employee_id')
+    year = request.data.get('year', datetime.now().year)
+    
+    if not employee_id:
+        return Response(
+            {'error': 'employee_id is required'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    
+    try:
+        from .models import Employee
+        employee = Employee.objects.get(id=employee_id, is_deleted=False)
+    except Employee.DoesNotExist:
+        return Response(
+            {'error': 'Employee not found'},
+            status=status.HTTP_404_NOT_FOUND
+        )
+    
+    # Get or create balance
+    balance, created = EmployeeVacationBalance.objects.get_or_create(
+        employee=employee,
+        year=year,
+        defaults={
+            'start_balance': request.data.get('start_balance', 0),
+            'yearly_balance': request.data.get('yearly_balance', 28),
+            'used_days': request.data.get('used_days', 0),
+            'scheduled_days': request.data.get('scheduled_days', 0),
+            'updated_by': request.user
+        }
+    )
+    
+    if not created:
+        # Update existing balance
+        if 'start_balance' in request.data:
+            balance.start_balance = request.data['start_balance']
+        if 'yearly_balance' in request.data:
+            balance.yearly_balance = request.data['yearly_balance']
+        if 'used_days' in request.data:
+            balance.used_days = request.data['used_days']
+        if 'scheduled_days' in request.data:
+            balance.scheduled_days = request.data['scheduled_days']
+        
+        balance.updated_by = request.user
+        balance.save()
+    
+    serializer = EmployeeVacationBalanceSerializer(balance)
+    return Response({
+        'message': 'Balance updated successfully',
+        'balance': serializer.data
+    })
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@has_vacation_permission('vacation.balance.reset')
+def reset_balances(request):
+    """
+    POST /vacation/balances/reset/
+    Reset balances for a specific year
+    Permission: vacation.balance.reset or admin
+    """
+    year = request.data.get('year', datetime.now().year)
+    department_id = request.data.get('department_id', None)
+    
+    queryset = EmployeeVacationBalance.objects.filter(
+        is_deleted=False,
+        year=year
+    )
+    
+    if department_id:
+        queryset = queryset.filter(employee__department_id=department_id)
+    
+    # Reset used_days and scheduled_days to 0
+    updated_count = queryset.update(
+        used_days=0,
+        scheduled_days=0,
+        updated_by=request.user
+    )
+    
+    return Response({
+        'message': f'Reset {updated_count} balances for year {year}',
+        'count': updated_count
+    })
 
 # ==================== REQUEST IMMEDIATE ====================
 @swagger_auto_schema(
