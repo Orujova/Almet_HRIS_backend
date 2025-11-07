@@ -64,23 +64,22 @@ class DepartmentSerializer(serializers.ModelSerializer):
     employee_count = serializers.SerializerMethodField()
     unit_count = serializers.SerializerMethodField()
     
-    # Accept array of IDs
+    # Accept array of IDs for CREATE, single ID for UPDATE
     business_function_id = serializers.ListField(
         child=serializers.IntegerField(),
         write_only=True,
-        required=True,  # Make it required
-        help_text="Business function ID(s) - can be single integer or array"
+        required=False,  # Make optional since we'll handle validation
+        help_text="Business function ID(s) - array for create, single for update"
     )
     
     class Meta:
         model = Department
         fields = [
             'id', 'name',
-            'business_function_id',  # Only this write field
-            'business_function_name', 'business_function_code',  # Read-only display fields
+            'business_function_id',
+            'business_function_name', 'business_function_code',
             'is_active', 'employee_count', 'unit_count', 'created_at'
         ]
-        # REMOVED: 'business_function' from fields - this was causing the issue
     
     def get_employee_count(self, obj):
         return obj.employees.filter(status__affects_headcount=True).count()
@@ -88,27 +87,39 @@ class DepartmentSerializer(serializers.ModelSerializer):
     def get_unit_count(self, obj):
         return obj.units.filter(is_active=True).count()
     
-    def validate_business_function_id(self, value):
-        """Validate and normalize business_function_id"""
-        if not value:
-            raise serializers.ValidationError("business_function_id is required")
+    def validate(self, data):
+        """Handle both create and update modes"""
+        bf_id = data.get('business_function_id')
+        
+        # Check if data came from initial_data
+        if not bf_id and 'business_function' in self.initial_data:
+            bf_value = self.initial_data['business_function']
+            bf_id = [bf_value] if not isinstance(bf_value, list) else bf_value
+            data['business_function_id'] = bf_id
+        
+        # Validate business_function_id exists
+        if not bf_id:
+            raise serializers.ValidationError({
+                'business_function_id': 'Business function ID is required'
+            })
         
         # Ensure it's a list
-        if not isinstance(value, list):
-            value = [value]
+        if not isinstance(bf_id, list):
+            bf_id = [bf_id]
+            data['business_function_id'] = bf_id
         
         # Validate all IDs exist
         existing_count = BusinessFunction.objects.filter(
-            id__in=value, 
+            id__in=bf_id, 
             is_active=True
         ).count()
         
-        if existing_count != len(value):
-            raise serializers.ValidationError(
-                "Some business function IDs do not exist or are inactive"
-            )
+        if existing_count != len(bf_id):
+            raise serializers.ValidationError({
+                'business_function_id': 'Some business function IDs do not exist or are inactive'
+            })
         
-        return value
+        return data
     
     def create(self, validated_data):
         """Handle both single and bulk creation"""
@@ -130,7 +141,7 @@ class DepartmentSerializer(serializers.ModelSerializer):
             except BusinessFunction.DoesNotExist:
                 raise serializers.ValidationError("Business function not found")
         
-        # Bulk creation (2+ IDs)
+        # Bulk creation (2+ IDs) - rest of your existing code
         name = validated_data['name']
         is_active = validated_data.get('is_active', True)
         
@@ -141,7 +152,6 @@ class DepartmentSerializer(serializers.ModelSerializer):
             try:
                 business_function = BusinessFunction.objects.get(id=bf_id)
                 
-                # Check if already exists
                 if Department.objects.filter(
                     business_function=business_function,
                     name=name
@@ -159,7 +169,6 @@ class DepartmentSerializer(serializers.ModelSerializer):
             except Exception as e:
                 errors.append(f"Error for BF {bf_id}: {str(e)}")
         
-        # Store results for response
         self.context['bulk_result'] = {
             'created_departments': created_departments,
             'errors': errors,
@@ -171,7 +180,36 @@ class DepartmentSerializer(serializers.ModelSerializer):
             return created_departments[0]
         else:
             raise serializers.ValidationError({"errors": errors})
-
+    
+    def update(self, instance, validated_data):
+        """✅ FIXED: Handle update with single business_function_id"""
+        business_function_ids = validated_data.pop('business_function_id', None)
+        
+        if business_function_ids:
+            # For update, expect single ID in array
+            if isinstance(business_function_ids, list):
+                if len(business_function_ids) != 1:
+                    raise serializers.ValidationError({
+                        'business_function_id': 'Only one business function can be assigned during update'
+                    })
+                business_function_id = business_function_ids[0]
+            else:
+                business_function_id = business_function_ids
+            
+            try:
+                business_function = BusinessFunction.objects.get(id=business_function_id)
+                validated_data['business_function'] = business_function
+            except BusinessFunction.DoesNotExist:
+                raise serializers.ValidationError({
+                    'business_function_id': 'Business function not found'
+                })
+        
+        # Update other fields
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        
+        instance.save()
+        return instance
 
 class UnitSerializer(serializers.ModelSerializer):
     department_name = serializers.CharField(source='department.name', read_only=True)
@@ -282,6 +320,32 @@ class UnitSerializer(serializers.ModelSerializer):
             return created_units[0]
         else:
             raise serializers.ValidationError({"errors": errors})
+    
+    def update(self, instance, validated_data):
+        """FIXED: Handle single ID for update"""
+        department_id = validated_data.pop('department_id', None)
+        
+        if department_id:
+            # For update, take first ID from array or use single value
+            if isinstance(department_id, list):
+                dept_id = department_id[0] if department_id else None
+            else:
+                dept_id = department_id
+            
+            if dept_id:
+                try:
+                    department = Department.objects.get(id=dept_id, is_active=True)
+                    instance.department = department
+                except Department.DoesNotExist:
+                    raise serializers.ValidationError("Department not found")
+        
+        # Update other fields
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        
+        instance.save()
+        return instance
+    
 class JobFunctionSerializer(serializers.ModelSerializer):
     employee_count = serializers.SerializerMethodField()
     
@@ -2294,10 +2358,10 @@ class ManagerJobDescriptionSerializer(serializers.ModelSerializer):
 class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
     """Serializer for creating and updating employees with auto-generated employee_id"""
     
-    # User fields (write-only for creation)
-    first_name = serializers.CharField(max_length=150)
-    last_name = serializers.CharField(max_length=150)
-    email = serializers.EmailField()
+    # User fields (CHANGED: Required for both create and update)
+    first_name = serializers.CharField(max_length=150, required=True)
+    last_name = serializers.CharField(max_length=150, required=True)
+    email = serializers.EmailField(required=True)
     
     # Optional personal fields
     father_name = serializers.CharField(required=False, allow_blank=True, max_length=200)
@@ -2375,13 +2439,21 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
         vacancy_id = validated_data.pop('vacancy_id', None)
         create_user_account = validated_data.pop('create_user_account', False)
         
+        # ✅ CRITICAL: Extract first_name, last_name, email
+        first_name = validated_data.pop('first_name')
+        last_name = validated_data.pop('last_name')
+        email = validated_data.pop('email')
+        
         # Extract file data
         document = validated_data.pop('document', None)
         profile_photo = validated_data.pop('profile_photo', None)
         document_type = validated_data.pop('document_type', 'OTHER')
         document_name = validated_data.pop('document_name', '')
         
-        # CHANGED: Don't create user automatically
+        # ✅ Set employee fields directly
+        validated_data['first_name'] = first_name
+        validated_data['last_name'] = last_name
+        validated_data['email'] = email
         validated_data['created_by'] = self.context['request'].user
         
         # Set profile photo if provided
@@ -2404,7 +2476,7 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
         if 'grading_level' not in validated_data:
             validated_data['grading_level'] = ''
         
-        # Create the employee (no user account yet)
+        # ✅ Create the employee (first_name, last_name, email now in validated_data)
         employee = super().create(validated_data)
         
         # OPTIONAL: Create user account if requested
@@ -2412,7 +2484,6 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
             try:
                 employee.create_user_account()
             except ValueError as e:
-                # Log error but don't fail employee creation
                 logger.warning(f"Could not create user account for employee {employee.employee_id}: {e}")
         
         # Add tags
@@ -2465,6 +2536,11 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
         vacancy_id = validated_data.pop('vacancy_id', None)
         create_user_account = validated_data.pop('create_user_account', False)
         
+        # ✅ CRITICAL: Extract first_name, last_name, email if provided
+        first_name = validated_data.pop('first_name', None)
+        last_name = validated_data.pop('last_name', None)
+        email = validated_data.pop('email', None)
+        
         # Extract file data
         document = validated_data.pop('document', None)
         profile_photo = validated_data.pop('profile_photo', None)
@@ -2474,15 +2550,27 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
         # Track changes for activity log
         changes = []
         
-        # FIXED: Update employee fields directly (not user fields)
-        # Handle first_name, last_name, email directly on Employee model
-        employee_fields = ['first_name', 'last_name', 'email', 'father_name']
-        for field in employee_fields:
-            if field in validated_data:
-                old_value = getattr(instance, field, None)
-                new_value = validated_data[field]
-                if old_value != new_value:
-                    changes.append(f"{field}: {old_value} → {new_value}")
+        # ✅ Update employee fields directly
+        if first_name is not None:
+            old_value = instance.first_name
+            if old_value != first_name:
+                instance.first_name = first_name
+                validated_data['first_name'] = first_name
+                changes.append(f"First Name: {old_value} → {first_name}")
+        
+        if last_name is not None:
+            old_value = instance.last_name
+            if old_value != last_name:
+                instance.last_name = last_name
+                validated_data['last_name'] = last_name
+                changes.append(f"Last Name: {old_value} → {last_name}")
+        
+        if email is not None:
+            old_value = instance.email
+            if old_value != email:
+                instance.email = email
+                validated_data['email'] = email
+                changes.append(f"Email: {old_value} → {email}")
         
         # Update profile photo if provided
         if profile_photo:
@@ -2508,7 +2596,6 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
         # OPTIONAL: Create user account if requested and doesn't exist
         if create_user_account and not employee.user:
             try:
-                # Use employee's own fields for user creation
                 user = User.objects.create_user(
                     username=employee.email,
                     email=employee.email,
@@ -2525,22 +2612,21 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
             except Exception as e:
                 logger.warning(f"Could not create user account for employee {employee.employee_id}: {e}")
         
-        # FIXED: Update user account if it exists
+        # Sync user account if it exists
         if employee.user:
             user_updated = False
             
-            # Sync user fields with employee fields
-            if 'first_name' in validated_data and employee.user.first_name != employee.first_name:
+            if first_name and employee.user.first_name != employee.first_name:
                 employee.user.first_name = employee.first_name
                 user_updated = True
             
-            if 'last_name' in validated_data and employee.user.last_name != employee.last_name:
+            if last_name and employee.user.last_name != employee.last_name:
                 employee.user.last_name = employee.last_name
                 user_updated = True
             
-            if 'email' in validated_data and employee.user.email != employee.email:
+            if email and employee.user.email != employee.email:
                 employee.user.email = employee.email
-                employee.user.username = employee.email  # Keep username in sync
+                employee.user.username = employee.email
                 user_updated = True
             
             if user_updated:
