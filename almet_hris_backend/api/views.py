@@ -1844,24 +1844,42 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             return EmployeeDetailSerializer
     
     def list(self, request, *args, **kwargs):
-        """ENHANCED: Employee list that includes vacant positions by default"""
+        """FIXED: Proper pagination-filter coordination"""
         
         try:
-            # Check if we should include vacancies (default: True)
             include_vacancies = request.query_params.get('include_vacancies', 'true').lower() == 'true'
             
-            # Check pagination parameters
+            # ✅ FIX: Pagination parametrlərini yoxla
             page_param = request.query_params.get('page')
             page_size_param = request.query_params.get('page_size')
             use_pagination = request.query_params.get('use_pagination', '').lower() == 'true'
             
+            # ✅ CRITICAL: Filter parametrlərini detect et
+            filter_params = [
+                'search', 'employee_search', 'business_function', 'department', 
+                'unit', 'job_function', 'position_group', 'status', 'grading_level',
+                'line_manager', 'tags', 'gender', 'start_date_from', 'start_date_to',
+                'contract_end_date_from', 'contract_end_date_to', 'is_active', 
+                'status_needs_update', 'job_title_search', 'contract_duration',
+                'is_visible_in_org_chart', 'contract_expiring_days',
+                'years_of_service_min', 'years_of_service_max'
+            ]
+            
+            has_filters = any(request.query_params.get(param) for param in filter_params)
+            
+            # ✅ FIX: Əgər filter var və page explicitly set edilməyibsə, page=1 et
+            if has_filters and not page_param:
+                # Create mutable copy and force page=1
+                mutable_params = request.query_params.copy()
+                mutable_params['page'] = '1'
+                request._request.GET = mutable_params
+                logger.info(f"🔄 Auto-reset pagination to page 1 due to active filters")
+            
             should_paginate = bool(page_param or page_size_param or use_pagination)
             
             if include_vacancies:
-                # Get unified employee and vacancy data
                 return self._get_unified_employee_vacancy_list(request, should_paginate)
             else:
-                # Original employee-only logic
                 return self._get_employee_only_list(request, should_paginate)
                 
         except Exception as e:
@@ -1871,7 +1889,6 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 {'error': f'Failed to retrieve employees: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-    
     def _get_unified_employee_vacancy_list(self, request, should_paginate):
         """Get unified list of employees and vacant positions"""
         
