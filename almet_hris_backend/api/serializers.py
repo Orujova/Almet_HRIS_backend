@@ -2685,7 +2685,7 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
         return employee
 class BulkEmployeeCreateItemSerializer(serializers.Serializer):
     """Serializer for a single employee in bulk creation"""
-    employee_id = serializers.CharField(max_length=50)
+    employee_id = serializers.CharField(max_length=50, required=False, allow_blank=True)
     first_name = serializers.CharField(max_length=150)
     last_name = serializers.CharField(max_length=150)
     email = serializers.EmailField()
@@ -2895,7 +2895,11 @@ class BulkEmployeeGradingUpdateSerializer(serializers.Serializer):
 class OrgChartNodeSerializer(serializers.ModelSerializer):
     """FINAL FIXED: Enhanced serializer for organizational chart nodes"""
     
+    # ✅ Internal database ID (primary key)
+    id = serializers.IntegerField(read_only=True)
+    
     # Basic employee info for org chart
+    employee_id = serializers.CharField(read_only=True)  # HC001 kimi
     name = serializers.CharField(source='full_name', read_only=True)
     title = serializers.CharField(source='job_title', read_only=True)
     avatar = serializers.SerializerMethodField()
@@ -2913,7 +2917,7 @@ class OrgChartNodeSerializer(serializers.ModelSerializer):
     # Hierarchy info
     line_manager_id = serializers.CharField(source='line_manager.employee_id', read_only=True)
     direct_reports = serializers.SerializerMethodField()
-    direct_reports_details = serializers.SerializerMethodField()  # NEW: Detailed direct reports
+    direct_reports_details = serializers.SerializerMethodField()
     
     # Visual info
     status_color = serializers.CharField(source='status.color', read_only=True)
@@ -2932,8 +2936,12 @@ class OrgChartNodeSerializer(serializers.ModelSerializer):
     class Meta:
         model = Employee
         fields = [
+            # ✅ ƏSAS: ID və Employee ID hər ikisi
+            'id',  # Internal database ID (73)
+            'employee_id',  # Business ID (GEO1, HC001)
+            
             # Org chart essentials
-            'employee_id', 'name', 'title', 'avatar',
+            'name', 'title', 'avatar',
             'department', 'unit', 'business_function', 'position_group',
             'email', 'phone',
             'line_manager_id', 'direct_reports', 'direct_reports_details', 'status_color',
@@ -2944,6 +2952,108 @@ class OrgChartNodeSerializer(serializers.ModelSerializer):
             'colleagues_in_unit', 'colleagues_in_business_function',
             'manager_info', 'employee_details'
         ]
+    
+    def get_employee_details(self, obj):
+        """Get additional employee details safely"""
+        try:
+            # FIXED: Safe grading display
+            grading_display = 'No Grade'
+            if obj.grading_level:
+                parts = obj.grading_level.split('_')
+                if len(parts) == 2:
+                    position_short, level = parts
+                    grading_display = f"{position_short}-{level}"
+                else:
+                    grading_display = obj.grading_level
+            elif obj.position_group:
+                grading_display = f"{obj.position_group.grading_shorthand}-M"
+            
+            # FIXED: Safe contract duration
+            contract_duration = obj.contract_duration
+            try:
+                if hasattr(obj, 'get_contract_duration_display'):
+                    contract_duration = obj.get_contract_duration_display()
+            except:
+                pass
+            
+            return {
+                'internal_id': obj.id,  # ✅ ID burada da var
+                'employee_id': obj.employee_id,  # ✅ Employee ID burada da var
+                'start_date': obj.start_date,
+                'contract_duration': contract_duration,
+                'years_of_service': obj.years_of_service,
+                'grading_display': grading_display,
+                'tags': [
+                    {'name': tag.name, 'color': tag.color} 
+                    for tag in obj.tags.filter(is_active=True)
+                ],
+                'is_visible_in_org_chart': obj.is_visible_in_org_chart,
+                'created_at': obj.created_at,
+                'updated_at': obj.updated_at
+            }
+        except Exception as e:
+            return {
+                'internal_id': obj.id,
+                'employee_id': getattr(obj, 'employee_id', 'UNKNOWN'),
+                'start_date': obj.start_date,
+                'contract_duration': getattr(obj, 'contract_duration', 'N/A'),
+                'years_of_service': getattr(obj, 'years_of_service', 0),
+                'grading_display': 'No Grade',
+                'tags': [],
+                'is_visible_in_org_chart': getattr(obj, 'is_visible_in_org_chart', True),
+                'created_at': getattr(obj, 'created_at', None),
+                'updated_at': getattr(obj, 'updated_at', None)
+            }
+    
+    def get_direct_reports_details(self, obj):
+        """NEW: Get detailed information about direct reports"""
+        try:
+            direct_reports = Employee.objects.filter(
+                line_manager=obj,
+                status__allows_org_chart=True,
+                is_deleted=False
+            ).select_related('user', 'department', 'position_group', 'status')
+            
+            reports_data = []
+            for report in direct_reports:
+                report_data = {
+                    'id': report.id,  # ✅ Internal ID
+                    'employee_id': report.employee_id,  # ✅ Business ID
+                    'name': report.full_name,
+                    'title': report.job_title,
+                    'department': report.department.name if report.department else 'N/A',
+                    'unit': report.unit.name if report.unit else None,
+                    'position_group': report.position_group.get_name_display() if report.position_group else 'N/A',
+                    'email': report.user.email if report.user else 'N/A',
+                    'avatar': self.get_avatar(report),
+                    'status_color': report.status.color if report.status else '#6B7280',
+                    'profile_image_url': self._get_safe_profile_image_url(report)
+                }
+                reports_data.append(report_data)
+            
+            return reports_data
+        except Exception:
+            return []
+    
+    def get_manager_info(self, obj):
+        """Get manager information safely"""
+        try:
+            if not obj.line_manager:
+                return None
+            
+            manager = obj.line_manager
+            return {
+                'id': manager.id,  # ✅ Internal ID
+                'employee_id': manager.employee_id,  # ✅ Business ID
+                'name': manager.full_name,
+                'title': manager.job_title,
+                'department': manager.department.name if manager.department else 'N/A',
+                'avatar': self.get_avatar(manager),
+                'email': manager.user.email if manager.user else None,
+                'profile_image_url': self._get_safe_profile_image_url(manager)
+            }
+        except Exception:
+            return None
     
     def get_avatar(self, obj):
         """Generate avatar initials safely"""
@@ -2986,35 +3096,6 @@ class OrgChartNodeSerializer(serializers.ModelSerializer):
         except Exception:
             return 0
     
-    def get_direct_reports_details(self, obj):
-        """NEW: Get detailed information about direct reports"""
-        try:
-            direct_reports = Employee.objects.filter(
-                line_manager=obj,
-                status__allows_org_chart=True,
-                is_deleted=False
-            ).select_related('user', 'department', 'position_group', 'status')
-            
-            reports_data = []
-            for report in direct_reports:
-                report_data = {
-                    'id': report.id,
-                    'employee_id': report.employee_id,
-                    'name': report.full_name,
-                    'title': report.job_title,
-                    'department': report.department.name if report.department else 'N/A',
-                    'unit': report.unit.name if report.unit else None,
-                    'position_group': report.position_group.get_name_display() if report.position_group else 'N/A',
-                    'email': report.user.email if report.user else 'N/A',
-                    'avatar': self.get_avatar(report),
-                    'status_color': report.status.color if report.status else '#6B7280',
-                    'profile_image_url': self._get_safe_profile_image_url(report)
-                }
-                reports_data.append(report_data)
-            
-            return reports_data
-        except Exception:
-            return []
     
     def _get_safe_profile_image_url(self, employee):
         """Get profile image URL safely for any employee"""
@@ -3108,76 +3189,6 @@ class OrgChartNodeSerializer(serializers.ModelSerializer):
         except Exception:
             return 0
     
-    def get_manager_info(self, obj):
-        """Get manager information safely"""
-        try:
-            if not obj.line_manager:
-                return None
-            
-            manager = obj.line_manager
-            return {
-                'id': manager.employee_id,
-                'name': manager.full_name,
-                'title': manager.job_title,
-                'department': manager.department.name if manager.department else 'N/A',
-                'avatar': self.get_avatar(manager),
-                'email': manager.user.email if manager.user else None,
-                'profile_image_url': self._get_safe_profile_image_url(manager)
-            }
-        except Exception:
-            return None
-    
-    def get_employee_details(self, obj):
-        """Get additional employee details safely"""
-        try:
-            # FIXED: Safe grading display - only from employee_details
-            grading_display = 'No Grade'
-            if obj.grading_level:
-                parts = obj.grading_level.split('_')
-                if len(parts) == 2:
-                    position_short, level = parts
-                    grading_display = f"{position_short}-{level}"
-                else:
-                    grading_display = obj.grading_level
-            elif obj.position_group:
-                grading_display = f"{obj.position_group.grading_shorthand}-M"
-            
-            # FIXED: Safe contract duration
-            contract_duration = obj.contract_duration
-            try:
-                if hasattr(obj, 'get_contract_duration_display'):
-                    contract_duration = obj.get_contract_duration_display()
-            except:
-                pass
-            
-            return {
-                'internal_id': obj.id,
-                'start_date': obj.start_date,
-                'contract_duration': contract_duration,
-                'years_of_service': obj.years_of_service,
-                'grading_display': grading_display,  # ONLY grading info here
-                'tags': [
-                    {'name': tag.name, 'color': tag.color, } 
-                    for tag in obj.tags.filter(is_active=True)
-                ],
-                'is_visible_in_org_chart': obj.is_visible_in_org_chart,
-                'created_at': obj.created_at,
-                'updated_at': obj.updated_at
-            }
-        except Exception as e:
-            # Return basic details if there's any error
-            return {
-                'internal_id': obj.id,
-                'start_date': obj.start_date,
-                'contract_duration': getattr(obj, 'contract_duration', 'N/A'),
-                'years_of_service': getattr(obj, 'years_of_service', 0),
-                'grading_display': 'No Grade',
-                'tags': [],
-                'is_visible_in_org_chart': getattr(obj, 'is_visible_in_org_chart', True),
-                'created_at': getattr(obj, 'created_at', None),
-                'updated_at': getattr(obj, 'updated_at', None)
-            }
-
 class ContractExpirySerializer(serializers.ModelSerializer):
     """Serializer for contract expiry tracking"""
     name = serializers.CharField(source='full_name', read_only=True)

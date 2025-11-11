@@ -2686,7 +2686,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         
         # Define headers with validation requirements (ENHANCED with father_name)
         headers = [
-            'Employee ID*', 'First Name*', 'Last Name*', 'Email*',
+             'Employee ID (optional - auto-generated)', 'First Name*', 'Last Name*', 'Email*',
             'Date of Birth', 'Gender', 'Father Name', 'Address', 'Phone', 'Emergency Contact',
             'Business Function*', 'Department*', 'Unit', 'Job Function*',
             'Job Title*', 'Position Group*', 'Grading Level',
@@ -2719,11 +2719,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         ]
         ws.append(sample_data)
         
-        # Create reference sheets for dropdowns
-        self._create_reference_sheets(wb)
-        
-        # Add data validations
-        self._add_data_validations(ws)
+    
         
         # Auto-adjust column widths
         for column in ws.columns:
@@ -2738,8 +2734,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             adjusted_width = min(max_length + 2, 50)
             ws.column_dimensions[column_letter].width = adjusted_width
         
-        # Add instructions sheet
-        self._add_instructions_sheet(wb)
+     
         
         # Save to BytesIO
         output = io.BytesIO()
@@ -2754,199 +2749,6 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         
         return response
     
-    def _create_reference_sheets(self, workbook):
-        """Create reference sheets with lookup data"""
-        
-        # Business Functions sheet
-        bf_sheet = workbook.create_sheet(title="Business Functions")
-        bf_sheet.append(['Business Function'])
-        for bf in BusinessFunction.objects.filter(is_active=True).order_by('name'):
-            bf_sheet.append([bf.name])
-        
-        # Departments sheet
-        dept_sheet = workbook.create_sheet(title="Departments")
-        dept_sheet.append(['Business Function', 'Department'])
-        for dept in Department.objects.select_related('business_function').filter(is_active=True).order_by('business_function__name', 'name'):
-            dept_sheet.append([dept.business_function.name, dept.name])
-        
-        # Units sheet
-        unit_sheet = workbook.create_sheet(title="Units")
-        unit_sheet.append(['Department', 'Unit'])
-        for unit in Unit.objects.select_related('department').filter(is_active=True).order_by('department__name', 'name'):
-            unit_sheet.append([unit.department.name, unit.name])
-        
-        # Job Functions sheet
-        jf_sheet = workbook.create_sheet(title="Job Functions")
-        jf_sheet.append(['Job Function'])
-        for jf in JobFunction.objects.filter(is_active=True).order_by('name'):
-            jf_sheet.append([jf.name])
-        
-        # Position Groups sheet
-        pg_sheet = workbook.create_sheet(title="Position Groups")
-        pg_sheet.append(['Position Group', 'Available Grading Levels'])
-        for pg in PositionGroup.objects.filter(is_active=True).order_by('hierarchy_level'):
-            levels = ', '.join([level['code'] for level in pg.get_grading_levels()])
-            pg_sheet.append([pg.get_name_display(), levels])
-        
-        # Line Managers sheet (NEW)
-        lm_sheet = workbook.create_sheet(title="Line Managers")
-        lm_sheet.append(['Employee ID', 'Name', 'Position'])
-        for manager in Employee.objects.filter(
-            status__affects_headcount=True,
-            position_group__hierarchy_level__lte=4,
-            is_deleted=False
-        ).order_by('employee_id'):
-            lm_sheet.append([manager.employee_id, manager.full_name, manager.job_title])
-        
-        # Other options sheet
-        options_sheet = workbook.create_sheet(title="Options")
-        options_sheet.append(['Gender Options'])
-        options_sheet.append(['MALE'])
-        options_sheet.append(['FEMALE'])
-        options_sheet.append([''])
-        options_sheet.append(['Contract Duration Options'])
-        
-        # FIXED: Get contract duration choices properly
-        try:
-            # Try to get from ContractTypeConfig first
-            contract_configs = ContractTypeConfig.objects.filter(is_active=True).order_by('contract_type')
-            if contract_configs.exists():
-                for config in contract_configs:
-                    options_sheet.append([config.contract_type])
-            else:
-                # Fallback to default choices if no configs exist
-                default_durations = ['3_MONTHS', '6_MONTHS', '1_YEAR', '2_YEARS', '3_YEARS', 'PERMANENT']
-                for duration in default_durations:
-                    options_sheet.append([duration])
-        except Exception as e:
-            # Emergency fallback
-            logger.error(f"Error getting contract durations: {e}")
-            default_durations = ['3_MONTHS', '6_MONTHS', '1_YEAR', '2_YEARS', '3_YEARS', 'PERMANENT']
-            for duration in default_durations:
-                options_sheet.append([duration])
-        
-        options_sheet.append([''])
-        options_sheet.append(['Boolean Options'])
-        options_sheet.append(['TRUE'])
-        options_sheet.append(['FALSE'])
-    def _add_data_validations(self, worksheet):
-        """Add data validation to template"""
-        from openpyxl.worksheet.datavalidation import DataValidation
-        
-        # Gender validation (column F)
-        gender_validation = DataValidation(
-            type="list",
-            formula1='"MALE,FEMALE"',
-            showDropDown=True
-        )
-        gender_validation.add("F3:F1000")
-        worksheet.add_data_validation(gender_validation)
-        
-        # Business Function validation (column K)
-        bf_validation = DataValidation(
-            type="list",
-            formula1="'Business Functions'!A2:A100",
-            showDropDown=True
-        )
-        bf_validation.add("K3:K1000")
-        worksheet.add_data_validation(bf_validation)
-        
-        # Job Function validation (column N)
-        jf_validation = DataValidation(
-            type="list",
-            formula1="'Job Functions'!A2:A100",
-            showDropDown=True
-        )
-        jf_validation.add("N3:N1000")
-        worksheet.add_data_validation(jf_validation)
-        
-        # Position Group validation (column P)
-        pg_validation = DataValidation(
-            type="list",
-            formula1="'Position Groups'!A2:A100",
-            showDropDown=True
-        )
-        pg_validation.add("P3:P1000")
-        worksheet.add_data_validation(pg_validation)
-        
-        # Contract Duration validation (column S)
-        contract_validation = DataValidation(
-            type="list",
-            formula1='"3_MONTHS,6_MONTHS,1_YEAR,2_YEARS,3_YEARS,PERMANENT"',
-            showDropDown=True
-        )
-        contract_validation.add("S3:S1000")
-        worksheet.add_data_validation(contract_validation)
-        
-        # Boolean validation for Org Chart visibility (column V)
-        bool_validation = DataValidation(
-            type="list",
-            formula1='"TRUE,FALSE"',
-            showDropDown=True
-        )
-        bool_validation.add("V3:V1000")
-        worksheet.add_data_validation(bool_validation)
-    
-    def _add_instructions_sheet(self, workbook):
-        """Add instructions sheet to the workbook"""
-        instructions_sheet = workbook.create_sheet(title="Instructions")
-        
-        instructions = [
-            ["BULK EMPLOYEE CREATION TEMPLATE INSTRUCTIONS"],
-            [""],
-            ["REQUIRED FIELDS (marked with *)"],
-            ["• Employee ID: Unique identifier (e.g., HC001)"],
-            ["• First Name: Employee's first name"],
-            ["• Last Name: Employee's last name"],
-            ["• Email: Unique email address"],
-            ["• Business Function: Must match exactly from dropdown"],
-            ["• Department: Must exist under selected Business Function"],
-            ["• Job Function: Must match exactly from dropdown"],
-            ["• Job Title: Position title"],
-            ["• Position Group: Must match exactly from dropdown"],
-            ["• Start Date: Format YYYY-MM-DD (e.g., 2024-01-15)"],
-            ["• Contract Duration: Select from dropdown"],
-            [""],
-            ["OPTIONAL FIELDS"],
-            ["• Date of Birth: Format YYYY-MM-DD"],
-            ["• Gender: MALE or FEMALE"],
-            ["• Father Name: Father's name (optional)"],
-            ["• Unit: Must exist under selected Department"],
-            ["• Grading Level: Must be valid for Position Group (see Position Groups sheet)"],
-            ["• Contract Start Date: If different from Start Date"],
-            ["• Line Manager Employee ID: Must be existing employee ID (see Line Managers sheet)"],
-            ["• Is Visible in Org Chart: TRUE or FALSE (default: TRUE)"],
-            ["• Tag Names: Comma separated, format TYPE:Name (e.g., SKILL:Python,STATUS:New)"],
-            [""],
-            ["VALIDATION RULES"],
-            ["• Employee IDs must be unique"],
-            ["• Email addresses must be unique"],
-            ["• Departments must belong to selected Business Function"],
-            ["• Units must belong to selected Department"],
-            ["• Grading Levels must be valid for Position Group"],
-            ["• Line Manager must be existing employee"],
-            ["• Dates must be in YYYY-MM-DD format"],
-            [""],
-            ["NOTES"],
-            ["• Remove the sample data row before uploading"],
-            ["• Check the reference sheets for valid values"],
-            ["• Ensure all required fields are filled"],
-            ["• Date format must be YYYY-MM-DD"],
-            ["• Maximum 1000 employees per upload"],
-            ["• Father Name is optional but can be useful for identification"]
-        ]
-        
-        for row in instructions:
-            instructions_sheet.append(row)
-        
-        # Style the title
-        title_font = Font(bold=True, size=14, color="FFFFFF")
-        title_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
-        instructions_sheet['A1'].font = title_font
-        instructions_sheet['A1'].fill = title_fill
-        
-        # Auto-adjust column width
-        instructions_sheet.column_dimensions['A'].width = 80
 
     def _validate_and_prepare_employee_data(self, row, business_functions, departments, 
                                       units, job_functions, position_groups, 
@@ -3461,7 +3263,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             
             # Enhanced column mappings - more flexible matching
             column_mappings = {
-                'employee_id': ['Employee ID*', 'Employee ID', 'employee_id'],
+                'employee_id': ['Employee ID (optional - auto-generated)', 'Employee ID', 'employee_id'],  # ✅ UPDATED
                 'first_name': ['First Name*', 'First Name', 'first_name'],
                 'last_name': ['Last Name*', 'Last Name', 'last_name'],
                 'email': ['Email*', 'Email', 'email'],
@@ -3510,8 +3312,8 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             
             logger.info(f"Final column mapping: {actual_columns}")
             
-            # Check required fields
-            required_fields = ['employee_id', 'first_name', 'last_name', 'email', 
+            # ✅ UPDATED: Check required fields - employee_id ARTIQ REQUIRED DEYIL!
+            required_fields = ['first_name', 'last_name', 'email', 
                               'business_function', 'department', 'job_function', 
                               'job_title', 'position_group', 'start_date', 'contract_duration']
             
@@ -3527,15 +3329,16 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 results['failed'] = len(df_str)
                 return results
             
-            # Remove sample data row (row with HC001, John, Doe, etc.)
+            # ✅ UPDATED: Remove sample data row (daha flexible)
             df_clean = df_str.copy()
             
-            # Remove rows where Employee ID is sample data
-            employee_id_col = actual_columns['employee_id']
-            sample_ids = ['HC001', 'HC002', 'EMP001', 'TEST001']  # Common sample IDs
-            
-            for sample_id in sample_ids:
-                df_clean = df_clean[df_clean[employee_id_col].str.strip() != sample_id]
+            # Remove rows with sample data if employee_id column exists
+            if 'employee_id' in actual_columns:
+                employee_id_col = actual_columns['employee_id']
+                sample_ids = ['HC001', 'HC002', 'EMP001', 'TEST001']
+                
+                for sample_id in sample_ids:
+                    df_clean = df_clean[df_clean[employee_id_col].str.strip() != sample_id]
             
             # Remove rows with sample names
             first_name_col = actual_columns['first_name']
@@ -3546,10 +3349,11 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             # Remove completely empty rows
             df_clean = df_clean.dropna(how='all')
             
-            # Remove rows where employee_id is empty or nan
-            df_clean = df_clean[df_clean[employee_id_col].notna()]
-            df_clean = df_clean[df_clean[employee_id_col].str.strip() != '']
-            df_clean = df_clean[df_clean[employee_id_col].str.strip() != 'nan']
+            # ✅ CRITICAL FIX: Employee ID validation - boş ola bilər
+            # YALNIZ first_name və email-i yoxlayırıq
+            df_clean = df_clean[df_clean[first_name_col].notna()]
+            df_clean = df_clean[df_clean[first_name_col].str.strip() != '']
+            df_clean = df_clean[df_clean[first_name_col].str.strip() != 'nan']
             
             logger.info(f"After cleaning: {len(df_clean)} rows to process")
             
@@ -3634,7 +3438,9 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                             
                             return str_value
                         
-                        employee_id = safe_get('employee_id')
+                        # ✅ CRITICAL CHANGE: Employee ID is now OPTIONAL
+                        employee_id_from_excel = safe_get('employee_id')
+                        
                         first_name = safe_get('first_name')
                         last_name = safe_get('last_name')
                         email = safe_get('email')
@@ -3646,30 +3452,39 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                         start_date_str = safe_get('start_date')
                         contract_duration = safe_get('contract_duration', 'PERMANENT')
                         
-                        logger.info(f"Processing row {index}: {employee_id}, {first_name}, {last_name}")
+                        logger.info(f"Processing row {index}: {employee_id_from_excel or 'AUTO'}, {first_name}, {last_name}")
                         
-                        # Validate required fields
-                        if not all([employee_id, first_name, last_name, email, business_function_name, 
+                        # ✅ UPDATED: Validate required fields - employee_id ARTIQ YOXLANMIR
+                        if not all([first_name, last_name, email, business_function_name, 
                                    department_name, job_function_name, job_title, position_group_name, start_date_str]):
                             results['errors'].append(f"Row {index + 2}: Missing required data")
                             results['failed'] += 1
                             continue
                         
-                        # Check duplicates
-                        if Employee.objects.filter(employee_id=employee_id).exists():
-                            results['errors'].append(f"Row {index + 2}: Employee ID {employee_id} already exists")
-                            results['failed'] += 1
-                            continue
-                        
-                        if User.objects.filter(email=email).exists():
-                            results['errors'].append(f"Row {index + 2}: Email {email} already exists")
-                            results['failed'] += 1
-                            continue
-                        
-                        # Validate business function
+                        # ✅ CRITICAL: Business function validation - ALWAYS needed
                         business_function = business_functions.get(business_function_name.lower())
                         if not business_function:
                             results['errors'].append(f"Row {index + 2}: Business Function '{business_function_name}' not found")
+                            results['failed'] += 1
+                            continue
+                        
+                        # ✅ UPDATED: Employee ID handling
+                        validated_employee_id = None
+                        if employee_id_from_excel:
+                            # User provided employee_id - check for duplicates
+                            if Employee.objects.filter(employee_id=employee_id_from_excel).exists():
+                                results['errors'].append(f"Row {index + 2}: Employee ID {employee_id_from_excel} already exists")
+                                results['failed'] += 1
+                                continue
+                            validated_employee_id = employee_id_from_excel
+                            logger.info(f"Row {index + 2}: Using provided employee_id: {validated_employee_id}")
+                        else:
+                            # No employee_id provided - will be auto-generated by Employee.save()
+                            logger.info(f"Row {index + 2}: No employee_id provided, will be auto-generated for {first_name} {last_name} in {business_function.name}")
+                        
+                        # Check email duplicates
+                        if User.objects.filter(email=email).exists():
+                            results['errors'].append(f"Row {index + 2}: Email {email} already exists")
                             results['failed'] += 1
                             continue
                         
@@ -3741,7 +3556,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                         # ✅ PHONE FIELD VALIDATION - TRUNCATE IF TOO LONG
                         phone = safe_get('phone')
                         if phone and len(phone) > 15:
-                            phone = phone[:15]  # Take only first 15 characters
+                            phone = phone[:15]
                             logger.warning(f"Row {index + 2}: Phone number truncated to 15 characters")
                         
                         address = safe_get('address')
@@ -3779,43 +3594,40 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                         
                         notes = safe_get('notes')
                         
-                        # Create user
-                        # user_obj = User.objects.create_user(
-                        #     username=email,
-                        #     email=email,
-                        #     first_name=first_name,
-                        #     last_name=last_name
-                        # )
+                        # ✅ CRITICAL: Create employee - employee_id conditional
+                        employee_data = {
+                            'first_name': first_name,
+                            'last_name': last_name,
+                            'email': email,
+                            'date_of_birth': date_of_birth,
+                            'gender': gender,
+                            'father_name': father_name,
+                            'address': address,
+                            'phone': phone,
+                            'emergency_contact': emergency_contact,
+                            'business_function': business_function,
+                            'department': department,
+                            'unit': unit,
+                            'job_function': job_function,
+                            'job_title': job_title,
+                            'position_group': position_group,
+                            'grading_level': grading_level,
+                            'start_date': start_date,
+                            'contract_duration': contract_duration,
+                            'contract_start_date': contract_start_date,
+                            'line_manager': line_manager,
+                            'status': default_status,
+                            'is_visible_in_org_chart': is_visible_in_org_chart,
+                            'notes': notes,
+                            'created_by': user
+                        }
                         
-                        # Create employee
-                        employee = Employee.objects.create(
-                            # user=user_obj,
-                            first_name=first_name,  # 🆕 ƏLAVƏ ET
-                            last_name=last_name,    
-                            employee_id=employee_id,
-                            date_of_birth=date_of_birth,
-                            gender=gender,
-                            father_name=father_name,
-                            email=email, 
-                            address=address,
-                            phone=phone,
-                            emergency_contact=emergency_contact,
-                            business_function=business_function,
-                            department=department,
-                            unit=unit,
-                            job_function=job_function,
-                            job_title=job_title,
-                            position_group=position_group,
-                            grading_level=grading_level,
-                            start_date=start_date,
-                            contract_duration=contract_duration,
-                            contract_start_date=contract_start_date,
-                            line_manager=line_manager,
-                            status=default_status,
-                            is_visible_in_org_chart=is_visible_in_org_chart,
-                            notes=notes,
-                            created_by=user
-                        )
+                        # ✅ ONLY add employee_id if user provided it
+                        if validated_employee_id:
+                            employee_data['employee_id'] = validated_employee_id
+                        
+                        # Create employee - save() will auto-generate employee_id if not provided
+                        employee = Employee.objects.create(**employee_data)
                         
                         # Process tags
                         tags_str = safe_get('tags')
@@ -3846,19 +3658,26 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                         EmployeeActivity.objects.create(
                             employee=employee,
                             activity_type='BULK_CREATED',
-                            description=f"Employee {employee.full_name} created via bulk upload",
+                            description=f"Employee {employee.full_name} created via bulk upload" + 
+                                      (f" with provided ID {validated_employee_id}" if validated_employee_id else " with auto-generated ID"),
                             performed_by=user,
-                            metadata={'bulk_creation': True, 'row_number': index + 2}
+                            metadata={
+                                'bulk_creation': True, 
+                                'row_number': index + 2,
+                                'employee_id_auto_generated': not bool(validated_employee_id)
+                            }
                         )
                         
                         results['successful'] += 1
                         results['created_employees'].append({
                             'employee_id': employee.employee_id,
                             'name': employee.full_name,
-                            'email': employee.email 
+                            'email': employee.email,
+                            'id_auto_generated': not bool(validated_employee_id)
                         })
                         
-                        logger.info(f"✅ Created employee: {employee.employee_id} - {employee.full_name}")
+                        logger.info(f"✅ Created employee: {employee.employee_id} - {employee.full_name}" + 
+                                  (" (auto-generated ID)" if not validated_employee_id else " (provided ID)"))
                     
                 except Exception as e:
                     # ✅ Bu row fail oldu, amma digərləri davam edər
@@ -6138,13 +5957,19 @@ class OrgChartFilter:
         # 1. SEARCH FILTERS
         # ===========================================
         
+        # ✅ DÜZƏLDILMIŞ: Employee ID search
+        employee_id_search = self.params.get('employee_id_search')
+        if employee_id_search:
+            print(f"🔍 Applying employee ID search: {employee_id_search}")
+            queryset = queryset.filter(employee_id__icontains=employee_id_search)
+        
         # General search across multiple fields
         search = self.params.get('search')
         if search:
             print(f"🔍 Applying org chart search: {search}")
             queryset = queryset.filter(
                 Q(full_name__icontains=search) |
-                Q(employee_id__icontains=search) |
+                Q(employee_id__icontains=search) |  # ✅ Employee ID də search-ə daxildir
                 Q(user__email__icontains=search) |
                 Q(job_title__icontains=search) |
                 Q(business_function__name__icontains=search) |
@@ -6153,7 +5978,6 @@ class OrgChartFilter:
                 Q(father_name__icontains=search) |
                 Q(phone__icontains=search)
             )
-        
         
         # Job title search
         job_title_search = self.params.get('job_title_search')
@@ -6171,31 +5995,31 @@ class OrgChartFilter:
         # 2. ORGANIZATIONAL STRUCTURE FILTERS
         # ===========================================
         
-        # Business Functions (array)
+        # ✅ DÜZƏLDILMIŞ: Business Functions (array)
         business_function_ids = self.get_int_filter_values('business_function')
         if business_function_ids:
             print(f"🏭 Applying business function filter: {business_function_ids}")
             queryset = queryset.filter(business_function__id__in=business_function_ids)
         
-        # Departments (array)
+        # ✅ DÜZƏLDILMIŞ: Departments (array)
         department_ids = self.get_int_filter_values('department')
         if department_ids:
             print(f"🏢 Applying department filter: {department_ids}")
             queryset = queryset.filter(department__id__in=department_ids)
         
-        # Units (array)
+        # ✅ DÜZƏLDILMIŞ: Units (array)
         unit_ids = self.get_int_filter_values('unit')
         if unit_ids:
             print(f"🏢 Applying unit filter: {unit_ids}")
             queryset = queryset.filter(unit__id__in=unit_ids)
         
-        # Job Functions (array)
+        # ✅ DÜZƏLDILMIŞ: Job Functions (array)
         job_function_ids = self.get_int_filter_values('job_function')
         if job_function_ids:
             print(f"💼 Applying job function filter: {job_function_ids}")
             queryset = queryset.filter(job_function__id__in=job_function_ids)
         
-        # Position Groups (array)
+        # ✅ DÜZƏLDILMIŞ: Position Groups (array)
         position_group_ids = self.get_int_filter_values('position_group')
         if position_group_ids:
             print(f"📊 Applying position group filter: {position_group_ids}")
@@ -6205,7 +6029,7 @@ class OrgChartFilter:
         # 3. HIERARCHY FILTERS
         # ===========================================
         
-        # Line Managers (array)
+        # ✅ DÜZƏLDILMIŞ: Line Managers (array)
         line_manager_ids = self.get_int_filter_values('line_manager')
         if line_manager_ids:
             print(f"👨‍💼 Applying line manager filter: {line_manager_ids}")
@@ -6250,7 +6074,7 @@ class OrgChartFilter:
         # 4. EMPLOYMENT STATUS FILTERS
         # ===========================================
         
-        # Employment Status (array)
+        # ✅ DÜZƏLDILMIŞ: Employment Status (array)
         status_values = self.get_filter_values('status')
         if status_values:
             print(f"🎯 Applying status filter: {status_values}")
@@ -6265,7 +6089,7 @@ class OrgChartFilter:
             if status_q:
                 queryset = queryset.filter(status_q)
         
-        # Grading Levels (array)
+        # ✅ DÜZƏLDILMIŞ: Grading Levels (array)
         grading_levels = self.get_filter_values('grading_level')
         if grading_levels:
             print(f"📈 Applying grading level filter: {grading_levels}")
@@ -6297,20 +6121,18 @@ class OrgChartFilter:
                 )
             ).filter(direct_reports_count__gt=0)
         
-       
-        
         # ===========================================
         # 6. DEMOGRAPHIC FILTERS
         # ===========================================
         
-        # Gender filter
+        # ✅ DÜZƏLDILMIŞ: Gender filter (array)
         genders = self.get_filter_values('gender')
         if genders:
             print(f"👤 Applying gender filter: {genders}")
             queryset = queryset.filter(gender__in=genders)
         
-       
-        
+        final_count = queryset.count()
+        print(f"✅ Filter complete: {final_count} employees after all filters")
         
         return queryset
 
@@ -6470,11 +6292,10 @@ class OrgChartViewSet(viewsets.ReadOnlyModelViewSet):
             'position_group', 'vacancy_status', 'reporting_to'
         )
         
-        # Apply some filters to vacancies too
+        # Apply filters to vacancies
         business_function_values = request.query_params.getlist('business_function')
         if business_function_values:
             try:
-                # Parse comma-separated values
                 bf_ids = []
                 for bf_val in business_function_values:
                     if ',' in bf_val:
@@ -6506,9 +6327,10 @@ class OrgChartViewSet(viewsets.ReadOnlyModelViewSet):
         vacancy_data = []
         for vacancy in vacancies:
             vac_data = {
-                'employee_id': f"VAC_{vacancy.position_id}",
-                'name': f"[VACANT] {vacancy.title}",
-                'title': vacancy.title,
+                'id': vacancy.id,  # ✅ ƏLAVƏ ET: Internal database ID
+                'employee_id': vacancy.position_id,  # Business ID (position_id)
+                'name': f"[VACANT] {vacancy.job_title}",
+                'title': vacancy.job_title,
                 'avatar': 'VA',
                 'department': vacancy.department.name if vacancy.department else 'N/A',
                 'unit': vacancy.unit.name if vacancy.unit else None,
@@ -6526,19 +6348,20 @@ class OrgChartViewSet(viewsets.ReadOnlyModelViewSet):
                 'colleagues_in_unit': 0,
                 'colleagues_in_business_function': 0,
                 'manager_info': {
-                    'id': vacancy.reporting_to.employee_id,
+                    'id': vacancy.reporting_to.id,  # ✅ Manager ID
+                    'employee_id': vacancy.reporting_to.employee_id,  # ✅ Manager employee_id
                     'name': vacancy.reporting_to.full_name,
                     'title': vacancy.reporting_to.job_title,
                     'avatar': self._generate_avatar(vacancy.reporting_to.full_name)
                 } if vacancy.reporting_to else None,
                 'employee_details': {
-                    'internal_id': vacancy.id,
-      
-                    'is_vacancy': True
+                    'internal_id': vacancy.id,  # ✅ Vacancy internal ID
+                    'employee_id': vacancy.position_id,  # ✅ Position ID
+                    'is_vacancy': True,
+                    'original_employee_pk': vacancy.original_employee_pk
                 }
             }
             vacancy_data.append(vac_data)
-        
         # Combine employee and vacancy data
         all_org_data = employee_data + vacancy_data
         
@@ -6565,7 +6388,6 @@ class OrgChartViewSet(viewsets.ReadOnlyModelViewSet):
                 }
             }
         })
-    
     @action(detail=False, methods=['get'])
     def get_statistics(self, request):
         """Get comprehensive org chart statistics"""
@@ -6597,7 +6419,6 @@ class OrgChartViewSet(viewsets.ReadOnlyModelViewSet):
         elif len(words) == 1:
             return words[0][:2].upper()
         return 'NA'
-
 
 class ProfileImageViewSet(viewsets.ViewSet):
     permission_classes = [IsAuthenticated]
