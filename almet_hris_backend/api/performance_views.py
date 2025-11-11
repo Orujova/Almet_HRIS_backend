@@ -2076,6 +2076,7 @@ class PerformanceDashboardViewSet(viewsets.ViewSet):
     """Performance Dashboard Statistics with Access Control"""
     permission_classes = [IsAuthenticated]
     
+    
     @action(detail=False, methods=['get'])
     def statistics(self, request):
         """Get dashboard statistics - filtered by access"""
@@ -2109,7 +2110,23 @@ class PerformanceDashboardViewSet(viewsets.ViewSet):
         ).count()
         
         mid_year_completed = performances.filter(mid_year_completed=True).count()
-        end_year_completed = performances.filter(end_year_completed=True).count()
+        
+        # ✅ FIXED: Count only truly completed performances
+        # Must have:
+        # 1. approval_status = 'COMPLETED'
+        # 2. competencies_submitted = True
+        # 3. All non-cancelled objectives have end_year_rating
+        end_year_completed = 0
+        for perf in performances.filter(approval_status='COMPLETED', competencies_submitted=True):
+            # Check if all objectives have end_year_rating
+            objectives = perf.objectives.filter(is_cancelled=False)
+            if objectives.exists():
+                all_rated = all(obj.end_year_rating is not None for obj in objectives)
+                if all_rated:
+                    end_year_completed += 1
+            else:
+                # No objectives - count as completed if competencies submitted
+                end_year_completed += 1
         
         pending_employee_approval = performances.filter(
             approval_status='PENDING_EMPLOYEE_APPROVAL'
