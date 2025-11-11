@@ -2694,7 +2694,11 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             'Line Manager Employee ID', 'Is Visible in Org Chart',
             'Tag Names (comma separated)', 'Notes'
         ]
+        # Create reference sheets for dropdowns
+        self._create_reference_sheets(wb)
         
+        # Add data validations
+        self._add_data_validations(ws)
         # Write headers
         ws.append(headers)
         
@@ -2734,7 +2738,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             adjusted_width = min(max_length + 2, 50)
             ws.column_dimensions[column_letter].width = adjusted_width
         
-     
+        self._add_instructions_sheet(wb)
         
         # Save to BytesIO
         output = io.BytesIO()
@@ -2749,7 +2753,202 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         
         return response
     
-
+    def _create_reference_sheets(self, workbook):
+        """Create reference sheets with lookup data"""
+        from openpyxl.styles import Font, PatternFill
+        
+        # Business Functions sheet
+        bf_sheet = workbook.create_sheet(title="Business Functions")
+        bf_sheet.append(['Business Function'])
+        for bf in BusinessFunction.objects.filter(is_active=True).order_by('name'):
+            bf_sheet.append([bf.name])
+        
+        # Departments sheet
+        dept_sheet = workbook.create_sheet(title="Departments")
+        dept_sheet.append(['Business Function', 'Department'])
+        for dept in Department.objects.select_related('business_function').filter(is_active=True).order_by('business_function__name', 'name'):
+            dept_sheet.append([dept.business_function.name, dept.name])
+        
+        # Units sheet
+        unit_sheet = workbook.create_sheet(title="Units")
+        unit_sheet.append(['Department', 'Unit'])
+        for unit in Unit.objects.select_related('department').filter(is_active=True).order_by('department__name', 'name'):
+            unit_sheet.append([unit.department.name, unit.name])
+        
+        # Job Functions sheet
+        jf_sheet = workbook.create_sheet(title="Job Functions")
+        jf_sheet.append(['Job Function'])
+        for jf in JobFunction.objects.filter(is_active=True).order_by('name'):
+            jf_sheet.append([jf.name])
+        
+        # Position Groups sheet
+        pg_sheet = workbook.create_sheet(title="Position Groups")
+        pg_sheet.append(['Position Group', 'Available Grading Levels'])
+        for pg in PositionGroup.objects.filter(is_active=True).order_by('hierarchy_level'):
+            levels = ', '.join([level['code'] for level in pg.get_grading_levels()])
+            pg_sheet.append([pg.get_name_display(), levels])
+        
+        # Line Managers sheet
+        lm_sheet = workbook.create_sheet(title="Line Managers")
+        lm_sheet.append(['Employee ID', 'Name', 'Position'])
+        for manager in Employee.objects.filter(
+            status__affects_headcount=True,
+            position_group__hierarchy_level__lte=4,
+            is_deleted=False
+        ).order_by('employee_id'):
+            lm_sheet.append([manager.employee_id, manager.full_name, manager.job_title])
+        
+        # Other options sheet
+        options_sheet = workbook.create_sheet(title="Options")
+        options_sheet.append(['Gender Options'])
+        options_sheet.append(['MALE'])
+        options_sheet.append(['FEMALE'])
+        options_sheet.append([''])
+        options_sheet.append(['Contract Duration Options'])
+        
+        # Get contract duration choices properly
+        try:
+            contract_configs = ContractTypeConfig.objects.filter(is_active=True).order_by('contract_type')
+            if contract_configs.exists():
+                for config in contract_configs:
+                    options_sheet.append([config.contract_type])
+            else:
+                default_durations = ['3_MONTHS', '6_MONTHS', '1_YEAR', '2_YEARS', '3_YEARS', 'PERMANENT']
+                for duration in default_durations:
+                    options_sheet.append([duration])
+        except Exception as e:
+            logger.error(f"Error getting contract durations: {e}")
+            default_durations = ['3_MONTHS', '6_MONTHS', '1_YEAR', '2_YEARS', '3_YEARS', 'PERMANENT']
+            for duration in default_durations:
+                options_sheet.append([duration])
+        
+        options_sheet.append([''])
+        options_sheet.append(['Boolean Options'])
+        options_sheet.append(['TRUE'])
+        options_sheet.append(['FALSE'])
+    
+    
+    def _add_data_validations(self, worksheet):
+        """Add data validation to template"""
+        from openpyxl.worksheet.datavalidation import DataValidation
+        
+        # Gender validation (column F)
+        gender_validation = DataValidation(
+            type="list",
+            formula1='"MALE,FEMALE"',
+            showDropDown=True
+        )
+        gender_validation.add("F3:F1000")
+        worksheet.add_data_validation(gender_validation)
+        
+        # Business Function validation (column K)
+        bf_validation = DataValidation(
+            type="list",
+            formula1="'Business Functions'!A2:A100",
+            showDropDown=True
+        )
+        bf_validation.add("K3:K1000")
+        worksheet.add_data_validation(bf_validation)
+        
+        # Job Function validation (column N)
+        jf_validation = DataValidation(
+            type="list",
+            formula1="'Job Functions'!A2:A100",
+            showDropDown=True
+        )
+        jf_validation.add("N3:N1000")
+        worksheet.add_data_validation(jf_validation)
+        
+        # Position Group validation (column P)
+        pg_validation = DataValidation(
+            type="list",
+            formula1="'Position Groups'!A2:A100",
+            showDropDown=True
+        )
+        pg_validation.add("P3:P1000")
+        worksheet.add_data_validation(pg_validation)
+        
+        # Contract Duration validation (column S)
+        contract_validation = DataValidation(
+            type="list",
+            formula1='"3_MONTHS,6_MONTHS,1_YEAR,2_YEARS,3_YEARS,PERMANENT"',
+            showDropDown=True
+        )
+        contract_validation.add("S3:S1000")
+        worksheet.add_data_validation(contract_validation)
+        
+        # Boolean validation for Org Chart visibility (column V)
+        bool_validation = DataValidation(
+            type="list",
+            formula1='"TRUE,FALSE"',
+            showDropDown=True
+        )
+        bool_validation.add("V3:V1000")
+        worksheet.add_data_validation(bool_validation)
+    
+    
+    def _add_instructions_sheet(self, workbook):
+        """Add instructions sheet to the workbook"""
+        from openpyxl.styles import Font, PatternFill
+        
+        instructions_sheet = workbook.create_sheet(title="Instructions")
+        
+        instructions = [
+            ["BULK EMPLOYEE CREATION TEMPLATE INSTRUCTIONS"],
+            [""],
+            ["REQUIRED FIELDS (marked with *)"],
+            ["• Employee ID: Unique identifier (e.g., HC001)"],
+            ["• First Name: Employee's first name"],
+            ["• Last Name: Employee's last name"],
+            ["• Email: Unique email address"],
+            ["• Business Function: Must match exactly from dropdown"],
+            ["• Department: Must exist under selected Business Function"],
+            ["• Job Function: Must match exactly from dropdown"],
+            ["• Job Title: Position title"],
+            ["• Position Group: Must match exactly from dropdown"],
+            ["• Start Date: Format YYYY-MM-DD (e.g., 2024-01-15)"],
+            ["• Contract Duration: Select from dropdown"],
+            [""],
+            ["OPTIONAL FIELDS"],
+            ["• Date of Birth: Format YYYY-MM-DD"],
+            ["• Gender: MALE or FEMALE"],
+            ["• Father Name: Father's name (optional)"],
+            ["• Unit: Must exist under selected Department"],
+            ["• Grading Level: Must be valid for Position Group (see Position Groups sheet)"],
+            ["• Contract Start Date: If different from Start Date"],
+            ["• Line Manager Employee ID: Must be existing employee ID (see Line Managers sheet)"],
+            ["• Is Visible in Org Chart: TRUE or FALSE (default: TRUE)"],
+            ["• Tag Names: Comma separated, format TYPE:Name (e.g., SKILL:Python,STATUS:New)"],
+            [""],
+            ["VALIDATION RULES"],
+            ["• Employee IDs must be unique"],
+            ["• Email addresses must be unique"],
+            ["• Departments must belong to selected Business Function"],
+            ["• Units must belong to selected Department"],
+            ["• Grading Levels must be valid for Position Group"],
+            ["• Line Manager must be existing employee"],
+            ["• Dates must be in YYYY-MM-DD format"],
+            [""],
+            ["NOTES"],
+            ["• Remove the sample data row before uploading"],
+            ["• Check the reference sheets for valid values"],
+            ["• Ensure all required fields are filled"],
+            ["• Date format must be YYYY-MM-DD"],
+            ["• Maximum 1000 employees per upload"],
+            ["• Father Name is optional but can be useful for identification"]
+        ]
+        
+        for row in instructions:
+            instructions_sheet.append(row)
+        
+        # Style the title
+        title_font = Font(bold=True, size=14, color="FFFFFF")
+        title_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+        instructions_sheet['A1'].font = title_font
+        instructions_sheet['A1'].fill = title_fill
+        
+        # Auto-adjust column width
+        instructions_sheet.column_dimensions['A'].width = 80
     def _validate_and_prepare_employee_data(self, row, business_functions, departments, 
                                       units, job_functions, position_groups, 
                                       employee_lookup, tags_lookup, default_status, row_num):
@@ -2956,7 +3155,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             return {'error': f"Row {row_num}: {'; '.join(errors)}"}
         
         return data
-   
+    
     @action(detail=False, methods=['post'])
     def export_selected(self, request):
         """COMPLETELY FIXED: Export selected employees to Excel or CSV with proper field handling"""
