@@ -497,7 +497,7 @@ class EmployeePerformanceDetailSerializer(serializers.ModelSerializer):
     
     objectives = EmployeeObjectiveSerializer(many=True, read_only=True)
     competency_ratings = EmployeeCompetencyRatingSerializer(many=True, read_only=True)
-    development_needs = DevelopmentNeedSerializer(many=True, read_only=True)
+    development_needs = serializers.SerializerMethodField()
     
     # ✅ Clarification comments
     clarification_comments = serializers.SerializerMethodField()
@@ -539,7 +539,14 @@ class EmployeePerformanceDetailSerializer(serializers.ModelSerializer):
             return obj.employee.line_manager.full_name if obj.employee.line_manager else None
         except:
             return None
-    
+    def get_development_needs(self, obj):
+        """Safe get development needs"""
+        try:
+            needs = obj.development_needs.all()
+            return DevelopmentNeedSerializer(needs, many=True).data
+        except Exception as e:
+            logger.warning(f"Error getting development_needs: {e}")
+            return []
     def get_metadata(self, obj):
         """Get metadata about competency type - safe"""
         try:
