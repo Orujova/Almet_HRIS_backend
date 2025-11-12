@@ -89,8 +89,7 @@ class PositionLeadershipAssessmentViewSet(viewsets.ModelViewSet):
             'leadership_item__child_group__main_group'
         ).all())
         
-        print(f"🔍 Position Assessment ID: {instance.id}")
-        print(f"🔍 Competency Ratings Count: {len(competency_ratings)}")
+
         
         serializer = self.get_serializer(instance)
         return Response(serializer.data)
@@ -271,12 +270,7 @@ class PositionLeadershipAssessmentViewSet(viewsets.ModelViewSet):
                 for keyword in leadership_keywords
             )
             
-            # Debug logging
-            print(f"🔍 Employee: {employee.full_name}")
-            print(f"🔍 Position Group Name: {employee.position_group.name}")
-            print(f"🔍 Position Group Display: {employee.position_group.get_name_display()}")
-            print(f"🔍 Normalized Name: {position_name}")
-            print(f"🔍 Is Leadership: {is_leadership}")
+
             
             if not is_leadership:
                 return Response({
@@ -1879,12 +1873,7 @@ class AssessmentDashboardViewSet(viewsets.ViewSet):
                 for keyword in leadership_keywords
             )
             
-            # Debug logging
-            print(f"🔍 Employee Overview - Employee: {employee.full_name}")
-            print(f"🔍 Position Group Name: {employee.position_group.name}")
-            print(f"🔍 Position Group Display: {employee.position_group.get_name_display()}")
-            print(f"🔍 Normalized Name: {position_name}")
-            print(f"🔍 Is Leadership Position: {is_leadership_position}")
+
             
             # Get all assessments for employee
             core_assessments = EmployeeCoreAssessment.objects.filter(

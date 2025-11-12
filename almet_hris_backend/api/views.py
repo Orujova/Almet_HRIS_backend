@@ -168,7 +168,7 @@ def authenticate_microsoft(request):
     3. Generate YOUR OWN JWT tokens (for YOUR API access)
     4. Return YOUR JWT tokens to frontend
     """
-    logger.info('=== Microsoft authentication request received ===')
+ 
     
     try:
         id_token = request.data.get('id_token')
@@ -622,17 +622,17 @@ class ComprehensiveEmployeeFilter:
         is_deleted = self.params.get('is_deleted')
         if is_deleted:
             if is_deleted.lower() == 'true':
-                print(f"🗑️ Applying is_deleted: True")
+           
                 from .models import Employee
                 queryset = Employee.all_objects.filter(
                     pk__in=queryset.values_list('pk', flat=True),
                     is_deleted=True
                 )
             elif is_deleted.lower() == 'false':
-                print(f"🗑️ Applying is_deleted: False")
+             
                 queryset = queryset.filter(is_deleted=False)
             elif is_deleted.lower() == 'all':
-                print(f"🗑️ Applying is_deleted: All (including deleted)")
+             
                 from .models import Employee
                 queryset = Employee.all_objects.filter(
                     pk__in=queryset.values_list('pk', flat=True)
@@ -5870,10 +5870,7 @@ class BulkEmployeeUploadViewSet(viewsets.ViewSet):
         """Bulk create employees from uploaded Excel file"""
         
         try:
-            # Log incoming request
-            logger.info(f"Bulk upload request received from user: {request.user}")
-            logger.info(f"Request FILES: {list(request.FILES.keys())}")
-            logger.info(f"Request data: {request.data}")
+         
             
             # Check if file exists
             if 'file' not in request.FILES:
@@ -5884,7 +5881,7 @@ class BulkEmployeeUploadViewSet(viewsets.ViewSet):
                 )
             
             file = request.FILES['file']
-            logger.info(f"File received: {file.name}, size: {file.size}")
+        
             
             # Validate file format
             if not file.name.endswith(('.xlsx', '.xls')):
@@ -6318,7 +6315,7 @@ class OrgChartFilter:
         # Exclude employees without teams (no direct reports)
         hide_individual_contributors = self.params.get('hide_individual_contributors')
         if hide_individual_contributors and hide_individual_contributors.lower() == 'true':
-            print(f"👥 Hiding individual contributors")
+       
             queryset = queryset.annotate(
                 direct_reports_count=Count(
                     'direct_reports',
@@ -6329,7 +6326,7 @@ class OrgChartFilter:
         # Show only managers (have direct reports)
         managers_only = self.params.get('managers_only')
         if managers_only and managers_only.lower() == 'true':
-            print(f"👨‍💼 Showing managers only")
+        
             queryset = queryset.annotate(
                 direct_reports_count=Count(
                     'direct_reports',

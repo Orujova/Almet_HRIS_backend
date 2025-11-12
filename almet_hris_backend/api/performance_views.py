@@ -136,7 +136,6 @@ class ObjectiveStatusViewSet(viewsets.ModelViewSet):
 
 # ============ MAIN PERFORMANCE VIEWSET ============
 
-# api/performance_views.py
 
 class EmployeePerformanceViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
@@ -2079,15 +2078,13 @@ class PerformanceDashboardViewSet(viewsets.ViewSet):
     
     @action(detail=False, methods=['get'])
     def statistics(self, request):
-        """Get dashboard statistics - filtered by access"""
+        """Get dashboard statistics - FIXED"""
         year = request.query_params.get('year')
         
         if not year:
             active_year = PerformanceYear.objects.filter(is_active=True).first()
             if not active_year:
-                return Response({
-                    'error': 'No active performance year'
-                }, status=status.HTTP_404_NOT_FOUND)
+                return Response({'error': 'No active performance year'}, status=status.HTTP_404_NOT_FOUND)
             year = active_year.year
         else:
             year = int(year)
@@ -2095,9 +2092,7 @@ class PerformanceDashboardViewSet(viewsets.ViewSet):
         try:
             perf_year = PerformanceYear.objects.get(year=year)
         except PerformanceYear.DoesNotExist:
-            return Response({
-                'error': f'Performance year {year} not found'
-            }, status=status.HTTP_404_NOT_FOUND)
+            return Response({'error': f'Performance year {year} not found'}, status=status.HTTP_404_NOT_FOUND)
         
         performances = EmployeePerformance.objects.filter(performance_year=perf_year)
         performances = filter_viewable_performances(request.user, performances)
@@ -2112,22 +2107,35 @@ class PerformanceDashboardViewSet(viewsets.ViewSet):
         mid_year_completed = performances.filter(mid_year_completed=True).count()
         
         # ✅ FIXED: Count only truly completed performances
-        # Must have:
-        # 1. approval_status = 'COMPLETED'
-        # 2. competencies_submitted = True
-        # 3. All non-cancelled objectives have end_year_rating
         end_year_completed = 0
-        for perf in performances.filter(approval_status='COMPLETED', competencies_submitted=True):
-            # Check if all objectives have end_year_rating
+        
+        for perf in performances:
+            # Must have COMPLETED status
+            if perf.approval_status != 'COMPLETED':
+                continue
+            
+            # Must have competencies submitted
+            if not perf.competencies_submitted:
+                logger.info(f"⚠️ {perf.employee.full_name}: Not completed - competencies not submitted")
+                continue
+            
+            # Must have all objectives rated
             objectives = perf.objectives.filter(is_cancelled=False)
             if objectives.exists():
                 all_rated = all(obj.end_year_rating is not None for obj in objectives)
-                if all_rated:
-                    end_year_completed += 1
-            else:
-                # No objectives - count as completed if competencies submitted
-                end_year_completed += 1
+                if not all_rated:
+                    logger.info(f"⚠️ {perf.employee.full_name}: Not completed - some objectives not rated")
+                    continue
+            
+            # Must have final_rating calculated
+            if not perf.final_rating or perf.final_rating == 'N/A':
+                logger.info(f"⚠️ {perf.employee.full_name}: Not completed - no final rating")
+                continue
+            
+            logger.info(f"✅ {perf.employee.full_name}: COMPLETED")
+            end_year_completed += 1
         
+        logger.info(f"📊 End year completed: {end_year_completed}/{total_employees}")
         pending_employee_approval = performances.filter(
             approval_status='PENDING_EMPLOYEE_APPROVAL'
         ).count()

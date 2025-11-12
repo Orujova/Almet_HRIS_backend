@@ -144,7 +144,7 @@ class PositionLeadershipAssessmentCreateSerializer(serializers.ModelSerializer):
     
     def validate_grade_levels(self, value):
         """Validate grade levels"""
-        print(f"🔍 [Leadership] Validating grade_levels: {value}, type: {type(value)}")
+
         
         if not value:
             raise serializers.ValidationError("At least one grade level must be selected")
@@ -167,7 +167,7 @@ class PositionLeadershipAssessmentCreateSerializer(serializers.ModelSerializer):
         # Remove duplicates and sort
         unique_grades = sorted(list(set(cleaned_grades)))
         
-        print(f"✅ [Leadership] Cleaned grade_levels: {unique_grades}")
+
         return unique_grades
     
     def validate(self, data):
@@ -201,7 +201,7 @@ class PositionLeadershipAssessmentCreateSerializer(serializers.ModelSerializer):
         if not value:
             raise serializers.ValidationError("Competency ratings are required")
         
-        print(f"🔍 [Leadership] Validating competency_ratings: {len(value)} items")
+
         
         for idx, rating in enumerate(value):
             if 'leadership_item_id' not in rating or 'required_level' not in rating:
@@ -223,7 +223,7 @@ class PositionLeadershipAssessmentCreateSerializer(serializers.ModelSerializer):
         competency_ratings = validated_data.pop('competency_ratings')
         validated_data['created_by'] = self.context['request'].user
         
-        print(f"🚀 [Leadership] Creating with grade_levels: {validated_data.get('grade_levels')}")
+    
         
         position_assessment = super().create(validated_data)
         
@@ -235,7 +235,7 @@ class PositionLeadershipAssessmentCreateSerializer(serializers.ModelSerializer):
                 required_level=rating_data['required_level']
             )
         
-        print(f"✅ [Leadership] Created assessment ID: {position_assessment.id}")
+  
         return position_assessment
     
     @transaction.atomic
@@ -243,9 +243,7 @@ class PositionLeadershipAssessmentCreateSerializer(serializers.ModelSerializer):
         """Update position assessment and its competency ratings"""
         competency_ratings = validated_data.pop('competency_ratings', None)
         
-        print(f"🔍 [Leadership] Update instance ID: {instance.id}")
-        print(f"🔍 [Leadership] Current grade_levels: {instance.grade_levels}")
-        print(f"🔍 [Leadership] New validated_data: {validated_data}")
+
         
         # ✅ Update fields explicitly
         if 'position_group' in validated_data:
@@ -253,18 +251,18 @@ class PositionLeadershipAssessmentCreateSerializer(serializers.ModelSerializer):
         
         if 'grade_levels' in validated_data:
             instance.grade_levels = validated_data['grade_levels']
-            print(f"✅ [Leadership] Updated grade_levels to: {instance.grade_levels}")
+
         
         instance.save()
-        print(f"✅ [Leadership] Saved instance, grade_levels now: {instance.grade_levels}")
+     
         
         # Update competency ratings if provided
         if competency_ratings is not None:
-            print(f"🔄 [Leadership] Updating {len(competency_ratings)} competency ratings")
+     
             
             # Delete old ratings
             deleted_count = instance.competency_ratings.all().delete()[0]
-            print(f"🗑️  [Leadership] Deleted {deleted_count} old ratings")
+        
             
             # Create new ratings
             for rating_data in competency_ratings:
@@ -274,11 +272,11 @@ class PositionLeadershipAssessmentCreateSerializer(serializers.ModelSerializer):
                     required_level=rating_data['required_level']
                 )
             
-            print(f"✅ [Leadership] Created {len(competency_ratings)} new ratings")
+  
         
         # Refresh from DB to get updated values
         instance.refresh_from_db()
-        print(f"🔄 [Leadership] After refresh, grade_levels: {instance.grade_levels}")
+
         
         return instance
 class EmployeeLeadershipCompetencyRatingSerializer(serializers.ModelSerializer):
@@ -497,12 +495,7 @@ class EmployeeLeadershipAssessmentCreateSerializer(serializers.ModelSerializer):
                 for keyword in leadership_keywords
             )
             
-            # Debug logging
-            print(f"🔍 Employee: {employee.full_name}")
-            print(f"🔍 Position Group Name (DB): {employee.position_group.name}")
-            print(f"🔍 Position Group Display: {employee.position_group.get_name_display()}")
-            print(f"🔍 Normalized Name: {position_name}")
-            print(f"🔍 Is Leadership: {is_leadership}")
+
             
             if not is_leadership:
                 raise serializers.ValidationError(
@@ -866,7 +859,7 @@ class PositionBehavioralAssessmentCreateSerializer(serializers.ModelSerializer):
     
     def validate_grade_levels(self, value):
         """Validate grade levels"""
-        print(f"🔍 [Behavioral] Validating grade_levels: {value}, type: {type(value)}")
+   
         
         if not value:
             raise serializers.ValidationError("At least one grade level must be selected")
@@ -889,7 +882,7 @@ class PositionBehavioralAssessmentCreateSerializer(serializers.ModelSerializer):
         # Remove duplicates and sort
         unique_grades = sorted(list(set(cleaned_grades)))
         
-        print(f"✅ [Behavioral] Cleaned grade_levels: {unique_grades}")
+    
         return unique_grades
     
     def validate(self, data):
@@ -943,7 +936,7 @@ class PositionBehavioralAssessmentCreateSerializer(serializers.ModelSerializer):
         competency_ratings = validated_data.pop('competency_ratings')
         validated_data['created_by'] = self.context['request'].user
         
-        print(f"🚀 [Behavioral] Creating with grade_levels: {validated_data.get('grade_levels')}")
+   
         
         position_assessment = super().create(validated_data)
         
@@ -953,8 +946,7 @@ class PositionBehavioralAssessmentCreateSerializer(serializers.ModelSerializer):
                 behavioral_competency_id=rating_data['behavioral_competency_id'],
                 required_level=rating_data['required_level']
             )
-        
-        print(f"✅ [Behavioral] Created assessment ID: {position_assessment.id}")
+   
         return position_assessment
     
     @transaction.atomic
@@ -962,9 +954,7 @@ class PositionBehavioralAssessmentCreateSerializer(serializers.ModelSerializer):
         """Update position assessment and its competency ratings"""
         competency_ratings = validated_data.pop('competency_ratings', None)
         
-        print(f"🔍 [Behavioral] Update instance ID: {instance.id}")
-        print(f"🔍 [Behavioral] Current grade_levels: {instance.grade_levels}")
-        print(f"🔍 [Behavioral] New validated_data: {validated_data}")
+    
         
         # ✅ Update fields explicitly
         if 'position_group' in validated_data:
@@ -972,17 +962,14 @@ class PositionBehavioralAssessmentCreateSerializer(serializers.ModelSerializer):
         
         if 'grade_levels' in validated_data:
             instance.grade_levels = validated_data['grade_levels']
-            print(f"✅ [Behavioral] Updated grade_levels to: {instance.grade_levels}")
+         
         
         instance.save()
-        print(f"✅ [Behavioral] Saved instance, grade_levels now: {instance.grade_levels}")
+   
         
         # Update competency ratings if provided
         if competency_ratings is not None:
-            print(f"🔄 [Behavioral] Updating {len(competency_ratings)} competency ratings")
-            
-            deleted_count = instance.competency_ratings.all().delete()[0]
-            print(f"🗑️  [Behavioral] Deleted {deleted_count} old ratings")
+     
             
             for rating_data in competency_ratings:
                 PositionBehavioralCompetencyRating.objects.create(
@@ -991,11 +978,11 @@ class PositionBehavioralAssessmentCreateSerializer(serializers.ModelSerializer):
                     required_level=rating_data['required_level']
                 )
             
-            print(f"✅ [Behavioral] Created {len(competency_ratings)} new ratings")
+     
         
         # Refresh from DB
         instance.refresh_from_db()
-        print(f"🔄 [Behavioral] After refresh, grade_levels: {instance.grade_levels}")
+      
         
         return instance
 class EmployeeCoreCompetencyRatingSerializer(serializers.ModelSerializer):

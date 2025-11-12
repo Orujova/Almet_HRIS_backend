@@ -359,8 +359,7 @@ class EmployeePerformance(models.Model):
     
     def calculate_scores(self):
         """
-        Calculate all performance scores
-        ✅ FIXED: Proper final rating calculation with better logging
+        ✅ FIXED: Ensure final_rating is ALWAYS calculated
         """
         from collections import defaultdict
         
@@ -390,9 +389,10 @@ class EmployeePerformance(models.Model):
         
         logger.info(f"✅ Objectives: {self.total_objectives_score}/{eval_target.objective_score_target} = {self.objectives_percentage}%")
         
-        # ========== BEHAVIORAL COMPETENCIES CALCULATION ==========
+        # ========== COMPETENCIES CALCULATION ==========
         competencies = self.competency_ratings.select_related(
             'behavioral_competency__group',
+            'leadership_item',
             'end_year_rating'
         ).all()
         
@@ -401,10 +401,14 @@ class EmployeePerformance(models.Model):
         total_actual = 0
         
         for comp in competencies:
-            if not comp.behavioral_competency:
+            # ✅ Handle both behavioral and leadership competencies
+            if comp.behavioral_competency:
+                group_name = comp.behavioral_competency.group.name
+            elif comp.leadership_item:
+                group_name = comp.leadership_item.child_group.main_group.name if comp.leadership_item.child_group else 'Leadership'
+            else:
                 continue
                 
-            group_name = comp.behavioral_competency.group.name
             required = comp.required_level or 0
             actual = comp.end_year_rating.value if comp.end_year_rating else 0
             
@@ -415,7 +419,7 @@ class EmployeePerformance(models.Model):
             total_required += required
             total_actual += actual
         
-        # Calculate group-level scores
+        # Group scores
         group_scores = {}
         for group_name, data in group_data.items():
             percentage = (data['actual_total'] / data['required_total'] * 100) if data['required_total'] > 0 else 0
@@ -444,25 +448,28 @@ class EmployeePerformance(models.Model):
             2
         )
         
-        logger.info(f"📊 Overall Weighted: {self.overall_weighted_percentage}% (Obj: {self.objectives_percentage}% × {weight_config.objectives_weight}% + Comp: {self.competencies_percentage}% × {weight_config.competencies_weight}%)")
+        logger.info(f"📊 Overall Weighted: {self.overall_weighted_percentage}%")
         
-        # ✅ FIX: Determine final rating using FIXED EvaluationScale
+        # ✅ CRITICAL: Determine final rating using EvaluationScale
         rating = EvaluationScale.get_rating_by_percentage(self.overall_weighted_percentage)
         
         if rating:
             self.final_rating = rating.name
-            logger.info(f"✅ Final rating: {self.final_rating} (range: {rating.range_min}-{rating.range_max}%)")
+            logger.info(f"✅ Final rating SET: {self.final_rating} (range: {rating.range_min}-{rating.range_max}%)")
         else:
-            self.final_rating = 'N/A'
-            logger.error(f"❌ No rating found for {self.overall_weighted_percentage}%")
-            
-            # Debug all scales
+            # ✅ Fallback: Find closest scale
             all_scales = EvaluationScale.objects.filter(is_active=True).order_by('-range_min')
-            logger.error(f"Available scales: {[(s.name, s.range_min, s.range_max) for s in all_scales]}")
+            if all_scales.exists():
+                # Get the lowest scale as fallback
+                self.final_rating = all_scales.last().name
+                logger.warning(f"⚠️ Using fallback rating: {self.final_rating}")
+            else:
+                self.final_rating = 'N/A'
+                logger.error(f"❌ No rating scales found!")
         
         self.save()
         
-        logger.info(f"✅ Final scores saved - Rating: {self.final_rating}, Overall: {self.overall_weighted_percentage}%")
+        logger.info(f"✅ Scores saved - Final Rating: {self.final_rating}, Overall: {self.overall_weighted_percentage}%")
 class EmployeeObjective(models.Model):
     """Employee Objectives - UNCHANGED"""
     performance = models.ForeignKey(EmployeePerformance, on_delete=models.CASCADE, related_name='objectives')

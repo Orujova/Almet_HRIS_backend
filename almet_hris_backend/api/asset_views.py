@@ -68,12 +68,12 @@ class AssetFilter:
     def filter(self):
         queryset = self.queryset
         
-        print(f"🔍 ASSET FILTER DEBUG: Raw params = {self.params}")
+   
         
         # Search filter - UPDATED to remove brand and model
         search = self.params.get('search')
         if search:
-            print(f"🔍 Applying asset search: {search}")
+           
             queryset = queryset.filter(
                 Q(asset_name__icontains=search) |
                 Q(serial_number__icontains=search) |
@@ -85,25 +85,25 @@ class AssetFilter:
         # Status filter
         status_values = self.get_list_values('status')
         if status_values:
-            print(f"🎯 Applying status filter: {status_values}")
+     
             queryset = queryset.filter(status__in=status_values)
         
         # Category filter
         category_ids = self.get_int_list_values('category')
         if category_ids:
-            print(f"📂 Applying category filter: {category_ids}")
+        
             queryset = queryset.filter(category__id__in=category_ids)
         
         # Assigned to filter
         assigned_to_ids = self.get_int_list_values('assigned_to')
         if assigned_to_ids:
-            print(f"👤 Applying assigned_to filter: {assigned_to_ids}")
+    
             queryset = queryset.filter(assigned_to__id__in=assigned_to_ids)
         
         # Department filter (through assigned employee)
         department_ids = self.get_int_list_values('department')
         if department_ids:
-            print(f"🏢 Applying department filter: {department_ids}")
+     
             queryset = queryset.filter(assigned_to__department__id__in=department_ids)
         
         # Purchase date range
@@ -145,17 +145,17 @@ class AssetFilter:
         # Unassigned assets filter
         unassigned_only = self.params.get('unassigned_only')
         if unassigned_only and unassigned_only.lower() == 'true':
-            print(f"📋 Showing unassigned assets only")
+       
             queryset = queryset.filter(assigned_to__isnull=True)
         
         # Assigned assets filter
         assigned_only = self.params.get('assigned_only')
         if assigned_only and assigned_only.lower() == 'true':
-            print(f"👥 Showing assigned assets only")
+  
             queryset = queryset.filter(assigned_to__isnull=False)
         
         final_count = queryset.count()
-        print(f"✅ ASSET FILTER COMPLETE: {final_count} assets after filtering")
+      
         
         return queryset
 

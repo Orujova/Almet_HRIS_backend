@@ -53,8 +53,7 @@ class NotificationService:
                 'Content-Type': 'application/json'
             }
             
-            # Try to get mailbox info
-            logger.info(f"🔍 Verifying access to mailbox: {shared_mailbox_email}")
+   
             
             response = requests.get(
                 f"{self.graph_endpoint}/users/{shared_mailbox_email}",
@@ -64,7 +63,7 @@ class NotificationService:
             
             if response.status_code == 200:
                 mailbox_info = response.json()
-                logger.info(f"✅ Mailbox verified: {mailbox_info.get('displayName')}")
+            
                 result = (True, None)
                 self._verified_mailboxes[cache_key] = result
                 return result
@@ -120,7 +119,7 @@ class NotificationService:
         """
         
         if not self.settings.enable_email_notifications:
-            logger.info("Email notifications are disabled")
+           
             return False
         
         if not access_token:
@@ -151,8 +150,7 @@ class NotificationService:
             )
             
             if not is_accessible:
-                logger.warning(f"⚠️ Shared mailbox not accessible: {error_message}")
-                logger.info("🔄 Falling back to user's own mailbox")
+        
                 
                 # FALLBACK: Send from user's mailbox with clear indication
                 return self._send_from_user_mailbox_with_note(
@@ -193,7 +191,7 @@ class NotificationService:
                 "Content-Type": "application/json"
             }
             
-            logger.info(f"📧 Sending email from {shared_mailbox_email} to {recipient_email}")
+       
             
             # Use shared mailbox endpoint
             response = requests.post(
@@ -204,15 +202,14 @@ class NotificationService:
             )
             
             if response.status_code == 202:
-                logger.info(f"✅ Email sent successfully from shared mailbox")
+     
                 notification_log.mark_as_sent()
                 return True
             else:
                 error_msg = f"Failed: {response.status_code} - {response.text}"
                 logger.error(error_msg)
                 
-                # Try fallback
-                logger.info("🔄 Attempting fallback to user's mailbox")
+            
                 return self._send_from_user_mailbox_with_note(
                     recipient_email=recipient_email,
                     subject=subject,
@@ -226,8 +223,7 @@ class NotificationService:
             error_msg = f"Error: {str(e)}"
             logger.error(error_msg)
             
-            # Try fallback
-            logger.info("🔄 Exception occurred, attempting fallback")
+          
             return self._send_from_user_mailbox_with_note(
                 recipient_email=recipient_email,
                 subject=subject,
@@ -278,7 +274,7 @@ class NotificationService:
                 "Content-Type": "application/json"
             }
             
-            logger.info(f"📧 Sending fallback email to {recipient_email}")
+      
             
             response = requests.post(
                 f"{self.graph_endpoint}/me/sendMail",
@@ -288,7 +284,7 @@ class NotificationService:
             )
             
             if response.status_code == 202:
-                logger.info(f"✅ Fallback email sent successfully")
+
                 notification_log.mark_as_sent()
                 return True
             else:
@@ -372,7 +368,7 @@ class NotificationService:
                 "Content-Type": "application/json"
             }
             
-            logger.info(f"📧 Fetching {email_type} emails with subject: {subject_filter}")
+          
             
             response = requests.get(
                 f"{self.graph_endpoint}{folder_endpoint}",
@@ -389,11 +385,11 @@ class NotificationService:
                 for email in emails:
                     email['email_type'] = email_type
                 
-                logger.info(f"✅ Retrieved {len(emails)} {email_type} emails")
+          
                 return emails
             
             elif response.status_code == 400:
-                logger.warning("⚠️ Filter failed, trying client-side filter...")
+               
                 return self._get_emails_client_side_filter(
                     access_token, folder_endpoint, subject_filter, top, email_type
                 )
@@ -444,7 +440,7 @@ class NotificationService:
                 
                 filtered_emails = filtered_emails[:top]
                 
-                logger.info(f"✅ Client-side: {len(filtered_emails)} {email_type} emails")
+              
                 return filtered_emails
             
             return []
@@ -499,7 +495,7 @@ class NotificationService:
         """Send email via Microsoft Graph API"""
         
         if not self.settings.enable_email_notifications:
-            logger.info("Email notifications are disabled")
+     
             return False
         
         if not access_token:
@@ -545,7 +541,7 @@ class NotificationService:
                 "Content-Type": "application/json"
             }
             
-            logger.info(f"📧 Sending email to {recipient_email}")
+        
             
             response = requests.post(
                 f"{self.graph_endpoint}/me/sendMail",
@@ -555,7 +551,7 @@ class NotificationService:
             )
             
             if response.status_code == 202:
-                logger.info(f"✅ Email sent successfully")
+        
                 notification_log.mark_as_sent()
                 return True
             else:

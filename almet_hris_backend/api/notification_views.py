@@ -144,9 +144,7 @@ def get_outlook_emails(request):
                 'graph_token_status': 'missing'
             }, status=status.HTTP_401_UNAUTHORIZED)
         
-        logger.info(f"✅ Graph token retrieved for {request.user.username}")
-        logger.info(f"📬 Fetching emails - Module: {module}, Type: {email_type}")
-        
+   
         # Get settings
         settings = NotificationSettings.get_active()
         
@@ -248,7 +246,7 @@ def get_outlook_emails(request):
             'total': len(result['all_emails'])
         }
         
-        logger.info(f"✅ Retrieved - Received: {result['counts']['received']}, Sent: {result['counts']['sent']}")
+   
         
         return Response(result)
         

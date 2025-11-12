@@ -299,13 +299,13 @@ class PerformanceActivityLogSerializer(serializers.ModelSerializer):
 
 import logging
 logger = logging.getLogger(__name__)
-
 class EmployeePerformanceListSerializer(serializers.ModelSerializer):
     """Simplified serializer for list view - FIXED"""
     employee_name = serializers.SerializerMethodField()
     employee_id = serializers.SerializerMethodField()
     employee_position_group = serializers.SerializerMethodField()
     employee_department = serializers.SerializerMethodField()
+    employee_company = serializers.SerializerMethodField()
     year = serializers.SerializerMethodField()
     
     # CRITICAL FIX: Add current_period
@@ -320,13 +320,24 @@ class EmployeePerformanceListSerializer(serializers.ModelSerializer):
     has_mid_year_draft = serializers.SerializerMethodField()
     has_end_year_draft = serializers.SerializerMethodField()
     has_dev_needs_draft = serializers.SerializerMethodField()
+    objectives_percentage = serializers.DecimalField(
+        max_digits=5, 
+        decimal_places=2, 
+        read_only=True
+    )
     
+    # ✅ NEW: Add competencies_percentage to list
+    competencies_percentage = serializers.DecimalField(
+        max_digits=5, 
+        decimal_places=2, 
+        read_only=True
+    )
     class Meta:
         model = EmployeePerformance
         fields = [
             'id', 'employee', 'employee_name', 'employee_id', 
-            'employee_position_group', 'employee_department',
-            'year', 'current_period',
+            'employee_position_group', 'employee_department','employee_company',
+            'year', 'current_period','objectives_percentage', 'competencies_percentage',
             'approval_status',
             'objectives_count', 'competencies_count',
             'objectives_employee_submitted', 'objectives_employee_approved', 
@@ -367,7 +378,28 @@ class EmployeePerformanceListSerializer(serializers.ModelSerializer):
         except Exception as e:
             logger.warning(f"Error getting position_group: {e}")
             return 'Unknown'
-    
+    def get_employee_company(self, obj):
+        """Safe get company"""
+        try:
+            if obj.employee and obj.employee.business_function:
+                # Business function obyektini çək
+                bf = obj.employee.business_function
+                
+                # Name field-i varsa
+                if hasattr(bf, 'name'):
+                    return bf.name
+                
+                # Title field-i varsa  
+                if hasattr(bf, 'title'):
+                    return bf.title
+                
+                # Yoxsa str() ilə göstər
+                return str(bf)
+                
+            return 'Unknown'
+        except Exception as e:
+            logger.warning(f"Error getting business_function: {e}")
+            return 'Unknown'
     def get_employee_department(self, obj):
         """Safe get department"""
         try:
@@ -776,7 +808,7 @@ class PerformanceDashboardSerializer(serializers.Serializer):
     pending_employee_approval = serializers.IntegerField()
     pending_manager_approval = serializers.IntegerField()
     need_clarification = serializers.IntegerField()
-# api/performance_serializers.py - PerformanceInitializeSerializer
+
 
 class PerformanceInitializeSerializer(serializers.Serializer):
     """

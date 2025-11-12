@@ -501,8 +501,7 @@ class JobDescription(models.Model):
             
             if emp_grade_normalized != jd_grade_normalized:
                 errors.append(f"Grading Level: Required '{jd_grade}', Employee has '{emp_grade}' (normalized: '{jd_grade_normalized}' vs '{emp_grade_normalized}')")
-                print(f"  ❌ Grading Level mismatch: Required '{jd_grade}' vs Employee '{emp_grade}'")
-                print(f"     Normalized: Required '{jd_grade_normalized}' vs Employee '{emp_grade_normalized}'")
+              
             else:
                 print(f"  ✅ Grading Level matches: '{jd_grade}' (normalized: '{jd_grade_normalized}')")
             
@@ -510,8 +509,7 @@ class JobDescription(models.Model):
                 error_msg = "; ".join(errors)
                 print(f"  🚫 VALIDATION FAILED: {error_msg}")
                 return False, error_msg
-            
-            print(f"  ✅ VALIDATION PASSED: All criteria match including job title")
+         
             return True, "Employee matches all criteria including job title"
     
     def get_employee_matching_details(self):
