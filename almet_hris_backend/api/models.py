@@ -202,6 +202,7 @@ class JobFunction(SoftDeleteModel):
 class PositionGroup(SoftDeleteModel):
     POSITION_LEVELS = [
         ('VC', 'Vice Chairman'),
+        ('Chairman', 'Chairman'),
         ('DIRECTOR', 'Director'),
         ('MANAGER', 'Manager'),
         ('HEAD OF DEPARTMENT', 'Head of Department'),

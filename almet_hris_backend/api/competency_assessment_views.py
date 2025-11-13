@@ -329,41 +329,6 @@ class PositionLeadershipAssessmentViewSet(viewsets.ModelViewSet):
             return Response({'error': 'Invalid employee_id format'}, 
                           status=status.HTTP_400_BAD_REQUEST)
     
-    @action(detail=True, methods=['post'])
-    def duplicate(self, request, pk=None):
-        """Duplicate leadership position assessment for new job title"""
-        original = self.get_object()
-
-        new_grade_level = request.data.get('grade_level')
-        
-   
-        
-        try:
-            with transaction.atomic():
-                # Create new position assessment
-                new_assessment = PositionLeadershipAssessment.objects.create(
-                    position_group=original.position_group,
-              
-                    grade_levels=[new_grade_level],
-                    created_by=request.user
-                )
-                
-                # Copy all competency ratings
-                for rating in original.competency_ratings.all():
-                    rating.pk = None
-                    rating.position_assessment = new_assessment
-                    rating.save()
-                
-                serializer = PositionLeadershipAssessmentSerializer(new_assessment)
-                return Response({
-                    'success': True,
-                    'message': f'Leadership position assessment duplicated for  (Grade {new_grade_level})',
-                    'assessment': serializer.data
-                })
-        except Exception as e:
-            return Response({
-                'error': f'Failed to duplicate leadership assessment: {str(e)}'
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class EmployeeLeadershipAssessmentViewSet(viewsets.ModelViewSet):
@@ -835,42 +800,7 @@ class PositionCoreAssessmentViewSet(viewsets.ModelViewSet):
         
         return queryset.order_by('position_group__hierarchy_level', 'job_title')
     
-    @action(detail=True, methods=['post'])
-    def duplicate(self, request, pk=None):
-        """Duplicate position assessment for new job title"""
-        original = self.get_object()
-        new_job_title = request.data.get('job_title')
-        
-        if not new_job_title:
-            return Response({'error': 'job_title is required'}, 
-                          status=status.HTTP_400_BAD_REQUEST)
-        
-        try:
-            with transaction.atomic():
-                # Create new position assessment
-                new_assessment = PositionCoreAssessment.objects.create(
-                    position_group=original.position_group,
-                    job_title=new_job_title,
-                    created_by=request.user
-                )
-                
-                # Copy all competency ratings
-                for rating in original.competency_ratings.all():
-                    rating.pk = None
-                    rating.position_assessment = new_assessment
-                    rating.save()
-                
-                serializer = PositionCoreAssessmentSerializer(new_assessment)
-                return Response({
-                    'success': True,
-                    'message': f'Position assessment duplicated for {new_job_title}',
-                    'assessment': serializer.data
-                })
-        except Exception as e:
-            return Response({
-                'error': f'Failed to duplicate assessment: {str(e)}'
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-    
+ 
     @swagger_auto_schema(
         method='get',
         operation_description='Get position assessment template for specific employee',
@@ -1072,45 +1002,7 @@ class PositionBehavioralAssessmentViewSet(viewsets.ModelViewSet):
             return Response({'error': 'Employee not found'}, 
                           status=status.HTTP_404_NOT_FOUND)
     
-    @action(detail=True, methods=['post'])
-    def duplicate(self, request, pk=None):
-        """Duplicate behavioral position assessment for new job title"""
-        original = self.get_object()
-    
-        new_grade_level = request.data.get('grade_level')  # NEW
-        
-        if  not new_grade_level:
-            return Response({
-                'error': ' grade_level are required'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        try:
-            with transaction.atomic():
-                # Create new position assessment
-                new_assessment = PositionBehavioralAssessment.objects.create(
-                    position_group=original.position_group,
-                 
-                    grade_level=new_grade_level,  # NEW
-                    created_by=request.user
-                )
-                
-                # Copy all competency ratings
-                for rating in original.competency_ratings.all():
-                    rating.pk = None
-                    rating.position_assessment = new_assessment
-                    rating.save()
-                
-                serializer = PositionBehavioralAssessmentSerializer(new_assessment)
-                return Response({
-                    'success': True,
-                    'message': f'Behavioral position assessment duplicated for (Grade {new_grade_level})',
-                    'assessment': serializer.data
-                })
-        except Exception as e:
-            return Response({
-                'error': f'Failed to duplicate behavioral assessment: {str(e)}'
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
+ 
 class EmployeeCoreAssessmentViewSet(viewsets.ModelViewSet):
     """Employee Core Competency Assessments - Simplified"""
     queryset = EmployeeCoreAssessment.objects.all()

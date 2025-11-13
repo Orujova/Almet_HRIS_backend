@@ -18,7 +18,7 @@ from .serializers import (
     GradingSystemSerializer, SalaryGradeSerializer, CurrentStructureSerializer,
     SalaryScenarioListSerializer, SalaryScenarioDetailSerializer,
     SalaryScenarioCreateSerializer,
-    ScenarioHistorySerializer
+ 
 )
 from .managers import SalaryCalculationManager
 from api.views import ModernPagination
@@ -916,16 +916,3 @@ class SalaryScenarioViewSet(viewsets.ModelViewSet):
                 'error': 'Failed to get current scenario',
                 'details': str(e)
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-class ScenarioHistoryViewSet(viewsets.ReadOnlyModelViewSet):
-    serializer_class = ScenarioHistorySerializer
-    permission_classes = [IsAuthenticated]
-    pagination_class = ModernPagination
-    filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
-    filterset_fields = ['scenario', 'action', 'performed_by']
-    ordering = ['-timestamp']
-    
-    def get_queryset(self):
-        return ScenarioHistory.objects.select_related(
-            'scenario', 'performed_by', 'previous_current_scenario'
-        )

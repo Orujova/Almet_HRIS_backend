@@ -397,16 +397,4 @@ class SalaryScenarioCreateSerializer(serializers.ModelSerializer):
         
         return scenario
 
-class ScenarioHistorySerializer(serializers.ModelSerializer):
-    performed_by_name = serializers.CharField(source='performed_by.get_full_name', read_only=True)
-    scenario_name = serializers.CharField(source='scenario.name', read_only=True)
-    previous_scenario_name = serializers.CharField(source='previous_current_scenario.name', read_only=True)
-    
-    class Meta:
-        model = ScenarioHistory
-        fields = [
-            'id', 'scenario', 'scenario_name', 'action', 'previous_scenario_name',
-            'changes_made', 'performed_by', 'performed_by_name', 'timestamp'
-        ]
-        read_only_fields = ['id', 'timestamp']
 

@@ -57,7 +57,6 @@ class JobTitleSerializer(serializers.ModelSerializer):
         ).count()
 
 
-
 class DepartmentSerializer(serializers.ModelSerializer):
     business_function_name = serializers.CharField(source='business_function.name', read_only=True)
     business_function_code = serializers.CharField(source='business_function.code', read_only=True)

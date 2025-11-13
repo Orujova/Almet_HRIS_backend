@@ -101,10 +101,10 @@ router.register(r'competency/leadership-items', LeadershipCompetencyItemViewSet,
 
 # ==================== JOB DESCRIPTIONS ====================
 router.register(r'job-descriptions', JobDescriptionViewSet, basename='jobdescription')
-router.register(r'job-description/business-resources', JobBusinessResourceViewSet, basename='jobbusinessresource')
-router.register(r'job-description/access-matrix', AccessMatrixViewSet, basename='accessmatrix')
-router.register(r'job-description/company-benefits', CompanyBenefitViewSet, basename='companybenefit')
-router.register(r'job-description/stats', JobDescriptionStatsViewSet, basename='jobdescriptionstats')
+router.register(r'job-description-settings/business-resources', JobBusinessResourceViewSet, basename='jobbusinessresource')
+router.register(r'job-description-settings/access-matrix', AccessMatrixViewSet, basename='accessmatrix')
+router.register(r'job-description-settings/company-benefits', CompanyBenefitViewSet, basename='companybenefit')
+router.register(r'job-description-settings/stats', JobDescriptionStatsViewSet, basename='jobdescriptionstats')
 
 
 # ==================== ASSET MANAGEMENT ====================
@@ -151,10 +151,7 @@ urlpatterns = [
          AssetViewSet.as_view({'post': 'export_assets'}), 
          name='asset-export'),
     
-    # Org Chart Statistics
-    path('org-chart/statistics/', 
-         views.OrgChartViewSet.as_view({'get': 'get_statistics'}), 
-         name='org_chart_statistics'),
+
     
     # Module URLs
     path('vacation/', include('api.vacation_urls')),
@@ -162,7 +159,7 @@ urlpatterns = [
     path('notifications/', include('api.notification_urls')),
     path('news/', include('api.news_urls')),
     path('performance/', include('api.performance_urls')),
-    
+    path('policies/', include('api.policy_urls')),
     # Router URLs
     path('', include(router.urls)),
 ]

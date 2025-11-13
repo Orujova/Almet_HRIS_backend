@@ -6,7 +6,7 @@ router = DefaultRouter()
 router.register(r'systems', views.GradingSystemViewSet, basename='gradingsystem')
 router.register(r'salary-grades', views.SalaryGradeViewSet, basename='salarygrade')
 router.register(r'scenarios', views.SalaryScenarioViewSet, basename='salaryscenario')
-router.register(r'history', views.ScenarioHistoryViewSet, basename='scenariohistory')
+
 
 urlpatterns = [
     path('', include(router.urls)),
