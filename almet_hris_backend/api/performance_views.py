@@ -1957,7 +1957,8 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
             ['Employee Name:', performance.employee.full_name],
             ['Employee ID:', performance.employee.employee_id],
             ['Department:', performance.employee.department.name if performance.employee.department else 'N/A'],
-            ['Position:', performance.employee.position_group],
+            # ✅ FIX: Convert position_group to string
+            ['Position:', str(performance.employee.position_group) if performance.employee.position_group else 'N/A'],
             ['Manager:', performance.employee.line_manager.full_name if performance.employee.line_manager else 'N/A'],
             ['Performance Year:', str(performance.performance_year.year)],
             ['Status:', performance.get_approval_status_display()],
@@ -1990,6 +1991,7 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
             ws_summary[f'B{row}'] = value
             row += 1
         
+        # ========== OBJECTIVES SHEET ==========
         ws_obj = wb.create_sheet('Objectives')
         headers = ['#', 'Title', 'Description', 'Weight %', 'Progress %', 'Status', 'End-Year Rating', 'Score']
         for col, header in enumerate(headers, 1):
@@ -2009,6 +2011,7 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
             ws_obj.cell(row=idx+1, column=7, value=obj.end_year_rating.name if obj.end_year_rating else 'N/A')
             ws_obj.cell(row=idx+1, column=8, value=float(obj.calculated_score))
         
+        # ========== COMPETENCIES SHEET ==========
         ws_comp = wb.create_sheet('Competencies')
         headers = ['Group', 'Competency', 'Required Level', 'End-Year Rating', 'Actual Value', 'Gap', 'Notes']
         for col, header in enumerate(headers, 1):
@@ -2017,16 +2020,34 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
             cell.font = header_font
             cell.border = border
         
-        competencies = performance.competency_ratings.select_related('behavioral_competency', 'behavioral_competency__group', 'end_year_rating').all()
+        competencies = performance.competency_ratings.select_related(
+            'behavioral_competency', 
+            'behavioral_competency__group',
+            'leadership_item',
+            'end_year_rating'
+        ).all()
+        
         for idx, comp in enumerate(competencies, 1):
-            ws_comp.cell(row=idx+1, column=1, value=comp.behavioral_competency.group.name)
-            ws_comp.cell(row=idx+1, column=2, value=comp.behavioral_competency.name)
-            ws_comp.cell(row=idx+1, column=3, value=comp.required_level)
+            # ✅ Handle both behavioral and leadership competencies
+            if comp.behavioral_competency:
+                group_name = comp.behavioral_competency.group.name
+                comp_name = comp.behavioral_competency.name
+            elif comp.leadership_item:
+                group_name = comp.leadership_item.child_group.main_group.name if comp.leadership_item.child_group else 'Leadership'
+                comp_name = comp.leadership_item.name
+            else:
+                group_name = 'N/A'
+                comp_name = 'N/A'
+            
+            ws_comp.cell(row=idx+1, column=1, value=group_name)
+            ws_comp.cell(row=idx+1, column=2, value=comp_name)
+            ws_comp.cell(row=idx+1, column=3, value=comp.required_level or 0)
             ws_comp.cell(row=idx+1, column=4, value=comp.end_year_rating.name if comp.end_year_rating else 'N/A')
             ws_comp.cell(row=idx+1, column=5, value=comp.actual_value)
             ws_comp.cell(row=idx+1, column=6, value=comp.gap)
             ws_comp.cell(row=idx+1, column=7, value=comp.notes or '')
         
+        # ========== DEVELOPMENT NEEDS SHEET ==========
         ws_dev = wb.create_sheet('Development Needs')
         headers = ['Competency Gap', 'Development Activity', 'Progress %', 'Comment']
         for col, header in enumerate(headers, 1):
@@ -2042,6 +2063,7 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
             ws_dev.cell(row=idx+1, column=3, value=need.progress)
             ws_dev.cell(row=idx+1, column=4, value=need.comment or '')
         
+        # ========== AUTO-ADJUST COLUMN WIDTHS ==========
         for ws in [ws_summary, ws_obj, ws_comp, ws_dev]:
             for column in ws.columns:
                 max_length = 0
@@ -2055,6 +2077,7 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
                 adjusted_width = min(max_length + 2, 50)
                 ws.column_dimensions[column_letter].width = adjusted_width
         
+        # ========== SAVE AND RETURN ==========
         output = io.BytesIO()
         wb.save(output)
         output.seek(0)
@@ -2067,7 +2090,6 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
         response['Content-Disposition'] = f'attachment; filename="{filename}"'
         
         return response
-
 
 # ============ DASHBOARD VIEWSET ============
 

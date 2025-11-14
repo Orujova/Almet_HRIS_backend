@@ -101,10 +101,10 @@ router.register(r'competency/leadership-items', LeadershipCompetencyItemViewSet,
 
 # ==================== JOB DESCRIPTIONS ====================
 router.register(r'job-descriptions', JobDescriptionViewSet, basename='jobdescription')
-router.register(r'job-description-settings/business-resources', JobBusinessResourceViewSet, basename='jobbusinessresource')
-router.register(r'job-description-settings/access-matrix', AccessMatrixViewSet, basename='accessmatrix')
-router.register(r'job-description-settings/company-benefits', CompanyBenefitViewSet, basename='companybenefit')
-router.register(r'job-description-settings/stats', JobDescriptionStatsViewSet, basename='jobdescriptionstats')
+router.register(r'job-description/business-resources', JobBusinessResourceViewSet, basename='jobbusinessresource')
+router.register(r'job-description/access-matrix', AccessMatrixViewSet, basename='accessmatrix')
+router.register(r'job-description/company-benefits', CompanyBenefitViewSet, basename='companybenefit')
+router.register(r'job-description/stats', JobDescriptionStatsViewSet, basename='jobdescriptionstats')
 
 
 # ==================== ASSET MANAGEMENT ====================
