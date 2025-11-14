@@ -243,26 +243,19 @@ class PositionLeadershipAssessmentCreateSerializer(serializers.ModelSerializer):
         """Update position assessment and its competency ratings"""
         competency_ratings = validated_data.pop('competency_ratings', None)
         
-
-        
         # ✅ Update fields explicitly
         if 'position_group' in validated_data:
             instance.position_group = validated_data['position_group']
         
         if 'grade_levels' in validated_data:
             instance.grade_levels = validated_data['grade_levels']
-
-        
+    
         instance.save()
-     
         
         # Update competency ratings if provided
         if competency_ratings is not None:
-     
-            
-            # Delete old ratings
-            deleted_count = instance.competency_ratings.all().delete()[0]
-        
+            # 🔥 ƏSAS DÜZƏLİŞ: Əvvəlcə köhnələri sil
+            instance.competency_ratings.all().delete()
             
             # Create new ratings
             for rating_data in competency_ratings:
@@ -271,12 +264,9 @@ class PositionLeadershipAssessmentCreateSerializer(serializers.ModelSerializer):
                     leadership_item_id=rating_data['leadership_item_id'],
                     required_level=rating_data['required_level']
                 )
-            
-  
         
         # Refresh from DB to get updated values
         instance.refresh_from_db()
-
         
         return instance
 class EmployeeLeadershipCompetencyRatingSerializer(serializers.ModelSerializer):
@@ -954,8 +944,6 @@ class PositionBehavioralAssessmentCreateSerializer(serializers.ModelSerializer):
         """Update position assessment and its competency ratings"""
         competency_ratings = validated_data.pop('competency_ratings', None)
         
-    
-        
         # ✅ Update fields explicitly
         if 'position_group' in validated_data:
             instance.position_group = validated_data['position_group']
@@ -963,26 +951,23 @@ class PositionBehavioralAssessmentCreateSerializer(serializers.ModelSerializer):
         if 'grade_levels' in validated_data:
             instance.grade_levels = validated_data['grade_levels']
          
-        
         instance.save()
-   
         
-        # Update competency ratings if provided
+        # ✅ Update competency ratings if provided
         if competency_ratings is not None:
-     
+            # 🔥 ƏSAS DÜZƏLİŞ: Əvvəlcə köhnələri sil
+            instance.competency_ratings.all().delete()
             
+            # Sonra yenilərini yarat
             for rating_data in competency_ratings:
                 PositionBehavioralCompetencyRating.objects.create(
                     position_assessment=instance,
                     behavioral_competency_id=rating_data['behavioral_competency_id'],
                     required_level=rating_data['required_level']
                 )
-            
-     
         
         # Refresh from DB
         instance.refresh_from_db()
-      
         
         return instance
 class EmployeeCoreCompetencyRatingSerializer(serializers.ModelSerializer):
