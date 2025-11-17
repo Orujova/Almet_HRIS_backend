@@ -899,23 +899,13 @@ class JobDescriptionCreateUpdateSerializer(serializers.ModelSerializer):
             return obj.get_employee_matching_details()
         return None
     
-    def validate_grading_level(self, value):
-        """Enhanced grading level validation"""
-        position_group_id = self.initial_data.get('position_group')
-        if position_group_id:
-            try:
-                position_group = PositionGroup.objects.get(id=position_group_id)
-                # Enhanced validation logic can be added here
-                logger.info(f"Validating grading level {value} for position group {position_group.name}")
-            except PositionGroup.DoesNotExist:
-                raise serializers.ValidationError("Invalid position group")
-        return value
+   
     
     def validate(self, attrs):
         """ENHANCED: Comprehensive validation before employee assignment"""
         
         # Validate that all required organizational fields are present INCLUDING job_title
-        required_fields = ['job_title', 'business_function', 'department', 'job_function', 'position_group', 'grading_level']  # ADD job_title here
+        required_fields = ['job_title', 'business_function', 'department', 'job_function', 'position_group']  # ADD job_title here
         missing_fields = [field for field in required_fields if not attrs.get(field)]
         
         if missing_fields:
