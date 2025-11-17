@@ -56,9 +56,17 @@ class JobDescription(models.Model):
         on_delete=models.CASCADE,
         verbose_name="Position Group/Hierarchy"
     )
+    grading_levels = models.JSONField(
+    default=list,
+    help_text="List of grading levels (e.g., ['M', 'N', 'O'])"
+)
+    
+    # Backward compatibility üçün köhnə field-i saxlayın (optional)
     grading_level = models.CharField(
-        max_length=10, 
-        help_text="Grading level from position group"
+        max_length=50, 
+        blank=True,
+        null=True,
+        help_text="DEPRECATED: Use grading_levels instead. Kept for backward compatibility."
     )
     
     # Employee assignment
@@ -172,7 +180,7 @@ class JobDescription(models.Model):
     @classmethod
     def get_eligible_employees_with_priority(cls, job_title=None, business_function_id=None, 
                                            department_id=None, unit_id=None, job_function_id=None, 
-                                           position_group_id=None, grading_level=None):
+                                           position_group_id=None,grading_levels=None):
         """COMPLETELY REWRITTEN: Get employees matching ALL criteria with detailed logging"""
         from .models import Employee
         import logging
@@ -188,7 +196,7 @@ class JobDescription(models.Model):
         logger.info(f"  🏪 Unit ID: {unit_id}")
         logger.info(f"  💼 Job Function ID: {job_function_id}")
         logger.info(f"  📊 Position Group ID: {position_group_id}")
-        logger.info(f"  🎯 Grading Level: '{grading_level}'")
+        logger.info(f"  🎯 Grading Level: '{grading_levels}'")
         logger.info(f"{'='*80}\n")
         
         # Start with all active employees
@@ -244,7 +252,6 @@ class JobDescription(models.Model):
             logger.info("")
         
         # 3. DEPARTMENT FILTER
-        # 3. DEPARTMENT FILTER - FLEXIBLE: Match by NAME, not strict ID
         if department_id:
             before = queryset.count()
             
@@ -315,7 +322,6 @@ class JobDescription(models.Model):
             logger.info("")
         
         # 6. POSITION GROUP FILTER
-        # 6. POSITION GROUP FILTER
         if position_group_id:
             before = queryset.count()
             
@@ -352,12 +358,17 @@ class JobDescription(models.Model):
                 logger.error(f"  🔍 This means the {before} employee(s) have DIFFERENT position group IDs!")
         
         # 7. GRADING LEVEL FILTER - Special handling with normalization
-        if grading_level:
-            grading_level_clean = grading_level.strip()
-            normalized_target = normalize_grading_level(grading_level_clean)
+        if grading_levels:
+            # Normalize input - ensure it's a list
+            if isinstance(grading_levels, str):
+                grading_levels = [grading_levels]
             
-            logger.info(f"🎯 STEP 7: Grading Level Filter")
-            logger.info(f"  Target: '{grading_level_clean}' (normalized: '{normalized_target}')")
+            # Normalize all target levels
+            normalized_targets = [normalize_grading_level(gl.strip()) for gl in grading_levels]
+            
+            logger.info(f"🎯 STEP 7: Grading Levels Filter (Multiple)")
+            logger.info(f"  Target levels: {grading_levels}")
+            logger.info(f"  Normalized: {normalized_targets}")
             
             # Manual filtering with normalization
             all_remaining = list(queryset)
@@ -368,18 +379,18 @@ class JobDescription(models.Model):
                 emp_grade = emp.grading_level.strip() if emp.grading_level else ""
                 emp_normalized = normalize_grading_level(emp_grade)
                 
-                if emp_normalized == normalized_target:
+                # 🔥 CHECK IF EMPLOYEE MATCHES ANY OF THE TARGET LEVELS
+                if emp_normalized in normalized_targets:
                     matching_ids.append(emp.id)
-                    logger.info(f"    ✅ {emp.full_name} ({emp.employee_id}): grade '{emp_grade}' MATCHES")
+                    logger.info(f"    ✅ {emp.full_name} ({emp.employee_id}): grade '{emp_grade}' MATCHES (in {normalized_targets})")
                 else:
-                    logger.info(f"    ❌ {emp.full_name} ({emp.employee_id}): grade '{emp_grade}' ≠ '{grading_level_clean}'")
+                    logger.info(f"    ❌ {emp.full_name} ({emp.employee_id}): grade '{emp_grade}' NOT IN {normalized_targets}")
             
             before = queryset.count()
             queryset = queryset.filter(id__in=matching_ids)
             after = queryset.count()
-            logger.info(f"  Result: {before} → {after} employees")
+            logger.info(f"  Result: {before} → {after} employees matching grading levels {grading_levels}")
             logger.info("")
-        
         # FINAL RESULT
         final_count = queryset.count()
         logger.info(f"\n{'='*80}")

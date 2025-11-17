@@ -53,7 +53,7 @@ from .job_description_models import (
     JobBusinessResourceItem, JobDescriptionBusinessResource,JobDescriptionAccessMatrix,JobDescriptionCompanyBenefit,
 AccessMatrixItem,
     CompanyBenefitItem, 
-    JobDescriptionActivity
+    JobDescriptionActivity,normalize_grading_level
 )
 
 # Job Description Serializers - ALL SERIALIZERS
@@ -373,7 +373,11 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
             unit_id = request.data.get('unit')
             job_function_id = request.data.get('job_function')
             position_group_id = request.data.get('position_group')
-            grading_level = request.data.get('grading_level')
+            grading_levels = request.data.get('grading_levels')
+            if isinstance(grading_levels, str):
+                grading_levels = [grading_levels]
+            elif not isinstance(grading_levels, list):
+                grading_levels = []
             max_preview = request.data.get('max_preview', 50)
             include_vacancies = request.data.get('include_vacancies', True)
             
@@ -384,7 +388,7 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                 'department': department_id,
                 'job_function': job_function_id,
                 'position_group': position_group_id,
-                'grading_level': grading_level
+                'grading_levels': grading_levels
             }
             
             missing_fields = [field for field, value in required_fields.items() if not value]
@@ -402,7 +406,7 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                 unit_id=unit_id,
                 job_function_id=job_function_id,
                 position_group_id=position_group_id,
-                grading_level=grading_level
+                grading_levels=grading_levels 
             )
             
             # NEW: Get eligible vacant positions
@@ -413,7 +417,7 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                 unit_id=unit_id,
                 job_function_id=job_function_id,
                 position_group_id=position_group_id,
-                grading_level=grading_level
+                grading_levels=grading_levels 
             ) if include_vacancies else VacantPosition.objects.none()
             
             # Apply limits
@@ -486,7 +490,7 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                     'unit': {'id': unit.id, 'name': unit.name} if unit else None,
                     'job_function': {'id': job_function.id, 'name': job_function.name},
                     'position_group': {'id': position_group.id, 'name': position_group.name},
-                    'grading_level': grading_level
+                    'grading_levels': grading_levels
                 },
                 'next_steps': {
                     'if_single_match': 'Submit job description - will auto-assign',
@@ -508,7 +512,7 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
     
     def _get_eligible_vacant_positions(self, job_title=None, business_function_id=None, 
                                      department_id=None, unit_id=None, job_function_id=None, 
-                                     position_group_id=None, grading_level=None):
+                                     position_group_id=None, grading_levels=None):
         """Get vacant positions matching job description criteria"""
         from .models import VacantPosition
         
@@ -556,14 +560,14 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
             logger.info(f"After position_group filter: {queryset.count()}")
         
         # 7. GRADING LEVEL FILTER
-        if grading_level:
-            from .job_description_models import normalize_grading_level
-            grading_level_clean = grading_level.strip()
-            normalized_target = normalize_grading_level(grading_level_clean)
+        if grading_levels:
+            if isinstance(grading_levels, str):
+                grading_levels = [grading_levels]
             
-            logger.info(f"Target grading level: '{grading_level_clean}' (normalized: '{normalized_target}')")
+            normalized_targets = [normalize_grading_level(gl.strip()) for gl in grading_levels]
             
-            # Get all vacancies and filter manually for smart comparison
+            logger.info(f"Target grading levels: {grading_levels} (normalized: {normalized_targets})")
+            
             all_vacancies = list(queryset)
             matching_vacancies = []
             
@@ -571,12 +575,12 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                 vac_grade = vacancy.grading_level.strip() if vacancy.grading_level else ""
                 vac_normalized = normalize_grading_level(vac_grade)
                 
-                if vac_normalized == normalized_target:
+                if vac_normalized in normalized_targets:
                     matching_vacancies.append(vacancy.id)
-                    logger.info(f"Vacancy match: {vacancy.position_id} - '{vac_grade}' (normalized: '{vac_normalized}')")
+                    logger.info(f"Vacancy match: {vacancy.position_id} - '{vac_grade}' IN {normalized_targets}")
             
             queryset = queryset.filter(id__in=matching_vacancies)
-            logger.info(f"After grading_level filter: {queryset.count()}")
+            logger.info(f"After grading_levels filter: {queryset.count()}")
         
         return queryset.order_by('position_id')
     
@@ -1223,7 +1227,7 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
             'D': 'unit_code',
             'E': 'job_function_code',
             'F': 'position_group_code',
-            'G': 'grading_level',
+            'G': 'grading_levels',
             'H': 'job_purpose',
             'I': 'critical_duties',
             'J': 'main_kpis',
@@ -1253,7 +1257,18 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                         row_data[field_name] = None
                     else:
                         row_data[field_name] = str(cell_value).strip()
+                grading_levels_str = row_data.get('grading_levels', '')
+                if grading_levels_str:
+                    # Split by comma, strip whitespace, remove duplicates
+                    grading_levels = list(set([
+                        level.strip().upper() 
+                        for level in grading_levels_str.split(',') 
+                        if level.strip()
+                    ]))
+                else:
+                    grading_levels = []
                 
+                logger.info(f"Grading Levels: '{grading_levels_str}' → {grading_levels}")
                 logger.info(f"\n{'='*80}")
                 logger.info(f"📋 PROCESSING ROW {row_num}")
                 logger.info(f"{'='*80}")
@@ -1263,7 +1278,7 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                 logger.info(f"Unit: '{row_data.get('unit_code')}'")
                 logger.info(f"Job Function: '{row_data.get('job_function_code')}'")
                 logger.info(f"Position Group: '{row_data.get('position_group_code')}'")
-                logger.info(f"Grading Level: '{row_data.get('grading_level')}'")
+          
                 
                 # Validate required fields
                 required_fields = ['job_title', 'business_function_code', 'department_code', 
@@ -1333,7 +1348,7 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                         'unit_id': org_data['unit'].id if org_data.get('unit') else None,  # ✅ .id to get integer
                         'job_function_id': org_data['job_function'].id,  # ✅ .id to get integer
                         'position_group_id': org_data['position_group'].id,  # ✅ .id to get integer
-                        'grading_level': row_data['grading_level']
+                         'grading_levels': grading_levels 
                     }
                     
                     # Log each criterion with type
@@ -1426,7 +1441,7 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                                 unit=org_data.get('unit'),
                                 job_function=org_data['job_function'],
                                 position_group=org_data['position_group'],
-                                grading_level=row_data['grading_level'],
+                                grading_levels=grading_levels,
                                 assigned_employee=emp,
                                 reports_to=emp.line_manager if emp else None,  # 🔥 FIX: Explicitly set reports_to
                                 job_purpose=row_data['job_purpose'],
@@ -2021,7 +2036,7 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                 'Unit',
                 'Job Function*',
                 'Position Group*',
-                'Grading Level*',
+                'Grading Levels*',
                 'Job Purpose*',
                 'Critical Duties*',
                 'Main KPIs*',

@@ -3,10 +3,10 @@
 from rest_framework import serializers
 from .policy_models import (
     PolicyFolder, CompanyPolicy, PolicyAcknowledgment,
-    PolicyAccessLog, PolicyVersion
+
 )
-from .models import BusinessFunction, Employee
-from django.contrib.auth.models import User
+from .models import BusinessFunction
+
 from django.utils import timezone
 
 
@@ -38,7 +38,7 @@ class BusinessFunctionWithFoldersSerializer(serializers.ModelSerializer):
     
     def get_folders(self, obj):
         """Get active folders with policy counts"""
-        folders = obj.policy_folders.filter(is_active=True).order_by('order', 'name')
+        folders = obj.policy_folders.filter(is_active=True).order_by( 'name')
         return PolicyFolderSerializer(folders, many=True, context=self.context).data
     
     def get_folder_count(self, obj):
@@ -70,7 +70,7 @@ class PolicyFolderSerializer(serializers.ModelSerializer):
     
     # Computed fields
     policy_count = serializers.SerializerMethodField()
-    mandatory_policy_count = serializers.SerializerMethodField()
+
     total_views = serializers.SerializerMethodField()
     total_downloads = serializers.SerializerMethodField()
     
@@ -82,7 +82,7 @@ class PolicyFolderSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'business_function', 'business_function_name',
             'business_function_code', 'name', 'description', 'icon',
-            'order', 'is_active', 'policy_count', 'mandatory_policy_count',
+            'is_active', 'policy_count', 
             'total_views', 'total_downloads', 'created_by',
             'created_by_name', 'created_at', 'updated_at'
         ]
@@ -92,9 +92,7 @@ class PolicyFolderSerializer(serializers.ModelSerializer):
         """Get count of active policies"""
         return obj.get_policy_count()
     
-    def get_mandatory_policy_count(self, obj):
-        """Get count of mandatory policies"""
-        return obj.get_mandatory_policy_count()
+
     
     def get_total_views(self, obj):
         """Get total view count"""
@@ -118,7 +116,7 @@ class PolicyFolderCreateUpdateSerializer(serializers.ModelSerializer):
         model = PolicyFolder
         fields = [
             'id', 'business_function', 'name', 'description',
-            'icon', 'order', 'is_active'
+            'icon',  'is_active'
         ]
     
     def validate_name(self, value):
@@ -182,15 +180,15 @@ class CompanyPolicyListSerializer(serializers.ModelSerializer):
         model = CompanyPolicy
         fields = [
             'id', 'folder', 'folder_name', 'business_function_code',
-            'business_function_name', 'title', 'description', 'version',
-            'status', 'effective_date', 'review_date', 'is_mandatory',
+            'business_function_name', 'title', 'description', 
+
             'requires_acknowledgment', 'file_size', 'file_size_display',
-            'download_count', 'view_count', 'last_accessed',
+            'download_count', 'view_count', 
             'policy_url', 'is_active', 'created_at', 'updated_at'
         ]
         read_only_fields = [
             'file_size', 'download_count', 'view_count',
-            'last_accessed', 'created_at', 'updated_at'
+           'created_at', 'updated_at'
         ]
     
     def get_policy_url(self, obj):
@@ -221,7 +219,7 @@ class CompanyPolicyDetailSerializer(serializers.ModelSerializer):
     # User tracking
     created_by_name = serializers.SerializerMethodField()
     updated_by_name = serializers.SerializerMethodField()
-    approved_by_name = serializers.SerializerMethodField()
+  
     
     # Business function info
     business_function_code = serializers.CharField(
@@ -239,18 +237,17 @@ class CompanyPolicyDetailSerializer(serializers.ModelSerializer):
             'id', 'folder', 'folder_details', 'business_function_code',
             'business_function_name', 'title', 'description',
             'policy_file', 'policy_url', 'file_size', 'file_size_display',
-            'version', 'status', 'effective_date', 'review_date',
-            'is_mandatory', 'requires_acknowledgment', 'download_count',
-            'view_count', 'last_accessed', 'is_active', 'created_by',
+       
+         'requires_acknowledgment', 'download_count',
+            'view_count',  'is_active', 'created_by',
             'created_by_name', 'updated_by', 'updated_by_name',
-            'approved_by', 'approved_by_name', 'approved_at',
+          
             'acknowledgment_count', 'acknowledgment_percentage',
             'created_at', 'updated_at'
         ]
         read_only_fields = [
-            'created_by', 'created_at', 'updated_at', 'approved_by',
-            'approved_at', 'file_size', 'download_count', 'view_count',
-            'last_accessed'
+            'created_by', 'created_at', 'updated_at', 'file_size', 'download_count', 'view_count',
+           
         ]
     
     def get_policy_url(self, obj):
@@ -282,22 +279,20 @@ class CompanyPolicyDetailSerializer(serializers.ModelSerializer):
             return obj.updated_by.get_full_name() or obj.updated_by.username
         return None
     
-    def get_approved_by_name(self, obj):
-        """Get approver name"""
-        if obj.approved_by:
-            return obj.approved_by.get_full_name() or obj.approved_by.username
-        return None
+
+
+
 
 
 class CompanyPolicyCreateUpdateSerializer(serializers.ModelSerializer):
     """Serializer for creating/updating policies"""
     
-    # CRITICAL: Explicitly define file field for proper Swagger documentation
+    # ✅ CRITICAL: Explicitly define policy_file as FileField
     policy_file = serializers.FileField(
         required=True,
-        help_text="PDF file (max 10MB)",
         allow_empty_file=False,
-        use_url=True
+        help_text="PDF file (max 10MB)",
+        write_only=False  # Make it visible in Swagger
     )
     
     class Meta:
@@ -307,49 +302,28 @@ class CompanyPolicyCreateUpdateSerializer(serializers.ModelSerializer):
             'folder', 
             'title', 
             'description', 
-            'policy_file',  # IMPORTANT: Must be included in fields
-            'version', 
-            'status', 
-            'effective_date', 
-            'review_date',
-            'is_mandatory', 
+            'policy_file',  # Must be here
+
             'requires_acknowledgment', 
             'is_active'
         ]
-        extra_kwargs = {
-            'policy_file': {
-                'required': True,
-                'allow_null': False,
-                'use_url': True
-            }
-        }
     
     def validate_policy_file(self, value):
         """Validate uploaded file"""
-        if value:
-            # Check file size (max 10MB)
-            if value.size > 10 * 1024 * 1024:
-                raise serializers.ValidationError(
-                    "File size cannot exceed 10MB (current: {:.2f}MB)".format(
-                        value.size / (1024 * 1024)
-                    )
-                )
-            
-            # Check file extension
-            if not value.name.lower().endswith('.pdf'):
-                raise serializers.ValidationError(
-                    "Only PDF files are allowed. Current file: {}".format(value.name)
-                )
-            
-            # Check MIME type
-            import mimetypes
-            mime_type, _ = mimetypes.guess_type(value.name)
-            if mime_type != 'application/pdf':
-                raise serializers.ValidationError(
-                    "Invalid file type. Must be application/pdf"
-                )
-        else:
+        if not value:
             raise serializers.ValidationError("Policy file is required")
+            
+        # Check file size (max 10MB)
+        if value.size > 10 * 1024 * 1024:
+            raise serializers.ValidationError(
+                f"File size cannot exceed 10MB (current: {value.size / (1024 * 1024):.2f}MB)"
+            )
+        
+        # Check file extension
+        if not value.name.lower().endswith('.pdf'):
+            raise serializers.ValidationError(
+                f"Only PDF files are allowed. Current file: {value.name}"
+            )
         
         return value
     
@@ -363,10 +337,7 @@ class CompanyPolicyCreateUpdateSerializer(serializers.ModelSerializer):
         
         return value.strip()
     
-    def validate_version(self, value):
-        """Validate version format"""
-        if not value or not value.strip():
-            return "1.0"  # Default version
+  
         
         return value.strip()
     
@@ -382,35 +353,13 @@ class CompanyPolicyCreateUpdateSerializer(serializers.ModelSerializer):
         
         return value
     
-    def validate(self, data):
-        """Validate complete policy data"""
-        # Validate dates
-        effective_date = data.get('effective_date')
-        review_date = data.get('review_date')
-        
-        if effective_date and review_date:
-            if review_date <= effective_date:
-                raise serializers.ValidationError({
-                    'review_date': 'Review date must be after effective date'
-                })
-        
-        # Validate status
-        status = data.get('status', 'DRAFT')
-        valid_statuses = [choice[0] for choice in CompanyPolicy.STATUS_CHOICES]
-        if status not in valid_statuses:
-            raise serializers.ValidationError({
-                'status': f'Invalid status. Must be one of: {", ".join(valid_statuses)}'
-            })
-        
-        return data
-    
+
     def create(self, validated_data):
         """Create policy with user tracking"""
         request = self.context.get('request')
         if request and hasattr(request, 'user'):
             validated_data['created_by'] = request.user
         
-        # Log policy creation
         import logging
         logger = logging.getLogger(__name__)
         logger.info(
@@ -421,28 +370,14 @@ class CompanyPolicyCreateUpdateSerializer(serializers.ModelSerializer):
         return super().create(validated_data)
     
     def update(self, instance, validated_data):
-        """Update policy with user tracking and version control"""
+        """Update policy with user tracking  control"""
         request = self.context.get('request')
         if request and hasattr(request, 'user'):
             validated_data['updated_by'] = request.user
             
-            # If status is being changed to APPROVED, set approved_by
-            if (validated_data.get('status') == 'APPROVED' and 
-                instance.status != 'APPROVED'):
-                validated_data['approved_by'] = request.user
-                validated_data['approved_at'] = timezone.now()
+          
             
-            # If file is being updated, create version history
-            if 'policy_file' in validated_data and validated_data['policy_file'] != instance.policy_file:
-                # Create version from old file
-                from .policy_models import PolicyVersion
-                PolicyVersion.objects.create(
-                    policy=instance,
-                    version=instance.version,
-                    policy_file=instance.policy_file,
-                    changes_summary=f"Updated by {request.user.username}",
-                    created_by=request.user
-                )
+          
         
         return super().update(instance, validated_data)
     
@@ -461,7 +396,6 @@ class CompanyPolicyCreateUpdateSerializer(serializers.ModelSerializer):
                 representation['policy_url'] = instance.policy_file.url
         
         return representation
-
 # ==================== ACKNOWLEDGMENT SERIALIZERS ====================
 
 class PolicyAcknowledgmentSerializer(serializers.ModelSerializer):
@@ -486,15 +420,12 @@ class PolicyAcknowledgmentSerializer(serializers.ModelSerializer):
         source='policy.title',
         read_only=True
     )
-    policy_version = serializers.CharField(
-        source='policy.version',
-        read_only=True
-    )
+   
     
     class Meta:
         model = PolicyAcknowledgment
         fields = [
-            'id', 'policy', 'policy_title', 'policy_version',
+            'id', 'policy', 'policy_title', 
             'employee', 'employee_name', 'employee_id', 'employee_email',
             'acknowledged_at', 'ip_address', 'notes'
         ]
@@ -517,117 +448,10 @@ class PolicyAcknowledgmentSerializer(serializers.ModelSerializer):
         return data
 
 
-# ==================== ACCESS LOG SERIALIZERS ====================
-
-class PolicyAccessLogSerializer(serializers.ModelSerializer):
-    """Serializer for policy access logs"""
-    
-    # User fields
-    user_name = serializers.SerializerMethodField()
-    employee_name = serializers.CharField(
-        source='employee.full_name',
-        read_only=True
-    )
-    employee_id = serializers.CharField(
-        source='employee.employee_id',
-        read_only=True
-    )
-    
-    # Policy fields
-    policy_title = serializers.CharField(source='policy.title', read_only=True)
-    policy_version = serializers.CharField(source='policy.version', read_only=True)
-    
-    class Meta:
-        model = PolicyAccessLog
-        fields = [
-            'id', 'policy', 'policy_title', 'policy_version',
-            'user', 'user_name', 'employee', 'employee_name',
-            'employee_id', 'action', 'ip_address', 'user_agent',
-            'accessed_at'
-        ]
-        read_only_fields = ['accessed_at']
-    
-    def get_user_name(self, obj):
-        """Get user display name"""
-        return obj.get_user_display()
 
 
-# ==================== VERSION SERIALIZERS ====================
-
-class PolicyVersionSerializer(serializers.ModelSerializer):
-    """Serializer for policy version history"""
-    
-    # User fields
-    created_by_name = serializers.SerializerMethodField()
-    
-    # Computed fields
-    file_size_display = serializers.SerializerMethodField()
-    file_url = serializers.SerializerMethodField()
-    
-    # Policy fields
-    policy_title = serializers.CharField(source='policy.title', read_only=True)
-    
-    class Meta:
-        model = PolicyVersion
-        fields = [
-            'id', 'policy', 'policy_title', 'version', 'policy_file',
-            'file_url', 'file_size', 'file_size_display',
-            'changes_summary', 'created_by', 'created_by_name',
-            'created_at'
-        ]
-        read_only_fields = ['created_by', 'created_at', 'file_size']
-    
-    def get_file_size_display(self, obj):
-        """Get human readable file size"""
-        return obj.get_file_size_display()
-    
-    def get_file_url(self, obj):
-        """Get absolute URL for version file"""
-        if obj.policy_file:
-            request = self.context.get('request')
-            if request:
-                return request.build_absolute_uri(obj.policy_file.url)
-            return obj.policy_file.url
-        return None
-    
-    def get_created_by_name(self, obj):
-        """Get creator name"""
-        if obj.created_by:
-            return obj.created_by.get_full_name() or obj.created_by.username
-        return None
 
 
-class PolicyVersionCreateSerializer(serializers.ModelSerializer):
-    """Serializer for creating new versions"""
-    
-    class Meta:
-        model = PolicyVersion
-        fields = ['policy', 'version', 'policy_file', 'changes_summary']
-    
-    def validate_policy_file(self, value):
-        """Validate uploaded file"""
-        if value:
-            # Check file size (max 10MB)
-            if value.size > 10 * 1024 * 1024:
-                raise serializers.ValidationError(
-                    "File size cannot exceed 10MB"
-                )
-            
-            # Check file extension
-            if not value.name.lower().endswith('.pdf'):
-                raise serializers.ValidationError(
-                    "Only PDF files are allowed"
-                )
-        
-        return value
-    
-    def create(self, validated_data):
-        """Create version with user tracking"""
-        request = self.context.get('request')
-        if request and hasattr(request, 'user'):
-            validated_data['created_by'] = request.user
-        
-        return super().create(validated_data)
 
 
 # ==================== STATISTICS SERIALIZERS ====================
@@ -638,11 +462,11 @@ class PolicyStatisticsSerializer(serializers.Serializer):
     total_policies = serializers.IntegerField()
     total_folders = serializers.IntegerField()
     total_business_functions = serializers.IntegerField()
-    mandatory_policies = serializers.IntegerField()
+ 
     policies_requiring_acknowledgment = serializers.IntegerField()
     total_views = serializers.IntegerField()
     total_downloads = serializers.IntegerField()
-    policies_by_status = serializers.ListField()
+
 
 
 class BusinessFunctionStatisticsSerializer(serializers.Serializer):
@@ -653,6 +477,6 @@ class BusinessFunctionStatisticsSerializer(serializers.Serializer):
     business_function_code = serializers.CharField()
     folder_count = serializers.IntegerField()
     policy_count = serializers.IntegerField()
-    mandatory_policy_count = serializers.IntegerField()
+
     total_views = serializers.IntegerField()
     total_downloads = serializers.IntegerField()

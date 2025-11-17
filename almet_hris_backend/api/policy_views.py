@@ -1,4 +1,4 @@
-# api/company_policies_views.py - FULL Views with Swagger Support
+# api/policy_views.py - COMPLETE FILE
 
 from rest_framework import viewsets, status, filters, parsers
 from rest_framework.decorators import action
@@ -14,39 +14,19 @@ import logging
 
 from .policy_models import (
     PolicyFolder, CompanyPolicy, PolicyAcknowledgment,
-    PolicyAccessLog, PolicyVersion
+
 )
 from .policy_serializers import (
     PolicyFolderSerializer, PolicyFolderCreateUpdateSerializer,
     CompanyPolicyListSerializer, CompanyPolicyDetailSerializer,
     CompanyPolicyCreateUpdateSerializer, PolicyAcknowledgmentSerializer,
-    PolicyAccessLogSerializer, PolicyVersionSerializer,
-    PolicyVersionCreateSerializer, BusinessFunctionWithFoldersSerializer,
-    PolicyStatisticsSerializer, BusinessFunctionStatisticsSerializer
+
+ BusinessFunctionWithFoldersSerializer,
+
 )
 from .models import BusinessFunction, Employee
 
 logger = logging.getLogger(__name__)
-
-
-# ==================== CUSTOM SWAGGER SCHEMA ====================
-
-from drf_yasg.inspectors import SwaggerAutoSchema
-
-class FileUploadAutoSchema(SwaggerAutoSchema):
-    """Custom schema for file upload endpoints"""
-    
-    def get_consumes(self):
-        """Force multipart/form-data for file uploads"""
-        if self.method.lower() in ['post', 'put', 'patch']:
-            return ['multipart/form-data']
-        return super().get_consumes()
-    
-    def get_request_body_schema(self, serializer):
-        """Override request body schema for file uploads"""
-        if self.method.lower() in ['post', 'put', 'patch']:
-            return None  # Don't generate request body schema, use manual parameters
-        return super().get_request_body_schema(serializer)
 
 
 # ==================== COMPANY POLICY VIEWS ====================
@@ -54,29 +34,12 @@ class FileUploadAutoSchema(SwaggerAutoSchema):
 class CompanyPolicyViewSet(viewsets.ModelViewSet):
     """
     ViewSet for managing company policies with FILE UPLOAD support
-    
-    Endpoints:
-    - GET /api/policies/ - List all policies
-    - GET /api/policies/{id}/ - Get policy details
-    - POST /api/policies/ - Create new policy (with PDF upload)
-    - PUT /api/policies/{id}/ - Update policy (with optional PDF upload)
-    - PATCH /api/policies/{id}/ - Partial update policy
-    - DELETE /api/policies/{id}/ - Delete policy
-    - POST /api/policies/{id}/view/ - Track policy view
-    - POST /api/policies/{id}/download/ - Track policy download
-    - GET /api/policies/{id}/access_logs/ - Get access logs
-    - POST /api/policies/{id}/acknowledge/ - Acknowledge policy
-    - GET /api/policies/{id}/acknowledgments/ - Get acknowledgments
-    - GET /api/policies/{id}/version_history/ - Get version history
-    - POST /api/policies/{id}/create_version/ - Create new version
-    - POST /api/policies/{id}/change_status/ - Change policy status
-    - GET /api/policies/by-folder/{folder_id}/ - Get policies by folder
     """
     
     queryset = CompanyPolicy.objects.select_related(
         'folder', 'folder__business_function',
-        'created_by', 'updated_by', 'approved_by'
-    ).prefetch_related('acknowledgments', 'access_logs')
+        'created_by', 'updated_by', 
+    ).prefetch_related('acknowledgments')
     
     permission_classes = [IsAuthenticated]
     
@@ -89,12 +52,12 @@ class CompanyPolicyViewSet(viewsets.ModelViewSet):
     
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = [
-        'folder', 'status', 'is_mandatory',
+        'folder', 
         'requires_acknowledgment', 'is_active'
     ]
-    search_fields = ['title', 'description', 'version']
+    search_fields = ['title', 'description']
     ordering_fields = [
-        'title', 'updated_at', 'created_at', 'effective_date',
+        'title', 'updated_at', 'created_at', 
         'view_count', 'download_count'
     ]
     ordering = ['-updated_at']
@@ -123,109 +86,10 @@ class CompanyPolicyViewSet(viewsets.ModelViewSet):
         
         return queryset
     
-    @swagger_auto_schema(
-        operation_description="Create a new company policy with PDF file upload",
-        manual_parameters=[
-            openapi.Parameter(
-                'folder',
-                openapi.IN_FORM,
-                description="Policy folder ID",
-                type=openapi.TYPE_INTEGER,
-                required=True
-            ),
-            openapi.Parameter(
-                'title',
-                openapi.IN_FORM,
-                description="Policy title",
-                type=openapi.TYPE_STRING,
-                required=True
-            ),
-            openapi.Parameter(
-                'description',
-                openapi.IN_FORM,
-                description="Policy description",
-                type=openapi.TYPE_STRING,
-                required=False
-            ),
-            openapi.Parameter(
-                'policy_file',
-                openapi.IN_FORM,
-                description="PDF file (max 10MB)",
-                type=openapi.TYPE_FILE,
-                required=True
-            ),
-            openapi.Parameter(
-                'version',
-                openapi.IN_FORM,
-                description="Version number (e.g., 1.0)",
-                type=openapi.TYPE_STRING,
-                required=False
-            ),
-            openapi.Parameter(
-                'status',
-                openapi.IN_FORM,
-                description="Policy status (DRAFT, REVIEW, APPROVED, PUBLISHED, ARCHIVED)",
-                type=openapi.TYPE_STRING,
-                required=False
-            ),
-            openapi.Parameter(
-                'effective_date',
-                openapi.IN_FORM,
-                description="Effective date (YYYY-MM-DD)",
-                type=openapi.TYPE_STRING,
-                format=openapi.FORMAT_DATE,
-                required=False
-            ),
-            openapi.Parameter(
-                'review_date',
-                openapi.IN_FORM,
-                description="Review date (YYYY-MM-DD)",
-                type=openapi.TYPE_STRING,
-                format=openapi.FORMAT_DATE,
-                required=False
-            ),
-            openapi.Parameter(
-                'is_mandatory',
-                openapi.IN_FORM,
-                description="Is mandatory for all employees",
-                type=openapi.TYPE_BOOLEAN,
-                required=False
-            ),
-            openapi.Parameter(
-                'requires_acknowledgment',
-                openapi.IN_FORM,
-                description="Requires employee acknowledgment",
-                type=openapi.TYPE_BOOLEAN,
-                required=False
-            ),
-            openapi.Parameter(
-                'is_active',
-                openapi.IN_FORM,
-                description="Is active and visible",
-                type=openapi.TYPE_BOOLEAN,
-                required=False
-            ),
-        ],
-        consumes=['multipart/form-data'],
-        responses={
-            201: CompanyPolicyDetailSerializer,
-            400: 'Bad Request - Validation Error'
-        }
-    )
+    # NO @swagger_auto_schema on create/update/partial_update - let DRF handle it
+    
     def create(self, request, *args, **kwargs):
-        """
-        Create new policy with file upload
-        
-        Request should be multipart/form-data with:
-        - folder (int)
-        - title (string)
-        - description (string)
-        - policy_file (file) - PDF only
-        - version (string)
-        - status (string)
-        - is_mandatory (boolean)
-        - requires_acknowledgment (boolean)
-        """
+        """Create new policy with file upload"""
         logger.info(f"Policy creation request from {request.user.username}")
         logger.debug(f"Request data: {request.data}")
         logger.debug(f"Request files: {request.FILES}")
@@ -261,102 +125,8 @@ class CompanyPolicyViewSet(viewsets.ModelViewSet):
             logger.error(f"Policy creation failed: {str(e)}")
             raise
     
-    @swagger_auto_schema(
-        operation_description="Update policy with optional PDF file replacement",
-        manual_parameters=[
-            openapi.Parameter(
-                'folder',
-                openapi.IN_FORM,
-                description="Policy folder ID",
-                type=openapi.TYPE_INTEGER,
-                required=False
-            ),
-            openapi.Parameter(
-                'title',
-                openapi.IN_FORM,
-                description="Policy title",
-                type=openapi.TYPE_STRING,
-                required=False
-            ),
-            openapi.Parameter(
-                'description',
-                openapi.IN_FORM,
-                description="Policy description",
-                type=openapi.TYPE_STRING,
-                required=False
-            ),
-            openapi.Parameter(
-                'policy_file',
-                openapi.IN_FORM,
-                description="PDF file (max 10MB) - optional for update",
-                type=openapi.TYPE_FILE,
-                required=False
-            ),
-            openapi.Parameter(
-                'version',
-                openapi.IN_FORM,
-                description="Version number (e.g., 1.0)",
-                type=openapi.TYPE_STRING,
-                required=False
-            ),
-            openapi.Parameter(
-                'status',
-                openapi.IN_FORM,
-                description="Policy status",
-                type=openapi.TYPE_STRING,
-                required=False
-            ),
-            openapi.Parameter(
-                'effective_date',
-                openapi.IN_FORM,
-                description="Effective date (YYYY-MM-DD)",
-                type=openapi.TYPE_STRING,
-                format=openapi.FORMAT_DATE,
-                required=False
-            ),
-            openapi.Parameter(
-                'review_date',
-                openapi.IN_FORM,
-                description="Review date (YYYY-MM-DD)",
-                type=openapi.TYPE_STRING,
-                format=openapi.FORMAT_DATE,
-                required=False
-            ),
-            openapi.Parameter(
-                'is_mandatory',
-                openapi.IN_FORM,
-                description="Is mandatory",
-                type=openapi.TYPE_BOOLEAN,
-                required=False
-            ),
-            openapi.Parameter(
-                'requires_acknowledgment',
-                openapi.IN_FORM,
-                description="Requires acknowledgment",
-                type=openapi.TYPE_BOOLEAN,
-                required=False
-            ),
-            openapi.Parameter(
-                'is_active',
-                openapi.IN_FORM,
-                description="Is active",
-                type=openapi.TYPE_BOOLEAN,
-                required=False
-            ),
-        ],
-        consumes=['multipart/form-data'],
-        responses={
-            200: CompanyPolicyDetailSerializer,
-            400: 'Bad Request - Validation Error',
-            404: 'Policy Not Found'
-        }
-    )
     def update(self, request, *args, **kwargs):
-        """
-        Update policy with optional file replacement
-        
-        If new policy_file is provided, old version is archived
-        """
+        """Update policy with optional file replacement"""
         partial = kwargs.pop('partial', False)
         instance = self.get_object()
         
@@ -381,24 +151,6 @@ class CompanyPolicyViewSet(viewsets.ModelViewSet):
             logger.error(f"Policy update failed: {str(e)}")
             raise
     
-    @swagger_auto_schema(
-        operation_description="Partially update policy",
-        manual_parameters=[
-            openapi.Parameter(
-                'policy_file',
-                openapi.IN_FORM,
-                description="PDF file (max 10MB) - optional",
-                type=openapi.TYPE_FILE,
-                required=False
-            ),
-        ],
-        consumes=['multipart/form-data'],
-        responses={
-            200: CompanyPolicyDetailSerializer,
-            400: 'Bad Request',
-            404: 'Policy Not Found'
-        }
-    )
     def partial_update(self, request, *args, **kwargs):
         """Partial update of policy"""
         kwargs['partial'] = True
@@ -449,7 +201,9 @@ class CompanyPolicyViewSet(viewsets.ModelViewSet):
             context={'request': request}
         )
         return Response(serializer.data)
-    
+
+
+ 
     @swagger_auto_schema(
         operation_description="Track policy view and increment view counter",
         responses={
@@ -460,7 +214,7 @@ class CompanyPolicyViewSet(viewsets.ModelViewSet):
                     properties={
                         'message': openapi.Schema(type=openapi.TYPE_STRING),
                         'view_count': openapi.Schema(type=openapi.TYPE_INTEGER),
-                        'last_accessed': openapi.Schema(type=openapi.TYPE_STRING, format=openapi.FORMAT_DATETIME),
+                  
                     }
                 )
             ),
@@ -475,15 +229,14 @@ class CompanyPolicyViewSet(viewsets.ModelViewSet):
         # Increment view count
         policy.increment_view_count()
         
-        # Log access
-        self._log_access(policy, 'VIEW', request)
+     
         
         logger.info(f"Policy viewed: {policy.title} by {request.user.username}")
         
         return Response({
             'message': 'Policy view tracked successfully',
             'view_count': policy.view_count,
-            'last_accessed': policy.last_accessed
+     
         })
     
     @swagger_auto_schema(
@@ -511,9 +264,7 @@ class CompanyPolicyViewSet(viewsets.ModelViewSet):
         # Increment download count
         policy.increment_download_count()
         
-        # Log access
-        self._log_access(policy, 'DOWNLOAD', request)
-        
+   
         logger.info(f"Policy downloaded: {policy.title} by {request.user.username}")
         
         return Response({
@@ -522,29 +273,7 @@ class CompanyPolicyViewSet(viewsets.ModelViewSet):
             'file_url': request.build_absolute_uri(policy.policy_file.url) if policy.policy_file else None
         })
     
-    @swagger_auto_schema(
-        operation_description="Get access logs for this policy",
-        responses={
-            200: PolicyAccessLogSerializer(many=True)
-        }
-    )
-    @action(detail=True, methods=['get'])
-    def access_logs(self, request, pk=None):
-        """Get access logs for this policy"""
-        policy = self.get_object()
-        
-        logs = PolicyAccessLog.objects.filter(
-            policy=policy
-        ).select_related('user', 'employee').order_by('-accessed_at')
-        
-        # Pagination
-        page = self.paginate_queryset(logs)
-        if page is not None:
-            serializer = PolicyAccessLogSerializer(page, many=True)
-            return self.get_paginated_response(serializer.data)
-        
-        serializer = PolicyAccessLogSerializer(logs, many=True)
-        return Response(serializer.data)
+
     
     @swagger_auto_schema(
         operation_description="Acknowledge policy reading by employee",
@@ -637,146 +366,10 @@ class CompanyPolicyViewSet(viewsets.ModelViewSet):
         serializer = PolicyAcknowledgmentSerializer(acknowledgments, many=True)
         return Response(serializer.data)
     
-    @swagger_auto_schema(
-        operation_description="Get version history for this policy",
-        responses={
-            200: PolicyVersionSerializer(many=True)
-        }
-    )
-    @action(detail=True, methods=['get'])
-    def version_history(self, request, pk=None):
-        """Get version history for this policy"""
-        policy = self.get_object()
-        
-        versions = PolicyVersion.objects.filter(
-            policy=policy
-        ).select_related('created_by').order_by('-created_at')
-        
-        serializer = PolicyVersionSerializer(
-            versions,
-            many=True,
-            context={'request': request}
-        )
-        return Response(serializer.data)
     
-    @swagger_auto_schema(
-        operation_description="Create a new version of this policy",
-        request_body=openapi.Schema(
-            type=openapi.TYPE_OBJECT,
-            properties={
-                'changes_summary': openapi.Schema(
-                    type=openapi.TYPE_STRING,
-                    description='Summary of changes in this version'
-                )
-            }
-        ),
-        responses={
-            201: PolicyVersionSerializer,
-            404: 'Policy Not Found'
-        }
-    )
-    @action(detail=True, methods=['post'])
-    def create_version(self, request, pk=None):
-        """Create a new version of this policy"""
-        policy = self.get_object()
-        
-        # Create version from current policy state
-        version = PolicyVersion.objects.create(
-            policy=policy,
-            version=policy.version,
-            policy_file=policy.policy_file,
-            changes_summary=request.data.get('changes_summary', ''),
-            created_by=request.user
-        )
-        
-        logger.info(f"Policy version created: {policy.title} v{version.version} by {request.user.username}")
-        
-        serializer = PolicyVersionSerializer(version, context={'request': request})
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
-    
-    @swagger_auto_schema(
-        operation_description="Change policy status (DRAFT, REVIEW, APPROVED, PUBLISHED, ARCHIVED)",
-        request_body=openapi.Schema(
-            type=openapi.TYPE_OBJECT,
-            required=['status'],
-            properties={
-                'status': openapi.Schema(
-                    type=openapi.TYPE_STRING,
-                    enum=['DRAFT', 'REVIEW', 'APPROVED', 'PUBLISHED', 'ARCHIVED'],
-                    description='New policy status'
-                )
-            }
-        ),
-        responses={
-            200: openapi.Response(
-                description="Status changed successfully",
-                schema=openapi.Schema(
-                    type=openapi.TYPE_OBJECT,
-                    properties={
-                        'message': openapi.Schema(type=openapi.TYPE_STRING),
-                        'old_status': openapi.Schema(type=openapi.TYPE_STRING),
-                        'new_status': openapi.Schema(type=openapi.TYPE_STRING),
-                    }
-                )
-            ),
-            400: 'Invalid status',
-            404: 'Policy Not Found'
-        }
-    )
-    @action(detail=True, methods=['post'])
-    def change_status(self, request, pk=None):
-        """Change policy status"""
-        policy = self.get_object()
-        new_status = request.data.get('status')
-        
-        if not new_status:
-            return Response(
-                {'error': 'Status is required'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        # Validate status
-        valid_statuses = [choice[0] for choice in CompanyPolicy.STATUS_CHOICES]
-        if new_status not in valid_statuses:
-            return Response(
-                {'error': f'Invalid status. Must be one of: {", ".join(valid_statuses)}'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        old_status = policy.status
-        policy.status = new_status
-        policy.updated_by = request.user
-        
-        # Handle approval
-        if new_status == 'APPROVED' and old_status != 'APPROVED':
-            policy.approved_by = request.user
-            policy.approved_at = timezone.now()
-        
-        policy.save()
-        
-        logger.info(f"Policy status changed: {policy.title} from {old_status} to {new_status} by {request.user.username}")
-        
-        return Response({
-            'message': f'Policy status changed from {old_status} to {new_status}',
-            'old_status': old_status,
-            'new_status': new_status
-        })
-    
-    def _log_access(self, policy, action, request):
-        """Helper method to log policy access"""
-        try:
-            employee = Employee.objects.get(user=request.user)
-        except Employee.DoesNotExist:
-            employee = None
-        
-        PolicyAccessLog.objects.create(
-            policy=policy,
-            user=request.user,
-            employee=employee,
-            action=action,
-            ip_address=self._get_client_ip(request),
-            user_agent=request.META.get('HTTP_USER_AGENT', '')
-        )
+
+
+
     
     def _get_client_ip(self, request):
         """Get client IP address from request"""
@@ -793,17 +386,6 @@ class CompanyPolicyViewSet(viewsets.ModelViewSet):
 class PolicyFolderViewSet(viewsets.ModelViewSet):
     """
     ViewSet for managing policy folders
-    
-    Endpoints:
-    - GET /api/policy-folders/ - List all folders
-    - GET /api/policy-folders/{id}/ - Get folder details
-    - POST /api/policy-folders/ - Create new folder
-    - PUT /api/policy-folders/{id}/ - Update folder
-    - PATCH /api/policy-folders/{id}/ - Partial update folder
-    - DELETE /api/policy-folders/{id}/ - Delete folder
-    - GET /api/policy-folders/by-business-function/{bf_id}/ - Get folders by business function
-    - GET /api/policy-folders/{id}/policies/ - Get all policies in folder
-    - GET /api/policy-folders/{id}/statistics/ - Get folder statistics
     """
     
     queryset = PolicyFolder.objects.select_related(
@@ -813,8 +395,8 @@ class PolicyFolderViewSet(viewsets.ModelViewSet):
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['business_function', 'is_active']
     search_fields = ['name', 'description']
-    ordering_fields = ['name', 'order', 'created_at', 'updated_at']
-    ordering = ['business_function', 'order', 'name']
+    ordering_fields = ['name',  'created_at', 'updated_at']
+    ordering = ['business_function',  'name']
     
     def get_serializer_class(self):
         """Return appropriate serializer based on action"""
@@ -914,14 +496,11 @@ class PolicyFolderViewSet(viewsets.ModelViewSet):
                         'folder_name': openapi.Schema(type=openapi.TYPE_STRING),
                         'business_function': openapi.Schema(type=openapi.TYPE_STRING),
                         'total_policies': openapi.Schema(type=openapi.TYPE_INTEGER),
-                        'mandatory_policies': openapi.Schema(type=openapi.TYPE_INTEGER),
+                  
                         'policies_requiring_acknowledgment': openapi.Schema(type=openapi.TYPE_INTEGER),
                         'total_views': openapi.Schema(type=openapi.TYPE_INTEGER),
                         'total_downloads': openapi.Schema(type=openapi.TYPE_INTEGER),
-                        'policies_by_status': openapi.Schema(
-                            type=openapi.TYPE_ARRAY,
-                            items=openapi.Schema(type=openapi.TYPE_OBJECT)
-                        ),
+                       
                     }
                 )
             ),
@@ -940,13 +519,11 @@ class PolicyFolderViewSet(viewsets.ModelViewSet):
             'folder_name': folder.name,
             'business_function': folder.business_function.name,
             'total_policies': policies.count(),
-            'mandatory_policies': policies.filter(is_mandatory=True).count(),
+     
             'policies_requiring_acknowledgment': policies.filter(requires_acknowledgment=True).count(),
             'total_views': sum(p.view_count for p in policies),
             'total_downloads': sum(p.download_count for p in policies),
-            'policies_by_status': list(
-                policies.values('status').annotate(count=Count('id'))
-            )
+           
         }
         
         return Response(stats)
@@ -957,11 +534,6 @@ class PolicyFolderViewSet(viewsets.ModelViewSet):
 class BusinessFunctionPolicyViewSet(viewsets.ReadOnlyModelViewSet):
     """
     ViewSet for getting business functions with their policy folders
-    
-    Endpoints:
-    - GET /api/business-functions-policies/ - List all business functions with folders
-    - GET /api/business-functions-policies/{id}/ - Get business function with folders
-    - GET /api/business-functions-policies/with-stats/ - Get all with statistics
     """
     
     queryset = BusinessFunction.objects.filter(
@@ -995,7 +567,7 @@ class BusinessFunctionPolicyViewSet(viewsets.ReadOnlyModelViewSet):
                             'code': openapi.Schema(type=openapi.TYPE_STRING),
                             'folder_count': openapi.Schema(type=openapi.TYPE_INTEGER),
                             'total_policy_count': openapi.Schema(type=openapi.TYPE_INTEGER),
-                            'mandatory_policy_count': openapi.Schema(type=openapi.TYPE_INTEGER),
+                        
                             'total_views': openapi.Schema(type=openapi.TYPE_INTEGER),
                             'total_downloads': openapi.Schema(type=openapi.TYPE_INTEGER),
                         }
@@ -1015,14 +587,14 @@ class BusinessFunctionPolicyViewSet(viewsets.ReadOnlyModelViewSet):
             
             # Calculate statistics
             total_policies = 0
-            mandatory_policies = 0
+   
             total_views = 0
             total_downloads = 0
             
             for folder in folders:
                 policies = folder.policies.filter(is_active=True)
                 total_policies += policies.count()
-                mandatory_policies += policies.filter(is_mandatory=True).count()
+     
                 total_views += sum(p.view_count for p in policies)
                 total_downloads += sum(p.download_count for p in policies)
             
@@ -1032,7 +604,7 @@ class BusinessFunctionPolicyViewSet(viewsets.ReadOnlyModelViewSet):
                 'code': bf.code,
                 'folder_count': folders.count(),
                 'total_policy_count': total_policies,
-                'mandatory_policy_count': mandatory_policies,
+       
                 'total_views': total_views,
                 'total_downloads': total_downloads
             })
@@ -1045,13 +617,6 @@ class BusinessFunctionPolicyViewSet(viewsets.ReadOnlyModelViewSet):
 class PolicyStatisticsViewSet(viewsets.ViewSet):
     """
     ViewSet for policy statistics and analytics
-    
-    Endpoints:
-    - GET /api/policy-statistics/overview/ - Get overall statistics
-    - GET /api/policy-statistics/by-business-function/ - Get stats by business function
-    - GET /api/policy-statistics/most-viewed/ - Get most viewed policies
-    - GET /api/policy-statistics/most-downloaded/ - Get most downloaded policies
-    - GET /api/policy-statistics/acknowledgment-status/ - Get acknowledgment statistics
     """
     
     permission_classes = [IsAuthenticated]
@@ -1067,14 +632,11 @@ class PolicyStatisticsViewSet(viewsets.ViewSet):
                         'total_policies': openapi.Schema(type=openapi.TYPE_INTEGER),
                         'total_folders': openapi.Schema(type=openapi.TYPE_INTEGER),
                         'total_business_functions': openapi.Schema(type=openapi.TYPE_INTEGER),
-                        'mandatory_policies': openapi.Schema(type=openapi.TYPE_INTEGER),
+                    
                         'policies_requiring_acknowledgment': openapi.Schema(type=openapi.TYPE_INTEGER),
                         'total_views': openapi.Schema(type=openapi.TYPE_INTEGER),
                         'total_downloads': openapi.Schema(type=openapi.TYPE_INTEGER),
-                        'policies_by_status': openapi.Schema(
-                            type=openapi.TYPE_ARRAY,
-                            items=openapi.Schema(type=openapi.TYPE_OBJECT)
-                        ),
+                        
                     }
                 )
             )
@@ -1093,27 +655,24 @@ class PolicyStatisticsViewSet(viewsets.ViewSet):
         
         # Policy statistics
         policies = CompanyPolicy.objects.filter(is_active=True)
-        mandatory_policies = policies.filter(is_mandatory=True).count()
+
         policies_requiring_ack = policies.filter(requires_acknowledgment=True).count()
         
         # Aggregated statistics
         total_views = sum(p.view_count for p in policies)
         total_downloads = sum(p.download_count for p in policies)
         
-        # Policies by status
-        policies_by_status = list(
-            policies.values('status').annotate(count=Count('id'))
-        )
+      
         
         return Response({
             'total_policies': total_policies,
             'total_folders': total_folders,
             'total_business_functions': total_business_functions,
-            'mandatory_policies': mandatory_policies,
+       
             'policies_requiring_acknowledgment': policies_requiring_ack,
             'total_views': total_views,
             'total_downloads': total_downloads,
-            'policies_by_status': policies_by_status
+          
         })
     
     @swagger_auto_schema(
@@ -1131,7 +690,7 @@ class PolicyStatisticsViewSet(viewsets.ViewSet):
                             'business_function_code': openapi.Schema(type=openapi.TYPE_STRING),
                             'folder_count': openapi.Schema(type=openapi.TYPE_INTEGER),
                             'policy_count': openapi.Schema(type=openapi.TYPE_INTEGER),
-                            'mandatory_policy_count': openapi.Schema(type=openapi.TYPE_INTEGER),
+                         
                             'total_views': openapi.Schema(type=openapi.TYPE_INTEGER),
                             'total_downloads': openapi.Schema(type=openapi.TYPE_INTEGER),
                         }
@@ -1161,7 +720,7 @@ class PolicyStatisticsViewSet(viewsets.ViewSet):
                 'business_function_code': bf.code,
                 'folder_count': folders.count(),
                 'policy_count': policies.count(),
-                'mandatory_policy_count': policies.filter(is_mandatory=True).count(),
+     
                 'total_views': sum(p.view_count for p in policies),
                 'total_downloads': sum(p.download_count for p in policies)
             })

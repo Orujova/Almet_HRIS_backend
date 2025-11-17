@@ -453,7 +453,11 @@ class JobDescriptionCreateUpdateSerializer(serializers.ModelSerializer):
         write_only=True,
         help_text="Set to true to reset approval status to DRAFT when updating (update only)"
     )
-    
+    grading_levels = serializers.ListField(
+        child=serializers.CharField(max_length=10),
+        required=True,
+        help_text="List of grading levels to match (e.g., ['M', 'N', 'O'])"
+    )
     # Response fields
     created_job_descriptions = serializers.SerializerMethodField()
     total_positions_assigned = serializers.SerializerMethodField()
@@ -463,7 +467,7 @@ class JobDescriptionCreateUpdateSerializer(serializers.ModelSerializer):
         model = JobDescription
         fields = [
             'id', 'job_title', 'job_purpose', 'business_function', 'department',
-            'unit', 'job_function', 'position_group', 'grading_level',
+            'unit', 'job_function', 'position_group', 'grading_levels',
             'sections', 'required_skills_data', 'behavioral_competencies_data',
             'business_resources_ids', 'access_rights_ids', 'company_benefits_ids',
             'selected_employee_ids',
@@ -528,7 +532,23 @@ class JobDescriptionCreateUpdateSerializer(serializers.ModelSerializer):
             )
         
         return value
-    
+    def validate_grading_levels(self, value):
+        """Validate grading levels list"""
+        if not value or len(value) == 0:
+            raise serializers.ValidationError("At least one grading level is required")
+        
+        # Remove duplicates and normalize
+        normalized = []
+        for level in value:
+            normalized_level = level.strip().upper()
+            if normalized_level and normalized_level not in normalized:
+                normalized.append(normalized_level)
+        
+        if not normalized:
+            raise serializers.ValidationError("No valid grading levels provided")
+        
+        logger.info(f"Validated grading levels: {value} → {normalized}")
+        return normalized
     def create(self, validated_data):
         """ENHANCED: Create with both employee and vacancy selection logic"""
         validated_data.pop('reset_approval_status', None)
@@ -536,9 +556,7 @@ class JobDescriptionCreateUpdateSerializer(serializers.ModelSerializer):
         sections_data = validated_data.pop('sections', [])
         skills_data = validated_data.pop('required_skills_data', [])
         competencies_data = validated_data.pop('behavioral_competencies_data', [])
-        business_resources_ids = validated_data.pop('business_resources_ids', [])
-        access_rights_ids = validated_data.pop('access_rights_ids', [])
-        company_benefits_ids = validated_data.pop('company_benefits_ids', [])
+        grading_levels = validated_data.pop('grading_levels', [])
         selected_employee_ids = validated_data.pop('selected_employee_ids', [])
         # 🔥 NEW: Extract nested item data
         business_resources_data = validated_data.pop('business_resources_with_items', [])
@@ -569,7 +587,7 @@ class JobDescriptionCreateUpdateSerializer(serializers.ModelSerializer):
                 unit_id=validated_data['unit'].id if validated_data.get('unit') else None,
                 job_function_id=validated_data['job_function'].id,
                 position_group_id=validated_data['position_group'].id,
-                grading_level=validated_data['grading_level']
+                grading_levels=grading_levels
             )
             
             # Get eligible vacancies
@@ -580,7 +598,7 @@ class JobDescriptionCreateUpdateSerializer(serializers.ModelSerializer):
                 unit_id=validated_data['unit'].id if validated_data.get('unit') else None,
                 job_function_id=validated_data['job_function'].id,
                 position_group_id=validated_data['position_group'].id,
-                grading_level=validated_data['grading_level']
+                grading_levels=grading_levels
             )
             
             logger.info(f"Found {eligible_employees.count()} eligible employees, {eligible_vacancies.count()} eligible vacancies")
@@ -597,7 +615,7 @@ class JobDescriptionCreateUpdateSerializer(serializers.ModelSerializer):
                         'unit': validated_data['unit'].name if validated_data.get('unit') else 'Any',
                         'job_function': validated_data['job_function'].name,
                         'position_group': validated_data['position_group'].name,
-                        'grading_level': validated_data['grading_level']
+                        'grading_levels': grading_levels 
                     }
                 })
             
@@ -659,6 +677,10 @@ class JobDescriptionCreateUpdateSerializer(serializers.ModelSerializer):
                 
                 # Prepare data for this position
                 jd_data = validated_data.copy()
+                jd_data['grading_levels'] = grading_levels 
+                
+                if grading_levels:
+                    jd_data['grading_level'] = grading_levels[0]
                 
                 if position_type == 'employee':
                     jd_data['assigned_employee'] = position
@@ -735,7 +757,7 @@ class JobDescriptionCreateUpdateSerializer(serializers.ModelSerializer):
     
     def _get_eligible_vacant_positions_for_jd(self, job_title=None, business_function_id=None, 
                                              department_id=None, unit_id=None, job_function_id=None, 
-                                             position_group_id=None, grading_level=None):
+                                             position_group_id=None, grading_levels=None):
         """Get vacant positions matching job description criteria"""
         from .models import VacantPosition
         from .job_description_models import normalize_grading_level
@@ -769,9 +791,12 @@ class JobDescriptionCreateUpdateSerializer(serializers.ModelSerializer):
         if position_group_id:
             queryset = queryset.filter(position_group_id=position_group_id)
         
-        if grading_level:
-            # Apply same grading level logic as employees
-            normalized_target = normalize_grading_level(grading_level.strip())
+        if grading_levels:
+            if isinstance(grading_levels, str):
+                grading_levels = [grading_levels]
+            
+            normalized_targets = [normalize_grading_level(gl.strip()) for gl in grading_levels]
+            
             all_vacancies = list(queryset)
             matching_vacancies = []
             
@@ -779,10 +804,12 @@ class JobDescriptionCreateUpdateSerializer(serializers.ModelSerializer):
                 vac_grade = vacancy.grading_level.strip() if vacancy.grading_level else ""
                 vac_normalized = normalize_grading_level(vac_grade)
                 
-                if vac_normalized == normalized_target:
+                # 🔥 CHECK IF VACANCY MATCHES ANY TARGET LEVEL
+                if vac_normalized in normalized_targets:
                     matching_vacancies.append(vacancy.id)
             
             queryset = queryset.filter(id__in=matching_vacancies)
+        
         
         return queryset.order_by('position_id')
     

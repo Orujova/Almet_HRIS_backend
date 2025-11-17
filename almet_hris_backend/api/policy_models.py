@@ -42,10 +42,7 @@ class PolicyFolder(models.Model):
         help_text="Emoji icon for the folder (e.g., 👥, ⚖️, 🎁)"
     )
     
-    order = models.IntegerField(
-        default=0,
-        help_text="Display order within business function (lower numbers appear first)"
-    )
+  
     
     # Status
     is_active = models.BooleanField(
@@ -67,13 +64,13 @@ class PolicyFolder(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     
     class Meta:
-        ordering = ['business_function', 'order', 'name']
+        ordering = ['business_function',  'name']
         unique_together = ['business_function', 'name']
         verbose_name = "Policy Folder"
         verbose_name_plural = "Policy Folders"
         indexes = [
             models.Index(fields=['business_function', 'is_active']),
-            models.Index(fields=['order']),
+          
             models.Index(fields=['created_at']),
         ]
     
@@ -81,9 +78,7 @@ class PolicyFolder(models.Model):
         """Get count of active policies in this folder"""
         return self.policies.filter(is_active=True).count()
     
-    def get_mandatory_policy_count(self):
-        """Get count of mandatory policies in this folder"""
-        return self.policies.filter(is_active=True, is_mandatory=True).count()
+
     
     def get_total_views(self):
         """Get total view count for all policies in folder"""
@@ -120,13 +115,7 @@ class CompanyPolicy(models.Model):
     Stores policy documents (PDFs) with metadata, versioning, and tracking
     """
     
-    STATUS_CHOICES = [
-        ('DRAFT', 'Draft'),
-        ('REVIEW', 'Under Review'),
-        ('APPROVED', 'Approved'),
-        ('PUBLISHED', 'Published'),
-        ('ARCHIVED', 'Archived'),
-    ]
+ 
     
     # Relationships
     folder = models.ForeignKey(
@@ -160,39 +149,9 @@ class CompanyPolicy(models.Model):
         help_text="File size in bytes (auto-calculated)"
     )
     
-    # Version Information
-    version = models.CharField(
-        max_length=20,
-        default='1.0',
-        help_text="Policy version (e.g., 1.0, 1.1, 2.0)"
-    )
+
     
-    # Status
-    status = models.CharField(
-        max_length=20,
-        choices=STATUS_CHOICES,
-        default='DRAFT',
-        help_text="Current status of the policy"
-    )
-    
-    # Dates
-    effective_date = models.DateField(
-        null=True,
-        blank=True,
-        help_text="Date when policy becomes effective"
-    )
-    
-    review_date = models.DateField(
-        null=True,
-        blank=True,
-        help_text="Next review date for this policy"
-    )
-    
-    # Settings
-    is_mandatory = models.BooleanField(
-        default=False,
-        help_text="Is this policy mandatory for all employees?"
-    )
+
     
     requires_acknowledgment = models.BooleanField(
         default=False,
@@ -209,12 +168,7 @@ class CompanyPolicy(models.Model):
         default=0,
         help_text="Number of times this policy has been viewed"
     )
-    
-    last_accessed = models.DateTimeField(
-        null=True,
-        blank=True,
-        help_text="Last time this policy was accessed"
-    )
+
     
     # Status
     is_active = models.BooleanField(
@@ -240,21 +194,7 @@ class CompanyPolicy(models.Model):
         help_text="User who last updated this policy"
     )
     
-    approved_by = models.ForeignKey(
-        User,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='approved_policies',
-        help_text="User who approved this policy"
-    )
-    
-    approved_at = models.DateTimeField(
-        null=True,
-        blank=True,
-        help_text="When this policy was approved"
-    )
-    
+ 
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -265,10 +205,10 @@ class CompanyPolicy(models.Model):
         verbose_name_plural = "Company Policies"
         indexes = [
             models.Index(fields=['folder', 'is_active']),
-            models.Index(fields=['status']),
-            models.Index(fields=['effective_date']),
+  
+   
             models.Index(fields=['-updated_at']),
-            models.Index(fields=['is_mandatory']),
+  
             models.Index(fields=['requires_acknowledgment']),
         ]
     
@@ -281,9 +221,7 @@ class CompanyPolicy(models.Model):
             except Exception as e:
                 logger.warning(f"Could not calculate file size: {e}")
         
-        # Auto-set approval timestamp
-        if self.status == 'APPROVED' and not self.approved_at:
-            self.approved_at = timezone.now()
+       
         
         super().save(*args, **kwargs)
     
@@ -296,10 +234,7 @@ class CompanyPolicy(models.Model):
             if self.policy_file.size > 10 * 1024 * 1024:
                 raise ValidationError("File size cannot exceed 10MB")
         
-        # Validate dates
-        if self.effective_date and self.review_date:
-            if self.review_date <= self.effective_date:
-                raise ValidationError("Review date must be after effective date")
+      
     
     def get_file_size_display(self):
         """Human readable file size"""
@@ -315,15 +250,15 @@ class CompanyPolicy(models.Model):
     def increment_view_count(self):
         """Increment view counter"""
         self.view_count += 1
-        self.last_accessed = timezone.now()
-        self.save(update_fields=['view_count', 'last_accessed'])
+     
+        self.save(update_fields=['view_count'])
         logger.info(f"Policy {self.id} viewed. Total views: {self.view_count}")
     
     def increment_download_count(self):
         """Increment download counter"""
         self.download_count += 1
-        self.last_accessed = timezone.now()
-        self.save(update_fields=['download_count', 'last_accessed'])
+    
+        self.save(update_fields=['download_count'])
         logger.info(f"Policy {self.id} downloaded. Total downloads: {self.download_count}")
     
     def get_business_function(self):
@@ -354,7 +289,7 @@ class CompanyPolicy(models.Model):
     
     def __str__(self):
         bf_code = self.folder.business_function.code if self.folder and self.folder.business_function else 'N/A'
-        return f"{bf_code} - {self.title} (v{self.version})"
+        return f"{bf_code} - {self.title} "
 
 
 class PolicyAcknowledgment(models.Model):
@@ -409,172 +344,7 @@ class PolicyAcknowledgment(models.Model):
         return f"{self.employee.full_name} - {self.policy.title}"
 
 
-class PolicyAccessLog(models.Model):
-    """
-    Log all policy access for audit purposes
-    
-    Tracks every view, download, and print of policies
-    """
-    
-    ACTION_CHOICES = [
-        ('VIEW', 'Viewed'),
-        ('DOWNLOAD', 'Downloaded'),
-        ('PRINT', 'Printed'),
-    ]
-    
-    policy = models.ForeignKey(
-        CompanyPolicy,
-        on_delete=models.CASCADE,
-        related_name='access_logs',
-        help_text="Policy that was accessed"
-    )
-    
-    user = models.ForeignKey(
-        User,
-        on_delete=models.SET_NULL,
-        null=True,
-        related_name='policy_accesses',
-        help_text="Django user who accessed the policy"
-    )
-    
-    employee = models.ForeignKey(
-        'Employee',
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='policy_access_logs',
-        help_text="Employee who accessed the policy (if linked)"
-    )
-    
-    action = models.CharField(
-        max_length=20,
-        choices=ACTION_CHOICES,
-        default='VIEW',
-        help_text="Type of access action"
-    )
-    
-    ip_address = models.GenericIPAddressField(
-        null=True,
-        blank=True,
-        help_text="IP address of the user"
-    )
-    
-    user_agent = models.TextField(
-        blank=True,
-        help_text="Browser user agent string"
-    )
-    
-    accessed_at = models.DateTimeField(
-        auto_now_add=True,
-        help_text="When the access occurred"
-    )
-    
-    class Meta:
-        ordering = ['-accessed_at']
-        verbose_name = "Policy Access Log"
-        verbose_name_plural = "Policy Access Logs"
-        indexes = [
-            models.Index(fields=['policy', '-accessed_at']),
-            models.Index(fields=['user', '-accessed_at']),
-            models.Index(fields=['employee', '-accessed_at']),
-            models.Index(fields=['-accessed_at']),
-            models.Index(fields=['action']),
-        ]
-    
-    def get_user_display(self):
-        """Get user display name"""
-        if self.employee:
-            return self.employee.full_name
-        elif self.user:
-            return self.user.get_full_name() or self.user.username
-        return 'Unknown'
-    
-    def __str__(self):
-        user_name = self.get_user_display()
-        return f"{user_name} {self.get_action_display()} {self.policy.title}"
 
-
-class PolicyVersion(models.Model):
-    """
-    Track policy version history
-    
-    When a policy is updated, previous versions are stored here
-    """
-    
-    policy = models.ForeignKey(
-        CompanyPolicy,
-        on_delete=models.CASCADE,
-        related_name='version_history',
-        help_text="Policy this version belongs to"
-    )
-    
-    version = models.CharField(
-        max_length=20,
-        help_text="Version number (e.g., 1.0, 1.1, 2.0)"
-    )
-    
-    policy_file = models.FileField(
-        upload_to='company_policies/versions/%Y/%m/',
-        validators=[FileExtensionValidator(allowed_extensions=['pdf'])],
-        help_text="Previous version of the policy file"
-    )
-    
-    file_size = models.PositiveIntegerField(
-        null=True,
-        blank=True,
-        help_text="File size in bytes"
-    )
-    
-    changes_summary = models.TextField(
-        blank=True,
-        help_text="Summary of changes in this version"
-    )
-    
-    created_by = models.ForeignKey(
-        User,
-        on_delete=models.SET_NULL,
-        null=True,
-        help_text="User who created this version"
-    )
-    
-    created_at = models.DateTimeField(
-        auto_now_add=True,
-        help_text="When this version was created"
-    )
-    
-    class Meta:
-        ordering = ['-created_at']
-        unique_together = ['policy', 'version']
-        verbose_name = "Policy Version"
-        verbose_name_plural = "Policy Versions"
-        indexes = [
-            models.Index(fields=['policy', '-created_at']),
-            models.Index(fields=['-created_at']),
-        ]
-    
-    def save(self, *args, **kwargs):
-        """Auto-calculate file size"""
-        if self.policy_file:
-            try:
-                self.file_size = self.policy_file.size
-            except Exception as e:
-                logger.warning(f"Could not calculate file size for version: {e}")
-        
-        super().save(*args, **kwargs)
-    
-    def get_file_size_display(self):
-        """Human readable file size"""
-        if self.file_size:
-            if self.file_size < 1024:
-                return f"{self.file_size} B"
-            elif self.file_size < 1024 * 1024:
-                return f"{self.file_size / 1024:.1f} KB"
-            else:
-                return f"{self.file_size / (1024 * 1024):.1f} MB"
-        return "Unknown"
-    
-    def __str__(self):
-        return f"{self.policy.title} - v{self.version}"
 
 
 # Signal handlers for automatic operations
@@ -592,13 +362,3 @@ def delete_policy_file(sender, instance, **kwargs):
         except Exception as e:
             logger.error(f"Error deleting policy file: {e}")
 
-@receiver(pre_delete, sender=PolicyVersion)
-def delete_version_file(sender, instance, **kwargs):
-    """Delete version file when version is deleted"""
-    if instance.policy_file:
-        try:
-            if os.path.isfile(instance.policy_file.path):
-                os.remove(instance.policy_file.path)
-                logger.info(f"Deleted version file: {instance.policy_file.path}")
-        except Exception as e:
-            logger.error(f"Error deleting version file: {e}")
