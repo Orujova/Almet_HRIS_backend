@@ -413,7 +413,7 @@ class JobDescription(models.Model):
         return queryset.order_by('line_manager_id', 'employee_id')
     @classmethod 
     def get_eligible_employees(cls, job_title=None, business_function=None, department=None, 
-                             unit=None, job_function=None, position_group=None, grading_level=None):
+                             unit=None, job_function=None, position_group=None, grading_levels=None):
         """Wrapper method for backward compatibility"""
         job_title_str = job_title
         business_function_id = business_function.id if hasattr(business_function, 'id') else business_function
@@ -429,18 +429,19 @@ class JobDescription(models.Model):
             unit_id=unit_id,
             job_function_id=job_function_id,
             position_group_id=position_group_id,
-            grading_level=grading_level
+            grading_levels=grading_levels
         )
     
+    # api/job_description_models.py - JobDescription model
+
     def validate_employee_assignment(self):
-        """FIXED: Validate employee against ALL criteria INCLUDING job title"""
+        """UPDATED: Validate employee against ALL criteria INCLUDING job title and MULTIPLE grading levels"""
         if not self.assigned_employee:
             return False, "No employee assigned"
         
         emp = self.assigned_employee
         errors = []
         
-      
         # 1. JOB TITLE CHECK (Case insensitive, strip whitespace) - MOST IMPORTANT!
         if self.job_title:
             emp_title = emp.job_title.strip() if emp.job_title else ""
@@ -501,30 +502,55 @@ class JobDescription(models.Model):
             else:
                 print(f"  ✅ Position Group matches: '{self.position_group.name}'")
         
-        # 7. GRADING LEVEL CHECK
-        if self.grading_level:
+        # 🔥 7. GRADING LEVELS CHECK - UPDATED FOR MULTIPLE LEVELS
+        if self.grading_levels and len(self.grading_levels) > 0:
+            emp_grade = emp.grading_level.strip() if emp.grading_level else ""
+            emp_grade_normalized = normalize_grading_level(emp_grade)
+            
+            # Normalize all target grading levels
+            normalized_targets = [normalize_grading_level(level.strip()) for level in self.grading_levels if level]
+            
+            # Check if employee's grade matches ANY of the target levels
+            if emp_grade_normalized not in normalized_targets:
+                errors.append(
+                    f"Grading Level: Required one of {self.grading_levels}, "
+                    f"Employee has '{emp_grade}' (normalized: '{emp_grade_normalized}', "
+                    f"targets: {normalized_targets})"
+                )
+                print(f"  ❌ Grading Level mismatch: Employee '{emp_grade}' NOT IN {self.grading_levels}")
+            else:
+                print(f"  ✅ Grading Level matches: '{emp_grade}' IN {self.grading_levels}")
+        
+        # 🔥 Fallback: Check single grading_level for backward compatibility
+        elif self.grading_level and self.grading_level.strip():
             emp_grade = emp.grading_level.strip() if emp.grading_level else ""
             jd_grade = self.grading_level.strip()
             
-            # Normalize both for comparison
             emp_grade_normalized = normalize_grading_level(emp_grade)
             jd_grade_normalized = normalize_grading_level(jd_grade)
             
             if emp_grade_normalized != jd_grade_normalized:
-                errors.append(f"Grading Level: Required '{jd_grade}', Employee has '{emp_grade}' (normalized: '{jd_grade_normalized}' vs '{emp_grade_normalized}')")
-              
+                errors.append(
+                    f"Grading Level: Required '{jd_grade}', Employee has '{emp_grade}' "
+                    f"(normalized: '{jd_grade_normalized}' vs '{emp_grade_normalized}')"
+                )
+                print(f"  ❌ Grading Level mismatch: '{jd_grade}' vs '{emp_grade}'")
             else:
                 print(f"  ✅ Grading Level matches: '{jd_grade}' (normalized: '{jd_grade_normalized}')")
-            
-            if errors:
-                error_msg = "; ".join(errors)
-                print(f"  🚫 VALIDATION FAILED: {error_msg}")
-                return False, error_msg
-         
-            return True, "Employee matches all criteria including job title"
+        
+        # Final validation result
+        if errors:
+            error_msg = "; ".join(errors)
+            print(f"  🚫 VALIDATION FAILED: {error_msg}")
+            return False, error_msg
+        
+        return True, "Employee matches all criteria including job title and grading level(s)"
     
+    
+    # api/job_description_models.py - JobDescription model
+
     def get_employee_matching_details(self):
-        """Get detailed matching information for all criteria"""
+        """UPDATED: Get detailed matching information for all criteria including MULTIPLE grading levels"""
         if not self.assigned_employee:
             return None
         
@@ -636,8 +662,37 @@ class JobDescription(models.Model):
                 details['overall_match'] = False
                 details['mismatch_details'].append(f"Position Group: Required '{req_pg}', Employee has '{emp_pg}'")
         
-        # GRADING LEVEL CHECK
-        if self.grading_level:
+        # 🔥 GRADING LEVELS CHECK - UPDATED FOR MULTIPLE LEVELS
+        if self.grading_levels and len(self.grading_levels) > 0:
+            emp_grade = emp.grading_level.strip() if emp.grading_level else ""
+            emp_grade_normalized = normalize_grading_level(emp_grade)
+            
+            # Normalize all target grading levels
+            normalized_targets = [normalize_grading_level(level.strip()) for level in self.grading_levels if level]
+            
+            # Check if employee's grade matches ANY of the target levels
+            matches = emp_grade_normalized in normalized_targets
+            
+            details['matches']['grading_levels'] = {
+                'required': self.grading_levels,  # List of all accepted levels
+                'required_normalized': normalized_targets,
+                'employee_has': emp_grade,
+                'employee_normalized': emp_grade_normalized,
+                'matches': matches,
+                'match_type': 'multiple_options',
+                'matching_level': emp_grade if matches else None  # Which level matched
+            }
+            
+            if not matches:
+                details['overall_match'] = False
+                details['mismatch_details'].append(
+                    f"Grading Levels: Required one of {self.grading_levels} "
+                    f"(normalized: {normalized_targets}), "
+                    f"Employee has '{emp_grade}' (normalized: '{emp_grade_normalized}')"
+                )
+        
+        # 🔥 Fallback: Single grading_level for backward compatibility
+        elif self.grading_level and self.grading_level.strip():
             emp_grade = emp.grading_level.strip() if emp.grading_level else ""
             jd_grade = self.grading_level.strip()
             
@@ -651,15 +706,18 @@ class JobDescription(models.Model):
                 'employee_has': emp_grade,
                 'required_normalized': jd_grade_normalized,
                 'employee_normalized': emp_grade_normalized,
-                'matches': matches
+                'matches': matches,
+                'match_type': 'single_value'
             }
             
             if not matches:
                 details['overall_match'] = False
-                details['mismatch_details'].append(f"Grading Level: Required '{jd_grade}' (norm: '{jd_grade_normalized}'), Employee has '{emp_grade}' (norm: '{emp_grade_normalized}')")
-    
+                details['mismatch_details'].append(
+                    f"Grading Level: Required '{jd_grade}' (norm: '{jd_grade_normalized}'), "
+                    f"Employee has '{emp_grade}' (norm: '{emp_grade_normalized}')"
+                )
+        
         return details
-    
     def save(self, *args, **kwargs):
         """Auto-assign reports_to from employee's line_manager"""
         if self.assigned_employee and self.assigned_employee.line_manager:
