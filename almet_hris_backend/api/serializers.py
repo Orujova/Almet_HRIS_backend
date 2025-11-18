@@ -33,11 +33,26 @@ class BusinessFunctionSerializer(serializers.ModelSerializer):
     class Meta:
         model = BusinessFunction
         fields = ['id', 'name', 'code',  'is_active', 'employee_count', 'created_at']
+    def to_representation(self, instance):
+        """Format text fields to title case"""
+        data = super().to_representation(instance)
+        
+        # ✅ Title case tətbiq et - ad və soyad
+        text_fields = [
+            'name',  
+            
+        ]
+        
+        for field in text_fields:
+            if field in data and data[field]:
+                # Strip whitespace və title case
+                data[field] = str(data[field]).strip().title()
+        
+        return data
     
     def get_employee_count(self, obj):
         return obj.employees.filter(status__affects_headcount=True).count()
 
-# Add JobTitle serializer
 class JobTitleSerializer(serializers.ModelSerializer):
 
     employee_count = serializers.SerializerMethodField()
@@ -48,6 +63,22 @@ class JobTitleSerializer(serializers.ModelSerializer):
             'id', 'name', 'description',
             'is_active', 'employee_count', 'created_at', 'updated_at'
         ]
+    def to_representation(self, instance):
+        """Format text fields to title case"""
+        data = super().to_representation(instance)
+        
+        # ✅ Title case tətbiq et - ad və soyad
+        text_fields = [
+            'name',  
+            
+        ]
+        
+        for field in text_fields:
+            if field in data and data[field]:
+                # Strip whitespace və title case
+                data[field] = str(data[field]).strip().title()
+        
+        return data
     
     def get_employee_count(self, obj):
         return Employee.objects.filter(
@@ -55,7 +86,6 @@ class JobTitleSerializer(serializers.ModelSerializer):
             status__affects_headcount=True,
             is_deleted=False
         ).count()
-
 
 class DepartmentSerializer(serializers.ModelSerializer):
     business_function_name = serializers.CharField(source='business_function.name', read_only=True)
@@ -79,6 +109,22 @@ class DepartmentSerializer(serializers.ModelSerializer):
             'business_function_name', 'business_function_code',
             'is_active', 'employee_count', 'unit_count', 'created_at'
         ]
+    def to_representation(self, instance):
+        """Format text fields to title case"""
+        data = super().to_representation(instance)
+        
+        # ✅ Title case tətbiq et - ad və soyad
+        text_fields = [
+            'name',  
+            
+        ]
+        
+        for field in text_fields:
+            if field in data and data[field]:
+                # Strip whitespace və title case
+                data[field] = str(data[field]).strip().title()
+        
+        return data
     
     def get_employee_count(self, obj):
         return obj.employees.filter(status__affects_headcount=True).count()
@@ -232,6 +278,22 @@ class UnitSerializer(serializers.ModelSerializer):
             'is_active', 'employee_count', 'created_at'
         ]
         # REMOVED: 'department' from fields - this was causing the issue
+    def to_representation(self, instance):
+        """Format text fields to title case"""
+        data = super().to_representation(instance)
+        
+        # ✅ Title case tətbiq et - ad və soyad
+        text_fields = [
+            'name',  
+            
+        ]
+        
+        for field in text_fields:
+            if field in data and data[field]:
+                # Strip whitespace və title case
+                data[field] = str(data[field]).strip().title()
+        
+        return data
     
     def get_employee_count(self, obj):
         return obj.employees.filter(status__affects_headcount=True).count()
@@ -351,6 +413,22 @@ class JobFunctionSerializer(serializers.ModelSerializer):
     class Meta:
         model = JobFunction
         fields = ['id', 'name',  'is_active', 'employee_count', 'created_at']
+    def to_representation(self, instance):
+        """Format text fields to title case"""
+        data = super().to_representation(instance)
+        
+        # ✅ Title case tətbiq et - ad və soyad
+        text_fields = [
+            'name',  
+            
+        ]
+        
+        for field in text_fields:
+            if field in data and data[field]:
+                # Strip whitespace və title case
+                data[field] = str(data[field]).strip().title()
+        
+        return data
     
     def get_employee_count(self, obj):
         return obj.employees.filter(status__affects_headcount=True).count()
@@ -506,7 +584,22 @@ class VacantPositionListSerializer(serializers.ModelSerializer):
             # Original vacancy fields
             'position_id',  'notes'
         ]
-    
+    def to_representation(self, instance):
+        """Format text fields to title case"""
+        data = super().to_representation(instance)
+        
+        # ✅ Title case tətbiq et - ad və soyad
+        text_fields = [
+             'department_name','unit_name',  'reporting_to_name','job_function_name',
+            'job_title', 'business_function_name',
+        ]
+        
+        for field in text_fields:
+            if field in data and data[field]:
+                # Strip whitespace və title case
+                data[field] = str(data[field]).strip().title()
+        
+        return data
     def get_grading_display(self, obj):
         if obj.grading_level:
             parts = obj.grading_level.split('_')
@@ -1007,6 +1100,32 @@ class EmployeeListSerializer(serializers.ModelSerializer):
             'updated_at', 'profile_image_url', 'is_deleted', 'is_vacancy','line_manager_email'
         ]
     
+    def to_representation(self, instance):
+        """Format text fields to title case"""
+        data = super().to_representation(instance)
+        
+        # ✅ Title case tətbiq et - ad və soyad
+        text_fields = [
+            'name',  # Full name
+            'first_name',
+            'last_name',
+            'father_name',
+            'business_function_name',
+            'department_name',
+            'unit_name',
+            'job_function_name',
+            'job_title',
+            'position_group_name',
+            'line_manager_name'
+        ]
+        
+        for field in text_fields:
+            if field in data and data[field]:
+                # Strip whitespace və title case
+                data[field] = str(data[field]).strip().title()
+        
+        return data
+    
     def get_profile_image_url(self, obj):
         """Get profile image URL safely"""
         if obj.profile_image:
@@ -1102,7 +1221,24 @@ class EmployeeDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = Employee
         fields = '__all__'
-    
+    def to_representation(self, instance):
+        """Format text fields to title case"""
+        data = super().to_representation(instance)
+        
+        # ✅ Title case tətbiq et
+        text_fields = [
+            'name',
+            'first_name', 
+            'last_name',
+            'father_name',
+            'job_title'
+        ]
+        
+        for field in text_fields:
+            if field in data and data[field]:
+                data[field] = str(data[field]).strip().title()
+        
+        return data
     def _get_period_display(self, period):
         """Get human-readable period name"""
         periods = {
@@ -2951,6 +3087,22 @@ class OrgChartNodeSerializer(serializers.ModelSerializer):
             'colleagues_in_unit', 'colleagues_in_business_function',
             'manager_info', 'employee_details'
         ]
+    def to_representation(self, instance):
+        """Format text fields to title case"""
+        data = super().to_representation(instance)
+        
+        # ✅ Title case tətbiq et - ad və soyad
+        text_fields = [
+            'name',  
+            'title', 'department', 'unit', 'business_function',
+        ]
+        
+        for field in text_fields:
+            if field in data and data[field]:
+                # Strip whitespace və title case
+                data[field] = str(data[field]).strip().title()
+        
+        return data
     
     def get_employee_details(self, obj):
         """Get additional employee details safely"""

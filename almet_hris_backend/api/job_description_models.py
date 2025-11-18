@@ -1058,34 +1058,3 @@ class JobDescriptionCompanyBenefit(models.Model):
         db_table = 'job_description_company_benefits'
         unique_together = ['job_description', 'benefit']
 
-class JobDescriptionActivity(models.Model):
-    """Activity log for job descriptions"""
-    
-    ACTIVITY_TYPES = [
-        ('CREATED', 'Created'),
-        ('UPDATED', 'Updated'),
-        ('SUBMITTED_FOR_APPROVAL', 'Submitted for Approval'),
-        ('APPROVED_BY_LINE_MANAGER', 'Approved by Line Manager'),
-        ('APPROVED_BY_EMPLOYEE', 'Approved by Employee'),
-        ('REJECTED', 'Rejected'),
-        ('REVISION_REQUESTED', 'Revision Requested'),
-        ('RESUBMITTED', 'Resubmitted'),
-    ]
-    
-    job_description = models.ForeignKey(
-        JobDescription, 
-        on_delete=models.CASCADE,
-        related_name='activities'
-    )
-    activity_type = models.CharField(max_length=30, choices=ACTIVITY_TYPES)
-    description = models.TextField()
-    performed_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
-    performed_at = models.DateTimeField(auto_now_add=True)
-    metadata = models.JSONField(default=dict, blank=True)
-    
-    class Meta:
-        db_table = 'job_description_activities'
-        ordering = ['-performed_at']
-    
-    def __str__(self):
-        return f"{self.job_description.job_title} - {self.get_activity_type_display()}"

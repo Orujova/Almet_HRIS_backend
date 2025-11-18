@@ -746,9 +746,10 @@ class AdvancedEmployeeSorter:
         Frontend MultipleSortingSystem component-indən gələn sorting parametrlərini işləyir
         Format: [{'field': 'employee_name', 'direction': 'asc'}, ...]
         """
+        
         if not self.sorting_params:
             # Default sorting
-            return self.queryset.order_by('employee_id')
+            return self.queryset.order_by('full_name')
         
         order_fields = []
         needs_annotation = False
@@ -806,7 +807,7 @@ class AdvancedEmployeeSorter:
         return self.queryset.order_by('employee_id')
 
 class BusinessFunctionViewSet(viewsets.ModelViewSet):
-    queryset = BusinessFunction.objects.all()
+    queryset = BusinessFunction.objects.all().order_by('name')
     serializer_class = BusinessFunctionSerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
@@ -818,7 +819,7 @@ class DepartmentViewSet(viewsets.ModelViewSet):
     """
     ENHANCED: Department ViewSet with bulk creation for multiple business functions
     """
-    queryset = Department.objects.select_related('business_function').all()
+    queryset = Department.objects.select_related('business_function').all().order_by('name')
     serializer_class = DepartmentSerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
@@ -940,7 +941,7 @@ class UnitViewSet(viewsets.ModelViewSet):
     """
     ENHANCED: Unit ViewSet with bulk creation for multiple departments
     """
-    queryset = Unit.objects.select_related('department__business_function').all()
+    queryset = Unit.objects.select_related('department__business_function').all().order_by('name')
     serializer_class = UnitSerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
@@ -1060,7 +1061,7 @@ class UnitViewSet(viewsets.ModelViewSet):
 
 class JobTitleViewSet(viewsets.ModelViewSet):
 
-    queryset = JobTitle.objects.all()
+    queryset = JobTitle.objects.all().order_by('name')
     serializer_class = JobTitleSerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
@@ -1220,7 +1221,7 @@ class JobTitleViewSet(viewsets.ModelViewSet):
 
 class JobFunctionViewSet(viewsets.ModelViewSet):
     """UPDATED: Employee count əlavə olundu"""
-    queryset = JobFunction.objects.all()
+    queryset = JobFunction.objects.all().order_by('name')
     serializer_class = JobFunctionSerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
@@ -1249,7 +1250,7 @@ class PositionGroupViewSet(viewsets.ModelViewSet):
         })
 
 class EmployeeTagViewSet(viewsets.ModelViewSet):
-    queryset = EmployeeTag.objects.all()
+    queryset = EmployeeTag.objects.all().order_by('name')
     serializer_class = EmployeeTagSerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
@@ -1443,9 +1444,9 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             'position_group', 'status', 'line_manager', 'original_vacancy'
         ).prefetch_related(
             'tags', 'documents', 'activities'
-        ).all()
+        ).all().order_by('full_name')
     
-  
+    
     def _clean_form_data(self, data):
         """Comprehensive data cleaning for form data"""
         cleaned_data = {}
@@ -1625,7 +1626,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             unified_data = self._sort_unified_data(unified_data, sorting_params)
         else:
             # Default sort by employee_id
-            unified_data.sort(key=lambda x: x.get('employee_id', ''))
+            unified_data.sort(key=lambda x: x.get('name', ''))
         
         # Apply pagination if requested
         if should_paginate:
@@ -1681,8 +1682,12 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         else:
             sorting_params = []
         
-        employee_sorter = AdvancedEmployeeSorter(queryset, sorting_params)
+        if not sorting_params:
+            queryset = queryset.order_by('full_name')
+        else:
+            employee_sorter = AdvancedEmployeeSorter(queryset, sorting_params)
         queryset = employee_sorter.sort()
+        
         
         total_count = queryset.count()
         
