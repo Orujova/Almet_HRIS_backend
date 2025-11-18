@@ -1178,6 +1178,244 @@ class JobDescriptionCreateUpdateSerializer(serializers.ModelSerializer):
             
             return instance
 
+class EligibleEmployeesSerializer(serializers.Serializer):
+    """UPDATED: Serializer for getting eligible employees with MULTIPLE grading levels support and enhanced validation"""
+    
+    business_function = serializers.IntegerField(
+        required=True, 
+        help_text="Business Function ID (Required)"
+    )
+    department = serializers.IntegerField(
+        required=True, 
+        help_text="Department ID (Required)"
+    )
+    unit = serializers.IntegerField(
+        required=False, 
+        allow_null=True, 
+        help_text="Unit ID (Optional)"
+    )
+    job_function = serializers.IntegerField(
+        required=True, 
+        help_text="Job Function ID (Required)"
+    )
+    position_group = serializers.IntegerField(
+        required=True, 
+        help_text="Position Group ID (Required)"
+    )
+    
+    # 🔥 NEW: Support multiple grading levels (Primary field)
+    grading_levels = serializers.ListField(
+        child=serializers.CharField(max_length=50, allow_blank=False),
+        required=False,
+        allow_empty=False,
+        help_text="List of Grading Levels (e.g., ['M', 'N', 'O']). Use this for multiple levels."
+    )
+    
+    # 🔥 KEPT: Single grading level for backward compatibility (Now optional)
+    grading_level = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        allow_null=True,
+        help_text="Single Grading Level (Deprecated - use grading_levels instead). Will be converted to grading_levels array."
+    )
+    
+    job_title = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        help_text="Job Title for additional filtering (Optional)"
+    )
+    
+    max_preview = serializers.IntegerField(
+        required=False,
+        default=50,
+        min_value=1,
+        max_value=1000,
+        help_text="Maximum number of employees to return (Default: 50)"
+    )
+    
+    include_vacancies = serializers.BooleanField(
+        required=False,
+        default=True,
+        help_text="Include vacant positions in results (Default: True)"
+    )
+    
+    def validate(self, attrs):
+        """UPDATED: Enhanced validation with organizational structure checks and grading levels handling"""
+        
+        validation_errors = {}
+        
+        # ===================================================================
+        # 🔥 STEP 1: HANDLE GRADING LEVELS - Convert single to array if needed
+        # ===================================================================
+        grading_levels = attrs.get('grading_levels')
+        grading_level = attrs.get('grading_level')
+        
+        logger.info(f"📊 Grading validation - Received grading_levels: {grading_levels}, grading_level: {grading_level}")
+        
+        if grading_levels and len(grading_levels) > 0:
+            # User provided grading_levels array - validate it
+            cleaned_levels = []
+            for idx, level in enumerate(grading_levels):
+                if not level or not level.strip():
+                    validation_errors['grading_levels'] = f'Grading level at index {idx} cannot be empty'
+                    break
+                cleaned_levels.append(level.strip())
+            
+            if 'grading_levels' not in validation_errors:
+                attrs['grading_levels'] = cleaned_levels
+                # Set first level as grading_level for backward compatibility
+                attrs['grading_level'] = cleaned_levels[0] if cleaned_levels else None
+                logger.info(f"✅ Using grading_levels array: {cleaned_levels}")
+                
+        elif grading_level and grading_level.strip():
+            # User provided single grading_level - convert to array
+            level_clean = grading_level.strip()
+            attrs['grading_levels'] = [level_clean]
+            attrs['grading_level'] = level_clean
+            logger.info(f"✅ Converted single grading_level '{level_clean}' to array")
+            
+        else:
+            # Neither provided - search without grading filter (optional now)
+            attrs['grading_levels'] = []
+            attrs['grading_level'] = None
+            logger.info("⚠️ No grading levels provided - will search all grades")
+        
+        # ===================================================================
+        # 🔥 STEP 2: VALIDATE ORGANIZATIONAL STRUCTURE
+        # ===================================================================
+        
+        # Business Function validation
+        if 'business_function' in attrs:
+            try:
+                bf = BusinessFunction.objects.get(id=attrs['business_function'])
+                if not bf.is_active:
+                    validation_errors['business_function'] = 'Business function is not active'
+                else:
+                    attrs['_business_function_obj'] = bf  # Cache for later use
+                    logger.info(f"✅ Business Function validated: {bf.name}")
+            except BusinessFunction.DoesNotExist:
+                validation_errors['business_function'] = 'Business function not found'
+                logger.error(f"❌ Business Function {attrs['business_function']} not found")
+        
+        # Department validation
+        if 'department' in attrs:
+            try:
+                dept = Department.objects.get(id=attrs['department'])
+                if not dept.is_active:
+                    validation_errors['department'] = 'Department is not active'
+                    logger.error(f"❌ Department {dept.name} is not active")
+                    
+                # Check if department belongs to business function
+                elif 'business_function' in attrs and dept.business_function_id != attrs['business_function']:
+                    validation_errors['department'] = (
+                        f'Department does not belong to specified business function '
+                        f'(Expected BF: {attrs["business_function"]}, Got: {dept.business_function_id})'
+                    )
+                    logger.error(f"❌ Department {dept.name} not in Business Function {attrs['business_function']}")
+                else:
+                    attrs['_department_obj'] = dept  # Cache for later use
+                    logger.info(f"✅ Department validated: {dept.name}")
+                    
+            except Department.DoesNotExist:
+                validation_errors['department'] = 'Department not found'
+                logger.error(f"❌ Department {attrs['department']} not found")
+        
+        # Unit validation (optional)
+        if 'unit' in attrs and attrs['unit']:
+            try:
+                unit = Unit.objects.get(id=attrs['unit'])
+                if not unit.is_active:
+                    validation_errors['unit'] = 'Unit is not active'
+                    logger.error(f"❌ Unit {unit.name} is not active")
+                    
+                # Check if unit belongs to department
+                elif 'department' in attrs and unit.department_id != attrs['department']:
+                    validation_errors['unit'] = (
+                        f'Unit does not belong to specified department '
+                        f'(Expected Dept: {attrs["department"]}, Got: {unit.department_id})'
+                    )
+                    logger.error(f"❌ Unit {unit.name} not in Department {attrs['department']}")
+                else:
+                    attrs['_unit_obj'] = unit  # Cache for later use
+                    logger.info(f"✅ Unit validated: {unit.name}")
+                    
+            except Unit.DoesNotExist:
+                validation_errors['unit'] = 'Unit not found'
+                logger.error(f"❌ Unit {attrs['unit']} not found")
+        
+        # Job Function validation
+        if 'job_function' in attrs:
+            try:
+                jf = JobFunction.objects.get(id=attrs['job_function'])
+                if not jf.is_active:
+                    validation_errors['job_function'] = 'Job function is not active'
+                    logger.error(f"❌ Job Function {jf.name} is not active")
+                else:
+                    attrs['_job_function_obj'] = jf  # Cache for later use
+                    logger.info(f"✅ Job Function validated: {jf.name}")
+            except JobFunction.DoesNotExist:
+                validation_errors['job_function'] = 'Job function not found'
+                logger.error(f"❌ Job Function {attrs['job_function']} not found")
+        
+        # Position Group validation
+        if 'position_group' in attrs:
+            try:
+                pg = PositionGroup.objects.get(id=attrs['position_group'])
+                if not pg.is_active:
+                    validation_errors['position_group'] = 'Position group is not active'
+                    logger.error(f"❌ Position Group {pg.name} is not active")
+                else:
+                    attrs['_position_group_obj'] = pg  # Cache for later use
+                    logger.info(f"✅ Position Group validated: {pg.name}")
+            except PositionGroup.DoesNotExist:
+                validation_errors['position_group'] = 'Position group not found'
+                logger.error(f"❌ Position Group {attrs['position_group']} not found")
+        
+        # ===================================================================
+        # 🔥 STEP 3: RAISE ALL VALIDATION ERRORS TOGETHER
+        # ===================================================================
+        if validation_errors:
+            logger.error(f"❌ Validation failed with errors: {validation_errors}")
+            raise serializers.ValidationError(validation_errors)
+        
+        # ===================================================================
+        # 🔥 STEP 4: LOG FINAL VALIDATED CRITERIA
+        # ===================================================================
+        logger.info("=" * 80)
+        logger.info("✅ VALIDATION SUCCESSFUL - Final Criteria:")
+        logger.info(f"  - Business Function: {attrs.get('_business_function_obj', 'N/A')}")
+        logger.info(f"  - Department: {attrs.get('_department_obj', 'N/A')}")
+        logger.info(f"  - Unit: {attrs.get('_unit_obj', 'N/A')}")
+        logger.info(f"  - Job Function: {attrs.get('_job_function_obj', 'N/A')}")
+        logger.info(f"  - Position Group: {attrs.get('_position_group_obj', 'N/A')}")
+        logger.info(f"  - Grading Levels: {attrs.get('grading_levels', [])}")
+        logger.info(f"  - Job Title: {attrs.get('job_title', 'N/A')}")
+        logger.info(f"  - Max Preview: {attrs.get('max_preview', 50)}")
+        logger.info(f"  - Include Vacancies: {attrs.get('include_vacancies', True)}")
+        logger.info("=" * 80)
+        
+        return attrs
+    
+    def to_representation(self, instance):
+        """Add metadata about search criteria"""
+        representation = super().to_representation(instance)
+        
+        # Add search metadata
+        if hasattr(self, 'validated_data'):
+            representation['_metadata'] = {
+                'grading_levels_count': len(self.validated_data.get('grading_levels', [])),
+                'grading_levels_used': self.validated_data.get('grading_levels', []),
+                'has_unit_filter': bool(self.validated_data.get('unit')),
+                'has_job_title_filter': bool(self.validated_data.get('job_title', '').strip()),
+                'max_results': self.validated_data.get('max_preview', 50),
+                'includes_vacancies': self.validated_data.get('include_vacancies', True),
+                'backward_compatible_mode': bool(
+                    self.validated_data.get('grading_level') and 
+                    not self.initial_data.get('grading_levels')
+                )
+            }
+        
+        return representation
 
 class JobDescriptionListSerializer(serializers.ModelSerializer):
     """Serializer for job description list view with enhanced employee info"""
