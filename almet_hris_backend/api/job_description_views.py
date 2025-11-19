@@ -1,4 +1,5 @@
-# api/job_description_views.py - UPDATED: Smart employee selection based on organizational hierarchy
+# api/job_description_views.py - UPDATED: Multiple employee assignment support
+# PART 1: Imports, Filters, and Main ViewSet
 
 from rest_framework import viewsets, status, filters
 from rest_framework.decorators import action
@@ -29,55 +30,30 @@ try:
 except ImportError:
     HAS_REPORTLAB = False
 
-# Openpyxl imports for Excel operations
-try:
-
-    from openpyxl.utils import get_column_letter
-    HAS_OPENPYXL = True
-except ImportError:
-    HAS_OPENPYXL = False
-
 logger = logging.getLogger(__name__)
 
-# Job Description Models - CRITICAL IMPORTS
+# Job Description Models
 from .job_description_models import (
-    JobDescription, 
-    JobBusinessResource, 
-    AccessMatrix,
-    CompanyBenefit, 
-    JobBusinessResourceItem,
-AccessMatrixItem,
-    CompanyBenefitItem, 
-   normalize_grading_level
+    JobDescription, JobDescriptionAssignment,
+    JobBusinessResource, AccessMatrix, CompanyBenefit,
+    JobBusinessResourceItem, AccessMatrixItem, CompanyBenefitItem,
+    normalize_grading_level
 )
 
-# Job Description Serializers - ALL SERIALIZERS
+# Job Description Serializers
 from .job_description_serializers import (
-    JobDescriptionListSerializer, 
-    JobDescriptionDetailSerializer,
-    JobDescriptionCreateUpdateSerializer, 
-    JobDescriptionApprovalSerializer,
-    JobDescriptionRejectionSerializer, 
-    JobDescriptionSubmissionSerializer,
-    JobBusinessResourceSerializer, 
-    AccessMatrixSerializer, 
-    CompanyBenefitSerializer, 
-    EmployeeBasicSerializer,
-JobBusinessResourceItemSerializer,AccessMatrixItemSerializer,CompanyBenefitItemSerializer
+    JobDescriptionListSerializer, JobDescriptionDetailSerializer,
+    JobDescriptionCreateUpdateSerializer, JobDescriptionApprovalSerializer,
+    JobDescriptionRejectionSerializer, JobDescriptionSubmissionSerializer,
+    JobBusinessResourceSerializer, AccessMatrixSerializer, CompanyBenefitSerializer,
+    EmployeeBasicSerializer, JobBusinessResourceItemSerializer,
+    AccessMatrixItemSerializer, CompanyBenefitItemSerializer,
+    JobDescriptionAssignmentListSerializer, JobDescriptionAssignmentDetailSerializer,
+    AddAssignmentSerializer, ReassignEmployeeSerializer
 )
-
 
 # Core Models
-from .models import (
-    BusinessFunction, 
-    Department, 
-    Unit, 
-    PositionGroup, 
-    JobFunction,
-    VacantPosition
-)
-
-from .models import BusinessFunction, Department, Unit, PositionGroup, JobFunction,VacantPosition
+from .models import BusinessFunction, Department, Unit, PositionGroup, JobFunction, VacantPosition, Employee
 
 
 class JobDescriptionFilter:
@@ -91,7 +67,6 @@ class JobDescriptionFilter:
             self.params = dict(params)
     
     def get_list_values(self, param_name):
-        """Get list values from query params safely"""
         value = self.params.get(param_name)
         if not value:
             return []
@@ -104,7 +79,6 @@ class JobDescriptionFilter:
             return [str(value)]
     
     def get_int_list_values(self, param_name):
-        """Get integer list values"""
         string_values = self.get_list_values(param_name)
         int_values = []
         for val in string_values:
@@ -125,15 +99,8 @@ class JobDescriptionFilter:
                 Q(job_purpose__icontains=search) |
                 Q(business_function__name__icontains=search) |
                 Q(department__name__icontains=search) |
-                Q(job_function__name__icontains=search) |
-                Q(assigned_employee__full_name__icontains=search) |
-                Q(assigned_employee__employee_id__icontains=search)
+                Q(job_function__name__icontains=search)
             )
-        
-        # Status filter
-        status_values = self.get_list_values('status')
-        if status_values:
-            queryset = queryset.filter(status__in=status_values)
         
         # Business function filter
         business_function_ids = self.get_int_list_values('business_function')
@@ -155,22 +122,6 @@ class JobDescriptionFilter:
         if position_group_ids:
             queryset = queryset.filter(position_group__id__in=position_group_ids)
         
-        # Employee filter
-        employee_search = self.params.get('employee_search')
-        if employee_search:
-            queryset = queryset.filter(
-                Q(assigned_employee__full_name__icontains=employee_search) |
-                Q(assigned_employee__employee_id__icontains=employee_search)
-            )
-        
-        # Manager filter
-        manager_search = self.params.get('manager_search')
-        if manager_search:
-            queryset = queryset.filter(
-                Q(reports_to__full_name__icontains=manager_search) |
-                Q(reports_to__employee_id__icontains=manager_search)
-            )
-        
         # Created date range
         created_date_from = self.params.get('created_date_from')
         created_date_to = self.params.get('created_date_to')
@@ -191,78 +142,39 @@ class JobDescriptionFilter:
             except:
                 pass
         
-        
-        
         return queryset
 
 
-from drf_yasg.utils import swagger_auto_schema, no_body
-from drf_yasg import openapi
-
-# At the top of your ViewSet, override the schema
-from rest_framework.schemas.openapi import AutoSchema
-
-class FileUploadAutoSchema(AutoSchema):
-    """Custom schema for file upload endpoints - prevents ModelSerializer fields from appearing"""
-    
-    def get_serializer(self, path, method):
-        """Don't use ModelSerializer for schema generation in file upload actions"""
-        view = self.view
-        
-        # For these actions, don't auto-generate schema from serializer
-        if hasattr(view, 'action') and view.action in ['bulk_upload', 'download_template', 'export_to_excel']:
-            return None
-        
-        return super().get_serializer(path, method)
-    
-    def get_request_serializer(self, path, method):
-        """Override to prevent request body schema for file upload actions"""
-        view = self.view
-        
-        if hasattr(view, 'action') and view.action in ['bulk_upload', 'download_template', 'export_to_excel']:
-            return None
-        
-        return super().get_request_serializer(path, method)
-
 class JobDescriptionViewSet(viewsets.ModelViewSet):
-    """ViewSet with enhanced employee selection logic"""
+    """ViewSet with multiple employee assignment support"""
     
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['job_title', 'job_purpose', 'business_function__name', 'department__name']
-    ordering_fields = ['job_title', 'created_at', 'status', 'business_function__name']
+    ordering_fields = ['job_title', 'created_at', 'business_function__name']
     ordering = ['-created_at']
-    
-    # IMPORTANT: Set default parser classes at class level
     parser_classes = [JSONParser, MultiPartParser, FormParser]
     
-    # Use custom schema
-    schema = FileUploadAutoSchema()
-    
     def get_queryset(self):
-        """FIXED: Include nested items in prefetch"""
         return JobDescription.objects.select_related(
             'business_function', 'department', 'unit', 'job_function', 'position_group',
-            'reports_to', 'assigned_employee', 'created_by', 'updated_by',
-            'line_manager_approved_by', 'employee_approved_by'
+            'created_by', 'updated_by'
         ).prefetch_related(
+            'assignments__employee',
+            'assignments__reports_to',
+            'assignments__vacancy_position',
             'sections',
             'required_skills__skill__group',
             'behavioral_competencies__competency__group',
-            
-            # 🔥 FIX: Prefetch with nested items
             'business_resources__resource__items',
-            'business_resources__specific_items',  # ✅ Add this
-            
+            'business_resources__specific_items',
             'access_rights__access_matrix__items',
-            'access_rights__specific_items',  # ✅ Add this
-            
+            'access_rights__specific_items',
             'company_benefits__benefit__items',
-            'company_benefits__specific_items'  # ✅ Add this
+            'company_benefits__specific_items'
         ).all()
     
     def get_serializer_class(self):
-        """Return appropriate serializer for each action"""
         action = getattr(self, 'action', None)
         
         if action == 'list':
@@ -271,9 +183,9 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
             return JobDescriptionCreateUpdateSerializer
         else:
             return JobDescriptionDetailSerializer
-        
+    
     def create(self, request, *args, **kwargs):
-        """ENHANCED: Create with employee selection workflow"""
+        """Create with employee selection workflow"""
         
         serializer = self.get_serializer(data=request.data)
         
@@ -281,76 +193,583 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
             serializer.is_valid(raise_exception=True)
             instance = serializer.save()
             
-            # Enhanced response
             response_data = serializer.data
             
-            # Add summary information
-            total_created = getattr(instance, '_created_job_descriptions', [instance])
+            total_created = len(getattr(instance, '_assignments_created', []))
             response_data['summary'] = {
-                'total_job_descriptions_created': len(total_created),
-                'assignment_mode': 'multiple' if len(total_created) > 1 else 'single',
-                'message': f'Successfully created {len(total_created)} job description(s)'
+                'total_assignments_created': total_created,
+                'message': f'Job description created with {total_created} assignment(s)'
             }
             
             headers = self.get_success_headers(response_data)
             return Response(response_data, status=status.HTTP_201_CREATED, headers=headers)
             
         except serializers.ValidationError as e:
-            # Check if this is an employee selection requirement
-            if isinstance(e.detail, dict) and e.detail.get('requires_employee_selection'):
-                # Return special response for employee selection
+            if isinstance(e.detail, dict) and e.detail.get('requires_selection'):
                 return Response({
-                    'requires_employee_selection': True,
-                    'message': e.detail['message'],
-                    'eligible_employees': e.detail['eligible_employees'],
-                    'eligible_count': e.detail['eligible_count'],
-                    'instruction': e.detail['instruction'],
-                    'next_step': 'Resubmit the same request with "selected_employee_ids" field containing the IDs of employees you want to assign'
+                    'requires_selection': True,
+                    'message': e.detail.get('message'),
+                    'eligible_employees': e.detail.get('eligible_employees', []),
+                    'eligible_vacancies': e.detail.get('eligible_vacancies', []),
+                    'instruction': 'Resubmit with selected_employee_ids'
                 }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
-            else:
-                # Regular validation error
-                raise
+            raise
+    
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user)
+    
+    def perform_update(self, serializer):
+        serializer.save(updated_by=self.request.user)
+    
+    # ==================== ASSIGNMENT MANAGEMENT ACTIONS ====================
     
     @swagger_auto_schema(
-    method='post',
-    operation_description="Preview employees and vacant positions that would be assigned based on criteria",
-    request_body=openapi.Schema(
-        type=openapi.TYPE_OBJECT,
-        required=['job_title', 'business_function', 'department', 'job_function', 'position_group', 'grading_level'],
-        properties={
-            'job_title': openapi.Schema(type=openapi.TYPE_STRING),
-            'business_function': openapi.Schema(type=openapi.TYPE_INTEGER),
-            'department': openapi.Schema(type=openapi.TYPE_INTEGER),
-            'unit': openapi.Schema(type=openapi.TYPE_INTEGER),
-            'job_function': openapi.Schema(type=openapi.TYPE_INTEGER),
-            'position_group': openapi.Schema(type=openapi.TYPE_INTEGER),
-            'grading_level': openapi.Schema(type=openapi.TYPE_STRING),
-            'max_preview': openapi.Schema(type=openapi.TYPE_INTEGER, default=50),
-            'include_vacancies': openapi.Schema(type=openapi.TYPE_BOOLEAN, default=True)
-        }
-    ),
-    responses={
-        200: openapi.Response(
-            description="Eligible employees and vacancies found",
-            schema=openapi.Schema(
-                type=openapi.TYPE_OBJECT,
-                properties={
-                    'eligible_employees_count': openapi.Schema(type=openapi.TYPE_INTEGER),
-                    'eligible_vacancies_count': openapi.Schema(type=openapi.TYPE_INTEGER),
-                    'total_eligible_count': openapi.Schema(type=openapi.TYPE_INTEGER),
-                    'employees': openapi.Schema(type=openapi.TYPE_ARRAY, items=openapi.Schema(type=openapi.TYPE_OBJECT)),
-                    'vacancies': openapi.Schema(type=openapi.TYPE_ARRAY, items=openapi.Schema(type=openapi.TYPE_OBJECT)),
-                    'unified_list': openapi.Schema(type=openapi.TYPE_ARRAY, items=openapi.Schema(type=openapi.TYPE_OBJECT)),
-                    'assignment_strategy': openapi.Schema(type=openapi.TYPE_STRING),
-                    'requires_manual_selection': openapi.Schema(type=openapi.TYPE_BOOLEAN)
-                }
-            )
+        method='get',
+        operation_description="Get all assignments for this job description",
+        responses={200: JobDescriptionAssignmentListSerializer(many=True)}
+    )
+    @action(detail=True, methods=['get'])
+    def assignments(self, request, pk=None):
+        """Get all assignments for this job description"""
+        job_description = self.get_object()
+        assignments = job_description.assignments.filter(is_active=True).select_related(
+            'employee', 'reports_to', 'vacancy_position'
         )
-    }
-)
+        
+        # Filter by status if provided
+        status_filter = request.query_params.get('status')
+        if status_filter:
+            assignments = assignments.filter(status=status_filter)
+        
+        serializer = JobDescriptionAssignmentListSerializer(assignments, many=True)
+        
+        return Response({
+            'job_description_id': str(job_description.id),
+            'job_title': job_description.job_title,
+            'total_assignments': assignments.count(),
+            'summary': job_description.get_assignments_summary(),
+            'assignments': serializer.data
+        })
+    
+    @swagger_auto_schema(
+        method='post',
+        operation_description="Add new assignments to existing job description",
+        request_body=AddAssignmentSerializer,
+        responses={201: "Assignments added successfully"}
+    )
+    @action(detail=True, methods=['post'])
+    def add_assignments(self, request, pk=None):
+        """Add new employees/vacancies to this job description"""
+        job_description = self.get_object()
+        
+        serializer = AddAssignmentSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        employee_ids = serializer.validated_data.get('employee_ids', [])
+        vacancy_ids = serializer.validated_data.get('vacancy_ids', [])
+        
+        with transaction.atomic():
+            assignments_created = []
+            
+            # Add employees
+            for emp_id in employee_ids:
+                try:
+                    employee = Employee.objects.get(id=emp_id, is_deleted=False)
+                    
+                    # Check if already assigned
+                    if job_description.assignments.filter(employee=employee, is_active=True).exists():
+                        continue
+                    
+                    assignment = JobDescriptionAssignment.objects.create(
+                        job_description=job_description,
+                        employee=employee,
+                        is_vacancy=False,
+                        reports_to=employee.line_manager
+                    )
+                    assignments_created.append(assignment)
+                except Employee.DoesNotExist:
+                    pass
+            
+            # Add vacancies
+            for vac_id in vacancy_ids:
+                try:
+                    vacancy = VacantPosition.objects.get(id=vac_id, is_filled=False)
+                    
+                    # Check if already assigned
+                    if job_description.assignments.filter(vacancy_position=vacancy, is_active=True).exists():
+                        continue
+                    
+                    assignment = JobDescriptionAssignment.objects.create(
+                        job_description=job_description,
+                        employee=None,
+                        is_vacancy=True,
+                        vacancy_position=vacancy,
+                        reports_to=vacancy.reporting_to
+                    )
+                    assignments_created.append(assignment)
+                except VacantPosition.DoesNotExist:
+                    pass
+        
+        return Response({
+            'success': True,
+            'message': f'Added {len(assignments_created)} new assignment(s)',
+            'assignments_created': [
+                {
+                    'id': str(a.id),
+                    'name': a.get_display_name(),
+                    'is_vacancy': a.is_vacancy
+                }
+                for a in assignments_created
+            ]
+        }, status=status.HTTP_201_CREATED)
+    
+    @swagger_auto_schema(
+        method='post',
+        operation_description="Remove an assignment from job description",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'assignment_id': openapi.Schema(type=openapi.TYPE_STRING, format='uuid')
+            }
+        )
+    )
+    @action(detail=True, methods=['post'])
+    def remove_assignment(self, request, pk=None):
+        """Remove/deactivate an assignment"""
+        job_description = self.get_object()
+        assignment_id = request.data.get('assignment_id')
+        
+        if not assignment_id:
+            return Response({'error': 'assignment_id required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            assignment = job_description.assignments.get(id=assignment_id)
+            assignment.is_active = False
+            assignment.save()
+            
+            return Response({
+                'success': True,
+                'message': f'Assignment removed: {assignment.get_display_name()}'
+            })
+        except JobDescriptionAssignment.DoesNotExist:
+            return Response({'error': 'Assignment not found'}, status=status.HTTP_404_NOT_FOUND)
+    
+    @swagger_auto_schema(
+        method='post',
+        operation_description="Reassign employee to a vacant assignment",
+        request_body=ReassignEmployeeSerializer
+    )
+    @action(detail=True, methods=['post'])
+    def reassign_employee(self, request, pk=None):
+        """Assign a new employee to a vacant assignment"""
+        job_description = self.get_object()
+        
+        serializer = ReassignEmployeeSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        assignment_id = serializer.validated_data['assignment_id']
+        employee_id = serializer.validated_data['employee_id']
+        
+        try:
+            assignment = job_description.assignments.get(id=assignment_id, is_vacancy=True)
+            employee = Employee.objects.get(id=employee_id, is_deleted=False)
+            
+            assignment.assign_new_employee(employee)
+            
+            return Response({
+                'success': True,
+                'message': f'Employee {employee.full_name} assigned to position',
+                'assignment': JobDescriptionAssignmentDetailSerializer(
+                    assignment, context={'request': request}
+                ).data
+            })
+        except JobDescriptionAssignment.DoesNotExist:
+            return Response({'error': 'Vacant assignment not found'}, status=status.HTTP_404_NOT_FOUND)
+        except Employee.DoesNotExist:
+            return Response({'error': 'Employee not found'}, status=status.HTTP_404_NOT_FOUND)
+    
+    # api/job_description_views.py - PART 2: Approval actions
+# Bu hissəni Part 1-in ardınca JobDescriptionViewSet class-ına əlavə edin
+
+    # ==================== APPROVAL WORKFLOW ACTIONS ====================
+    
+    @swagger_auto_schema(
+        method='post',
+        operation_description="Submit assignment for approval",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'assignment_id': openapi.Schema(type=openapi.TYPE_STRING, format='uuid'),
+                'comments': openapi.Schema(type=openapi.TYPE_STRING)
+            }
+        )
+    )
+    @action(detail=True, methods=['post'])
+    def submit_assignment_for_approval(self, request, pk=None):
+        """Submit a specific assignment for approval"""
+        job_description = self.get_object()
+        assignment_id = request.data.get('assignment_id')
+        comments = request.data.get('comments', '')
+        
+        if not assignment_id:
+            return Response({'error': 'assignment_id required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            assignment = job_description.assignments.get(id=assignment_id, is_active=True)
+            
+            if assignment.status not in ['DRAFT', 'REVISION_REQUIRED']:
+                return Response({
+                    'error': f'Cannot submit assignment with status: {assignment.get_status_display()}'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            if not assignment.reports_to:
+                return Response({
+                    'error': 'Assignment has no line manager assigned'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            assignment.status = 'PENDING_LINE_MANAGER'
+            assignment.save()
+            
+            logger.info(f"Assignment {assignment_id} submitted for approval")
+            
+            return Response({
+                'success': True,
+                'message': 'Assignment submitted for approval',
+                'assignment_id': str(assignment.id),
+                'status': assignment.get_status_display(),
+                'next_approver': assignment.reports_to.full_name if assignment.reports_to else None
+            })
+            
+        except JobDescriptionAssignment.DoesNotExist:
+            return Response({'error': 'Assignment not found'}, status=status.HTTP_404_NOT_FOUND)
+    
+    @swagger_auto_schema(
+        method='post',
+        operation_description="Submit all draft assignments for approval",
+        responses={200: "Submitted successfully"}
+    )
+    @action(detail=True, methods=['post'])
+    def submit_all_for_approval(self, request, pk=None):
+        """Submit all draft assignments for approval"""
+        job_description = self.get_object()
+        
+        draft_assignments = job_description.assignments.filter(
+            is_active=True,
+            status__in=['DRAFT', 'REVISION_REQUIRED']
+        )
+        
+        submitted_count = 0
+        errors = []
+        
+        for assignment in draft_assignments:
+            if not assignment.reports_to:
+                errors.append(f"{assignment.get_display_name()}: No line manager")
+                continue
+            
+            assignment.status = 'PENDING_LINE_MANAGER'
+            assignment.save()
+            submitted_count += 1
+        
+        return Response({
+            'success': True,
+            'message': f'Submitted {submitted_count} assignment(s) for approval',
+            'submitted_count': submitted_count,
+            'errors': errors if errors else None
+        })
+    
+    @swagger_auto_schema(
+        method='post',
+        operation_description="Approve assignment as line manager",
+        request_body=JobDescriptionApprovalSerializer
+    )
+    @action(detail=True, methods=['post'])
+    def approve_assignment_by_line_manager(self, request, pk=None):
+        """Approve a specific assignment as line manager"""
+        job_description = self.get_object()
+        assignment_id = request.data.get('assignment_id')
+        
+        if not assignment_id:
+            return Response({'error': 'assignment_id required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        serializer = JobDescriptionApprovalSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            assignment = job_description.assignments.get(id=assignment_id, is_active=True)
+            
+            if assignment.status != 'PENDING_LINE_MANAGER':
+                return Response({
+                    'error': f'Assignment is not pending line manager approval. Status: {assignment.get_status_display()}'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            if not assignment.can_be_approved_by_line_manager(request.user):
+                return Response({
+                    'error': 'You are not authorized to approve this assignment as line manager'
+                }, status=status.HTTP_403_FORBIDDEN)
+            
+            with transaction.atomic():
+                assignment.line_manager_approved_by = request.user
+                assignment.line_manager_approved_at = timezone.now()
+                assignment.line_manager_comments = serializer.validated_data.get('comments', '')
+                
+                signature = serializer.validated_data.get('signature')
+                if signature:
+                    assignment.line_manager_signature = signature
+                
+                # Move to employee approval (if not vacancy)
+                if assignment.is_vacancy:
+                    assignment.status = 'APPROVED'  # Vacancies don't need employee approval
+                else:
+                    assignment.status = 'PENDING_EMPLOYEE'
+                
+                assignment.save()
+            
+            logger.info(f"Assignment {assignment_id} approved by line manager {request.user.username}")
+            
+            return Response({
+                'success': True,
+                'message': 'Assignment approved by line manager',
+                'assignment_id': str(assignment.id),
+                'status': assignment.get_status_display(),
+                'is_fully_approved': assignment.status == 'APPROVED'
+            })
+            
+        except JobDescriptionAssignment.DoesNotExist:
+            return Response({'error': 'Assignment not found'}, status=status.HTTP_404_NOT_FOUND)
+    
+    @swagger_auto_schema(
+        method='post',
+        operation_description="Approve assignment as employee",
+        request_body=JobDescriptionApprovalSerializer
+    )
+    @action(detail=True, methods=['post'])
+    def approve_assignment_as_employee(self, request, pk=None):
+        """Approve a specific assignment as employee"""
+        job_description = self.get_object()
+        assignment_id = request.data.get('assignment_id')
+        
+        if not assignment_id:
+            return Response({'error': 'assignment_id required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        serializer = JobDescriptionApprovalSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            assignment = job_description.assignments.get(id=assignment_id, is_active=True)
+            
+            if assignment.status != 'PENDING_EMPLOYEE':
+                return Response({
+                    'error': f'Assignment is not pending employee approval. Status: {assignment.get_status_display()}'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            if not assignment.can_be_approved_by_employee(request.user):
+                return Response({
+                    'error': 'You are not authorized to approve this assignment as employee'
+                }, status=status.HTTP_403_FORBIDDEN)
+            
+            with transaction.atomic():
+                assignment.employee_approved_by = request.user
+                assignment.employee_approved_at = timezone.now()
+                assignment.employee_comments = serializer.validated_data.get('comments', '')
+                assignment.status = 'APPROVED'
+                
+                signature = serializer.validated_data.get('signature')
+                if signature:
+                    assignment.employee_signature = signature
+                
+                assignment.save()
+            
+            logger.info(f"Assignment {assignment_id} approved by employee {request.user.username}")
+            
+            return Response({
+                'success': True,
+                'message': 'Assignment fully approved',
+                'assignment_id': str(assignment.id),
+                'status': assignment.get_status_display()
+            })
+            
+        except JobDescriptionAssignment.DoesNotExist:
+            return Response({'error': 'Assignment not found'}, status=status.HTTP_404_NOT_FOUND)
+    
+    @swagger_auto_schema(
+        method='post',
+        operation_description="Reject assignment",
+        request_body=JobDescriptionRejectionSerializer
+    )
+    @action(detail=True, methods=['post'])
+    def reject_assignment(self, request, pk=None):
+        """Reject a specific assignment"""
+        job_description = self.get_object()
+        assignment_id = request.data.get('assignment_id')
+        
+        if not assignment_id:
+            return Response({'error': 'assignment_id required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        serializer = JobDescriptionRejectionSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            assignment = job_description.assignments.get(id=assignment_id, is_active=True)
+            
+            if assignment.status not in ['PENDING_LINE_MANAGER', 'PENDING_EMPLOYEE']:
+                return Response({
+                    'error': f'Assignment cannot be rejected in status: {assignment.get_status_display()}'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            with transaction.atomic():
+                assignment.status = 'REJECTED'
+                if assignment.status == 'PENDING_LINE_MANAGER':
+                    assignment.line_manager_comments = serializer.validated_data['reason']
+                else:
+                    assignment.employee_comments = serializer.validated_data['reason']
+                assignment.save()
+            
+            return Response({
+                'success': True,
+                'message': 'Assignment rejected',
+                'assignment_id': str(assignment.id),
+                'status': assignment.get_status_display(),
+                'reason': serializer.validated_data['reason']
+            })
+            
+        except JobDescriptionAssignment.DoesNotExist:
+            return Response({'error': 'Assignment not found'}, status=status.HTTP_404_NOT_FOUND)
+    
+    @swagger_auto_schema(
+        method='post',
+        operation_description="Request revision for assignment"
+    )
+    @action(detail=True, methods=['post'])
+    def request_assignment_revision(self, request, pk=None):
+        """Request revision for an assignment"""
+        job_description = self.get_object()
+        assignment_id = request.data.get('assignment_id')
+        reason = request.data.get('reason', '')
+        
+        if not assignment_id:
+            return Response({'error': 'assignment_id required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        if not reason:
+            return Response({'error': 'reason required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            assignment = job_description.assignments.get(id=assignment_id, is_active=True)
+            
+            if assignment.status not in ['PENDING_LINE_MANAGER', 'PENDING_EMPLOYEE']:
+                return Response({
+                    'error': f'Cannot request revision for status: {assignment.get_status_display()}'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            assignment.status = 'REVISION_REQUIRED'
+            if assignment.line_manager_approved_at:
+                assignment.employee_comments = reason
+            else:
+                assignment.line_manager_comments = reason
+            assignment.save()
+            
+            return Response({
+                'success': True,
+                'message': 'Revision requested',
+                'assignment_id': str(assignment.id),
+                'status': assignment.get_status_display()
+            })
+            
+        except JobDescriptionAssignment.DoesNotExist:
+            return Response({'error': 'Assignment not found'}, status=status.HTTP_404_NOT_FOUND)
+    
+    @action(detail=False, methods=['get'])
+    def pending_approvals(self, request):
+        """Get all assignments pending approval for current user"""
+        try:
+            user = request.user
+            
+            logger.info(f"Getting pending approvals for user: {user.username}")
+            
+            # Get employee record
+            employee = None
+            try:
+                employee = user.employee_profile
+            except:
+                pass
+            
+            # Pending line manager approval
+            line_manager_pending = JobDescriptionAssignment.objects.filter(
+                status='PENDING_LINE_MANAGER',
+                reports_to__user=user,
+                is_active=True
+            ).select_related(
+                'job_description', 'employee', 'reports_to'
+            )
+            
+            # Pending employee approval
+            employee_pending = JobDescriptionAssignment.objects.none()
+            if employee:
+                employee_pending = JobDescriptionAssignment.objects.filter(
+                    status='PENDING_EMPLOYEE',
+                    employee__user=user,
+                    is_active=True
+                ).select_related(
+                    'job_description', 'employee', 'reports_to'
+                )
+            
+            lm_serializer = JobDescriptionAssignmentListSerializer(line_manager_pending, many=True)
+            emp_serializer = JobDescriptionAssignmentListSerializer(employee_pending, many=True)
+            
+            return Response({
+                'pending_as_line_manager': {
+                    'count': line_manager_pending.count(),
+                    'assignments': lm_serializer.data
+                },
+                'pending_as_employee': {
+                    'count': employee_pending.count(),
+                    'assignments': emp_serializer.data
+                },
+                'total_pending': line_manager_pending.count() + employee_pending.count(),
+                'user_info': {
+                    'user_id': user.id,
+                    'username': user.username,
+                    'employee_id': employee.employee_id if employee else None,
+                    'employee_name': employee.full_name if employee else None
+                }
+            })
+            
+        except Exception as e:
+            logger.error(f"Error getting pending approvals: {str(e)}")
+            return Response(
+                {'error': f'Failed to get pending approvals: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )    
+    
+    # api/job_description_views.py - PART 3: Preview, Stats, and Resource ViewSets
+# Bu hissəni Part 2-nin ardınca əlavə edin
+
+    # ==================== PREVIEW AND UTILITY ACTIONS ====================
+    
+    @swagger_auto_schema(
+        method='post',
+        operation_description="Preview eligible employees and vacancies",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['job_title', 'business_function', 'department', 'job_function', 'position_group', 'grading_levels'],
+            properties={
+                'job_title': openapi.Schema(type=openapi.TYPE_STRING),
+                'business_function': openapi.Schema(type=openapi.TYPE_INTEGER),
+                'department': openapi.Schema(type=openapi.TYPE_INTEGER),
+                'unit': openapi.Schema(type=openapi.TYPE_INTEGER),
+                'job_function': openapi.Schema(type=openapi.TYPE_INTEGER),
+                'position_group': openapi.Schema(type=openapi.TYPE_INTEGER),
+                'grading_levels': openapi.Schema(type=openapi.TYPE_ARRAY, items=openapi.Schema(type=openapi.TYPE_STRING))
+            }
+        )
+    )
     @action(detail=False, methods=['post'])
     def preview_eligible_employees(self, request):
-        """ENHANCED: Preview which employees AND vacant positions would be assigned and what strategy would be used"""
+        """Preview which employees and vacancies would be assigned"""
         try:
             job_title = request.data.get('job_title')
             business_function_id = request.data.get('business_function')
@@ -358,16 +777,13 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
             unit_id = request.data.get('unit')
             job_function_id = request.data.get('job_function')
             position_group_id = request.data.get('position_group')
-            grading_levels = request.data.get('grading_levels')
+            grading_levels = request.data.get('grading_levels', [])
+            
             if isinstance(grading_levels, str):
                 grading_levels = [grading_levels]
-            elif not isinstance(grading_levels, list):
-                grading_levels = []
-            max_preview = request.data.get('max_preview', 50)
-            include_vacancies = request.data.get('include_vacancies', True)
             
-            # Validate required fields
-            required_fields = {
+            # Validate
+            required = {
                 'job_title': job_title,
                 'business_function': business_function_id,
                 'department': department_id,
@@ -376,14 +792,14 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                 'grading_levels': grading_levels
             }
             
-            missing_fields = [field for field, value in required_fields.items() if not value]
-            if missing_fields:
+            missing = [f for f, v in required.items() if not v]
+            if missing:
                 return Response(
-                    {'error': f'Missing required fields: {", ".join(missing_fields)}'},
+                    {'error': f'Missing required fields: {", ".join(missing)}'},
                     status=status.HTTP_400_BAD_REQUEST
                 )
             
-            # Get eligible employees (existing logic)
+            # Get eligible employees
             eligible_employees = JobDescription.get_eligible_employees_with_priority(
                 job_title=job_title,
                 business_function_id=business_function_id,
@@ -391,10 +807,10 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                 unit_id=unit_id,
                 job_function_id=job_function_id,
                 position_group_id=position_group_id,
-                grading_levels=grading_levels 
+                grading_levels=grading_levels
             )
             
-            # NEW: Get eligible vacant positions
+            # Get eligible vacancies
             eligible_vacancies = self._get_eligible_vacant_positions(
                 job_title=job_title,
                 business_function_id=business_function_id,
@@ -402,1246 +818,130 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                 unit_id=unit_id,
                 job_function_id=job_function_id,
                 position_group_id=position_group_id,
-                grading_levels=grading_levels 
-            ) if include_vacancies else VacantPosition.objects.none()
+                grading_levels=grading_levels
+            )
             
-            # Apply limits
-            limited_employees = eligible_employees[:max_preview//2] if include_vacancies else eligible_employees[:max_preview]
-            limited_vacancies = eligible_vacancies[:max_preview//2] if include_vacancies else eligible_vacancies.none()
-            
-            # Serialize data
-            employees_serializer = EmployeeBasicSerializer(limited_employees, many=True)
-            employees_data = employees_serializer.data
+            employees_data = EmployeeBasicSerializer(eligible_employees[:50], many=True).data
             
             vacancies_data = []
-            if include_vacancies:
-                for vacancy in limited_vacancies:
-                    vacancy_data = self._convert_vacancy_to_employee_preview_format(vacancy)
-                    vacancies_data.append(vacancy_data)
+            for v in eligible_vacancies[:50]:
+                vacancies_data.append({
+                    'id': v.original_employee_pk or v.id,
+                    'position_id': v.position_id,
+                    'job_title': v.job_title,
+                    'is_vacancy': True,
+                    'reports_to': v.reporting_to.full_name if v.reporting_to else None,
+                    'grading_level': v.grading_level
+                })
             
-            # Create unified list for frontend
-            unified_list = []
-            unified_list.extend(employees_data)
-            unified_list.extend(vacancies_data)
+            total = eligible_employees.count() + eligible_vacancies.count()
             
-            # Determine assignment strategy
-            total_eligible = eligible_employees.count() + (eligible_vacancies.count() if include_vacancies else 0)
-            employee_count = eligible_employees.count()
-            vacancy_count = eligible_vacancies.count() if include_vacancies else 0
-            
-            if total_eligible == 0:
-                assignment_strategy = "no_matches_found"
-                requires_manual_selection = False
-                strategy_message = "No employees or vacant positions match the criteria"
-            elif total_eligible == 1:
-                assignment_strategy = "auto_assign_single"
-                requires_manual_selection = False
-                if employee_count == 1:
-                    strategy_message = "Will automatically assign to the single matching employee"
-                else:
-                    strategy_message = "Will automatically convert the single matching vacant position"
-            else:
-                assignment_strategy = "manual_selection_required"
-                requires_manual_selection = True
-                strategy_message = f"Found {total_eligible} matching positions ({employee_count} employees, {vacancy_count} vacant positions) - you must select which ones to use"
-            
-            # Get organizational info for response
-            try:
-                business_function = BusinessFunction.objects.get(id=business_function_id)
-                department = Department.objects.get(id=department_id)
-                job_function = JobFunction.objects.get(id=job_function_id)
-                position_group = PositionGroup.objects.get(id=position_group_id)
-                unit = Unit.objects.get(id=unit_id) if unit_id else None
-            except:
-                return Response(
-                    {'error': 'Invalid organizational structure IDs provided'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            
-            response_data = {
-                'eligible_employees_count': employee_count,
-                'eligible_vacancies_count': vacancy_count,
-                'total_eligible_count': total_eligible,
+            return Response({
+                'total_eligible': total,
+                'employees_count': eligible_employees.count(),
+                'vacancies_count': eligible_vacancies.count(),
                 'employees': employees_data,
                 'vacancies': vacancies_data,
-                'unified_list': unified_list,
-                'assignment_strategy': assignment_strategy,
-                'requires_manual_selection': requires_manual_selection,
-                'strategy_message': strategy_message,
-                'criteria': {
-                    'job_title': job_title,
-                    'business_function': {'id': business_function.id, 'name': business_function.name},
-                    'department': {'id': department.id, 'name': department.name},
-                    'unit': {'id': unit.id, 'name': unit.name} if unit else None,
-                    'job_function': {'id': job_function.id, 'name': job_function.name},
-                    'position_group': {'id': position_group.id, 'name': position_group.name},
-                    'grading_levels': grading_levels
-                },
-                'next_steps': {
-                    'if_single_match': 'Submit job description - will auto-assign',
-                    'if_multiple_matches': 'Submit job description with "selected_employee_ids" and/or "selected_vacancy_ids" fields',
-                    'if_no_matches': 'Adjust criteria to find matching positions',
-                    'mixed_results': f'Found both employees ({employee_count}) and vacant positions ({vacancy_count}) - choose which to use'
-                },
-                'includes_vacancies': include_vacancies
-            }
-            
-            return Response(response_data, status=status.HTTP_200_OK)
+                'requires_selection': total > 1
+            })
             
         except Exception as e:
-            logger.error(f"Error in preview_eligible_employees: {str(e)}")
+            logger.error(f"Error in preview: {str(e)}")
             return Response(
-                {'error': f'Failed to preview positions: {str(e)}'},
+                {'error': f'Preview failed: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
     
-    def _get_eligible_vacant_positions(self, job_title=None, business_function_id=None, 
-                                     department_id=None, unit_id=None, job_function_id=None, 
-                                     position_group_id=None, grading_levels=None):
-        """Get vacant positions matching job description criteria"""
-        from .models import VacantPosition
-        
-        # Start with unfilled, active vacant positions
+    def _get_eligible_vacant_positions(self, **kwargs):
+        """Get eligible vacant positions"""
         queryset = VacantPosition.objects.filter(
             is_filled=False,
             is_deleted=False,
             include_in_headcount=True
-        ).select_related(
-            'business_function', 'department', 'unit', 'job_function', 
-            'position_group', 'vacancy_status'
         )
         
-        logger.info(f"Starting vacant position search with {queryset.count()} unfilled positions")
+        if kwargs.get('job_title'):
+            queryset = queryset.filter(job_title__iexact=kwargs['job_title'].strip())
         
-        # 1. JOB TITLE FILTER
-        if job_title:
-            job_title_clean = job_title.strip()
-            queryset = queryset.filter(job_title__iexact=job_title_clean)
-            logger.info(f"After job_title '{job_title_clean}' filter: {queryset.count()}")
+        if kwargs.get('business_function_id'):
+            queryset = queryset.filter(business_function_id=kwargs['business_function_id'])
         
-        # 2. BUSINESS FUNCTION FILTER
-        if business_function_id:
-            queryset = queryset.filter(business_function_id=business_function_id)
-            logger.info(f"After business_function filter: {queryset.count()}")
+        if kwargs.get('department_id'):
+            queryset = queryset.filter(department_id=kwargs['department_id'])
         
-        # 3. DEPARTMENT FILTER
-        if department_id:
-            queryset = queryset.filter(department_id=department_id)
-            logger.info(f"After department filter: {queryset.count()}")
+        if kwargs.get('unit_id'):
+            queryset = queryset.filter(unit_id=kwargs['unit_id'])
         
-        # 4. UNIT FILTER (optional)
-        if unit_id:
-            queryset = queryset.filter(unit_id=unit_id)
-            logger.info(f"After unit filter: {queryset.count()}")
+        if kwargs.get('job_function_id'):
+            queryset = queryset.filter(job_function_id=kwargs['job_function_id'])
         
-        # 5. JOB FUNCTION FILTER
-        if job_function_id:
-            queryset = queryset.filter(job_function_id=job_function_id)
-            logger.info(f"After job_function filter: {queryset.count()}")
+        if kwargs.get('position_group_id'):
+            queryset = queryset.filter(position_group_id=kwargs['position_group_id'])
         
-        # 6. POSITION GROUP FILTER
-        if position_group_id:
-            queryset = queryset.filter(position_group_id=position_group_id)
-            logger.info(f"After position_group filter: {queryset.count()}")
-        
-        # 7. GRADING LEVEL FILTER
+        grading_levels = kwargs.get('grading_levels', [])
         if grading_levels:
             if isinstance(grading_levels, str):
                 grading_levels = [grading_levels]
             
-            normalized_targets = [normalize_grading_level(gl.strip()) for gl in grading_levels]
-            
-            logger.info(f"Target grading levels: {grading_levels} (normalized: {normalized_targets})")
-            
-            all_vacancies = list(queryset)
-            matching_vacancies = []
-            
-            for vacancy in all_vacancies:
-                vac_grade = vacancy.grading_level.strip() if vacancy.grading_level else ""
-                vac_normalized = normalize_grading_level(vac_grade)
-                
-                if vac_normalized in normalized_targets:
-                    matching_vacancies.append(vacancy.id)
-                    logger.info(f"Vacancy match: {vacancy.position_id} - '{vac_grade}' IN {normalized_targets}")
-            
-            queryset = queryset.filter(id__in=matching_vacancies)
-            logger.info(f"After grading_levels filter: {queryset.count()}")
+            normalized = [normalize_grading_level(gl) for gl in grading_levels]
+            matching = [v.id for v in queryset if normalize_grading_level(v.grading_level or '') in normalized]
+            queryset = queryset.filter(id__in=matching)
         
-        return queryset.order_by('position_id')
+        return queryset
     
-    def _convert_vacancy_to_employee_preview_format(self, vacancy):
-        """Convert vacancy to employee-like format for preview"""
-        return {
-            'id': vacancy.original_employee_pk or f"vacancy_{vacancy.id}",  # Use original PK if available
-            'employee_id': vacancy.position_id,
-            'name': "VACANT POSITION",
-            'full_name': f"[VACANT] {vacancy.job_title}",
-            'email': None,
-            'father_name': None,
-            'date_of_birth': None,
-            'gender': None,
-            'phone': None,
-            'business_function_name': vacancy.business_function.name if vacancy.business_function else 'N/A',
-            'business_function_code': vacancy.business_function.code if vacancy.business_function else 'N/A',
-            'business_function_id': vacancy.business_function.id if vacancy.business_function else None,
-            'department_name': vacancy.department.name if vacancy.department else 'N/A',
-            'department_id': vacancy.department.id if vacancy.department else None,
-            'unit_name': vacancy.unit.name if vacancy.unit else None,
-            'unit_id': vacancy.unit.id if vacancy.unit else None,
-            'job_function_name': vacancy.job_function.name if vacancy.job_function else 'N/A',
-            'job_function_id': vacancy.job_function.id if vacancy.job_function else None,
-            'job_title': vacancy.job_title,
-            'position_group_name': vacancy.position_group.get_name_display() if vacancy.position_group else 'N/A',
-            'position_group_level': vacancy.position_group.hierarchy_level if vacancy.position_group else 0,
-            'position_group_id': vacancy.position_group.id if vacancy.position_group else None,
-            'grading_level': vacancy.grading_level,
-            'line_manager_name': vacancy.reporting_to.full_name if vacancy.reporting_to else None,
-            'line_manager_hc_number': vacancy.reporting_to.employee_id if vacancy.reporting_to else None,
-            'status_name': 'VACANT',
-            'status_color': '#F97316',
-            'organizational_path': self._get_vacancy_organizational_path(vacancy),
-            'matching_score': 100,
-            'has_line_manager': bool(vacancy.reporting_to),
-            'is_vacancy': True,
-            'record_type': 'vacancy',
-            'vacancy_details': {
-                'internal_id': vacancy.id,
-                'position_id': vacancy.position_id,
-                'include_in_headcount': vacancy.include_in_headcount,
-                'is_filled': vacancy.is_filled,
-                'filled_date': vacancy.filled_date,
-                'notes': vacancy.notes,
-                'original_employee_pk': vacancy.original_employee_pk,
-                'can_be_converted': True
-            }
-        }
-    
-    def _get_vacancy_organizational_path(self, vacancy):
-        """Get organizational path for vacancy"""
-        path_parts = []
-        
-        if vacancy.business_function:
-            path_parts.append(vacancy.business_function.name)
-        if vacancy.department:
-            path_parts.append(vacancy.department.name)
-        if vacancy.unit:
-            path_parts.append(vacancy.unit.name)
-        if vacancy.job_function:
-            path_parts.append(f"Function: {vacancy.job_function.name}")
-        if vacancy.position_group:
-            path_parts.append(f"Grade: {vacancy.grading_level}")
-        
-        return " > ".join(path_parts)
-    @swagger_auto_schema(
-        method='post',
-        operation_description="Submit job description for approval workflow",
-        request_body=openapi.Schema(
-            type=openapi.TYPE_OBJECT,
-            properties={
-                'submit_to_line_manager': openapi.Schema(
-                    type=openapi.TYPE_BOOLEAN, 
-                    default=True,
-                    description='Submit to line manager for approval'
-                ),
-                'comments': openapi.Schema(
-                    type=openapi.TYPE_STRING, 
-                    description='Optional comments'
-                )
-            },
-        ),
-        responses={
-            200: openapi.Response(
-                description="Submitted successfully",
-                schema=openapi.Schema(
-                    type=openapi.TYPE_OBJECT,
-                    properties={
-                        'success': openapi.Schema(type=openapi.TYPE_BOOLEAN),
-                        'message': openapi.Schema(type=openapi.TYPE_STRING),
-                        'job_description_id': openapi.Schema(type=openapi.TYPE_STRING),
-                        'status': openapi.Schema(type=openapi.TYPE_STRING),
-                        'next_approver': openapi.Schema(type=openapi.TYPE_STRING),
-                        'workflow_step': openapi.Schema(type=openapi.TYPE_STRING)
-                    }
-                )
-            ),
-            400: openapi.Response(description="Bad request"),
-            403: openapi.Response(description="Permission denied"),
-            404: openapi.Response(description="Job description not found")
-        }
-    )
-    @action(detail=True, methods=['post'])
-    def submit_for_approval(self, request, pk=None):
-        """Submit job description for approval workflow"""
-        try:
-            logger.info(f"Submit for approval request - User: {request.user.username}, JD ID: {pk}")
-            logger.info(f"Request data: {request.data}")
-            
-            job_description = self.get_object()
-            logger.info(f"Job description found: {job_description.job_title}, Status: {job_description.status}")
-            
-            if job_description.status not in ['DRAFT', 'REVISION_REQUIRED']:
-                logger.warning(f"Invalid status for submission: {job_description.status}")
-                return Response(
-                    {'error': f'Cannot submit job description with status: {job_description.get_status_display()}. Only DRAFT or REVISION_REQUIRED can be submitted.'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            
-            # Validate that we have an assigned employee and manager
-            if not job_description.assigned_employee:
-                return Response(
-                    {'error': 'Job description must have an assigned employee before submission'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            
-            if not job_description.reports_to:
-                return Response(
-                    {'error': 'Job description must have a line manager. Please ensure the assigned employee has a line manager set.'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            
-            serializer = JobDescriptionSubmissionSerializer(data=request.data)
-            if not serializer.is_valid():
-                logger.error(f"Serializer validation failed: {serializer.errors}")
-                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-            
-            logger.info("Starting job description submission transaction...")
-            
-            with transaction.atomic():
-                old_status = job_description.status
-                job_description.status = 'PENDING_LINE_MANAGER'
-                job_description.save(update_fields=['status'])
-                
-                logger.info(f"Status updated from {old_status} to {job_description.status}")
-                
-                employee_info = job_description.get_employee_info()
-                description = f"Job description submitted for approval by {request.user.get_full_name()}"
-                description += f" for {employee_info['name']}"
-                
-             
-                
-           
-                logger.info(f"Job description {job_description.id} submitted successfully")
-                
-                response_data = {
-                    'success': True,
-                    'message': 'Job description submitted for approval successfully',
-                    'job_description_id': str(job_description.id),
-                    'status': job_description.get_status_display(),
-                    'next_approver': job_description.reports_to.full_name if job_description.reports_to else 'N/A',
-                    'workflow_step': 'pending_line_manager_approval',
-                    'employee_info': employee_info,
-                    'manager_info': job_description.get_manager_info()
-                }
-                
-                logger.info(f"Returning success response for JD {job_description.id}")
-                return Response(response_data, status=status.HTTP_200_OK)
-                
-        except JobDescription.DoesNotExist:
-            logger.error(f"Job description not found: {pk}")
-            return Response(
-                {'error': 'Job description not found'},
-                status=status.HTTP_404_NOT_FOUND
-            )
-        except Exception as e:
-            logger.error(f"Error submitting job description {pk}: {str(e)}")
-            import traceback
-            logger.error(f"Full traceback: {traceback.format_exc()}")
-            return Response(
-                {'error': f'Failed to submit job description: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-    
-    @swagger_auto_schema(
-        method='post',
-        operation_description="Approve job description as line manager",
-        request_body=JobDescriptionApprovalSerializer,
-        responses={200: "Approved successfully"}
-    )
-    @action(detail=True, methods=['post'])
-    def approve_by_line_manager(self, request, pk=None):
-        """Approve job description as line manager"""
-        try:
-            logger.info(f"Line manager approval by {request.user.username} for JD {pk}")
-            
-            job_description = self.get_object()
-            
-            serializer = JobDescriptionApprovalSerializer(data=request.data)
-            if not serializer.is_valid():
-                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-            
-            if job_description.status != 'PENDING_LINE_MANAGER':
-                return Response(
-                    {'error': f'Job description is not pending line manager approval. Current status: {job_description.get_status_display()}'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            
-            with transaction.atomic():
-                job_description.line_manager_approved_by = request.user
-                job_description.line_manager_approved_at = timezone.now()
-                job_description.line_manager_comments = serializer.validated_data.get('comments', '')
-                
-                signature = serializer.validated_data.get('signature')
-                if signature:
-                    job_description.line_manager_signature = signature
-                
-                # Move to employee approval
-                job_description.status = 'PENDING_EMPLOYEE'
-                job_description.save()
-                
-                employee_info = job_description.get_employee_info()
-                description = f"Approved by {request.user.get_full_name()} as line manager"
-               
-                
-                logger.info(f"Line manager approval successful for JD {job_description.id}")
-                
-                return Response({
-                    'success': True,
-                    'message': 'Job description approved by line manager - now pending employee approval',
-                    'job_description_id': str(job_description.id),
-                    'status': job_description.get_status_display(),
-                    'next_step': 'pending_employee_approval',
-                    'approved_by': request.user.get_full_name(),
-                    'employee_info': employee_info,
-                    'is_fully_approved': False
-                }, status=status.HTTP_200_OK)
-                
-        except Exception as e:
-            logger.error(f"Error in approve_by_line_manager: {e}")
-            import traceback
-            logger.error(f"Traceback: {traceback.format_exc()}")
-            return Response(
-                {'error': f'Failed to approve: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-
-    @swagger_auto_schema(
-        method='post',
-        operation_description="Approve job description as employee",
-        request_body=JobDescriptionApprovalSerializer,
-        responses={200: "Approved successfully"}
-    )
-    @action(detail=True, methods=['post'])
-    def approve_as_employee(self, request, pk=None):
-        """Approve job description as employee"""
-        try:
-            job_description = self.get_object()
-            
-            if job_description.status != 'PENDING_EMPLOYEE':
-                return Response(
-                    {'error': f'Job description is not pending employee approval. Current status: {job_description.get_status_display()}'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            
-            serializer = JobDescriptionApprovalSerializer(data=request.data)
-            if not serializer.is_valid():
-                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-            
-            with transaction.atomic():
-                job_description.employee_approved_by = request.user
-                job_description.employee_approved_at = timezone.now()
-                job_description.employee_comments = serializer.validated_data.get('comments', '')
-                job_description.status = 'APPROVED'  # Fully approved
-                
-                signature = serializer.validated_data.get('signature')
-                if signature:
-                    job_description.employee_signature = signature
-                
-                job_description.save()
-                
-            
-                
-                return Response({
-                    'success': True,
-                    'message': 'Job description fully approved',
-                    'job_description_id': str(job_description.id),
-                    'status': job_description.get_status_display(),
-                    'approved_by': request.user.get_full_name(),
-                    'completion': 'Job description approval process completed'
-                })
-                
-        except Exception as e:
-            logger.error(f"Error approving as employee: {str(e)}")
-            return Response(
-                {'error': f'Failed to approve: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-
-    @swagger_auto_schema(
-        method='post',
-        operation_description="Reject job description",
-        request_body=JobDescriptionRejectionSerializer,
-        responses={200: "Rejected successfully"}
-    )
-    @action(detail=True, methods=['post'])
-    def reject(self, request, pk=None):
-        """Reject job description"""
-        try:
-            job_description = self.get_object()
-            
-            if job_description.status not in ['PENDING_LINE_MANAGER', 'PENDING_EMPLOYEE']:
-                return Response(
-                    {'error': f'Job description cannot be rejected in current status: {job_description.get_status_display()}'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            
-            serializer = JobDescriptionRejectionSerializer(data=request.data)
-            if not serializer.is_valid():
-                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-            
-            with transaction.atomic():
-                job_description.status = 'REJECTED'
-                job_description.save()
-                
-             
-                return Response({
-                    'success': True,
-                    'message': 'Job description rejected',
-                    'job_description_id': str(job_description.id),
-                    'status': job_description.get_status_display(),
-                    'rejected_by': request.user.get_full_name(),
-                    'reason': serializer.validated_data['reason']
-                })
-                
-        except Exception as e:
-            logger.error(f"Error rejecting job description: {str(e)}")
-            return Response(
-                {'error': f'Failed to reject: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-    
-    @action(detail=True, methods=['post'])
-    def request_revision(self, request, pk=None):
-        """Request revision for job description"""
-        try:
-            job_description = self.get_object()
-            
-            can_request = (
-                job_description.status in ['PENDING_LINE_MANAGER', 'PENDING_EMPLOYEE'] 
-            )
-            
-            if not can_request:
-                return Response(
-                    {'error': 'You are not authorized to request revision for this job description'},
-                    status=status.HTTP_403_FORBIDDEN
-                )
-            
-            serializer = JobDescriptionRejectionSerializer(data=request.data)
-            if not serializer.is_valid():
-                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-            
-            with transaction.atomic():
-                job_description.request_revision(
-                    reason=serializer.validated_data['reason']
-                )
-                
-            
-                
-                return Response({
-                    'success': True,
-                    'message': 'Revision requested',
-                    'job_description_id': str(job_description.id),
-                    'status': job_description.get_status_display(),
-                    'reason': serializer.validated_data['reason']
-                })
-                
-        except Exception as e:
-            logger.error(f"Error requesting revision: {str(e)}")
-            return Response(
-                {'error': f'Failed to request revision: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-    
-         
-   
-    @action(detail=False, methods=['get'])
-    def pending_approvals(self, request):
-        """Get job descriptions pending approval for current user"""
-        try:
-            user = request.user
-            
-            logger.info(f"Getting pending approvals for user: {user.username} (ID: {user.id})")
-            
-            # Get employee record for this user (if exists)
-            employee = None
-            try:
-                employee = user.employee_profile
-                logger.info(f"Found employee profile: {employee.employee_id} - {employee.full_name}")
-            except:
-                logger.warning(f"No employee profile found for user {user.username}")
-            
-            # Job descriptions where user is the reports_to manager and needs to approve
-            line_manager_pending = JobDescription.objects.filter(
-                status='PENDING_LINE_MANAGER',
-                reports_to__user=user
-            ).select_related('business_function', 'department', 'job_function', 'assigned_employee', 'created_by')
-            
-            logger.info(f"Line manager pending count: {line_manager_pending.count()}")
-            
-            # Job descriptions where user is the assigned employee and needs to approve
-            employee_pending = JobDescription.objects.none()  # Default to empty queryset
-            if employee:
-                employee_pending = JobDescription.objects.filter(
-                    status='PENDING_EMPLOYEE',
-                    assigned_employee__user=user
-                ).select_related('business_function', 'department', 'job_function', 'assigned_employee', 'created_by')
-            
-            logger.info(f"Employee pending count: {employee_pending.count()}")
-            
-            # Use proper serializer
-            line_manager_serializer = JobDescriptionListSerializer(
-                line_manager_pending, 
-                many=True, 
-                context={'request': request}
-            )
-            employee_serializer = JobDescriptionListSerializer(
-                employee_pending, 
-                many=True, 
-                context={'request': request}
-            )
-            
-            response_data = {
-                'pending_as_line_manager': {
-                    'count': line_manager_pending.count(),
-                    'job_descriptions': line_manager_serializer.data
-                },
-                'pending_as_employee': {
-                    'count': employee_pending.count(),
-                    'job_descriptions': employee_serializer.data
-                },
-                'total_pending': line_manager_pending.count() + employee_pending.count(),
-                'user_info': {
-                    'user_id': user.id,
-                    'username': user.username,
-                    'employee_id': employee.employee_id if employee else None,
-                    'employee_name': employee.full_name if employee else None,
-                    'has_employee_profile': employee is not None
-                }
-            }
-            
-            logger.info(f"Returning pending approvals response: {response_data['total_pending']} total")
-            
-            return Response(response_data)
-            
-        except Exception as e:
-            logger.error(f"Error getting pending approvals: {str(e)}")
-            import traceback
-            logger.error(f"Traceback: {traceback.format_exc()}")
-            return Response(
-                {'error': f'Failed to get pending approvals: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-
-    def perform_create(self, serializer):
-        """Set created_by when creating"""
-        serializer.save(created_by=self.request.user)
-    
-    def perform_update(self, serializer):
-        """Set updated_by when updating"""
-        serializer.save(updated_by=self.request.user)
-
-
-    def _create_enhanced_pdf(self, job_description, buffer):
-        """Create an enhanced, comprehensive PDF for job description with better formatting"""
-        try:
-            # Enhanced page setup with better margins
-            doc = SimpleDocTemplate(
-                buffer,
-                pagesize=A4,
-                rightMargin=1.5*cm,
-                leftMargin=1.5*cm,
-                topMargin=2*cm,
-                bottomMargin=2*cm,
-                title=f"Job Description - {job_description.job_title}"
-            )
-            
-            # Enhanced styles
-            styles = getSampleStyleSheet()
-            
-            # Custom styles for better formatting
-            title_style = ParagraphStyle(
-                'CustomTitle',
-                parent=styles['Heading1'],
-                fontSize=18,
-                spaceAfter=20,
-                alignment=TA_CENTER,
-                textColor=colors.darkblue,
-                fontName='Helvetica-Bold'
-            )
-            
-            section_header_style = ParagraphStyle(
-                'SectionHeader',
-                parent=styles['Heading2'],
-                fontSize=14,
-                spaceAfter=12,
-                spaceBefore=16,
-                textColor=colors.darkblue,
-                fontName='Helvetica-Bold',
-                borderWidth=1,
-                borderColor=colors.darkblue,
-                borderPadding=5
-            )
-            
-            subsection_header_style = ParagraphStyle(
-                'SubsectionHeader',
-                parent=styles['Heading3'],
-                fontSize=12,
-                spaceAfter=8,
-                spaceBefore=12,
-                textColor=colors.darkgreen,
-                fontName='Helvetica-Bold'
-            )
-            
-            content_style = ParagraphStyle(
-                'ContentStyle',
-                parent=styles['Normal'],
-                fontSize=10,
-                spaceAfter=8,
-                alignment=TA_JUSTIFY,
-                fontName='Helvetica'
-            )
-            
-            bullet_style = ParagraphStyle(
-                'BulletStyle',
-                parent=styles['Normal'],
-                fontSize=10,
-                spaceAfter=6,
-                leftIndent=20,
-                fontName='Helvetica'
-            )
-            
-            small_text_style = ParagraphStyle(
-                'SmallText',
-                parent=styles['Normal'],
-                fontSize=9,
-                spaceAfter=4,
-                fontName='Helvetica'
-            )
-            
-            story = []
-            
-            # HEADER SECTION
-            story.append(Paragraph("JOB DESCRIPTION", title_style))
-            story.append(Spacer(1, 0.3*inch))
-            
-            # Job title with styling
-            job_title_style = ParagraphStyle(
-                'JobTitle',
-                parent=styles['Heading1'],
-                fontSize=16,
-                alignment=TA_CENTER,
-                textColor=colors.darkred,
-                fontName='Helvetica-Bold',
-                spaceAfter=20
-            )
-            story.append(Paragraph(job_description.job_title, job_title_style))
-            
-            # Status badge
-            status_color = self._get_status_color(job_description.status)
-            status_style = ParagraphStyle(
-                'StatusBadge',
-                parent=styles['Normal'],
-                fontSize=10,
-                alignment=TA_CENTER,
-                backColor=status_color,
-                textColor=colors.white if status_color != colors.yellow else colors.black,
-                borderWidth=1,
-                borderColor=colors.black,
-                borderPadding=5
-            )
-            story.append(Paragraph(f"Status: {job_description.get_status_display()}", status_style))
-            story.append(Spacer(1, 0.2*inch))
-            
-            # ORGANIZATIONAL INFORMATION
-            story.append(Paragraph("ORGANIZATIONAL INFORMATION", section_header_style))
-            
-            employee_info = job_description.get_employee_info()
-            manager_info = job_description.get_manager_info()
-            
-            org_data = [
-                ['Field', 'Information'],
-                ['Job Title', job_description.job_title],
-                ['Business Function', job_description.business_function.name if job_description.business_function else 'N/A'],
-                ['Department', job_description.department.name if job_description.department else 'N/A'],
-                ['Unit', job_description.unit.name if job_description.unit else 'N/A'],
-                ['Job Function', job_description.job_function.name if job_description.job_function else 'N/A'],
-                ['Position Group', job_description.position_group.name if job_description.position_group else 'N/A'],
-                ['Grading Level', job_description.grading_level or 'N/A'],
-                ['Employee', f"{employee_info['name']} ({employee_info['employee_id']})" if employee_info else 'No Employee Assigned'],
-                ['Reports To', manager_info['name'] if manager_info else 'N/A'],
-                ['Created Date', job_description.created_at.strftime('%d/%m/%Y') if job_description.created_at else 'N/A']
-            ]
-            
-            org_table = Table(org_data, colWidths=[4*cm, 12*cm])
-            org_table.setStyle(TableStyle([
-                # Header row
-                ('BACKGROUND', (0, 0), (-1, 0), colors.darkblue),
-                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                ('FONTSIZE', (0, 0), (-1, 0), 11),
-                
-                # Data rows
-                ('BACKGROUND', (0, 1), (0, -1), colors.lightgrey),
-                ('FONTNAME', (0, 1), (0, -1), 'Helvetica-Bold'),
-                ('FONTNAME', (1, 1), (1, -1), 'Helvetica'),
-                ('FONTSIZE', (0, 1), (-1, -1), 10),
-                
-                # Alignment and padding
-                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-                ('LEFTPADDING', (0, 0), (-1, -1), 8),
-                ('RIGHTPADDING', (0, 0), (-1, -1), 8),
-                ('TOPPADDING', (0, 0), (-1, -1), 6),
-                ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
-                
-                # Grid
-                ('GRID', (0, 0), (-1, -1), 1, colors.black),
-                
-                # Alternating row colors for better readability
-                ('BACKGROUND', (0, 2), (-1, 2), colors.white),
-                ('BACKGROUND', (0, 4), (-1, 4), colors.white),
-                ('BACKGROUND', (0, 6), (-1, 6), colors.white),
-                ('BACKGROUND', (0, 8), (-1, 8), colors.white),
-                ('BACKGROUND', (0, 10), (-1, 10), colors.white),
-            ]))
-            
-            story.append(org_table)
-            story.append(Spacer(1, 0.2*inch))
-            
-            # JOB PURPOSE
-            if job_description.job_purpose:
-                story.append(Paragraph("JOB PURPOSE", section_header_style))
-                formatted_purpose = self._format_long_text(job_description.job_purpose, content_style)
-                story.append(formatted_purpose)
-                story.append(Spacer(1, 0.15*inch))
-            
-            # JOB DESCRIPTION SECTIONS (ENHANCED WITH BETTER FORMATTING)
-            if hasattr(job_description, 'sections') and job_description.sections.exists():
-                story.append(Paragraph("JOB DUTIES", section_header_style))
-                
-                # Group sections by type for better organization
-                sections_by_type = {}
-                for section in job_description.sections.all().order_by('order'):
-                    section_type = section.get_section_type_display()
-                    if section_type not in sections_by_type:
-                        sections_by_type[section_type] = []
-                    sections_by_type[section_type].append(section)
-                
-                # Render grouped sections
-                for section_type, sections in sections_by_type.items():
-                    story.append(Paragraph(section_type.upper(), subsection_header_style))
-                    
-                    for section in sections:
-                        # Parse content into bullet points if it contains bullets
-                        content = section.content.strip()
-                        
-                        # Split by common bullet indicators
-                        import re
-                        bullet_points = re.split(r'[•●▪︎\-]\s*', content)
-                        bullet_points = [bp.strip() for bp in bullet_points if bp.strip()]
-                        
-                        if len(bullet_points) > 1:
-                            # Multiple bullet points found
-                            for point in bullet_points:
-                                if point:
-                                    bullet_text = f"• {point}"
-                                    story.append(Paragraph(bullet_text, bullet_style))
-                        else:
-                            # Single paragraph
-                            formatted_content = self._format_long_text(content, content_style)
-                            story.append(formatted_content)
-                        
-                        story.append(Spacer(1, 0.1*inch))
-            
-            # REQUIREMENTS SECTION (ENHANCED)
-            story.append(Paragraph("REQUIREMENTS", section_header_style))
-            
-            # Create a structured requirements table
-            req_data = []
-            
-            # Educational Requirements
-            if job_description.business_function or job_description.department:
-                story.append(Paragraph("Educational Qualifications", subsection_header_style))
-                
-                # Parse requirements from job description sections
-                requirements_section = job_description.sections.filter(section_type='REQUIREMENTS').first()
-                if requirements_section:
-                    req_content = requirements_section.content.strip()
-                    req_bullets = re.split(r'[•●▪︎\-]\s*', req_content)
-                    req_bullets = [rb.strip() for rb in req_bullets if rb.strip()]
-                    
-                    for req in req_bullets:
-                        if req:
-                            story.append(Paragraph(f"• {req}", bullet_style))
-                
-                story.append(Spacer(1, 0.1*inch))
-            
-            # REQUIRED SKILLS
-            if hasattr(job_description, 'required_skills') and job_description.required_skills.exists():
-                story.append(Paragraph("REQUIRED SKILLS", section_header_style))
-                
-                skills_data = [['Skill Name', 'Skill Group', 'Proficiency Level', 'Mandatory']]
-                
-                for skill_req in job_description.required_skills.select_related('skill', 'skill__group').all():
-                    skills_data.append([
-                        skill_req.skill.name,
-                        skill_req.skill.group.name if skill_req.skill.group else 'N/A',
- 
-                    ])
-                
-                skills_table = Table(skills_data, colWidths=[5*cm, 3.5*cm, 3*cm, 2*cm])
-                skills_table.setStyle(TableStyle([
-                    # Header
-                    ('BACKGROUND', (0, 0), (-1, 0), colors.darkgreen),
-                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-                    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                    ('FONTSIZE', (0, 0), (-1, 0), 10),
-                    
-                    # Data
-                    ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
-                    ('FONTSIZE', (0, 1), (-1, -1), 9),
-                    ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-                    ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-                    ('LEFTPADDING', (0, 0), (-1, -1), 6),
-                    ('RIGHTPADDING', (0, 0), (-1, -1), 6),
-                    ('TOPPADDING', (0, 0), (-1, -1), 4),
-                    ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
-                    ('GRID', (0, 0), (-1, -1), 1, colors.black),
-                    
-                    # Zebra striping
-                    *[('BACKGROUND', (0, i), (-1, i), colors.lightgrey if i % 2 == 0 else colors.white)
-                      for i in range(1, len(skills_data))]
-                ]))
-                
-                story.append(skills_table)
-                story.append(Spacer(1, 0.15*inch))
-            
-            # BEHAVIORAL COMPETENCIES
-            if hasattr(job_description, 'behavioral_competencies') and job_description.behavioral_competencies.exists():
-                story.append(Paragraph("BEHAVIORAL COMPETENCIES", section_header_style))
-                
-                comp_data = [['Competency Name', 'Competency Group', 'Proficiency Level', 'Mandatory']]
-                
-                for comp_req in job_description.behavioral_competencies.select_related('competency', 'competency__group').all():
-                    comp_data.append([
-                        comp_req.competency.name,
-                        comp_req.competency.group.name if comp_req.competency.group else 'N/A',
-                    
-                  
-                    ])
-                
-                comp_table = Table(comp_data, colWidths=[5*cm, 3.5*cm, 3*cm, 2*cm])
-                comp_table.setStyle(TableStyle([
-                    # Header
-                    ('BACKGROUND', (0, 0), (-1, 0), colors.purple),
-                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-                    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                    ('FONTSIZE', (0, 0), (-1, 0), 10),
-                    
-                    # Data
-                    ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
-                    ('FONTSIZE', (0, 1), (-1, -1), 9),
-                    ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-                    ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-                    ('LEFTPADDING', (0, 0), (-1, -1), 6),
-                    ('RIGHTPADDING', (0, 0), (-1, -1), 6),
-                    ('TOPPADDING', (0, 0), (-1, -1), 4),
-                    ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
-                    ('GRID', (0, 0), (-1, -1), 1, colors.black),
-                    
-                    # Zebra striping
-                    *[('BACKGROUND', (0, i), (-1, i), colors.lightgrey if i % 2 == 0 else colors.white)
-                      for i in range(1, len(comp_data))]
-                ]))
-                
-                story.append(comp_table)
-                story.append(Spacer(1, 0.15*inch))
-            
-            # BUSINESS RESOURCES
-            resources_sections = []
-            
-            # Business Resources
-            if hasattr(job_description, 'business_resources') and job_description.business_resources.exists():
-                business_resources = [br.resource.name for br in job_description.business_resources.select_related('resource').all()]
-                if business_resources:
-                    resources_sections.append(('Business Resources', business_resources))
-            
-            # Access Rights
-            if hasattr(job_description, 'access_rights') and job_description.access_rights.exists():
-                access_rights = [ar.access_matrix.name for ar in job_description.access_rights.select_related('access_matrix').all()]
-                if access_rights:
-                    resources_sections.append(('Access Rights', access_rights))
-            
-            # Company Benefits
-            if hasattr(job_description, 'company_benefits') and job_description.company_benefits.exists():
-                benefits = [cb.benefit.name for cb in job_description.company_benefits.select_related('benefit').all()]
-                if benefits:
-                    resources_sections.append(('Company Benefits', benefits))
-            
-            if resources_sections:
-                story.append(Paragraph("RESOURCES & BENEFITS", section_header_style))
-                
-                for section_name, items in resources_sections:
-                    story.append(Paragraph(section_name, subsection_header_style))
-                    
-                    for item in items:
-                        bullet_text = f"• {item}"
-                        story.append(Paragraph(bullet_text, bullet_style))
-                    
-                    story.append(Spacer(1, 0.1*inch))
-            
-            # APPROVAL INFORMATION
-            story.append(Paragraph("APPROVAL INFORMATION", section_header_style))
-            
-            approval_data = [
-                ['Approval Stage', 'Status', 'Approved By', 'Date', 'Comments']
-            ]
-            
-            # Line Manager Approval
-            lm_status = 'Approved' if job_description.line_manager_approved_at else 'Pending'
-            lm_by = job_description.line_manager_approved_by.get_full_name() if job_description.line_manager_approved_by else 'N/A'
-            lm_date = job_description.line_manager_approved_at.strftime('%d/%m/%Y') if job_description.line_manager_approved_at else 'N/A'
-            lm_comments = job_description.line_manager_comments[:50] + '...' if len(job_description.line_manager_comments) > 50 else job_description.line_manager_comments
-            
-            approval_data.append(['Line Manager', lm_status, lm_by, lm_date, lm_comments or 'N/A'])
-            
-            # Employee Approval
-            emp_status = 'Approved' if job_description.employee_approved_at else 'Pending'
-            emp_by = job_description.employee_approved_by.get_full_name() if job_description.employee_approved_by else 'N/A'
-            emp_date = job_description.employee_approved_at.strftime('%d/%m/%Y') if job_description.employee_approved_at else 'N/A'
-            emp_comments = job_description.employee_comments[:50] + '...' if len(job_description.employee_comments) > 50 else job_description.employee_comments
-            
-            approval_data.append(['Employee', emp_status, emp_by, emp_date, emp_comments or 'N/A'])
-            
-            approval_table = Table(approval_data, colWidths=[3*cm, 2.5*cm, 4*cm, 3*cm, 4*cm])
-            approval_table.setStyle(TableStyle([
-                # Header
-                ('BACKGROUND', (0, 0), (-1, 0), colors.navy),
-                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                ('FONTSIZE', (0, 0), (-1, 0), 9),
-                
-                # Data
-                ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
-                ('FONTSIZE', (0, 1), (-1, -1), 8),
-                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-                ('LEFTPADDING', (0, 0), (-1, -1), 4),
-                ('RIGHTPADDING', (0, 0), (-1, -1), 4),
-                ('TOPPADDING', (0, 0), (-1, -1), 4),
-                ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
-                ('GRID', (0, 0), (-1, -1), 1, colors.black),
-                
-                # Status-specific coloring
-                ('BACKGROUND', (1, 1), (1, 1), colors.lightgreen if lm_status == 'Approved' else colors.lightyellow),
-                ('BACKGROUND', (1, 2), (1, 2), colors.lightgreen if emp_status == 'Approved' else colors.lightyellow),
-            ]))
-            
-            story.append(approval_table)
-            story.append(Spacer(1, 0.2*inch))
-            
-            # DOCUMENT INFORMATION
-            story.append(Paragraph("DOCUMENT INFORMATION", section_header_style))
-            
-            doc_info_data = [
-                ['Document ID', str(job_description.id)[:8] + '...'],
-                ['Created By', job_description.created_by.get_full_name() if job_description.created_by else 'System'],
-                ['Created Date', job_description.created_at.strftime('%d/%m/%Y %H:%M') if job_description.created_at else 'N/A'],
-                ['Last Updated', job_description.updated_at.strftime('%d/%m/%Y %H:%M') if job_description.updated_at else 'N/A'],
-                ['Updated By', job_description.updated_by.get_full_name() if job_description.updated_by else 'N/A'],
-                ['Generated', datetime.now().strftime('%d/%m/%Y %H:%M')],
-                ['Status', f"{job_description.get_status_display()} ({job_description.status})"]
-            ]
-            
-            doc_info_table = Table(doc_info_data, colWidths=[4*cm, 10*cm])
-            doc_info_table.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (0, -1), colors.lightblue),
-                ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
-                ('FONTNAME', (1, 0), (1, -1), 'Helvetica'),
-                ('FONTSIZE', (0, 0), (-1, -1), 9),
-                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-                ('LEFTPADDING', (0, 0), (-1, -1), 6),
-                ('RIGHTPADDING', (0, 0), (-1, -1), 6),
-                ('TOPPADDING', (0, 0), (-1, -1), 4),
-                ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
-                ('GRID', (0, 0), (-1, -1), 1, colors.black),
-            ]))
-            
-            story.append(doc_info_table)
-            
-            # Page break before signatures if approved
-            if job_description.status == 'APPROVED':
-                story.append(PageBreak())
-                
-                # SIGNATURES PAGE
-                story.append(Paragraph("DIGITAL SIGNATURES", section_header_style))
-                story.append(Spacer(1, 0.3*inch))
-                
-                signature_data = []
-                
-                # Line Manager Signature
-                if job_description.line_manager_approved_by:
-                    signature_data.append([
-                        'Line Manager Approval:',
-                        f"{job_description.line_manager_approved_by.get_full_name()}\n"
-                        f"Date: {job_description.line_manager_approved_at.strftime('%d/%m/%Y %H:%M')}\n"
-                        f"{'Signature on file' if job_description.line_manager_signature else 'No signature file'}"
-                    ])
-                
-                # Employee Signature
-                if job_description.employee_approved_by:
-                    signature_data.append([
-                        'Employee Approval:',
-                        f"{job_description.employee_approved_by.get_full_name()}\n"
-                        f"Date: {job_description.employee_approved_at.strftime('%d/%m/%Y %H:%M')}\n"
-                        f"{'Signature on file' if job_description.employee_signature else 'No signature file'}"
-                    ])
-                
-                if signature_data:
-                    signature_table = Table(signature_data, colWidths=[4*cm, 10*cm], rowHeights=[3*cm] * len(signature_data))
-                    signature_table.setStyle(TableStyle([
-                        ('BACKGROUND', (0, 0), (0, -1), colors.lightgreen),
-                        ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
-                        ('FONTNAME', (1, 0), (1, -1), 'Helvetica'),
-                        ('FONTSIZE', (0, 0), (-1, -1), 10),
-                        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-                        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-                        ('LEFTPADDING', (0, 0), (-1, -1), 8),
-                        ('RIGHTPADDING', (0, 0), (-1, -1), 8),
-                        ('TOPPADDING', (0, 0), (-1, -1), 8),
-                        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
-                        ('GRID', (0, 0), (-1, -1), 2, colors.darkgreen),
-                    ]))
-                    
-                    story.append(signature_table)
-            
-            # Build the PDF
-            doc.build(story)
-            return buffer
-            
-        except Exception as e:
-            logger.error(f"Error creating enhanced PDF: {str(e)}")
-            raise
-    def _format_long_text(self, text, style, max_line_length=80):
-        """Format long text to prevent layout issues"""
-        if not text:
-            return Paragraph("N/A", style)
-        
-        # Clean and prepare text
-        text = str(text).strip()
-        
-        # Replace multiple spaces and line breaks
-        import re
-        text = re.sub(r'\s+', ' ', text)
-        text = re.sub(r'\n+', '<br/>', text)
-        
-        # If text is very long, add line breaks at natural points
-        if len(text) > max_line_length:
-            words = text.split(' ')
-            formatted_lines = []
-            current_line = []
-            current_length = 0
-            
-            for word in words:
-                word_length = len(word)
-                if current_length + word_length + 1 <= max_line_length:
-                    current_line.append(word)
-                    current_length += word_length + 1
-                else:
-                    if current_line:
-                        formatted_lines.append(' '.join(current_line))
-                    current_line = [word]
-                    current_length = word_length
-            
-            if current_line:
-                formatted_lines.append(' '.join(current_line))
-            
-            text = '<br/>'.join(formatted_lines)
-        
-        return Paragraph(text, style)
-    
-    def _get_status_color(self, status):
-        """Get color for status"""
-        status_colors = {
-            'DRAFT': colors.grey,
-            'PENDING_LINE_MANAGER': colors.orange,
-            'PENDING_EMPLOYEE': colors.blue,
-            'APPROVED': colors.green,
-            'REJECTED': colors.red,
-            'REVISION_REQUIRED': colors.purple,
-        }
-        return status_colors.get(status, colors.grey)
-    
- 
     @action(detail=True, methods=['get'])
     def download_pdf(self, request, pk=None):
-        """Download job description as enhanced PDF"""
-        
+        """Download job description as PDF"""
         if not HAS_REPORTLAB:
-            return HttpResponse("PDF library not available", status=500, content_type='text/plain')
+            return HttpResponse("PDF library not available", status=500)
         
         try:
             job_description = self.get_object()
-            logger.info(f"Creating enhanced PDF for: {job_description.job_title}")
-            
             buffer = BytesIO()
             
-            try:
-                # Use the enhanced PDF generator
-                self._create_enhanced_pdf(job_description, buffer)
-                logger.info("Enhanced PDF created successfully")
-            except Exception as pdf_error:
-                logger.error(f"Enhanced PDF creation failed: {str(pdf_error)}")
-                # Fallback to simple PDF
-                try:
-                    self._create_simple_pdf(job_description, buffer)
-                    logger.info("Fallback to simple PDF successful")
-                except:
-                    return HttpResponse("PDF creation failed", status=500, content_type='text/plain')
+            # Simple PDF generation
+            doc = SimpleDocTemplate(buffer, pagesize=A4)
+            styles = getSampleStyleSheet()
+            story = []
             
+            # Title
+            story.append(Paragraph(f"Job Description: {job_description.job_title}", styles['Title']))
+            story.append(Spacer(1, 0.5*inch))
+            
+            # Assignments
+            story.append(Paragraph("Assigned To:", styles['Heading2']))
+            for assignment in job_description.assignments.filter(is_active=True):
+                story.append(Paragraph(
+                    f"• {assignment.get_display_name()} - {assignment.get_status_display()}",
+                    styles['Normal']
+                ))
+            
+            story.append(Spacer(1, 0.3*inch))
+            
+            # Purpose
+            story.append(Paragraph("Job Purpose:", styles['Heading2']))
+            story.append(Paragraph(job_description.job_purpose, styles['Normal']))
+            
+            doc.build(story)
             buffer.seek(0)
-            pdf_data = buffer.getvalue()
             
-            if len(pdf_data) == 0:
-                return HttpResponse("PDF creation failed", status=500, content_type='text/plain')
+            filename = f"JD_{job_description.job_title.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d')}.pdf"
             
-            # Enhanced filename with more info
-            safe_title = "".join(c for c in job_description.job_title if c.isalnum() or c in (' ', '-', '_'))
-            safe_title = safe_title.strip()[:30]
-            
-            employee_info = job_description.get_employee_info()
-            employee_part = ""
-            if employee_info:
-                safe_employee = "".join(c for c in employee_info['name'] if c.isalnum() or c in (' ', '-', '_'))
-                employee_part = f"_{safe_employee.replace(' ', '_')[:20]}"
-            
-            status_suffix = ""
-            if job_description.status == 'APPROVED':
-                status_suffix = "_APPROVED"
-            elif job_description.status in ['PENDING_LINE_MANAGER', 'PENDING_EMPLOYEE']:
-                status_suffix = "_PENDING"
-            elif job_description.status == 'DRAFT':
-                status_suffix = "_DRAFT"
-            
-            filename = f"JD_{safe_title.replace(' ', '_')}{employee_part}{status_suffix}_{datetime.now().strftime('%Y%m%d')}.pdf"
-            
-            response = HttpResponse(pdf_data, content_type='application/pdf')
+            response = HttpResponse(buffer.getvalue(), content_type='application/pdf')
             response['Content-Disposition'] = f'attachment; filename="{filename}"'
-            response['Content-Length'] = len(pdf_data)
-            response['Cache-Control'] = 'no-cache'
-            
-            logger.info(f"Enhanced PDF response created: {filename} ({len(pdf_data)} bytes)")
             return response
             
         except Exception as e:
             logger.error(f"PDF error: {str(e)}")
-            return HttpResponse(f"PDF Error: {str(e)}", status=500, content_type='text/plain')
-    
+            return HttpResponse(f"PDF Error: {str(e)}", status=500)
+
+
+# ==================== RESOURCE VIEWSETS ====================
 
 class JobBusinessResourceViewSet(viewsets.ModelViewSet):
-    """UPDATED: Business resources with nested items support"""
+    """Business resources with nested items"""
     
-    queryset = JobBusinessResource.objects.all()
+    queryset = JobBusinessResource.objects.prefetch_related('items').all()
     serializer_class = JobBusinessResourceSerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
@@ -1649,49 +949,33 @@ class JobBusinessResourceViewSet(viewsets.ModelViewSet):
     search_fields = ['name', 'description']
     ordering = ['name']
     
-    def get_queryset(self):
-        """Include items in queryset"""
-        return JobBusinessResource.objects.prefetch_related('items').all()
-    
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
     
     @action(detail=True, methods=['get'])
     def items(self, request, pk=None):
-        """🆕 Get all items for a resource"""
         resource = self.get_object()
         items = resource.items.filter(is_active=True)
         serializer = JobBusinessResourceItemSerializer(items, many=True)
         return Response({
             'resource': JobBusinessResourceSerializer(resource).data,
-            'items': serializer.data,
-            'total_items': items.count()
+            'items': serializer.data
         })
-    
     
     @action(detail=True, methods=['post'])
     def add_item(self, request, pk=None):
-        """🆕 Add a new item to this resource"""
         resource = self.get_object()
-        
         data = request.data.copy()
         data['resource'] = resource.id
         
         serializer = JobBusinessResourceItemSerializer(data=data)
         if serializer.is_valid():
             serializer.save(created_by=request.user)
-            return Response({
-                'success': True,
-                'message': f'Item added to {resource.name}',
-                'item': serializer.data
-            }, status=status.HTTP_201_CREATED)
-        
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
-    # In JobBusinessResourceViewSet class
     @action(detail=True, methods=['delete'])
     def delete_item(self, request, pk=None):
-        """🆕 Delete a specific item from this resource"""
         resource = self.get_object()
         item_id = request.data.get('item_id')
         
@@ -1699,94 +983,27 @@ class JobBusinessResourceViewSet(viewsets.ModelViewSet):
             return Response({'error': 'item_id required'}, status=400)
         
         try:
-            item = JobBusinessResourceItem.objects.get(
-                id=item_id,
-                resource=resource
-            )
-            item_name = item.name
+            item = JobBusinessResourceItem.objects.get(id=item_id, resource=resource)
             item.delete()
-            
-            return Response({
-                'success': True,
-                'message': f'Item "{item_name}" deleted from {resource.name}'
-            }, status=status.HTTP_200_OK)
+            return Response({'success': True})
         except JobBusinessResourceItem.DoesNotExist:
-            return Response(
-                {'error': 'Item not found in this resource'},
-                status=status.HTTP_404_NOT_FOUND
-            )
-    
-    @action(detail=True, methods=['put'])
-    def update_item(self, request, pk=None):
-        """🆕 Update a specific item in this resource"""
-        resource = self.get_object()
-        item_id = request.data.get('item_id')
-        
-        if not item_id:
-            return Response({'error': 'item_id required'}, status=400)
-        
-        try:
-            item = JobBusinessResourceItem.objects.get(
-                id=item_id,
-                resource=resource
-            )
-            
-            # Update fields
-            if 'name' in request.data:
-                item.name = request.data['name']
-            if 'description' in request.data:
-                item.description = request.data['description']
-            if 'is_active' in request.data:
-                item.is_active = request.data['is_active']
-            
-            item.save()
-            
-            serializer = JobBusinessResourceItemSerializer(item)
-            return Response({
-                'success': True,
-                'message': f'Item updated in {resource.name}',
-                'item': serializer.data
-            }, status=status.HTTP_200_OK)
-            
-        except JobBusinessResourceItem.DoesNotExist:
-            return Response(
-                {'error': 'Item not found in this resource'},
-                status=status.HTTP_404_NOT_FOUND
-            )
+            return Response({'error': 'Item not found'}, status=404)
+
 
 class JobBusinessResourceItemViewSet(viewsets.ModelViewSet):
-    """🆕 CRUD for business resource items"""
-    
     queryset = JobBusinessResourceItem.objects.select_related('resource').all()
     serializer_class = JobBusinessResourceItemSerializer
     permission_classes = [IsAuthenticated]
-    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
     filterset_fields = ['resource', 'is_active']
     search_fields = ['name', 'description']
-    ordering_fields = ['name', 'created_at']
-    ordering = ['resource__name', 'name']
     
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
-    
-    @action(detail=False, methods=['get'])
-    def by_resource(self, request):
-        """Get items grouped by resource"""
-        resource_id = request.query_params.get('resource_id')
-        if not resource_id:
-            return Response({'error': 'resource_id required'}, status=400)
-        
-        items = self.queryset.filter(resource_id=resource_id, is_active=True)
-        serializer = self.get_serializer(items, many=True)
-        return Response({
-            'items': serializer.data,
-            'count': items.count()
-        })
+
 
 class AccessMatrixViewSet(viewsets.ModelViewSet):
-    """UPDATED: Access matrix with nested items support"""
-    
-    queryset = AccessMatrix.objects.all()
+    queryset = AccessMatrix.objects.prefetch_related('items').all()
     serializer_class = AccessMatrixSerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
@@ -1794,48 +1011,33 @@ class AccessMatrixViewSet(viewsets.ModelViewSet):
     search_fields = ['name', 'description']
     ordering = ['name']
     
-    def get_queryset(self):
-        return AccessMatrix.objects.prefetch_related('items').all()
-    
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
     
     @action(detail=True, methods=['get'])
     def items(self, request, pk=None):
-        """🆕 Get all items for an access matrix"""
         access_matrix = self.get_object()
         items = access_matrix.items.filter(is_active=True)
         serializer = AccessMatrixItemSerializer(items, many=True)
         return Response({
             'access_matrix': AccessMatrixSerializer(access_matrix).data,
-            'items': serializer.data,
-            'total_items': items.count()
+            'items': serializer.data
         })
     
     @action(detail=True, methods=['post'])
     def add_item(self, request, pk=None):
- 
         access_matrix = self.get_object()
-        
         data = request.data.copy()
         data['access_matrix'] = access_matrix.id
         
         serializer = AccessMatrixItemSerializer(data=data)
         if serializer.is_valid():
             serializer.save(created_by=request.user)
-            return Response({
-                'success': True,
-                'message': f'Access item added to {access_matrix.name}',
-                'item': serializer.data
-            }, status=status.HTTP_201_CREATED)
-        
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
-    
-    # In AccessMatrixViewSet class
     @action(detail=True, methods=['delete'])
     def delete_item(self, request, pk=None):
-        """🆕 Delete a specific access item"""
         access_matrix = self.get_object()
         item_id = request.data.get('item_id')
         
@@ -1843,79 +1045,27 @@ class AccessMatrixViewSet(viewsets.ModelViewSet):
             return Response({'error': 'item_id required'}, status=400)
         
         try:
-            item = AccessMatrixItem.objects.get(
-                id=item_id,
-                access_matrix=access_matrix
-            )
-            item_name = item.name
+            item = AccessMatrixItem.objects.get(id=item_id, access_matrix=access_matrix)
             item.delete()
-            
-            return Response({
-                'success': True,
-                'message': f'Access item "{item_name}" deleted from {access_matrix.name}'
-            }, status=status.HTTP_200_OK)
+            return Response({'success': True})
         except AccessMatrixItem.DoesNotExist:
-            return Response(
-                {'error': 'Access item not found'},
-                status=status.HTTP_404_NOT_FOUND
-            )
-    
-    @action(detail=True, methods=['put'])
-    def update_item(self, request, pk=None):
-        """🆕 Update a specific access item"""
-        access_matrix = self.get_object()
-        item_id = request.data.get('item_id')
-        
-        if not item_id:
-            return Response({'error': 'item_id required'}, status=400)
-        
-        try:
-            item = AccessMatrixItem.objects.get(
-                id=item_id,
-                access_matrix=access_matrix
-            )
-            
-            if 'name' in request.data:
-                item.name = request.data['name']
-            if 'description' in request.data:
-                item.description = request.data['description']
-            if 'is_active' in request.data:
-                item.is_active = request.data['is_active']
-            
-            item.save()
-            
-            serializer = AccessMatrixItemSerializer(item)
-            return Response({
-                'success': True,
-                'message': f'Access item updated in {access_matrix.name}',
-                'item': serializer.data
-            }, status=status.HTTP_200_OK)
-            
-        except AccessMatrixItem.DoesNotExist:
-            return Response(
-                {'error': 'Access item not found'},
-                status=status.HTTP_404_NOT_FOUND
-            )
-    
-class AccessMatrixItemViewSet(viewsets.ModelViewSet):
+            return Response({'error': 'Item not found'}, status=404)
 
-    
+
+class AccessMatrixItemViewSet(viewsets.ModelViewSet):
     queryset = AccessMatrixItem.objects.select_related('access_matrix').all()
     serializer_class = AccessMatrixItemSerializer
     permission_classes = [IsAuthenticated]
-    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ['access_matrix',  'is_active']
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
+    filterset_fields = ['access_matrix', 'is_active']
     search_fields = ['name', 'description']
-    ordering_fields = ['name',  'created_at']
-    ordering = ['access_matrix__name', 'name']
     
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
 
+
 class CompanyBenefitViewSet(viewsets.ModelViewSet):
-    """UPDATED: Company benefits with nested items support"""
-    
-    queryset = CompanyBenefit.objects.all()
+    queryset = CompanyBenefit.objects.prefetch_related('items').all()
     serializer_class = CompanyBenefitSerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
@@ -1923,47 +1073,33 @@ class CompanyBenefitViewSet(viewsets.ModelViewSet):
     search_fields = ['name', 'description']
     ordering = ['name']
     
-    def get_queryset(self):
-        return CompanyBenefit.objects.prefetch_related('items').all()
-    
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
     
     @action(detail=True, methods=['get'])
     def items(self, request, pk=None):
-        """🆕 Get all items for a benefit"""
         benefit = self.get_object()
         items = benefit.items.filter(is_active=True)
-   
+        serializer = CompanyBenefitItemSerializer(items, many=True)
         return Response({
             'benefit': CompanyBenefitSerializer(benefit).data,
-   
-            'total_items': items.count()
+            'items': serializer.data
         })
     
     @action(detail=True, methods=['post'])
     def add_item(self, request, pk=None):
-        """🆕 Add a new benefit item"""
         benefit = self.get_object()
-        
         data = request.data.copy()
         data['benefit'] = benefit.id
         
         serializer = CompanyBenefitItemSerializer(data=data)
         if serializer.is_valid():
             serializer.save(created_by=request.user)
-            return Response({
-                'success': True,
-                'message': f'Benefit item added to {benefit.name}',
-                'item': serializer.data
-            }, status=status.HTTP_201_CREATED)
-        
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
-    # In CompanyBenefitViewSet class
     @action(detail=True, methods=['delete'])
     def delete_item(self, request, pk=None):
-        """🆕 Delete a specific benefit item"""
         benefit = self.get_object()
         item_id = request.data.get('item_id')
         
@@ -1971,154 +1107,82 @@ class CompanyBenefitViewSet(viewsets.ModelViewSet):
             return Response({'error': 'item_id required'}, status=400)
         
         try:
-            item = CompanyBenefitItem.objects.get(
-                id=item_id,
-                benefit=benefit
-            )
-            item_name = item.name
+            item = CompanyBenefitItem.objects.get(id=item_id, benefit=benefit)
             item.delete()
-            
-            return Response({
-                'success': True,
-                'message': f'Benefit item "{item_name}" deleted from {benefit.name}'
-            }, status=status.HTTP_200_OK)
+            return Response({'success': True})
         except CompanyBenefitItem.DoesNotExist:
-            return Response(
-                {'error': 'Benefit item not found'},
-                status=status.HTTP_404_NOT_FOUND
-            )
-    
-    @action(detail=True, methods=['put'])
-    def update_item(self, request, pk=None):
-        """🆕 Update a specific benefit item"""
-        benefit = self.get_object()
-        item_id = request.data.get('item_id')
-        
-        if not item_id:
-            return Response({'error': 'item_id required'}, status=400)
-        
-        try:
-            item = CompanyBenefitItem.objects.get(
-                id=item_id,
-                benefit=benefit
-            )
-            
-            if 'name' in request.data:
-                item.name = request.data['name']
-            if 'description' in request.data:
-                item.description = request.data['description']
-            if 'is_active' in request.data:
-                item.is_active = request.data['is_active']
-            
-            item.save()
-            
-            serializer = CompanyBenefitItemSerializer(item)
-            return Response({
-                'success': True,
-                'message': f'Benefit item updated in {benefit.name}',
-                'item': serializer.data
-            }, status=status.HTTP_200_OK)
-            
-        except CompanyBenefitItem.DoesNotExist:
-            return Response(
-                {'error': 'Benefit item not found'},
-                status=status.HTTP_404_NOT_FOUND
-            )
+            return Response({'error': 'Item not found'}, status=404)
+
+
 class CompanyBenefitItemViewSet(viewsets.ModelViewSet):
-    """🆕 CRUD for company benefit items"""
-    
     queryset = CompanyBenefitItem.objects.select_related('benefit').all()
     serializer_class = CompanyBenefitItemSerializer
     permission_classes = [IsAuthenticated]
-    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
     filterset_fields = ['benefit', 'is_active']
-    search_fields = ['name', 'description', 'value']
-    ordering_fields = ['name', 'created_at']
-    ordering = ['benefit__name', 'name']
+    search_fields = ['name', 'description']
     
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
 
+
 class JobDescriptionStatsViewSet(viewsets.ViewSet):
-    """ViewSet for Job Description Statistics"""
+    """Statistics for job descriptions"""
     
     permission_classes = [IsAuthenticated]
     
     def list(self, request):
         """Get comprehensive statistics"""
-        queryset = JobDescription.objects.all()
         
-        # Apply filters if provided
-        jd_filter = JobDescriptionFilter(queryset, request.query_params)
-        queryset = jd_filter.filter()
+        total_jds = JobDescription.objects.count()
+        total_assignments = JobDescriptionAssignment.objects.filter(is_active=True).count()
         
-        total_job_descriptions = queryset.count()
-        
-        # By status
-        status_stats = {}
-        for status_choice in JobDescription.STATUS_CHOICES:
-            status_code = status_choice[0]
-            count = queryset.filter(status=status_code).count()
+        # Assignment status breakdown
+        assignment_stats = {}
+        for status_choice in JobDescriptionAssignment.STATUS_CHOICES:
+            code = status_choice[0]
+            count = JobDescriptionAssignment.objects.filter(
+                is_active=True, status=code
+            ).count()
             if count > 0:
-                status_stats[status_choice[1]] = count
+                assignment_stats[status_choice[1]] = count
         
         # By department
-        department_stats = {}
-        dept_counts = queryset.values('department__name').annotate(
+        dept_stats = {}
+        dept_counts = JobDescription.objects.values('department__name').annotate(
             count=Count('id')
         ).order_by('-count')[:10]
         for item in dept_counts:
             if item['department__name']:
-                department_stats[item['department__name']] = item['count']
+                dept_stats[item['department__name']] = item['count']
         
-        # By business function
-        function_stats = {}
-        func_counts = queryset.values('business_function__name').annotate(
-            count=Count('id')
-        ).order_by('-count')[:10]
-        for item in func_counts:
-            if item['business_function__name']:
-                function_stats[item['business_function__name']] = item['count']
-        
-        # By job function
-        job_function_stats = {}
-        jf_counts = queryset.values('job_function__name').annotate(
-            count=Count('id')
-        ).order_by('-count')[:10]
-        for item in jf_counts:
-            if item['job_function__name']:
-                job_function_stats[item['job_function__name']] = item['count']
-        
-        # Pending approvals by type
-        pending_line_manager = queryset.filter(status='PENDING_LINE_MANAGER').count()
-        pending_employee = queryset.filter(status='PENDING_EMPLOYEE').count()
-        
-        # Employee assignment breakdown
-        total_assigned = queryset.filter(assigned_employee__isnull=False).count()
-        
-      
+        # Employee vs Vacancy
+        employee_assignments = JobDescriptionAssignment.objects.filter(
+            is_active=True, is_vacancy=False
+        ).count()
+        vacancy_assignments = JobDescriptionAssignment.objects.filter(
+            is_active=True, is_vacancy=True
+        ).count()
         
         return Response({
-            'total_job_descriptions': total_job_descriptions,
-            'status_breakdown': status_stats,
-            'department_breakdown': department_stats,
-            'business_function_breakdown': function_stats,
-            'job_function_breakdown': job_function_stats,
-            'assignment_breakdown': {
-                'total_assigned': total_assigned,
+            'total_job_descriptions': total_jds,
+            'total_assignments': total_assignments,
+            'assignment_status_breakdown': assignment_stats,
+            'department_breakdown': dept_stats,
+            'assignment_type_breakdown': {
+                'employees': employee_assignments,
+                'vacancies': vacancy_assignments
             },
             'pending_approvals': {
-                'total': pending_line_manager + pending_employee,
-                'pending_line_manager': pending_line_manager,
-                'pending_employee': pending_employee
-            },
-          
-            'approval_workflow_summary': {
-                'draft': queryset.filter(status='DRAFT').count(),
-                'pending_line_manager': pending_line_manager,
-                'pending_employee': pending_employee,
-                'approved': queryset.filter(status='APPROVED').count(),
-                'rejected': queryset.filter(status='REJECTED').count(),
-                'revision_required': queryset.filter(status='REVISION_REQUIRED').count()
+                'total': JobDescriptionAssignment.objects.filter(
+                    is_active=True,
+                    status__in=['PENDING_LINE_MANAGER', 'PENDING_EMPLOYEE']
+                ).count(),
+                'pending_line_manager': JobDescriptionAssignment.objects.filter(
+                    is_active=True, status='PENDING_LINE_MANAGER'
+                ).count(),
+                'pending_employee': JobDescriptionAssignment.objects.filter(
+                    is_active=True, status='PENDING_EMPLOYEE'
+                ).count()
             }
-        })
+        })        

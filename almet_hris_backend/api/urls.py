@@ -160,6 +160,7 @@ urlpatterns = [
     path('news/', include('api.news_urls')),
     path('performance/', include('api.performance_urls')),
     path('policies/', include('api.policy_urls')),
+    path('', include('api.celebration_urls')),
     # Router URLs
     path('', include(router.urls)),
 ]

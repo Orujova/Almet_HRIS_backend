@@ -1,25 +1,31 @@
-# api/job_description_serializers.py - UPDATED: Smart employee selection based on organizational hierarchy
+# api/job_description_serializers.py - UPDATED: Multiple employee assignment support
+# PART 1: Basic and Resource serializers
 
 from rest_framework import serializers
 from .job_description_models import (
-    JobDescription, JobDescriptionSection, JobDescriptionSkill,
-    JobDescriptionBehavioralCompetency, JobBusinessResource, AccessMatrix,
-    CompanyBenefit, JobDescriptionBusinessResource, JobDescriptionAccessMatrix,
-    JobDescriptionCompanyBenefit, JobBusinessResourceItem,AccessMatrixItem,CompanyBenefitItem
+    JobDescription, JobDescriptionAssignment, JobDescriptionSection,
+    JobDescriptionSkill, JobDescriptionBehavioralCompetency,
+    JobBusinessResource, AccessMatrix, CompanyBenefit,
+    JobDescriptionBusinessResource, JobDescriptionAccessMatrix,
+    JobDescriptionCompanyBenefit, JobBusinessResourceItem,
+    AccessMatrixItem, CompanyBenefitItem, normalize_grading_level
 )
-from .models import BusinessFunction, Department, Unit, PositionGroup, Employee, JobFunction,VacantPosition
+from .models import BusinessFunction, Department, Unit, PositionGroup, Employee, JobFunction, VacantPosition
 from .competency_models import Skill, BehavioralCompetency
 from django.contrib.auth.models import User
-
-import logging
-logger = logging.getLogger(__name__)
 from django.db import transaction
+import logging
 
+logger = logging.getLogger(__name__)
+
+
+# ==================== BASIC SERIALIZERS ====================
 
 class BusinessFunctionBasicSerializer(serializers.ModelSerializer):
     class Meta:
         model = BusinessFunction
         fields = ['id', 'name', 'code']
+
 
 class DepartmentBasicSerializer(serializers.ModelSerializer):
     business_function = BusinessFunctionBasicSerializer(read_only=True)
@@ -28,6 +34,7 @@ class DepartmentBasicSerializer(serializers.ModelSerializer):
         model = Department
         fields = ['id', 'name', 'business_function']
 
+
 class UnitBasicSerializer(serializers.ModelSerializer):
     department = DepartmentBasicSerializer(read_only=True)
     
@@ -35,13 +42,27 @@ class UnitBasicSerializer(serializers.ModelSerializer):
         model = Unit
         fields = ['id', 'name', 'department']
 
+
 class PositionGroupBasicSerializer(serializers.ModelSerializer):
     class Meta:
         model = PositionGroup
         fields = ['id', 'name', 'hierarchy_level', 'grading_shorthand']
 
+
+class JobFunctionBasicSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = JobFunction
+        fields = ['id', 'name']
+
+
+class UserBasicSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ['id', 'username', 'first_name', 'last_name']
+
+
 class EmployeeBasicSerializer(serializers.ModelSerializer):
-    """IMPROVED: Enhanced employee serializer with comprehensive organizational details"""
+    """Enhanced employee serializer with organizational details"""
     
     business_function_name = serializers.CharField(source='business_function.name', read_only=True)
     department_name = serializers.CharField(source='department.name', read_only=True)
@@ -51,7 +72,6 @@ class EmployeeBasicSerializer(serializers.ModelSerializer):
     line_manager_name = serializers.CharField(source='line_manager.full_name', read_only=True)
     line_manager_id = serializers.IntegerField(source='line_manager.id', read_only=True)
     email = serializers.CharField(source='user.email', read_only=True)
-    # Additional useful fields
     has_line_manager = serializers.SerializerMethodField()
     organizational_path = serializers.SerializerMethodField()
     matching_score = serializers.SerializerMethodField()
@@ -66,17 +86,14 @@ class EmployeeBasicSerializer(serializers.ModelSerializer):
             'job_function', 'job_function_name',
             'position_group', 'position_group_name',
             'grading_level', 'line_manager', 'line_manager_name', 'line_manager_id',
-            'has_line_manager', 'organizational_path', 'matching_score',
-           
+            'has_line_manager', 'organizational_path', 'matching_score'
         ]
     
     def get_has_line_manager(self, obj):
         return obj.line_manager is not None
     
     def get_organizational_path(self, obj):
-        """Get full organizational path for employee"""
         path_parts = []
-        
         if obj.business_function:
             path_parts.append(obj.business_function.name)
         if obj.department:
@@ -87,23 +104,13 @@ class EmployeeBasicSerializer(serializers.ModelSerializer):
             path_parts.append(f"Function: {obj.job_function.name}")
         if obj.position_group:
             path_parts.append(f"Grade: {obj.grading_level}")
-        
         return " > ".join(path_parts)
     
     def get_matching_score(self, obj):
-        """Calculate matching score based on criteria (placeholder for future enhancement)"""
-        # This could be enhanced later to show how well employee matches criteria
-        return 100  
+        return 100
 
-class JobFunctionBasicSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = JobFunction
-        fields = ['id', 'name']
 
-class UserBasicSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = User
-        fields = ['id', 'username', 'first_name', 'last_name']
+# ==================== SKILL & COMPETENCY SERIALIZERS ====================
 
 class SkillBasicSerializer(serializers.ModelSerializer):
     group_name = serializers.CharField(source='group.name', read_only=True)
@@ -112,6 +119,7 @@ class SkillBasicSerializer(serializers.ModelSerializer):
         model = Skill
         fields = ['id', 'name', 'group_name']
 
+
 class BehavioralCompetencyBasicSerializer(serializers.ModelSerializer):
     group_name = serializers.CharField(source='group.name', read_only=True)
     
@@ -119,9 +127,40 @@ class BehavioralCompetencyBasicSerializer(serializers.ModelSerializer):
         model = BehavioralCompetency
         fields = ['id', 'name', 'group_name']
 
-class AccessMatrixItemDetailSerializer(serializers.ModelSerializer):
-    """ENHANCED: More detailed access item with rich information"""
+
+# ==================== RESOURCE ITEM SERIALIZERS ====================
+
+class JobBusinessResourceItemDetailSerializer(serializers.ModelSerializer):
+    created_by_name = serializers.CharField(source='created_by.get_full_name', read_only=True)
+    resource_name = serializers.CharField(source='resource.name', read_only=True)
+    full_path = serializers.SerializerMethodField()
+    formatted_created_at = serializers.SerializerMethodField()
     
+    class Meta:
+        model = JobBusinessResourceItem
+        fields = [
+            'id', 'resource', 'resource_name', 'name', 'description',
+            'full_path', 'is_active', 'created_at', 'formatted_created_at',
+            'created_by', 'created_by_name'
+        ]
+        read_only_fields = ['created_at', 'created_by']
+    
+    def get_full_path(self, obj):
+        return f"{obj.resource.name} > {obj.name}"
+    
+    def get_formatted_created_at(self, obj):
+        if obj.created_at:
+            return obj.created_at.strftime('%d %B %Y, %H:%M')
+        return None
+
+
+class JobBusinessResourceItemSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = JobBusinessResourceItem
+        fields = ['id', 'resource', 'name', 'description', 'is_active']
+
+
+class AccessMatrixItemDetailSerializer(serializers.ModelSerializer):
     created_by_name = serializers.CharField(source='created_by.get_full_name', read_only=True)
     access_matrix_name = serializers.CharField(source='access_matrix.name', read_only=True)
     full_path = serializers.SerializerMethodField()
@@ -130,195 +169,98 @@ class AccessMatrixItemDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = AccessMatrixItem
         fields = [
-            'id', 
-            'access_matrix', 
-            'access_matrix_name',
-            'name', 
-            'description',
-            'full_path',           # 🆕 Complete path
-            'is_active',
-            'created_at',
-            'formatted_created_at',  # 🆕 Human-readable date
-            'created_by',
-            'created_by_name'
+            'id', 'access_matrix', 'access_matrix_name', 'name', 'description',
+            'full_path', 'is_active', 'created_at', 'formatted_created_at',
+            'created_by', 'created_by_name'
         ]
         read_only_fields = ['created_at', 'created_by']
     
     def get_full_path(self, obj):
-        """Get full hierarchical path"""
         return f"{obj.access_matrix.name} > {obj.name}"
     
-    
     def get_formatted_created_at(self, obj):
-        """Human-readable date"""
         if obj.created_at:
             return obj.created_at.strftime('%d %B %Y, %H:%M')
         return None
+
 
 class AccessMatrixItemSerializer(serializers.ModelSerializer):
-    """Simple serializer for create/update operations"""
-    
     class Meta:
         model = AccessMatrixItem
-        fields = [
-            'id', 'access_matrix', 'name', 'description',
-             'is_active'
-        ]
+        fields = ['id', 'access_matrix', 'name', 'description', 'is_active']
 
-class AccessMatrixSerializer(serializers.ModelSerializer):
-    """ENHANCED: Access matrix with detailed items"""
-    
-    created_by_name = serializers.CharField(source='created_by.get_full_name', read_only=True)
-    items = AccessMatrixItemDetailSerializer(many=True, read_only=True)  # 🔥 Use detailed serializer
-    items_count = serializers.SerializerMethodField()
-    
-    class Meta:
-        model = AccessMatrix
-        fields = [
-            'id', 
-            'name', 
-            'description', 
-            'is_active',
-            'created_at', 
-            'created_by', 
-            'created_by_name',
-            'items',                        # Detailed items
-            'items_count',                  # Total count
-        ]
-        read_only_fields = ['created_at', 'created_by']
-    
-    def get_items_count(self, obj):
-        return obj.items.filter(is_active=True).count()
-    
-class JobBusinessResourceItemDetailSerializer(serializers.ModelSerializer):
-    """ENHANCED: Detailed business resource item"""
-    
-    created_by_name = serializers.CharField(source='created_by.get_full_name', read_only=True)
-    resource_name = serializers.CharField(source='resource.name', read_only=True)
-    
-    # 🆕 Enhanced fields
-    full_path = serializers.SerializerMethodField()
-
-    formatted_created_at = serializers.SerializerMethodField()
-
-    
-    class Meta:
-        model = JobBusinessResourceItem
-        fields = [
-            'id',
-            'resource',
-            'resource_name',
-            'name',
-            'description',
-            'full_path',              # 🆕 Complete hierarchy
-            'is_active',
-            'created_at',
-            'formatted_created_at',
-            'created_by',
-            'created_by_name'
-        ]
-        read_only_fields = ['created_at', 'created_by']
-    
-    def get_full_path(self, obj):
-        return f"{obj.resource.name} > {obj.name}"
-    
-    
-    def get_formatted_created_at(self, obj):
-        if obj.created_at:
-            return obj.created_at.strftime('%d %B %Y, %H:%M')
-        return None
-    
-class JobBusinessResourceItemSerializer(serializers.ModelSerializer):
-    """Simple serializer for create/update"""
-    
-    class Meta:
-        model = JobBusinessResourceItem
-        fields = [
-            'id', 'resource', 'name', 'description',
-       'is_active'
-        ]
-
-class JobBusinessResourceSerializer(serializers.ModelSerializer):
-    """ENHANCED: Business resource with detailed items"""
-    
-    created_by_name = serializers.CharField(source='created_by.get_full_name', read_only=True)
-    items = JobBusinessResourceItemDetailSerializer(many=True, read_only=True)  # 🔥 Detailed
-    items_count = serializers.SerializerMethodField()
-    
-
-    
-    class Meta:
-        model = JobBusinessResource
-        fields = [
-            'id',
-            'name',
-            'description',
-            'is_active',
-            'created_at',
-            'created_by',
-            'created_by_name',
-            'items',                    # Detailed items
-            'items_count',              # Count
-
-        ]
-        read_only_fields = ['created_at', 'created_by']
-    
-    def get_items_count(self, obj):
-        return obj.items.filter(is_active=True).count()
 
 class CompanyBenefitItemDetailSerializer(serializers.ModelSerializer):
-    """ENHANCED: Detailed company benefit item"""
-    
     created_by_name = serializers.CharField(source='created_by.get_full_name', read_only=True)
     benefit_name = serializers.CharField(source='benefit.name', read_only=True)
-    
-    # 🆕 Enhanced fields
     full_path = serializers.SerializerMethodField()
     formatted_created_at = serializers.SerializerMethodField()
-
     
     class Meta:
         model = CompanyBenefitItem
         fields = [
-            'id',
-            'benefit',
-            'benefit_name',
-            'name',
-            'description',
-            'full_path',
-            'is_active',
-            'created_at',
-            'formatted_created_at',
-            'created_by',
-            'created_by_name'
+            'id', 'benefit', 'benefit_name', 'name', 'description', 'value',
+            'full_path', 'is_active', 'created_at', 'formatted_created_at',
+            'created_by', 'created_by_name'
         ]
         read_only_fields = ['created_at', 'created_by']
     
     def get_full_path(self, obj):
         return f"{obj.benefit.name} > {obj.name}"
     
-   
-    
     def get_formatted_created_at(self, obj):
         if obj.created_at:
             return obj.created_at.strftime('%d %B %Y, %H:%M')
         return None
 
+
 class CompanyBenefitItemSerializer(serializers.ModelSerializer):
-    """Simple serializer for create/update"""
-    
     class Meta:
         model = CompanyBenefitItem
+        fields = ['id', 'benefit', 'name', 'description', 'value', 'is_active']
+
+
+# ==================== RESOURCE PARENT SERIALIZERS ====================
+
+class JobBusinessResourceSerializer(serializers.ModelSerializer):
+    created_by_name = serializers.CharField(source='created_by.get_full_name', read_only=True)
+    items = JobBusinessResourceItemDetailSerializer(many=True, read_only=True)
+    items_count = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = JobBusinessResource
         fields = [
-            'id', 'benefit', 'name', 'description',
-         'is_active'
+            'id', 'name', 'description', 'is_active',
+            'created_at', 'created_by', 'created_by_name',
+            'items', 'items_count'
         ]
+        read_only_fields = ['created_at', 'created_by']
+    
+    def get_items_count(self, obj):
+        return obj.items.filter(is_active=True).count()
+
+
+class AccessMatrixSerializer(serializers.ModelSerializer):
+    created_by_name = serializers.CharField(source='created_by.get_full_name', read_only=True)
+    items = AccessMatrixItemDetailSerializer(many=True, read_only=True)
+    items_count = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = AccessMatrix
+        fields = [
+            'id', 'name', 'description', 'is_active',
+            'created_at', 'created_by', 'created_by_name',
+            'items', 'items_count'
+        ]
+        read_only_fields = ['created_at', 'created_by']
+    
+    def get_items_count(self, obj):
+        return obj.items.filter(is_active=True).count()
+
 
 class CompanyBenefitSerializer(serializers.ModelSerializer):
-    """UPDATED: Company benefit with nested items"""
-    
     created_by_name = serializers.CharField(source='created_by.get_full_name', read_only=True)
-    items = CompanyBenefitItemSerializer(many=True, read_only=True)
+    items = CompanyBenefitItemDetailSerializer(many=True, read_only=True)
     items_count = serializers.SerializerMethodField()
     
     class Meta:
@@ -326,17 +268,21 @@ class CompanyBenefitSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'name', 'description', 'is_active',
             'created_at', 'created_by', 'created_by_name',
-            'items', 'items_count'  # 🆕 Include nested items
+            'items', 'items_count'
         ]
         read_only_fields = ['created_at', 'created_by']
     
     def get_items_count(self, obj):
         return obj.items.filter(is_active=True).count()
 
+
+# ==================== JOB DESCRIPTION COMPONENT SERIALIZERS ====================
+
 class JobDescriptionSectionSerializer(serializers.ModelSerializer):
     class Meta:
         model = JobDescriptionSection
         fields = ['id', 'section_type', 'title', 'content', 'order']
+
 
 class JobDescriptionSkillSerializer(serializers.ModelSerializer):
     skill_detail = SkillBasicSerializer(source='skill', read_only=True)
@@ -345,12 +291,14 @@ class JobDescriptionSkillSerializer(serializers.ModelSerializer):
         model = JobDescriptionSkill
         fields = ['id', 'skill', 'skill_detail']
 
+
 class JobDescriptionBehavioralCompetencySerializer(serializers.ModelSerializer):
     competency_detail = BehavioralCompetencyBasicSerializer(source='competency', read_only=True)
     
     class Meta:
         model = JobDescriptionBehavioralCompetency
         fields = ['id', 'competency', 'competency_detail']
+
 
 class JobDescriptionBusinessResourceSerializer(serializers.ModelSerializer):
     resource_detail = JobBusinessResourceSerializer(source='resource', read_only=True)
@@ -359,12 +307,14 @@ class JobDescriptionBusinessResourceSerializer(serializers.ModelSerializer):
         model = JobDescriptionBusinessResource
         fields = ['id', 'resource', 'resource_detail']
 
+
 class JobDescriptionAccessMatrixSerializer(serializers.ModelSerializer):
     access_detail = AccessMatrixSerializer(source='access_matrix', read_only=True)
     
     class Meta:
         model = JobDescriptionAccessMatrix
         fields = ['id', 'access_matrix', 'access_detail']
+
 
 class JobDescriptionCompanyBenefitSerializer(serializers.ModelSerializer):
     benefit_detail = CompanyBenefitSerializer(source='benefit', read_only=True)
@@ -374,10 +324,186 @@ class JobDescriptionCompanyBenefitSerializer(serializers.ModelSerializer):
         fields = ['id', 'benefit', 'benefit_detail']
 
 
-class JobDescriptionCreateUpdateSerializer(serializers.ModelSerializer):
-    """ENHANCED: Manual employee and vacancy selection for multiple matches"""
+class JobDescriptionBusinessResourceDetailSerializer(serializers.ModelSerializer):
+    resource_detail = JobBusinessResourceSerializer(source='resource', read_only=True)
+    specific_items_detail = JobBusinessResourceItemDetailSerializer(
+        source='specific_items', many=True, read_only=True
+    )
+    has_specific_items = serializers.SerializerMethodField()
+    items_display = serializers.SerializerMethodField()
     
-    # Keep all existing fields...
+    class Meta:
+        model = JobDescriptionBusinessResource
+        fields = [
+            'id', 'resource', 'resource_detail', 'specific_items_detail',
+            'has_specific_items', 'items_display'
+        ]
+    
+    def get_has_specific_items(self, obj):
+        return obj.specific_items.exists()
+    
+    def get_items_display(self, obj):
+        if obj.specific_items.exists():
+            items = obj.specific_items.all()
+            return f"{obj.resource.name}: {', '.join([item.name for item in items])}"
+        return f"{obj.resource.name}: All items"
+
+
+class JobDescriptionAccessMatrixDetailSerializer(serializers.ModelSerializer):
+    access_detail = AccessMatrixSerializer(source='access_matrix', read_only=True)
+    specific_items_detail = AccessMatrixItemDetailSerializer(
+        source='specific_items', many=True, read_only=True
+    )
+    has_specific_items = serializers.SerializerMethodField()
+    items_display = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = JobDescriptionAccessMatrix
+        fields = [
+            'id', 'access_matrix', 'access_detail', 'specific_items_detail',
+            'has_specific_items', 'items_display'
+        ]
+    
+    def get_has_specific_items(self, obj):
+        return obj.specific_items.exists()
+    
+    def get_items_display(self, obj):
+        if obj.specific_items.exists():
+            items = obj.specific_items.all()
+            return f"{obj.access_matrix.name}: {', '.join([item.name for item in items])}"
+        return f"{obj.access_matrix.name}: All items"
+
+
+class JobDescriptionCompanyBenefitDetailSerializer(serializers.ModelSerializer):
+    benefit_detail = CompanyBenefitSerializer(source='benefit', read_only=True)
+    specific_items_detail = CompanyBenefitItemDetailSerializer(
+        source='specific_items', many=True, read_only=True
+    )
+    has_specific_items = serializers.SerializerMethodField()
+    items_display = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = JobDescriptionCompanyBenefit
+        fields = [
+            'id', 'benefit', 'benefit_detail', 'specific_items_detail',
+            'has_specific_items', 'items_display'
+        ]
+    
+    def get_has_specific_items(self, obj):
+        return obj.specific_items.exists()
+    
+    def get_items_display(self, obj):
+        if obj.specific_items.exists():
+            items = obj.specific_items.all()
+            return f"{obj.benefit.name}: {', '.join([item.name for item in items])}"
+        return f"{obj.benefit.name}: All items"
+    
+# api/job_description_serializers.py - PART 2: Assignment and Main serializers
+# Bu hissəni Part 1-in ardınca əlavə edin
+
+# ==================== ASSIGNMENT SERIALIZERS ====================
+
+class JobDescriptionAssignmentListSerializer(serializers.ModelSerializer):
+    """Serializer for listing assignments"""
+    
+    employee_name = serializers.CharField(source='employee.full_name', read_only=True)
+    employee_id_number = serializers.CharField(source='employee.employee_id', read_only=True)
+    reports_to_name = serializers.CharField(source='reports_to.full_name', read_only=True)
+    status_display = serializers.SerializerMethodField()
+    display_name = serializers.SerializerMethodField()
+    job_description_title = serializers.CharField(source='job_description.job_title', read_only=True)
+    
+    class Meta:
+        model = JobDescriptionAssignment
+        fields = [
+            'id', 'job_description', 'job_description_title',
+            'employee', 'employee_name', 'employee_id_number',
+            'is_vacancy', 'vacancy_position', 'reports_to', 'reports_to_name',
+            'status', 'status_display', 'display_name',
+            'line_manager_approved_at', 'employee_approved_at',
+            'created_at', 'is_active'
+        ]
+    
+    def get_status_display(self, obj):
+        return obj.get_status_display_with_color()
+    
+    def get_display_name(self, obj):
+        return obj.get_display_name()
+
+
+class JobDescriptionAssignmentDetailSerializer(serializers.ModelSerializer):
+    """Detailed serializer for single assignment"""
+    
+    employee = EmployeeBasicSerializer(read_only=True)
+    reports_to = EmployeeBasicSerializer(read_only=True)
+    line_manager_approved_by_detail = UserBasicSerializer(
+        source='line_manager_approved_by', read_only=True
+    )
+    employee_approved_by_detail = UserBasicSerializer(
+        source='employee_approved_by', read_only=True
+    )
+    status_display = serializers.SerializerMethodField()
+    display_name = serializers.SerializerMethodField()
+    can_approve_as_line_manager = serializers.SerializerMethodField()
+    can_approve_as_employee = serializers.SerializerMethodField()
+    employee_info = serializers.SerializerMethodField()
+    manager_info = serializers.SerializerMethodField()
+    validation_result = serializers.SerializerMethodField()
+    matching_details = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = JobDescriptionAssignment
+        fields = [
+            'id', 'job_description', 'employee', 'is_vacancy', 'vacancy_position',
+            'reports_to', 'status', 'status_display', 'display_name',
+            'line_manager_approved_by_detail', 'line_manager_approved_at',
+            'line_manager_comments', 'employee_approved_by_detail',
+            'employee_approved_at', 'employee_comments',
+            'line_manager_signature', 'employee_signature',
+            'created_at', 'updated_at', 'is_active',
+            'employee_removed_at', 'employee_removed_reason',
+            'can_approve_as_line_manager', 'can_approve_as_employee',
+            'employee_info', 'manager_info', 'validation_result', 'matching_details'
+        ]
+    
+    def get_status_display(self, obj):
+        return obj.get_status_display_with_color()
+    
+    def get_display_name(self, obj):
+        return obj.get_display_name()
+    
+    def get_can_approve_as_line_manager(self, obj):
+        request = self.context.get('request')
+        if not request or not request.user.is_authenticated:
+            return False
+        return obj.can_be_approved_by_line_manager(request.user)
+    
+    def get_can_approve_as_employee(self, obj):
+        request = self.context.get('request')
+        if not request or not request.user.is_authenticated:
+            return False
+        return obj.can_be_approved_by_employee(request.user)
+    
+    def get_employee_info(self, obj):
+        return obj.get_employee_info()
+    
+    def get_manager_info(self, obj):
+        return obj.get_manager_info()
+    
+    def get_validation_result(self, obj):
+        is_valid, message = obj.validate_employee_assignment()
+        return {'is_valid': is_valid, 'message': message}
+    
+    def get_matching_details(self, obj):
+        return obj.get_employee_matching_details()
+
+
+# ==================== MAIN CREATE/UPDATE SERIALIZER ====================
+
+class JobDescriptionCreateUpdateSerializer(serializers.ModelSerializer):
+    """Create job description with multiple employee assignments"""
+    
+    # Nested data inputs
     sections = serializers.ListField(
         child=serializers.DictField(),
         write_only=True,
@@ -396,63 +522,42 @@ class JobDescriptionCreateUpdateSerializer(serializers.ModelSerializer):
         required=False,
         help_text="List of {competency_id}"
     )
-    business_resources_ids = serializers.ListField(
-        child=serializers.IntegerField(),
-        write_only=True,
-        required=False
-    )
-    access_rights_ids = serializers.ListField(
-        child=serializers.IntegerField(),
-        write_only=True,
-        required=False
-    )
-    company_benefits_ids = serializers.ListField(
-        child=serializers.IntegerField(),
-        write_only=True,
-        required=False
-    )
     business_resources_with_items = serializers.ListField(
         child=serializers.DictField(),
         write_only=True,
         required=False,
-        help_text="List of {resource_id: int, item_ids: [int]} - specify parent and specific items"
+        help_text="List of {resource_id: int, item_ids: [int]}"
     )
-    
     access_rights_with_items = serializers.ListField(
         child=serializers.DictField(),
         write_only=True,
         required=False,
         help_text="List of {access_matrix_id: int, item_ids: [int]}"
     )
-    
     company_benefits_with_items = serializers.ListField(
         child=serializers.DictField(),
         write_only=True,
         required=False,
         help_text="List of {benefit_id: int, item_ids: [int]}"
     )
+    
+    # Employee selection
     selected_employee_ids = serializers.ListField(
         child=serializers.IntegerField(),
         required=False,
-        help_text="List of specific position IDs (both employee IDs and vacancy IDs) to create job descriptions for"
+        help_text="List of employee IDs to assign"
     )
     
-    # ADDED: Flag to reset approval status when editing
-    reset_approval_status = serializers.BooleanField(
-        required=False,
-        default=False,
-        write_only=True,
-        help_text="Set to true to reset approval status to DRAFT when updating (update only)"
-    )
     grading_levels = serializers.ListField(
         child=serializers.CharField(max_length=10),
         required=True,
-        help_text="List of grading levels to match (e.g., ['M', 'N', 'O'])"
+        help_text="List of grading levels (e.g., ['M', 'N', 'O'])"
     )
+    
     # Response fields
-    created_job_descriptions = serializers.SerializerMethodField()
-    total_positions_assigned = serializers.SerializerMethodField()
-    requires_position_selection = serializers.SerializerMethodField()
+    assignments_created = serializers.SerializerMethodField()
+    total_assignments = serializers.SerializerMethodField()
+    requires_selection = serializers.SerializerMethodField()
     
     class Meta:
         model = JobDescription
@@ -460,116 +565,79 @@ class JobDescriptionCreateUpdateSerializer(serializers.ModelSerializer):
             'id', 'job_title', 'job_purpose', 'business_function', 'department',
             'unit', 'job_function', 'position_group', 'grading_levels',
             'sections', 'required_skills_data', 'behavioral_competencies_data',
-            'business_resources_ids', 'access_rights_ids', 'company_benefits_ids',
-            'selected_employee_ids',
-            'reset_approval_status',  
-                 'business_resources_with_items',  # NEW
-            'access_rights_with_items',  # NEW
-            'company_benefits_with_items',  # NEW
-            'created_job_descriptions', 'total_positions_assigned', 
-            'requires_position_selection'
+            'business_resources_with_items', 'access_rights_with_items',
+            'company_benefits_with_items', 'selected_employee_ids',
+            'assignments_created', 'total_assignments', 'requires_selection'
         ]
-        read_only_fields = ['id', 'assigned_employee', 'reports_to']
+        read_only_fields = ['id']
     
-    def get_created_job_descriptions(self, obj):
-        """Return list of created job descriptions"""
-        if hasattr(obj, '_created_job_descriptions'):
+    def get_assignments_created(self, obj):
+        if hasattr(obj, '_assignments_created'):
             return [
                 {
-                    'id': str(jd.id),
-                    'job_title': jd.job_title,
-                    'position_type': 'employee' if jd.assigned_employee else 'vacancy',
-                    'position_name': jd.assigned_employee.full_name if jd.assigned_employee else 'Vacant Position',
-                    'position_id': jd.assigned_employee.employee_id if jd.assigned_employee else getattr(jd, 'vacancy_position_id', 'Unknown'),
-                    'manager_name': jd.reports_to.full_name if jd.reports_to else None
+                    'id': str(a.id),
+                    'employee_name': a.employee.full_name if a.employee else 'VACANT',
+                    'employee_id': a.employee.employee_id if a.employee else None,
+                    'is_vacancy': a.is_vacancy,
+                    'status': a.status,
+                    'reports_to': a.reports_to.full_name if a.reports_to else None
                 }
-                for jd in obj._created_job_descriptions
+                for a in obj._assignments_created
             ]
         return []
     
-    def get_total_positions_assigned(self, obj):
-        """Return total number of positions assigned (employees + vacancies)"""
-        if hasattr(obj, '_created_job_descriptions'):
-            return len(obj._created_job_descriptions)
-        return 0
+    def get_total_assignments(self, obj):
+        if hasattr(obj, '_assignments_created'):
+            return len(obj._assignments_created)
+        return obj.assignments.count()
     
-    def get_requires_position_selection(self, obj):
-        """Return whether position selection is required"""
-        return getattr(obj, '_requires_position_selection', False)
+    def get_requires_selection(self, obj):
+        return getattr(obj, '_requires_selection', False)
+    
+    def validate_grading_levels(self, value):
+        if not value:
+            raise serializers.ValidationError("At least one grading level required")
+        normalized = list(set([gl.strip().upper() for gl in value if gl.strip()]))
+        if not normalized:
+            raise serializers.ValidationError("No valid grading levels")
+        return normalized
     
     def validate_selected_employee_ids(self, value):
-        """Validate selected position IDs (both employees and vacancies)"""
         if not value:
             return value
         
-        # Check which IDs are employees and which are vacancies
         valid_employee_ids = list(Employee.objects.filter(
-            id__in=value, 
-            is_deleted=False
+            id__in=value, is_deleted=False
         ).values_list('id', flat=True))
         
         valid_vacancy_ids = list(VacantPosition.objects.filter(
-        original_employee_pk__in=value,  # original_employee_pk istifadə edin
-        is_filled=False,
-        
-    ).values_list('original_employee_pk', flat=True))
+            original_employee_pk__in=value, is_filled=False
+        ).values_list('original_employee_pk', flat=True))
         
         valid_ids = valid_employee_ids + valid_vacancy_ids
         invalid_ids = [id for id in value if id not in valid_ids]
         
         if invalid_ids:
             raise serializers.ValidationError(
-                f"Some position IDs do not exist or are inactive/filled: {invalid_ids}"
+                f"Invalid position IDs: {invalid_ids}"
             )
         
         return value
-    def validate_grading_levels(self, value):
-        """Validate grading levels list"""
-        if not value or len(value) == 0:
-            raise serializers.ValidationError("At least one grading level is required")
-        
-        # Remove duplicates and normalize
-        normalized = []
-        for level in value:
-            normalized_level = level.strip().upper()
-            if normalized_level and normalized_level not in normalized:
-                normalized.append(normalized_level)
-        
-        if not normalized:
-            raise serializers.ValidationError("No valid grading levels provided")
-        
-        logger.info(f"Validated grading levels: {value} → {normalized}")
-        return normalized
+    
     def create(self, validated_data):
-        """ENHANCED: Create with both employee and vacancy selection logic"""
-        validated_data.pop('reset_approval_status', None)
+        """Create job description and assign to employees"""
+        
         # Extract nested data
         sections_data = validated_data.pop('sections', [])
         skills_data = validated_data.pop('required_skills_data', [])
         competencies_data = validated_data.pop('behavioral_competencies_data', [])
         grading_levels = validated_data.pop('grading_levels', [])
         selected_employee_ids = validated_data.pop('selected_employee_ids', [])
-        # 🔥 NEW: Extract nested item data
         business_resources_data = validated_data.pop('business_resources_with_items', [])
         access_rights_data = validated_data.pop('access_rights_with_items', [])
         company_benefits_data = validated_data.pop('company_benefits_with_items', [])
         
-        # Keep backward compatibility with old format
-        if not business_resources_data:
-            old_format = validated_data.pop('business_resources_ids', [])
-            business_resources_data = [{'resource_id': rid, 'item_ids': []} for rid in old_format]
-        
-        if not access_rights_data:
-            old_format = validated_data.pop('access_rights_ids', [])
-            access_rights_data = [{'access_matrix_id': aid, 'item_ids': []} for aid in old_format]
-        
-        if not company_benefits_data:
-            old_format = validated_data.pop('company_benefits_ids', [])
-            company_benefits_data = [{'benefit_id': bid, 'item_ids': []} for bid in old_format]
-        logger.info(f"Creating job description - Selected position IDs: {selected_employee_ids}")
-        
         with transaction.atomic():
-            
             # Get eligible employees
             eligible_employees = JobDescription.get_eligible_employees_with_priority(
                 job_title=validated_data['job_title'],
@@ -582,7 +650,7 @@ class JobDescriptionCreateUpdateSerializer(serializers.ModelSerializer):
             )
             
             # Get eligible vacancies
-            eligible_vacancies = self._get_eligible_vacant_positions_for_jd(
+            eligible_vacancies = self._get_eligible_vacancies(
                 job_title=validated_data['job_title'],
                 business_function_id=validated_data['business_function'].id,
                 department_id=validated_data['department'].id,
@@ -592,977 +660,343 @@ class JobDescriptionCreateUpdateSerializer(serializers.ModelSerializer):
                 grading_levels=grading_levels
             )
             
-            logger.info(f"Found {eligible_employees.count()} eligible employees, {eligible_vacancies.count()} eligible vacancies")
-            
             total_eligible = eligible_employees.count() + eligible_vacancies.count()
             
             if total_eligible == 0:
                 raise serializers.ValidationError({
-                    'position_assignment': "No employees or vacant positions found matching the specified criteria",
+                    'position_assignment': "No employees or vacant positions found matching criteria",
                     'criteria': {
                         'job_title': validated_data['job_title'],
                         'business_function': validated_data['business_function'].name,
                         'department': validated_data['department'].name,
-                        'unit': validated_data['unit'].name if validated_data.get('unit') else 'Any',
-                        'job_function': validated_data['job_function'].name,
-                        'position_group': validated_data['position_group'].name,
-                        'grading_levels': grading_levels 
+                        'grading_levels': grading_levels
                     }
                 })
             
-            # Determine what positions to assign
-            positions_to_assign = []
+            # Determine assignments
+            employees_to_assign = []
+            vacancies_to_assign = []
             
-            if total_eligible == 1:
-                # CASE 1: Only one position matches - auto assign
-                if eligible_employees.count() == 1:
-                    positions_to_assign.append(('employee', eligible_employees.first()))
-                else:
-                    positions_to_assign.append(('vacancy', eligible_vacancies.first()))
-                logger.info("Single position found - auto-assigning")
+            if selected_employee_ids:
+                # User selected specific positions
+                employees_to_assign = list(eligible_employees.filter(id__in=selected_employee_ids))
+                vacancies_to_assign = list(eligible_vacancies.filter(
+                    original_employee_pk__in=selected_employee_ids
+                ))
                 
-            elif selected_employee_ids:
-                # CASE 2: Multiple positions match but user selected specific ones
-                # Separate employee and vacancy IDs from the mixed list
-                selected_employees = eligible_employees.filter(id__in=selected_employee_ids)
-                selected_vacancies = eligible_vacancies.filter(id__in=selected_employee_ids)
-                
-                for employee in selected_employees:
-                    positions_to_assign.append(('employee', employee))
-                
-                for vacancy in selected_vacancies:
-                    positions_to_assign.append(('vacancy', vacancy))
-                
-                if not positions_to_assign:
+                if not employees_to_assign and not vacancies_to_assign:
                     raise serializers.ValidationError({
-                        'selected_employee_ids': 'None of the selected position IDs match the job criteria'
+                        'selected_employee_ids': 'None of selected IDs match criteria'
                     })
-                
-                logger.info(f"User selected {len(positions_to_assign)} positions from {total_eligible} eligible")
-                
             else:
-                # CASE 3: Multiple positions match but no selection made - return error with options
-                from .serializers import EmployeeBasicSerializer, VacantPositionListSerializer
-                
-                employees_serializer = EmployeeBasicSerializer(eligible_employees[:20], many=True)
-                vacancies_serializer = VacantPositionListSerializer(eligible_vacancies[:20], many=True)
-                
-                raise serializers.ValidationError({
-                    'requires_position_selection': True,
-                    'message': f'Found {total_eligible} positions matching criteria ({eligible_employees.count()} employees, {eligible_vacancies.count()} vacant positions). Please select which positions to use.',
-                    'eligible_employees': employees_serializer.data,
-                    'eligible_vacancies': vacancies_serializer.data,
-                    'instruction': 'Use "selected_employee_ids" field with both employee IDs and vacancy IDs to specify which positions should get job descriptions',
-                    'eligible_counts': {
-                        'employees': eligible_employees.count(),
-                        'vacancies': eligible_vacancies.count(),
-                        'total': total_eligible
-                    }
-                })
+                # Auto-assign all matching
+                employees_to_assign = list(eligible_employees)
+                vacancies_to_assign = list(eligible_vacancies)
             
-            # Create job descriptions for selected positions
-            created_job_descriptions = []
+            # Create job description
+            validated_data['grading_levels'] = grading_levels
+            if grading_levels:
+                validated_data['grading_level'] = grading_levels[0]
             
-            for index, (position_type, position) in enumerate(positions_to_assign):
-                logger.info(f"Creating job description {index + 1}/{len(positions_to_assign)} for {position_type}: {getattr(position, 'full_name', getattr(position, 'position_id', 'Unknown'))}")
-                
-                # Prepare data for this position
-                jd_data = validated_data.copy()
-                jd_data['grading_levels'] = grading_levels 
-                
-                if grading_levels:
-                    jd_data['grading_level'] = grading_levels[0]
-                
-                if position_type == 'employee':
-                    jd_data['assigned_employee'] = position
-                    # reports_to will be auto-assigned in model save()
-                else:  # vacancy
-                    jd_data['assigned_employee'] = None
-                    jd_data['reports_to'] = position.reporting_to
-                    
-                
-                # Create main job description
-                job_description = JobDescription.objects.create(**jd_data)
-                
-                # Store vacancy info for response if needed
-                if position_type == 'vacancy':
-                    job_description.vacancy_position_id = position.position_id
-                
-                # Create all related objects
-                self._create_job_description_components(
-        job_description, sections_data, skills_data, competencies_data,
-        business_resources_data, access_rights_data, company_benefits_data  # Updated params
-    )
-                
-                # Activity logging
-                if position_type == 'employee':
-                    employee_info = job_description.get_employee_info()
-                    description = f"Job description created for {job_description.job_title} - Assigned to employee {employee_info['name']}"
-                else:
-                    description = f"Job description created for {job_description.job_title} - Assigned to vacant position {position.position_id}"
-                
-               
-                created_job_descriptions.append(job_description)
-                logger.info(f"Successfully created job description {job_description.id} for {position_type}")
+            job_description = JobDescription.objects.create(**validated_data)
             
-            # Summary logging
-            employee_jds = len([jd for jd in created_job_descriptions if jd.assigned_employee])
-            vacancy_jds = len([jd for jd in created_job_descriptions if not jd.assigned_employee])
-            logger.info(f"Job description creation completed: {len(created_job_descriptions)} total ({employee_jds} employees, {vacancy_jds} vacancies)")
+            # Create nested components
+            self._create_nested_data(
+                job_description, sections_data, skills_data, competencies_data,
+                business_resources_data, access_rights_data, company_benefits_data
+            )
             
-            # For response, return the first created job description but attach info about all
-            primary_job_description = created_job_descriptions[0]
-            primary_job_description._created_job_descriptions = created_job_descriptions
+            # Create assignments
+            assignments_created = []
             
-            return primary_job_description
+            for employee in employees_to_assign:
+                assignment = JobDescriptionAssignment.objects.create(
+                    job_description=job_description,
+                    employee=employee,
+                    is_vacancy=False,
+                    reports_to=employee.line_manager
+                )
+                assignments_created.append(assignment)
+                logger.info(f"Created assignment for: {employee.full_name}")
+            
+            for vacancy in vacancies_to_assign:
+                assignment = JobDescriptionAssignment.objects.create(
+                    job_description=job_description,
+                    employee=None,
+                    is_vacancy=True,
+                    vacancy_position=vacancy,
+                    reports_to=vacancy.reporting_to
+                )
+                assignments_created.append(assignment)
+                logger.info(f"Created vacancy assignment: {vacancy.position_id}")
+            
+            job_description._assignments_created = assignments_created
+            
+            logger.info(f"Job description created with {len(assignments_created)} assignments")
+            
+            return job_description
     
-    def _get_eligible_vacant_positions_for_jd(self, job_title=None, business_function_id=None, 
-                                             department_id=None, unit_id=None, job_function_id=None, 
-                                             position_group_id=None, grading_levels=None):
-        """Get vacant positions matching job description criteria"""
-        from .models import VacantPosition
-        from .job_description_models import normalize_grading_level
-        
-        # Start with unfilled, active vacant positions
+    def _get_eligible_vacancies(self, **kwargs):
+        """Get eligible vacant positions"""
         queryset = VacantPosition.objects.filter(
             is_filled=False,
             is_deleted=False,
             include_in_headcount=True
-        ).select_related(
-            'business_function', 'department', 'unit', 'job_function', 
-            'position_group', 'vacancy_status', 'reporting_to'
         )
         
-        # Apply filters similar to employee filtering
-        if job_title:
-            queryset = queryset.filter(job_title__iexact=job_title.strip())
+        if kwargs.get('job_title'):
+            queryset = queryset.filter(job_title__iexact=kwargs['job_title'].strip())
         
-        if business_function_id:
-            queryset = queryset.filter(business_function_id=business_function_id)
+        if kwargs.get('business_function_id'):
+            queryset = queryset.filter(business_function_id=kwargs['business_function_id'])
         
-        if department_id:
-            queryset = queryset.filter(department_id=department_id)
+        if kwargs.get('department_id'):
+            queryset = queryset.filter(department_id=kwargs['department_id'])
         
-        if unit_id:
-            queryset = queryset.filter(unit_id=unit_id)
+        if kwargs.get('unit_id'):
+            queryset = queryset.filter(unit_id=kwargs['unit_id'])
         
-        if job_function_id:
-            queryset = queryset.filter(job_function_id=job_function_id)
+        if kwargs.get('job_function_id'):
+            queryset = queryset.filter(job_function_id=kwargs['job_function_id'])
         
-        if position_group_id:
-            queryset = queryset.filter(position_group_id=position_group_id)
+        if kwargs.get('position_group_id'):
+            queryset = queryset.filter(position_group_id=kwargs['position_group_id'])
         
+        grading_levels = kwargs.get('grading_levels', [])
         if grading_levels:
             if isinstance(grading_levels, str):
                 grading_levels = [grading_levels]
             
-            normalized_targets = [normalize_grading_level(gl.strip()) for gl in grading_levels]
+            normalized = [normalize_grading_level(gl) for gl in grading_levels]
+            matching_ids = []
             
-            all_vacancies = list(queryset)
-            matching_vacancies = []
+            for v in queryset:
+                v_norm = normalize_grading_level(v.grading_level or '')
+                if v_norm in normalized:
+                    matching_ids.append(v.id)
             
-            for vacancy in all_vacancies:
-                vac_grade = vacancy.grading_level.strip() if vacancy.grading_level else ""
-                vac_normalized = normalize_grading_level(vac_grade)
-                
-                # 🔥 CHECK IF VACANCY MATCHES ANY TARGET LEVEL
-                if vac_normalized in normalized_targets:
-                    matching_vacancies.append(vacancy.id)
-            
-            queryset = queryset.filter(id__in=matching_vacancies)
+            queryset = queryset.filter(id__in=matching_ids)
         
-        
-        return queryset.order_by('position_id')
+        return queryset
     
-    def _create_job_description_components(self, job_description, sections_data, skills_data,   competencies_data, business_resources_data,  access_rights_data, company_benefits_data):
-        """Helper method to create all job description components with nested items"""
+    def _create_nested_data(self, job_description, sections_data, skills_data,
+                           competencies_data, business_resources_data,
+                           access_rights_data, company_benefits_data):
+        """Create all nested data"""
         
-        # Create sections (unchanged)
-        for section_data in sections_data:
+        # Sections
+        for section in sections_data:
             JobDescriptionSection.objects.create(
-                job_description=job_description,
-                **section_data
+                job_description=job_description, **section
             )
         
-        # Create skills (unchanged)
-        for skill_data in skills_data:
+        # Skills
+        for skill in skills_data:
             JobDescriptionSkill.objects.create(
                 job_description=job_description,
-                skill_id=skill_data['skill_id'],
-            
+                skill_id=skill['skill_id']
             )
         
-        # Create behavioral competencies (unchanged)
-        for competency_data in competencies_data:
+        # Competencies
+        for comp in competencies_data:
             JobDescriptionBehavioralCompetency.objects.create(
                 job_description=job_description,
-                competency_id=competency_data['competency_id'],
-            
+                competency_id=comp['competency_id']
             )
         
-        # 🔥 UPDATED: Create business resources with nested items
-        for resource_data in business_resources_data:
-            resource_id = resource_data.get('resource_id')
-            item_ids = resource_data.get('item_ids', [])
-            
-            jd_resource = JobDescriptionBusinessResource.objects.create(
+        # Business resources
+        for res_data in business_resources_data:
+            jd_res = JobDescriptionBusinessResource.objects.create(
                 job_description=job_description,
-                resource_id=resource_id
+                resource_id=res_data.get('resource_id')
             )
-            
-            # Link specific items if provided
+            item_ids = res_data.get('item_ids', [])
             if item_ids:
                 items = JobBusinessResourceItem.objects.filter(
-                    id__in=item_ids,
-                    resource_id=resource_id,
-                    is_active=True
+                    id__in=item_ids, is_active=True
                 )
-                jd_resource.specific_items.set(items)
+                jd_res.specific_items.set(items)
         
-        # 🔥 UPDATED: Create access rights with nested items
-        for access_data in access_rights_data:
-            access_matrix_id = access_data.get('access_matrix_id')
-            item_ids = access_data.get('item_ids', [])
-            
-            jd_access = JobDescriptionAccessMatrix.objects.create(
+        # Access rights
+        for acc_data in access_rights_data:
+            jd_acc = JobDescriptionAccessMatrix.objects.create(
                 job_description=job_description,
-                access_matrix_id=access_matrix_id
+                access_matrix_id=acc_data.get('access_matrix_id')
             )
-            
+            item_ids = acc_data.get('item_ids', [])
             if item_ids:
                 items = AccessMatrixItem.objects.filter(
-                    id__in=item_ids,
-                    access_matrix_id=access_matrix_id,
-                    is_active=True
+                    id__in=item_ids, is_active=True
                 )
-                jd_access.specific_items.set(items)
+                jd_acc.specific_items.set(items)
         
-        # 🔥 UPDATED: Create company benefits with nested items
-        for benefit_data in company_benefits_data:
-            benefit_id = benefit_data.get('benefit_id')
-            item_ids = benefit_data.get('item_ids', [])
-            
-            jd_benefit = JobDescriptionCompanyBenefit.objects.create(
+        # Benefits
+        for ben_data in company_benefits_data:
+            jd_ben = JobDescriptionCompanyBenefit.objects.create(
                 job_description=job_description,
-                benefit_id=benefit_id
+                benefit_id=ben_data.get('benefit_id')
             )
-            
+            item_ids = ben_data.get('item_ids', [])
             if item_ids:
                 items = CompanyBenefitItem.objects.filter(
-                    id__in=item_ids,
-                    benefit_id=benefit_id,
-                    is_active=True
+                    id__in=item_ids, is_active=True
                 )
-                jd_benefit.specific_items.set(items)
-    def get_employee_matching_details(self, obj):
-        """Get detailed matching information"""
-        if hasattr(obj, 'get_employee_matching_details'):
-            return obj.get_employee_matching_details()
-        return None
-    
-   
-    
-    def validate(self, attrs):
-        """ENHANCED: Comprehensive validation before employee assignment"""
-        
-        # Validate that all required organizational fields are present INCLUDING job_title
-        required_fields = ['job_title', 'business_function', 'department', 'job_function', 'position_group']  # ADD job_title here
-        missing_fields = [field for field in required_fields if not attrs.get(field)]
-        
-        if missing_fields:
-            raise serializers.ValidationError(
-                f"Required organizational fields missing: {', '.join(missing_fields)}"
-            )
-        
-        
-        
-        # Validate force_employee_id if provided
-        force_employee_id = attrs.get('force_employee_id')
-        if force_employee_id:
-            try:
-                employee = Employee.objects.get(id=force_employee_id,  )
-                
-                # Create temp JD for validation
-                temp_jd = JobDescription()
-                for field in required_fields:
-                    if field in attrs:
-                        setattr(temp_jd, field, attrs[field])
-                
-                temp_jd.assigned_employee = employee
-                is_valid, validation_message = temp_jd.validate_employee_assignment()
-                
-                if not is_valid:
-                    raise serializers.ValidationError(
-                        f"Forced employee assignment failed validation: {validation_message}"
-                    )
-                
-                logger.info(f"Force employee assignment validated: {employee.full_name}")
-                
-            except Employee.DoesNotExist:
-                raise serializers.ValidationError(f"Employee with ID {force_employee_id} not found or inactive")
-        
-        return attrs
-    
+                jd_ben.specific_items.set(items)
     
     def update(self, instance, validated_data):
-        """UPDATED: Update job description with approval status reset logic and MULTIPLE grading levels support"""
+        """Update job description (not assignments)"""
         
-        # Extract nested data
         sections_data = validated_data.pop('sections', None)
         skills_data = validated_data.pop('required_skills_data', None)
         competencies_data = validated_data.pop('behavioral_competencies_data', None)
-        force_employee_id = validated_data.pop('force_employee_id', None)
-        
-        # FIXED: Extract reset_approval_status flag (only for updates)
-        reset_approval = validated_data.pop('reset_approval_status', False)
+        grading_levels = validated_data.pop('grading_levels', None)
+        validated_data.pop('selected_employee_ids', None)
         business_resources_data = validated_data.pop('business_resources_with_items', None)
         access_rights_data = validated_data.pop('access_rights_with_items', None)
         company_benefits_data = validated_data.pop('company_benefits_with_items', None)
         
         with transaction.atomic():
+            if grading_levels:
+                validated_data['grading_levels'] = grading_levels
+                validated_data['grading_level'] = grading_levels[0]
             
-            # ADDED: Reset approval status if requested
-            if reset_approval:
-                logger.info(f"🔄 Resetting approval status for job {instance.id}")
-                instance.status = 'DRAFT'
-                instance.line_manager_approved_by = None
-                instance.line_manager_approved_at = None
-                instance.line_manager_comments = ''
-                instance.employee_approved_by = None
-                instance.employee_approved_at = None
-                instance.employee_comments = ''
-                
-               
-            
-            # 🔥 UPDATED: Track organizational changes including grading_levels
-            org_fields = ['business_function', 'department', 'unit', 'job_function', 'position_group', 'grading_levels', 'grading_level']
-            org_changed = any(field in validated_data for field in org_fields)
-            
-            old_employee = instance.assigned_employee
-            old_manager = instance.reports_to
-            reassignment_reason = None
-            
-            # ENHANCED: Employee reassignment logic
-            if force_employee_id:
-                new_employee = Employee.objects.get(id=force_employee_id)
-                validated_data['assigned_employee'] = new_employee
-                reassignment_reason = "Force reassignment requested"
-                logger.info(f"Force reassigning employee to: {new_employee.full_name}")
-                
-            elif org_changed:
-                logger.info("Organizational criteria changed, checking for employee reassignment")
-                
-                business_function = validated_data.get('business_function', instance.business_function)
-                department = validated_data.get('department', instance.department)
-                unit = validated_data.get('unit', instance.unit)
-                job_function = validated_data.get('job_function', instance.job_function)
-                position_group = validated_data.get('position_group', instance.position_group)
-                
-                # 🔥 UPDATED: Handle both grading_levels (new) and grading_level (old)
-                grading_levels = validated_data.get('grading_levels', instance.grading_levels if hasattr(instance, 'grading_levels') else [])
-                grading_level = validated_data.get('grading_level', instance.grading_level)
-                
-                # 🔥 Convert single grading_level to array if grading_levels not provided
-                if not grading_levels and grading_level:
-                    grading_levels = [grading_level]
-                
-                temp_jd = JobDescription()
-                temp_jd.job_title = instance.job_title  # 🔥 IMPORTANT: Include job_title for validation
-                temp_jd.business_function = business_function
-                temp_jd.department = department
-                temp_jd.unit = unit
-                temp_jd.job_function = job_function
-                temp_jd.position_group = position_group
-                temp_jd.grading_levels = grading_levels  # 🔥 NEW: Array
-                temp_jd.grading_level = grading_level    # Keep for backward compat
-                temp_jd.assigned_employee = old_employee
-                
-                is_still_valid, validation_message = temp_jd.validate_employee_assignment()
-                
-                if not is_still_valid:
-                    logger.info(f"Current employee no longer matches criteria: {validation_message}")
-                    
-                    # 🔥 UPDATED: Pass grading_levels array to search
-                    eligible_employees = JobDescription.get_eligible_employees_with_priority(
-                        job_title=temp_jd.job_title,
-                        business_function_id=business_function.id,
-                        department_id=department.id,
-                        unit_id=unit.id if unit else None,
-                        job_function_id=job_function.id,
-                        position_group_id=position_group.id,
-                        grading_levels=grading_levels  # 🔥 NEW: Pass array
-                    )
-                    
-                    if eligible_employees.exists():
-                        new_employee = eligible_employees.first()
-                        validated_data['assigned_employee'] = new_employee
-                        reassignment_reason = f"Organizational criteria changed, current employee no longer matches: {validation_message}"
-                        logger.info(f"Auto-reassigning to new matching employee: {new_employee.full_name}")
-                    else:
-                        raise serializers.ValidationError({
-                            'employee_assignment': 'No employees found matching the updated organizational criteria',
-                            'current_employee_validation': validation_message,
-                            'criteria': {
-                                'job_title': temp_jd.job_title,
-                                'business_function': business_function.name,
-                                'department': department.name,
-                                'unit': unit.name if unit else None,
-                                'job_function': job_function.name,
-                                'position_group': position_group.name,
-                                'grading_levels': grading_levels  # 🔥 Show all levels in error
-                            },
-                            'suggestion': 'Please adjust criteria or ensure matching employees exist'
-                        })
-                else:
-                    logger.info("Current employee still matches updated criteria, keeping assignment")
-            
-            # Update main fields
             for attr, value in validated_data.items():
                 setattr(instance, attr, value)
             
             instance.updated_by = self.context['request'].user
             instance.save()
             
-            # Check what changed
-            new_employee = instance.assigned_employee
-            new_manager = instance.reports_to
-            employee_changed = old_employee != new_employee
-            manager_changed = old_manager != new_manager
-            
-            # Update nested relationships if provided
+            # Update nested data if provided
             if sections_data is not None:
                 instance.sections.all().delete()
-                for section_data in sections_data:
+                for section in sections_data:
                     JobDescriptionSection.objects.create(
-                        job_description=instance,
-                        **section_data
+                        job_description=instance, **section
                     )
             
             if skills_data is not None:
                 instance.required_skills.all().delete()
-                for skill_data in skills_data:
+                for skill in skills_data:
                     JobDescriptionSkill.objects.create(
                         job_description=instance,
-                        skill_id=skill_data['skill_id'],
+                        skill_id=skill['skill_id']
                     )
             
             if competencies_data is not None:
                 instance.behavioral_competencies.all().delete()
-                for competency_data in competencies_data:
+                for comp in competencies_data:
                     JobDescriptionBehavioralCompetency.objects.create(
                         job_description=instance,
-                        competency_id=competency_data['competency_id'],
+                        competency_id=comp['competency_id']
                     )
             
-            # 🔥 CRITICAL FIX: Update business resources with items
             if business_resources_data is not None:
-                logger.info(f"🔄 Updating business resources...")
                 instance.business_resources.all().delete()
-                
-                for resource_data in business_resources_data:
-                    resource_id = resource_data.get('resource_id')
-                    item_ids = resource_data.get('item_ids', [])
-                    
-                    logger.info(f"  Adding resource {resource_id} with items {item_ids}")
-                    
-                    jd_resource = JobDescriptionBusinessResource.objects.create(
+                for res_data in business_resources_data:
+                    jd_res = JobDescriptionBusinessResource.objects.create(
                         job_description=instance,
-                        resource_id=resource_id
+                        resource_id=res_data.get('resource_id')
                     )
-                    
+                    item_ids = res_data.get('item_ids', [])
                     if item_ids:
                         items = JobBusinessResourceItem.objects.filter(
-                            id__in=item_ids,
-                            resource_id=resource_id,
-                            is_active=True
+                            id__in=item_ids, is_active=True
                         )
-                        jd_resource.specific_items.set(items)
-                        logger.info(f"    Linked {items.count()} specific items")
-                
-                logger.info(f"✅ Updated {len(business_resources_data)} business resources")
-                        
+                        jd_res.specific_items.set(items)
+            
             if access_rights_data is not None:
-                logger.info(f"🔄 Updating {len(access_rights_data)} access rights...")
                 instance.access_rights.all().delete()
-                
-                for access_data in access_rights_data:
-                    access_matrix_id = access_data.get('access_matrix_id')
-                    item_ids = access_data.get('item_ids', [])
-                    
-                    jd_access = JobDescriptionAccessMatrix.objects.create(
+                for acc_data in access_rights_data:
+                    jd_acc = JobDescriptionAccessMatrix.objects.create(
                         job_description=instance,
-                        access_matrix_id=access_matrix_id
+                        access_matrix_id=acc_data.get('access_matrix_id')
                     )
-                    
+                    item_ids = acc_data.get('item_ids', [])
                     if item_ids:
                         items = AccessMatrixItem.objects.filter(
-                            id__in=item_ids,
-                            access_matrix_id=access_matrix_id,
-                            is_active=True
+                            id__in=item_ids, is_active=True
                         )
-                        jd_access.specific_items.set(items)
-                
-                logger.info(f"✅ Updated access rights")
-                        
+                        jd_acc.specific_items.set(items)
+            
             if company_benefits_data is not None:
-                logger.info(f"🔄 Updating {len(company_benefits_data)} company benefits...")
                 instance.company_benefits.all().delete()
-                
-                for benefit_data in company_benefits_data:
-                    benefit_id = benefit_data.get('benefit_id')
-                    item_ids = benefit_data.get('item_ids', [])
-                    
-                    jd_benefit = JobDescriptionCompanyBenefit.objects.create(
+                for ben_data in company_benefits_data:
+                    jd_ben = JobDescriptionCompanyBenefit.objects.create(
                         job_description=instance,
-                        benefit_id=benefit_id
+                        benefit_id=ben_data.get('benefit_id')
                     )
-                    
+                    item_ids = ben_data.get('item_ids', [])
                     if item_ids:
                         items = CompanyBenefitItem.objects.filter(
-                            id__in=item_ids,
-                            benefit_id=benefit_id,
-                            is_active=True
+                            id__in=item_ids, is_active=True
                         )
-                        jd_benefit.specific_items.set(items)
-                
-                logger.info(f"✅ Updated company benefits")
-            
-            # Enhanced activity logging
-            updated_fields = list(validated_data.keys())
-            description = f"Job description updated for {instance.job_title}"
-            
-            # 🔥 UPDATED: Include grading_levels info in metadata
-            metadata = {
-                'updated_fields': updated_fields,
-                'organizational_changes': org_changed,
-                'approval_status_reset': reset_approval,
-                'grading_levels_updated': 'grading_levels' in validated_data or 'grading_level' in validated_data
-            }
-            
-            # 🔥 NEW: Log grading level changes if they occurred
-            if 'grading_levels' in validated_data:
-                old_levels = instance.grading_levels if hasattr(instance, 'grading_levels') else []
-                new_levels = validated_data.get('grading_levels', [])
-                if old_levels != new_levels:
-                    metadata['grading_levels_change'] = {
-                        'old': old_levels,
-                        'new': new_levels
-                    }
-                    description += f" - Grading levels updated from {old_levels} to {new_levels}"
-            
-            if employee_changed:
-                old_employee_name = old_employee.full_name if old_employee else 'None'
-                new_employee_name = new_employee.full_name if new_employee else 'None'
-                description += f" - Employee reassigned from {old_employee_name} to {new_employee_name}"
-                metadata.update({
-                    'employee_reassigned': True,
-                    'old_employee': old_employee_name,
-                    'new_employee': new_employee_name,
-                    'reassignment_reason': reassignment_reason,
-                    'employee_matching_details': instance.get_employee_matching_details()
-                })
-            
-            if manager_changed:
-                old_manager_name = old_manager.full_name if old_manager else 'None'
-                new_manager_name = new_manager.full_name if new_manager else 'None'
-                description += f" - Manager auto-updated from {old_manager_name} to {new_manager_name}"
-                metadata.update({
-                    'manager_auto_updated': True,
-                    'old_manager': old_manager_name,
-                    'new_manager': new_manager_name
-                })
-            
-          
-            
-            logger.info(f"Job description update completed: {instance.id}")
+                        jd_ben.specific_items.set(items)
             
             return instance
+# api/job_description_serializers.py - PART 3: List and Detail serializers
+# Bu hissəni Part 2-nin ardınca əlavə edin
 
-class EligibleEmployeesSerializer(serializers.Serializer):
-    """UPDATED: Serializer for getting eligible employees with MULTIPLE grading levels support and enhanced validation"""
-    
-    business_function = serializers.IntegerField(
-        required=True, 
-        help_text="Business Function ID (Required)"
-    )
-    department = serializers.IntegerField(
-        required=True, 
-        help_text="Department ID (Required)"
-    )
-    unit = serializers.IntegerField(
-        required=False, 
-        allow_null=True, 
-        help_text="Unit ID (Optional)"
-    )
-    job_function = serializers.IntegerField(
-        required=True, 
-        help_text="Job Function ID (Required)"
-    )
-    position_group = serializers.IntegerField(
-        required=True, 
-        help_text="Position Group ID (Required)"
-    )
-    
-    # 🔥 NEW: Support multiple grading levels (Primary field)
-    grading_levels = serializers.ListField(
-        child=serializers.CharField(max_length=50, allow_blank=False),
-        required=False,
-        allow_empty=False,
-        help_text="List of Grading Levels (e.g., ['M', 'N', 'O']). Use this for multiple levels."
-    )
-    
-    # 🔥 KEPT: Single grading level for backward compatibility (Now optional)
-    grading_level = serializers.CharField(
-        required=False,
-        allow_blank=True,
-        allow_null=True,
-        help_text="Single Grading Level (Deprecated - use grading_levels instead). Will be converted to grading_levels array."
-    )
-    
-    job_title = serializers.CharField(
-        required=False,
-        allow_blank=True,
-        help_text="Job Title for additional filtering (Optional)"
-    )
-    
-    max_preview = serializers.IntegerField(
-        required=False,
-        default=50,
-        min_value=1,
-        max_value=1000,
-        help_text="Maximum number of employees to return (Default: 50)"
-    )
-    
-    include_vacancies = serializers.BooleanField(
-        required=False,
-        default=True,
-        help_text="Include vacant positions in results (Default: True)"
-    )
-    
-    def validate(self, attrs):
-        """UPDATED: Enhanced validation with organizational structure checks and grading levels handling"""
-        
-        validation_errors = {}
-        
-        # ===================================================================
-        # 🔥 STEP 1: HANDLE GRADING LEVELS - Convert single to array if needed
-        # ===================================================================
-        grading_levels = attrs.get('grading_levels')
-        grading_level = attrs.get('grading_level')
-        
-        logger.info(f"📊 Grading validation - Received grading_levels: {grading_levels}, grading_level: {grading_level}")
-        
-        if grading_levels and len(grading_levels) > 0:
-            # User provided grading_levels array - validate it
-            cleaned_levels = []
-            for idx, level in enumerate(grading_levels):
-                if not level or not level.strip():
-                    validation_errors['grading_levels'] = f'Grading level at index {idx} cannot be empty'
-                    break
-                cleaned_levels.append(level.strip())
-            
-            if 'grading_levels' not in validation_errors:
-                attrs['grading_levels'] = cleaned_levels
-                # Set first level as grading_level for backward compatibility
-                attrs['grading_level'] = cleaned_levels[0] if cleaned_levels else None
-                logger.info(f"✅ Using grading_levels array: {cleaned_levels}")
-                
-        elif grading_level and grading_level.strip():
-            # User provided single grading_level - convert to array
-            level_clean = grading_level.strip()
-            attrs['grading_levels'] = [level_clean]
-            attrs['grading_level'] = level_clean
-            logger.info(f"✅ Converted single grading_level '{level_clean}' to array")
-            
-        else:
-            # Neither provided - search without grading filter (optional now)
-            attrs['grading_levels'] = []
-            attrs['grading_level'] = None
-            logger.info("⚠️ No grading levels provided - will search all grades")
-        
-        # ===================================================================
-        # 🔥 STEP 2: VALIDATE ORGANIZATIONAL STRUCTURE
-        # ===================================================================
-        
-        # Business Function validation
-        if 'business_function' in attrs:
-            try:
-                bf = BusinessFunction.objects.get(id=attrs['business_function'])
-                if not bf.is_active:
-                    validation_errors['business_function'] = 'Business function is not active'
-                else:
-                    attrs['_business_function_obj'] = bf  # Cache for later use
-                    logger.info(f"✅ Business Function validated: {bf.name}")
-            except BusinessFunction.DoesNotExist:
-                validation_errors['business_function'] = 'Business function not found'
-                logger.error(f"❌ Business Function {attrs['business_function']} not found")
-        
-        # Department validation
-        if 'department' in attrs:
-            try:
-                dept = Department.objects.get(id=attrs['department'])
-                if not dept.is_active:
-                    validation_errors['department'] = 'Department is not active'
-                    logger.error(f"❌ Department {dept.name} is not active")
-                    
-                # Check if department belongs to business function
-                elif 'business_function' in attrs and dept.business_function_id != attrs['business_function']:
-                    validation_errors['department'] = (
-                        f'Department does not belong to specified business function '
-                        f'(Expected BF: {attrs["business_function"]}, Got: {dept.business_function_id})'
-                    )
-                    logger.error(f"❌ Department {dept.name} not in Business Function {attrs['business_function']}")
-                else:
-                    attrs['_department_obj'] = dept  # Cache for later use
-                    logger.info(f"✅ Department validated: {dept.name}")
-                    
-            except Department.DoesNotExist:
-                validation_errors['department'] = 'Department not found'
-                logger.error(f"❌ Department {attrs['department']} not found")
-        
-        # Unit validation (optional)
-        if 'unit' in attrs and attrs['unit']:
-            try:
-                unit = Unit.objects.get(id=attrs['unit'])
-                if not unit.is_active:
-                    validation_errors['unit'] = 'Unit is not active'
-                    logger.error(f"❌ Unit {unit.name} is not active")
-                    
-                # Check if unit belongs to department
-                elif 'department' in attrs and unit.department_id != attrs['department']:
-                    validation_errors['unit'] = (
-                        f'Unit does not belong to specified department '
-                        f'(Expected Dept: {attrs["department"]}, Got: {unit.department_id})'
-                    )
-                    logger.error(f"❌ Unit {unit.name} not in Department {attrs['department']}")
-                else:
-                    attrs['_unit_obj'] = unit  # Cache for later use
-                    logger.info(f"✅ Unit validated: {unit.name}")
-                    
-            except Unit.DoesNotExist:
-                validation_errors['unit'] = 'Unit not found'
-                logger.error(f"❌ Unit {attrs['unit']} not found")
-        
-        # Job Function validation
-        if 'job_function' in attrs:
-            try:
-                jf = JobFunction.objects.get(id=attrs['job_function'])
-                if not jf.is_active:
-                    validation_errors['job_function'] = 'Job function is not active'
-                    logger.error(f"❌ Job Function {jf.name} is not active")
-                else:
-                    attrs['_job_function_obj'] = jf  # Cache for later use
-                    logger.info(f"✅ Job Function validated: {jf.name}")
-            except JobFunction.DoesNotExist:
-                validation_errors['job_function'] = 'Job function not found'
-                logger.error(f"❌ Job Function {attrs['job_function']} not found")
-        
-        # Position Group validation
-        if 'position_group' in attrs:
-            try:
-                pg = PositionGroup.objects.get(id=attrs['position_group'])
-                if not pg.is_active:
-                    validation_errors['position_group'] = 'Position group is not active'
-                    logger.error(f"❌ Position Group {pg.name} is not active")
-                else:
-                    attrs['_position_group_obj'] = pg  # Cache for later use
-                    logger.info(f"✅ Position Group validated: {pg.name}")
-            except PositionGroup.DoesNotExist:
-                validation_errors['position_group'] = 'Position group not found'
-                logger.error(f"❌ Position Group {attrs['position_group']} not found")
-        
-        # ===================================================================
-        # 🔥 STEP 3: RAISE ALL VALIDATION ERRORS TOGETHER
-        # ===================================================================
-        if validation_errors:
-            logger.error(f"❌ Validation failed with errors: {validation_errors}")
-            raise serializers.ValidationError(validation_errors)
-        
-        # ===================================================================
-        # 🔥 STEP 4: LOG FINAL VALIDATED CRITERIA
-        # ===================================================================
-        logger.info("=" * 80)
-        logger.info("✅ VALIDATION SUCCESSFUL - Final Criteria:")
-        logger.info(f"  - Business Function: {attrs.get('_business_function_obj', 'N/A')}")
-        logger.info(f"  - Department: {attrs.get('_department_obj', 'N/A')}")
-        logger.info(f"  - Unit: {attrs.get('_unit_obj', 'N/A')}")
-        logger.info(f"  - Job Function: {attrs.get('_job_function_obj', 'N/A')}")
-        logger.info(f"  - Position Group: {attrs.get('_position_group_obj', 'N/A')}")
-        logger.info(f"  - Grading Levels: {attrs.get('grading_levels', [])}")
-        logger.info(f"  - Job Title: {attrs.get('job_title', 'N/A')}")
-        logger.info(f"  - Max Preview: {attrs.get('max_preview', 50)}")
-        logger.info(f"  - Include Vacancies: {attrs.get('include_vacancies', True)}")
-        logger.info("=" * 80)
-        
-        return attrs
-    
-    def to_representation(self, instance):
-        """Add metadata about search criteria"""
-        representation = super().to_representation(instance)
-        
-        # Add search metadata
-        if hasattr(self, 'validated_data'):
-            representation['_metadata'] = {
-                'grading_levels_count': len(self.validated_data.get('grading_levels', [])),
-                'grading_levels_used': self.validated_data.get('grading_levels', []),
-                'has_unit_filter': bool(self.validated_data.get('unit')),
-                'has_job_title_filter': bool(self.validated_data.get('job_title', '').strip()),
-                'max_results': self.validated_data.get('max_preview', 50),
-                'includes_vacancies': self.validated_data.get('include_vacancies', True),
-                'backward_compatible_mode': bool(
-                    self.validated_data.get('grading_level') and 
-                    not self.initial_data.get('grading_levels')
-                )
-            }
-        
-        return representation
+# ==================== LIST SERIALIZER ====================
 
 class JobDescriptionListSerializer(serializers.ModelSerializer):
-    """Serializer for job description list view with enhanced employee info"""
+    """List view serializer with assignment summary"""
     
     business_function_name = serializers.CharField(source='business_function.name', read_only=True)
     department_name = serializers.CharField(source='department.name', read_only=True)
     unit_name = serializers.CharField(source='unit.name', read_only=True)
     job_function_name = serializers.CharField(source='job_function.name', read_only=True)
     position_group_name = serializers.CharField(source='position_group.name', read_only=True)
-    reports_to_name = serializers.CharField(source='reports_to.full_name', read_only=True)
-    employee_info = serializers.SerializerMethodField()
-    manager_info = serializers.SerializerMethodField()
     created_by_name = serializers.CharField(source='created_by.get_full_name', read_only=True)
-    status_display = serializers.SerializerMethodField()
-    employee_validation = serializers.SerializerMethodField()
+    
+    # Assignment summary
+    overall_status = serializers.ReadOnlyField()
+    total_assignments = serializers.ReadOnlyField()
+    employee_assignments_count = serializers.ReadOnlyField()
+    vacancy_assignments_count = serializers.ReadOnlyField()
+    approved_count = serializers.ReadOnlyField()
+    pending_count = serializers.ReadOnlyField()
+    
+    # Quick assignment list
+    assignments_preview = serializers.SerializerMethodField()
+    assignments_summary = serializers.SerializerMethodField()
     
     class Meta:
         model = JobDescription
         fields = [
-            'id', 'job_title', 'business_function_name', 'department_name','job_purpose',
-            'unit_name', 'job_function_name', 'position_group_name', 'grading_level', 
-            'reports_to_name', 'employee_info', 'manager_info', 'status', 'status_display', 
-            'version', 'is_active', 'created_at', 'created_by_name', 'employee_validation'
+            'id', 'job_title', 'job_purpose',
+            'business_function_name', 'department_name', 'unit_name',
+            'job_function_name', 'position_group_name', 'grading_levels',
+            'overall_status', 'total_assignments', 'employee_assignments_count',
+            'vacancy_assignments_count', 'approved_count', 'pending_count',
+            'assignments_preview', 'assignments_summary',
+            'version', 'is_active', 'created_at', 'created_by_name'
         ]
     
-    def get_status_display(self, obj):
-        return obj.get_status_display_with_color()
-    
-    def get_employee_info(self, obj):
-        return obj.get_employee_info()
-    
-    def get_manager_info(self, obj):
-        return obj.get_manager_info()
-    
-    def get_employee_validation(self, obj):
-        """Get employee validation status"""
-        if obj.assigned_employee:
-            is_valid, message = obj.validate_employee_assignment()
-            return {
-                'is_valid': is_valid,
-                'message': message[:100] + '...' if len(message) > 100 else message
+    def get_assignments_preview(self, obj):
+        """Get first few assignments for preview"""
+        assignments = obj.assignments.filter(is_active=True).select_related(
+            'employee', 'reports_to', 'vacancy_position'
+        )[:5]
+        return [
+            {
+                'id': str(a.id),
+                'name': a.get_display_name(),
+                'status': a.status,
+                'status_display': a.get_status_display_with_color(),
+                'is_vacancy': a.is_vacancy,
+                'reports_to': a.reports_to.full_name if a.reports_to else None
             }
-        return {'is_valid': False, 'message': 'No employee assigned'}
-class JobDescriptionBusinessResourceDetailSerializer(serializers.ModelSerializer):
-    """ENHANCED: Business resource with NESTED ITEMS for detail view"""
-    
-    resource_detail = JobBusinessResourceSerializer(source='resource', read_only=True)
-    specific_items_detail = JobBusinessResourceItemDetailSerializer(
-        source='specific_items',
-        many=True,
-        read_only=True
-    )
-    has_specific_items = serializers.SerializerMethodField()
-    items_display = serializers.SerializerMethodField()
-    
-    class Meta:
-        model = JobDescriptionBusinessResource
-        fields = [
-            'id',
-            'resource',
-            'resource_detail',
-            'specific_items_detail',
-            'has_specific_items',
-            'items_display'
+            for a in assignments
         ]
     
-    def get_has_specific_items(self, obj):
-        """Check if specific items are selected"""
-        return obj.specific_items.exists()
-    
-    def get_items_display(self, obj):
-        """Get human-readable items display"""
-        if obj.specific_items.exists():
-            items = obj.specific_items.all()
-            return f"{obj.resource.name}: {', '.join([item.name for item in items])}"
-        else:
-            return f"{obj.resource.name}: All items"
+    def get_assignments_summary(self, obj):
+        return obj.get_assignments_summary()
 
 
-class JobDescriptionAccessMatrixDetailSerializer(serializers.ModelSerializer):
-    """ENHANCED: Access matrix with NESTED ITEMS for detail view"""
-    
-    access_detail = AccessMatrixSerializer(source='access_matrix', read_only=True)
-    specific_items_detail = AccessMatrixItemDetailSerializer(
-        source='specific_items',
-        many=True,
-        read_only=True
-    )
-    has_specific_items = serializers.SerializerMethodField()
-    items_display = serializers.SerializerMethodField()
-    
-    class Meta:
-        model = JobDescriptionAccessMatrix
-        fields = [
-            'id',
-            'access_matrix',
-            'access_detail',
-            'specific_items_detail',
-            'has_specific_items',
-            'items_display'
-        ]
-    
-    def get_has_specific_items(self, obj):
-        return obj.specific_items.exists()
-    
-    def get_items_display(self, obj):
-        if obj.specific_items.exists():
-            items = obj.specific_items.all()
-            return f"{obj.access_matrix.name}: {', '.join([item.name for item in items])}"
-        else:
-            return f"{obj.access_matrix.name}: All items"
+# ==================== DETAIL SERIALIZER ====================
 
-
-class JobDescriptionCompanyBenefitDetailSerializer(serializers.ModelSerializer):
-    """ENHANCED: Company benefit with NESTED ITEMS for detail view"""
-    
-    benefit_detail = CompanyBenefitSerializer(source='benefit', read_only=True)
-    specific_items_detail = CompanyBenefitItemDetailSerializer(
-        source='specific_items',
-        many=True,
-        read_only=True
-    )
-    has_specific_items = serializers.SerializerMethodField()
-    items_display = serializers.SerializerMethodField()
-    
-    class Meta:
-        model = JobDescriptionCompanyBenefit
-        fields = [
-            'id',
-            'benefit',
-            'benefit_detail',
-            'specific_items_detail',
-            'has_specific_items',
-            'items_display'
-        ]
-    
-    def get_has_specific_items(self, obj):
-        return obj.specific_items.exists()
-    
-    def get_items_display(self, obj):
-        if obj.specific_items.exists():
-            items = obj.specific_items.all()
-            return f"{obj.benefit.name}: {', '.join([item.name for item in items])}"
-        else:
-            return f"{obj.benefit.name}: All items"
 class JobDescriptionDetailSerializer(serializers.ModelSerializer):
-    """Enhanced detail serializer with all nested data and employee validation info"""
+    """Full detail serializer with all nested data"""
     
     # Related object details
     business_function = BusinessFunctionBasicSerializer(read_only=True)
@@ -1570,76 +1004,67 @@ class JobDescriptionDetailSerializer(serializers.ModelSerializer):
     unit = UnitBasicSerializer(read_only=True)
     job_function = JobFunctionBasicSerializer(read_only=True)
     position_group = PositionGroupBasicSerializer(read_only=True)
-    reports_to = EmployeeBasicSerializer(read_only=True)
-    assigned_employee = EmployeeBasicSerializer(read_only=True)
     
-    # Enhanced employee information
-    employee_info = serializers.SerializerMethodField()
-    manager_info = serializers.SerializerMethodField()
-    employee_matching_details = serializers.SerializerMethodField()
-    employee_validation = serializers.SerializerMethodField()
+    # All assignments
+    assignments = JobDescriptionAssignmentDetailSerializer(many=True, read_only=True)
+    assignments_summary = serializers.SerializerMethodField()
     
-    # NEW: Nested detailed data - READ-ONLY for detail view
+    # Nested data
     sections = JobDescriptionSectionSerializer(many=True, read_only=True)
     required_skills = JobDescriptionSkillSerializer(many=True, read_only=True)
     behavioral_competencies = JobDescriptionBehavioralCompetencySerializer(many=True, read_only=True)
     business_resources = JobDescriptionBusinessResourceDetailSerializer(many=True, read_only=True)
     access_rights = JobDescriptionAccessMatrixDetailSerializer(many=True, read_only=True)
     company_benefits = JobDescriptionCompanyBenefitDetailSerializer(many=True, read_only=True)
-    # Approval and user information
+    
+    # User details
     created_by_detail = UserBasicSerializer(source='created_by', read_only=True)
     updated_by_detail = UserBasicSerializer(source='updated_by', read_only=True)
-    line_manager_approved_by_detail = UserBasicSerializer(source='line_manager_approved_by', read_only=True)
-    employee_approved_by_detail = UserBasicSerializer(source='employee_approved_by', read_only=True)
     
-    # Status and permissions
-    status_display = serializers.SerializerMethodField()
+    # Status and counts
+    overall_status = serializers.ReadOnlyField()
+    total_assignments = serializers.ReadOnlyField()
+    employee_assignments_count = serializers.ReadOnlyField()
+    vacancy_assignments_count = serializers.ReadOnlyField()
+    approved_count = serializers.ReadOnlyField()
+    pending_count = serializers.ReadOnlyField()
+    
+    # Permission checks
     can_edit = serializers.SerializerMethodField()
-    can_approve_as_line_manager = serializers.SerializerMethodField()
-    can_approve_as_employee = serializers.SerializerMethodField()
-    can_submit_for_approval = serializers.SerializerMethodField()
-    can_request_revision = serializers.SerializerMethodField()
+    can_add_assignments = serializers.SerializerMethodField()
     
-    # Summary counts for quick overview
+    # Summary counts
     sections_count = serializers.SerializerMethodField()
     skills_count = serializers.SerializerMethodField()
     competencies_count = serializers.SerializerMethodField()
     resources_count = serializers.SerializerMethodField()
     
-    # Approval workflow info
-    approval_workflow_status = serializers.SerializerMethodField()
-    next_approval_step = serializers.SerializerMethodField()
-    
     class Meta:
         model = JobDescription
         fields = [
             # Basic info
-            'id', 'job_title', 'job_purpose', 'grading_level', 'version', 'is_active',
+            'id', 'job_title', 'job_purpose', 'grading_levels', 'grading_level',
+            'version', 'is_active',
             
             # Organizational structure
             'business_function', 'department', 'unit', 'job_function', 'position_group',
             
-            # Enhanced employee assignment
-            'assigned_employee', 'reports_to', 'employee_info', 'manager_info',
-            'employee_matching_details', 'employee_validation',
+            # All assignments with details
+            'assignments', 'assignments_summary',
             
-            # NEW: Complete nested data
+            # Status counts
+            'overall_status', 'total_assignments', 'employee_assignments_count',
+            'vacancy_assignments_count', 'approved_count', 'pending_count',
+            
+            # Nested data
             'sections', 'required_skills', 'behavioral_competencies',
             'business_resources', 'access_rights', 'company_benefits',
             
             # Summary counts
             'sections_count', 'skills_count', 'competencies_count', 'resources_count',
             
-            # Status and permissions
-            'status', 'status_display', 'can_edit', 'can_approve_as_line_manager', 
-            'can_approve_as_employee', 'can_submit_for_approval', 'can_request_revision',
-            
-            # Approval workflow
-            'approval_workflow_status', 'next_approval_step',
-            
-            # Approval details
-            'line_manager_approved_by_detail', 'line_manager_approved_at', 'line_manager_comments',
-            'employee_approved_by_detail', 'employee_approved_at', 'employee_comments',
+            # Permissions
+            'can_edit', 'can_add_assignments',
             
             # User details
             'created_by_detail', 'updated_by_detail',
@@ -1648,203 +1073,39 @@ class JobDescriptionDetailSerializer(serializers.ModelSerializer):
             'created_at', 'updated_at'
         ]
     
-    def get_status_display(self, obj):
-        return obj.get_status_display_with_color()
+    def get_assignments_summary(self, obj):
+        return obj.get_assignments_summary()
     
-    def get_employee_info(self, obj):
-        return obj.get_employee_info()
-    
-    def get_manager_info(self, obj):
-        return obj.get_manager_info()
-    
-    def get_employee_matching_details(self, obj):
-        return obj.get_employee_matching_details()
-    
-    def get_employee_validation(self, obj):
-        if obj.assigned_employee:
-            is_valid, message = obj.validate_employee_assignment()
-            return {'is_valid': is_valid, 'message': message}
-        return {'is_valid': False, 'message': 'No employee assigned'}
-    
-    # Permission methods
     def get_can_edit(self, obj):
         request = self.context.get('request')
         if not request or not request.user.is_authenticated:
             return False
-        return (obj.status in ['DRAFT', 'REVISION_REQUIRED'] and 
-                (obj.created_by == request.user or request.user.is_staff))
+        return obj.created_by == request.user or request.user.is_staff
     
-    def get_can_approve_as_line_manager(self, obj):
+    def get_can_add_assignments(self, obj):
         request = self.context.get('request')
         if not request or not request.user.is_authenticated:
             return False
-        return obj.can_be_approved_by_line_manager(request.user)
+        return obj.created_by == request.user or request.user.is_staff
     
-    def get_can_approve_as_employee(self, obj):
-        request = self.context.get('request')
-        if not request or not request.user.is_authenticated:
-            return False
-        return obj.can_be_approved_by_employee(request.user)
-    
-    def get_can_submit_for_approval(self, obj):
-        request = self.context.get('request')
-        if not request or not request.user.is_authenticated:
-            return False
-        return (obj.status in ['DRAFT', 'REVISION_REQUIRED'] and 
-                (obj.created_by == request.user or request.user.is_staff) and
-                obj.assigned_employee and obj.reports_to)
-    
-    def get_can_request_revision(self, obj):
-        request = self.context.get('request')
-        if not request or not request.user.is_authenticated:
-            return False
-        return (obj.status in ['PENDING_LINE_MANAGER', 'PENDING_EMPLOYEE'] and
-                (obj.can_be_approved_by_line_manager(request.user) or
-                 obj.can_be_approved_by_employee(request.user)))
-    
-    # Summary count methods
     def get_sections_count(self, obj):
-        return obj.sections.count() if hasattr(obj, 'sections') else 0
+        return obj.sections.count()
     
     def get_skills_count(self, obj):
-        return obj.required_skills.count() if hasattr(obj, 'required_skills') else 0
+        return obj.required_skills.count()
     
     def get_competencies_count(self, obj):
-        return obj.behavioral_competencies.count() if hasattr(obj, 'behavioral_competencies') else 0
+        return obj.behavioral_competencies.count()
     
     def get_resources_count(self, obj):
-        business_resources = obj.business_resources.count() if hasattr(obj, 'business_resources') else 0
-        access_rights = obj.access_rights.count() if hasattr(obj, 'access_rights') else 0
-        company_benefits = obj.company_benefits.count() if hasattr(obj, 'company_benefits') else 0
-        return business_resources + access_rights + company_benefits
-    
-    # Approval workflow methods
-    def get_approval_workflow_status(self, obj):
-        """Get detailed approval workflow status"""
-        workflow_steps = []
-        
-        # Step 1: Creation
-        workflow_steps.append({
-            'step': 'created',
-            'label': 'Job Description Created',
-            'status': 'completed',
-            'completed_by': obj.created_by.get_full_name() if obj.created_by else 'System',
-            'completed_at': obj.created_at.isoformat() if obj.created_at else None,
-            'icon': 'create'
-        })
-        
-        # Step 2: Line Manager Approval
-        if obj.status in ['PENDING_LINE_MANAGER', 'PENDING_EMPLOYEE', 'APPROVED']:
-            lm_status = 'completed' if obj.line_manager_approved_at else 'pending'
-            workflow_steps.append({
-                'step': 'line_manager_approval',
-                'label': 'Line Manager Approval',
-                'status': lm_status,
-                'completed_by': obj.line_manager_approved_by.get_full_name() if obj.line_manager_approved_by else None,
-                'completed_at': obj.line_manager_approved_at.isoformat() if obj.line_manager_approved_at else None,
-                'pending_with': obj.reports_to.full_name if obj.reports_to and lm_status == 'pending' else None,
-                'comments': obj.line_manager_comments if obj.line_manager_comments else None,
-                'icon': 'supervisor_account'
-            })
-        
-        # Step 3: Employee Approval
-        if obj.status in ['PENDING_EMPLOYEE', 'APPROVED']:
-            emp_status = 'completed' if obj.employee_approved_at else 'pending'
-            workflow_steps.append({
-                'step': 'employee_approval',
-                'label': 'Employee Approval',
-                'status': emp_status,
-                'completed_by': obj.employee_approved_by.get_full_name() if obj.employee_approved_by else None,
-                'completed_at': obj.employee_approved_at.isoformat() if obj.employee_approved_at else None,
-                'pending_with': obj.assigned_employee.full_name if obj.assigned_employee and emp_status == 'pending' else None,
-                'comments': obj.employee_comments if obj.employee_comments else None,
-                'icon': 'person'
-            })
-        
-        # Special statuses
-        if obj.status == 'REJECTED':
-            workflow_steps.append({
-                'step': 'rejected',
-                'label': 'Rejected',
-                'status': 'rejected',
-                'icon': 'cancel'
-            })
-        elif obj.status == 'REVISION_REQUIRED':
-            workflow_steps.append({
-                'step': 'revision_required',
-                'label': 'Revision Required',
-                'status': 'revision_required',
-                'icon': 'edit'
-            })
-        
-        return {
-            'current_status': obj.status,
-            'current_status_display': obj.get_status_display(),
-            'workflow_steps': workflow_steps,
-            'progress_percentage': self._calculate_progress_percentage(obj),
-            'is_complete': obj.status == 'APPROVED'
-        }
-    
-    def _calculate_progress_percentage(self, obj):
-        """Calculate workflow progress percentage"""
-        if obj.status == 'DRAFT':
-            return 25
-        elif obj.status == 'PENDING_LINE_MANAGER':
-            return 50
-        elif obj.status == 'PENDING_EMPLOYEE':
-            return 75
-        elif obj.status == 'APPROVED':
-            return 100
-        elif obj.status in ['REJECTED', 'REVISION_REQUIRED']:
-            return 25  # Back to beginning essentially
-        return 0
-    
-    def get_next_approval_step(self, obj):
-        """Get information about next approval step"""
-        if obj.status == 'DRAFT':
-            return {
-                'action': 'submit_for_approval',
-                'label': 'Submit for Approval',
-                'description': 'Submit to line manager for review',
-                'next_approver': obj.reports_to.full_name if obj.reports_to else 'No manager assigned'
-            }
-        elif obj.status == 'PENDING_LINE_MANAGER':
-            return {
-                'action': 'line_manager_approval',
-                'label': 'Waiting for Line Manager',
-                'description': 'Pending line manager approval',
-                'next_approver': obj.reports_to.full_name if obj.reports_to else 'No manager assigned'
-            }
-        elif obj.status == 'PENDING_EMPLOYEE':
-            return {
-                'action': 'employee_approval',
-                'label': 'Waiting for Employee',
-                'description': 'Pending employee approval',
-                'next_approver': obj.assigned_employee.full_name if obj.assigned_employee else 'No employee assigned'
-            }
-        elif obj.status == 'APPROVED':
-            return {
-                'action': 'completed',
-                'label': 'Fully Approved',
-                'description': 'Job description is fully approved',
-                'next_approver': None
-            }
-        elif obj.status == 'REVISION_REQUIRED':
-            return {
-                'action': 'revise_and_resubmit',
-                'label': 'Revision Required',
-                'description': 'Please revise and resubmit',
-                'next_approver': obj.created_by.get_full_name() if obj.created_by else 'Creator'
-            }
-        elif obj.status == 'REJECTED':
-            return {
-                'action': 'rejected',
-                'label': 'Rejected',
-                'description': 'Job description was rejected',
-                'next_approver': None
-            }
-        
-        return None
+        return (
+            obj.business_resources.count() +
+            obj.access_rights.count() +
+            obj.company_benefits.count()
+        )
+
+
+# ==================== APPROVAL SERIALIZERS ====================
 
 class JobDescriptionApprovalSerializer(serializers.Serializer):
     """Serializer for approval actions"""
@@ -1853,28 +1114,99 @@ class JobDescriptionApprovalSerializer(serializers.Serializer):
     signature = serializers.FileField(required=False, allow_null=True)
     
     def validate_signature(self, value):
-        """Validate signature file"""
         if value:
-            # Check file size (max 2MB)
             if value.size > 2 * 1024 * 1024:
                 raise serializers.ValidationError("Signature file must be less than 2MB")
             
-            # Check file type
             allowed_types = ['image/png', 'image/jpeg', 'image/jpg', 'application/pdf']
             if value.content_type not in allowed_types:
                 raise serializers.ValidationError(
-                    "Invalid file type. Allowed types: PNG, JPEG, PDF"
+                    "Invalid file type. Allowed: PNG, JPEG, PDF"
                 )
-        
         return value
+
 
 class JobDescriptionRejectionSerializer(serializers.Serializer):
     """Serializer for rejection actions"""
     
     reason = serializers.CharField(required=True, min_length=10)
 
+
 class JobDescriptionSubmissionSerializer(serializers.Serializer):
-    """Serializer for submitting job description for approval"""
+    """Serializer for submitting for approval"""
     
     submit_to_line_manager = serializers.BooleanField(default=True)
     comments = serializers.CharField(required=False, allow_blank=True)
+
+
+# ==================== ADD ASSIGNMENT SERIALIZER ====================
+
+class AddAssignmentSerializer(serializers.Serializer):
+    """Serializer for adding new assignments to existing job description"""
+    
+    employee_ids = serializers.ListField(
+        child=serializers.IntegerField(),
+        required=False,
+        help_text="List of employee IDs to add"
+    )
+    vacancy_ids = serializers.ListField(
+        child=serializers.IntegerField(),
+        required=False,
+        help_text="List of vacancy IDs to add"
+    )
+    
+    def validate(self, attrs):
+        employee_ids = attrs.get('employee_ids', [])
+        vacancy_ids = attrs.get('vacancy_ids', [])
+        
+        if not employee_ids and not vacancy_ids:
+            raise serializers.ValidationError(
+                "At least one employee_id or vacancy_id is required"
+            )
+        
+        return attrs
+
+
+# ==================== ASSIGNMENT MANAGEMENT SERIALIZERS ====================
+
+class AssignmentStatusUpdateSerializer(serializers.Serializer):
+    """Serializer for updating assignment status"""
+    
+    status = serializers.ChoiceField(
+        choices=JobDescriptionAssignment.STATUS_CHOICES
+    )
+    comments = serializers.CharField(required=False, allow_blank=True)
+
+
+class BulkAssignmentActionSerializer(serializers.Serializer):
+    """Serializer for bulk actions on assignments"""
+    
+    assignment_ids = serializers.ListField(
+        child=serializers.UUIDField(),
+        required=True,
+        help_text="List of assignment UUIDs"
+    )
+    action = serializers.ChoiceField(
+        choices=[
+            ('submit', 'Submit for Approval'),
+            ('approve_lm', 'Approve as Line Manager'),
+            ('approve_emp', 'Approve as Employee'),
+            ('reject', 'Reject'),
+            ('revision', 'Request Revision')
+        ]
+    )
+    comments = serializers.CharField(required=False, allow_blank=True)
+
+
+class ReassignEmployeeSerializer(serializers.Serializer):
+    """Serializer for reassigning an employee to a vacant assignment"""
+    
+    assignment_id = serializers.UUIDField(required=True)
+    employee_id = serializers.IntegerField(required=True)
+    
+    def validate_employee_id(self, value):
+        try:
+            Employee.objects.get(id=value, is_deleted=False)
+        except Employee.DoesNotExist:
+            raise serializers.ValidationError("Employee not found or inactive")
+        return value            
