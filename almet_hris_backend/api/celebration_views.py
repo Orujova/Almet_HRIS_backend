@@ -71,7 +71,6 @@ class CelebrationViewSet(viewsets.ModelViewSet):
                 'id': str(celebration.id),
                 'type': celebration.type,
                 'title': celebration.title,
-               
                 'date': celebration.date.isoformat(),
                 'images': images,
                 'message': celebration.message,
@@ -117,7 +116,6 @@ class CelebrationViewSet(viewsets.ModelViewSet):
                         'employee_name': f'{emp.first_name} {emp.last_name}',
                         'employee_id': emp.id,
                         'position': position,
-             
                         'date': this_year_birthday.isoformat(),
                         'images': ['https://www.sugar.org/wp-content/uploads/Birthday-Cake-1.png'],
                         'message': f"Wishing you a wonderful {age}th birthday filled with joy and happiness! Thank you for all your contributions to the team.",
@@ -171,6 +169,16 @@ class CelebrationViewSet(viewsets.ModelViewSet):
         if not message:
             return Response({'error': 'Message is required'}, status=status.HTTP_400_BAD_REQUEST)
         
+        # ✅ Manual celebrations üçün həmin gün olmalıdır
+        celebration_date = celebration.date
+        today = date.today()
+        
+        if celebration_date != today:
+            return Response(
+                {'error': 'You can only celebrate on the celebration day'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
         wish = CelebrationWish.objects.create(
             celebration=celebration,
             user=request.user,
@@ -188,6 +196,7 @@ class CelebrationViewSet(viewsets.ModelViewSet):
     def add_auto_wish(self, request):
         """
         Add a wish to an auto celebration (birthday or work anniversary)
+        ✅ Auto celebrations üçün HEMIN GÜN OLMALIDIR - yoxlanış backendə aparılır
         """
         employee_id = request.data.get('employee_id')
         celebration_type = request.data.get('celebration_type')  # 'birthday' or 'work_anniversary'
@@ -201,6 +210,9 @@ class CelebrationViewSet(viewsets.ModelViewSet):
             employee = Employee.objects.get(id=employee_id)
         except Employee.DoesNotExist:
             return Response({'error': 'Employee not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        # ✅ Tarix yoxlamasını SİLİRİK - İstənilən vaxt celebrate etmək olsun
+        # Auto celebrations (birthday və work anniversary) üçün tarix məhdudiyyəti yoxdur
         
         wish = CelebrationWish.objects.create(
             employee=employee,

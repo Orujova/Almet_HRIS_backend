@@ -1557,9 +1557,4 @@ for admin_class in [EmployeeAdmin, EmployeeDocumentAdmin]:
     if hasattr(admin_class, '__bases__'):
         admin_class.__bases__ = admin_class.__bases__ + (AlmetAdminWithFilesMixin,)
         
-        
-        
-
-
-# api/admin.py sonuna  
-from .competency_admin import *        
+  
