@@ -14,7 +14,7 @@ from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 from django.db import models 
 import logging
-from .job_description_models import JobDescription
+from .job_description_models import JobDescription,JobDescriptionAssignment
 import traceback
 from rest_framework.parsers import JSONParser, MultiPartParser, FormParser
 from datetime import datetime, timedelta, date
@@ -3611,21 +3611,47 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             results['errors'].append(f"Processing failed: {str(e)}")
             results['failed'] = results['total_rows']
             return results
+    
+    @swagger_auto_schema(
+    method='get',
+    operation_description="Get job descriptions assigned to this employee",
+    responses={
+        200: openapi.Response(
+            description="Job descriptions retrieved successfully",
+            schema=openapi.Schema(
+                type=openapi.TYPE_OBJECT,
+                properties={
+                    'employee': openapi.Schema(type=openapi.TYPE_OBJECT),
+                    'job_descriptions': openapi.Schema(type=openapi.TYPE_ARRAY, items=openapi.Schema(type=openapi.TYPE_OBJECT)),
+                    'pending_approval_count': openapi.Schema(type=openapi.TYPE_INTEGER),
+                    'total_count': openapi.Schema(type=openapi.TYPE_INTEGER),
+                }
+            )
+        ),
+        404: "Employee not found"
+    }
+)
     @action(detail=True, methods=['get'])
     def job_descriptions(self, request, pk=None):
-        """UPDATED: Get job descriptions for employee"""
+        """✅ FIXED: Get job descriptions assigned to employee via JobDescriptionAssignment"""
         employee = self.get_object()
         
-        # Job descriptions assigned to this employee
-        assigned_job_descriptions = JobDescription.objects.filter(
-            assigned_employee=employee
+        # ✅ Job descriptions assigned to this employee through assignments
+        job_description_assignments = JobDescriptionAssignment.objects.filter(
+            employee=employee,
+            is_active=True
         ).select_related(
-            'business_function', 'department', 'job_function', 'position_group', 'reports_to', 'created_by'
+            'job_description__business_function',
+            'job_description__department', 
+            'job_description__job_function',
+            'job_description__position_group',
+            'reports_to'
         ).order_by('-created_at')
         
+        # Serialize assignments with job description details
         serializer = EmployeeJobDescriptionSerializer(
-            assigned_job_descriptions, 
-            many=True, 
+            job_description_assignments,
+            many=True,
             context={'request': request}
         )
         
@@ -3637,10 +3663,10 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 'job_title': employee.job_title
             },
             'job_descriptions': serializer.data,
-            'pending_approval_count': assigned_job_descriptions.filter(
-                status='PENDING_EMPLOYEE'
+            'pending_approval_count': job_description_assignments.filter(
+                status__in=['PENDING_EMPLOYEE', 'PENDING_LINE_MANAGER']
             ).count(),
-            'total_count': assigned_job_descriptions.count()
+            'total_count': job_description_assignments.count()
         })
     
     @action(detail=True, methods=['get'])

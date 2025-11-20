@@ -477,14 +477,9 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
             'errors': errors if errors else None
         })
     
-    @swagger_auto_schema(
-        method='post',
-        operation_description="Approve assignment as line manager",
-        request_body=JobDescriptionApprovalSerializer
-    )
     @action(detail=True, methods=['post'])
     def approve_assignment_by_line_manager(self, request, pk=None):
-        """Approve a specific assignment as line manager"""
+        """✅ OPEN: Anyone can approve as line manager"""
         job_description = self.get_object()
         assignment_id = request.data.get('assignment_id')
         
@@ -503,10 +498,7 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                     'error': f'Assignment is not pending line manager approval. Status: {assignment.get_status_display()}'
                 }, status=status.HTTP_400_BAD_REQUEST)
             
-            if not assignment.can_be_approved_by_line_manager(request.user):
-                return Response({
-                    'error': 'You are not authorized to approve this assignment as line manager'
-                }, status=status.HTTP_403_FORBIDDEN)
+            # ✅ REMOVED: Permission check - anyone can approve
             
             with transaction.atomic():
                 assignment.line_manager_approved_by = request.user
@@ -519,13 +511,13 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                 
                 # Move to employee approval (if not vacancy)
                 if assignment.is_vacancy:
-                    assignment.status = 'APPROVED'  # Vacancies don't need employee approval
+                    assignment.status = 'APPROVED'
                 else:
                     assignment.status = 'PENDING_EMPLOYEE'
                 
                 assignment.save()
             
-            logger.info(f"Assignment {assignment_id} approved by line manager {request.user.username}")
+            logger.info(f"Assignment {assignment_id} approved by {request.user.username}")
             
             return Response({
                 'success': True,
@@ -538,14 +530,10 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
         except JobDescriptionAssignment.DoesNotExist:
             return Response({'error': 'Assignment not found'}, status=status.HTTP_404_NOT_FOUND)
     
-    @swagger_auto_schema(
-        method='post',
-        operation_description="Approve assignment as employee",
-        request_body=JobDescriptionApprovalSerializer
-    )
+    
     @action(detail=True, methods=['post'])
     def approve_assignment_as_employee(self, request, pk=None):
-        """Approve a specific assignment as employee"""
+        """✅ OPEN: Anyone can approve as employee"""
         job_description = self.get_object()
         assignment_id = request.data.get('assignment_id')
         
@@ -564,10 +552,7 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                     'error': f'Assignment is not pending employee approval. Status: {assignment.get_status_display()}'
                 }, status=status.HTTP_400_BAD_REQUEST)
             
-            if not assignment.can_be_approved_by_employee(request.user):
-                return Response({
-                    'error': 'You are not authorized to approve this assignment as employee'
-                }, status=status.HTTP_403_FORBIDDEN)
+            # ✅ REMOVED: Permission check - anyone can approve
             
             with transaction.atomic():
                 assignment.employee_approved_by = request.user
@@ -593,14 +578,10 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
         except JobDescriptionAssignment.DoesNotExist:
             return Response({'error': 'Assignment not found'}, status=status.HTTP_404_NOT_FOUND)
     
-    @swagger_auto_schema(
-        method='post',
-        operation_description="Reject assignment",
-        request_body=JobDescriptionRejectionSerializer
-    )
+    
     @action(detail=True, methods=['post'])
     def reject_assignment(self, request, pk=None):
-        """Reject a specific assignment"""
+        """✅ OPEN: Anyone can reject"""
         job_description = self.get_object()
         assignment_id = request.data.get('assignment_id')
         
@@ -618,6 +599,8 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                 return Response({
                     'error': f'Assignment cannot be rejected in status: {assignment.get_status_display()}'
                 }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # ✅ REMOVED: Permission check - anyone can reject
             
             with transaction.atomic():
                 assignment.status = 'REJECTED'
@@ -637,11 +620,10 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
             
         except JobDescriptionAssignment.DoesNotExist:
             return Response({'error': 'Assignment not found'}, status=status.HTTP_404_NOT_FOUND)
-    
     @swagger_auto_schema(
         method='post',
         operation_description="Request revision for assignment"
-    )
+)
     @action(detail=True, methods=['post'])
     def request_assignment_revision(self, request, pk=None):
         """Request revision for an assignment"""

@@ -1200,12 +1200,12 @@ class EmployeeDetailSerializer(serializers.ModelSerializer):
     
     # JOB DESCRIPTION INTEGRATION - YENİ SAHƏLƏR
     job_description_assignments = serializers.SerializerMethodField()
+    team_job_description_assignments = serializers.SerializerMethodField()
     job_descriptions_count = serializers.SerializerMethodField()
     pending_job_description_approvals = serializers.SerializerMethodField()
     job_description_summary = serializers.SerializerMethodField()
     
-    # For managers - team member assignments
-    team_job_description_assignments = serializers.SerializerMethodField()
+   
     team_pending_approvals = serializers.SerializerMethodField()
     team_jd_summary = serializers.SerializerMethodField()
     
@@ -2185,10 +2185,11 @@ class EmployeeDetailSerializer(serializers.ModelSerializer):
                 'reports_to'
             ).order_by('-created_at')[:10]
             
+            # ✅ CRITICAL: Pass context to serializer
             serializer = EmployeeJobDescriptionSerializer(
                 assignments,
                 many=True,
-                context=self.context
+                context={'request': self.context.get('request')}  # ✅ Context əlavə et
             )
             
             return serializer.data
@@ -2196,6 +2197,37 @@ class EmployeeDetailSerializer(serializers.ModelSerializer):
             logger.error(f"Error getting job description assignments for employee {obj.employee_id}: {e}")
             return []
     
+    def get_team_job_description_assignments(self, obj):
+        """Get job description assignments for direct reports (for managers)"""
+        try:
+            from .job_description_models import JobDescriptionAssignment
+            
+            if not self.context.get('request') or not self.context.get('request').user:
+                return []
+            
+            # Get assignments where this employee is the reports_to manager
+            team_assignments = JobDescriptionAssignment.objects.filter(
+                reports_to=obj,
+                is_active=True
+            ).select_related(
+                'job_description__business_function',
+                'job_description__department',
+                'job_description__job_function',
+                'employee',
+                'vacancy_position'
+            ).order_by('-created_at')[:10]
+            
+            # ✅ CRITICAL: Pass context to serializer
+            serializer = ManagerJobDescriptionSerializer(
+                team_assignments,
+                many=True,
+                context={'request': self.context.get('request')}  # ✅ Context əlavə et
+            )
+            
+            return serializer.data
+        except Exception as e:
+            logger.error(f"Error getting team JD assignments for manager {obj.employee_id}: {e}")
+            return []
     def get_job_descriptions_count(self, obj):
         """Get total count of job description assignments"""
         try:
@@ -2270,37 +2302,7 @@ class EmployeeDetailSerializer(serializers.ModelSerializer):
                 'has_pending': False
             }
     
-    def get_team_job_description_assignments(self, obj):
-        """Get job description assignments for direct reports (for managers)"""
-        try:
-            from .job_description_models import JobDescriptionAssignment
-            
-            if not self.context.get('request') or not self.context.get('request').user:
-                return []
-            
-            # Get assignments where this employee is the reports_to manager
-            team_assignments = JobDescriptionAssignment.objects.filter(
-                reports_to=obj,
-                is_active=True
-            ).select_related(
-                'job_description__business_function',
-                'job_description__department',
-                'job_description__job_function',
-                'employee',
-                'vacancy_position'
-            ).order_by('-created_at')[:10]
-            
-            serializer = ManagerJobDescriptionSerializer(
-                team_assignments,
-                many=True,
-                context=self.context
-            )
-            
-            return serializer.data
-        except Exception as e:
-            logger.error(f"Error getting team JD assignments for manager {obj.employee_id}: {e}")
-            return []
-    
+ 
     def get_team_pending_approvals(self, obj):
         """Get assignments pending line manager approval"""
         try:
@@ -2361,6 +2363,8 @@ class EmployeeDetailSerializer(serializers.ModelSerializer):
                 'team_members': 0,
                 'has_pending': False
             }
+# api/serializers.py - EmployeeJobDescriptionSerializer
+
 class EmployeeJobDescriptionSerializer(serializers.Serializer):
     """NEW: Serializer for job description assignments"""
     
@@ -2374,6 +2378,7 @@ class EmployeeJobDescriptionSerializer(serializers.Serializer):
     
     # Assignment details
     is_vacancy = serializers.BooleanField(read_only=True)
+    employee_name = serializers.SerializerMethodField()  # ✅ ƏLAVƏ ET
     reports_to_name = serializers.CharField(source='reports_to.full_name', read_only=True)
     
     # Approval workflow
@@ -2389,19 +2394,37 @@ class EmployeeJobDescriptionSerializer(serializers.Serializer):
     created_at = serializers.DateTimeField(read_only=True)
     updated_at = serializers.DateTimeField(read_only=True)
     
-    # Action permissions
+    # ✅ ƏSAS DƏYİŞİKLİK: Unified can_approve field
     can_approve = serializers.SerializerMethodField()
+    can_approve_as_manager = serializers.SerializerMethodField()  # Manager view üçün
+    can_approve_as_employee = serializers.SerializerMethodField()  # Employee view üçün
     urgency = serializers.SerializerMethodField()
     days_pending = serializers.SerializerMethodField()
+    
+    def get_employee_name(self, obj):
+        """Get employee or vacancy name"""
+        if obj.employee:
+            return obj.employee.full_name
+        elif obj.is_vacancy and obj.vacancy_position:
+            return f"VACANT - {obj.vacancy_position.position_id}"
+        return "Unassigned"
     
     def get_status_display(self, obj):
         return obj.get_status_display_with_color()
     
+    
     def get_can_approve(self, obj):
-        request = self.context.get('request')
-        if not request or not request.user.is_authenticated:
-            return False
-        return obj.can_be_approved_by_employee(request.user)
+        """✅ Everyone can approve"""
+        # Pending status-da olanlar approve edilə bilər
+        return obj.status in ['PENDING_LINE_MANAGER', 'PENDING_EMPLOYEE']
+    
+    def get_can_approve_as_manager(self, obj):
+        """✅ Everyone can approve as manager"""
+        return obj.status == 'PENDING_LINE_MANAGER'
+    
+    def get_can_approve_as_employee(self, obj):
+        """✅ Everyone can approve as employee"""
+        return obj.status == 'PENDING_EMPLOYEE'
     
     def get_urgency(self, obj):
         from django.utils import timezone
@@ -2416,6 +2439,7 @@ class EmployeeJobDescriptionSerializer(serializers.Serializer):
     def get_days_pending(self, obj):
         from django.utils import timezone
         return (timezone.now() - obj.created_at).days
+
 
 class ManagerJobDescriptionSerializer(serializers.Serializer):
     """NEW: Serializer for manager viewing team member assignments"""
@@ -2442,8 +2466,9 @@ class ManagerJobDescriptionSerializer(serializers.Serializer):
     created_at = serializers.DateTimeField(read_only=True)
     updated_at = serializers.DateTimeField(read_only=True)
     
-    # Manager action permissions
+    # ✅ ƏSAS: Manager action permissions
     can_approve = serializers.SerializerMethodField()
+    can_approve_as_manager = serializers.SerializerMethodField()
     urgency_level = serializers.SerializerMethodField()
     days_since_created = serializers.SerializerMethodField()
     
@@ -2461,10 +2486,12 @@ class ManagerJobDescriptionSerializer(serializers.Serializer):
         return obj.get_status_display_with_color()
     
     def get_can_approve(self, obj):
-        request = self.context.get('request')
-        if not request or not request.user.is_authenticated:
-            return False
-        return obj.can_be_approved_by_line_manager(request.user)
+        """✅ Everyone can approve"""
+        return obj.status in ['PENDING_LINE_MANAGER', 'PENDING_EMPLOYEE']
+    
+    def get_can_approve_as_manager(self, obj):
+        """✅ Everyone can approve as manager"""
+        return obj.status == 'PENDING_LINE_MANAGER'
     
     def get_urgency_level(self, obj):
         from django.utils import timezone

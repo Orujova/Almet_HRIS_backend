@@ -182,23 +182,14 @@ class JobDescriptionAssignment(models.Model):
         return "Unassigned"
     
     def can_be_approved_by_line_manager(self, user):
-        """Check if user can approve as line manager"""
-        return (
-            self.status == 'PENDING_LINE_MANAGER' and
-            self.reports_to and
-            hasattr(self.reports_to, 'user') and
-            self.reports_to.user == user
-        )
+        """✅ SIMPLIFIED: Anyone can approve if status matches"""
+        # Sadəcə status yoxla
+        return self.status == 'PENDING_LINE_MANAGER'
     
     def can_be_approved_by_employee(self, user):
-        """Check if user can approve as employee"""
-        return (
-            self.status == 'PENDING_EMPLOYEE' and
-            self.employee and
-            hasattr(self.employee, 'user') and
-            self.employee.user == user
-        )
-    
+        """✅ SIMPLIFIED: Anyone can approve if status matches"""
+        # Sadəcə status yoxla
+        return self.status == 'PENDING_EMPLOYEE'
     def get_status_display_with_color(self):
         """Get status with color coding"""
         status_colors = {
