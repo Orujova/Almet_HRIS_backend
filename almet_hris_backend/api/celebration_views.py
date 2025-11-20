@@ -4,13 +4,12 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django.db.models import Count
 from datetime import date, timedelta
-from .celebration_models import Celebration, CelebrationImage, CelebrationWish
-from .celebration_serializers import (
+from .celebration_models  import Celebration, CelebrationImage, CelebrationWish
+from .celebration_serializers  import (
     CelebrationSerializer, 
     CelebrationImageSerializer,
     CelebrationWishSerializer,
-    AutoCelebrationSerializer,
-    CombinedCelebrationSerializer
+
 )
 from .models import Employee
 
@@ -22,6 +21,30 @@ class CelebrationViewSet(viewsets.ModelViewSet):
     
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
+    
+    @action(detail=False, methods=['get'])
+    def get_auto_wishes(self, request):
+        """
+        Get wishes for auto celebration (birthday or work anniversary)
+        """
+        employee_id = request.query_params.get('employee_id')
+        celebration_type = request.query_params.get('celebration_type')
+        
+        if not employee_id or not celebration_type:
+            return Response({'error': 'employee_id and celebration_type are required'}, 
+                          status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            employee = Employee.objects.get(id=employee_id)
+        except Employee.DoesNotExist:
+            return Response({'error': 'Employee not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        wishes = CelebrationWish.objects.filter(
+            employee=employee,
+            celebration_type=celebration_type
+        ).select_related('user').order_by('-created_at')
+        
+        return Response(CelebrationWishSerializer(wishes, many=True).data)
     
     @action(detail=False, methods=['get'])
     def all_celebrations(self, request):
@@ -42,15 +65,15 @@ class CelebrationViewSet(viewsets.ModelViewSet):
             wishes_count = CelebrationWish.objects.filter(celebration=celebration).count()
             
             images_data = CelebrationImageSerializer(celebration.images.all(), many=True, context={'request': request}).data
-            images = [img['image'] for img in images_data]
+            images = [request.build_absolute_uri(img['image']) for img in images_data] if images_data else ['/placeholder.png']
             
             manual_data.append({
                 'id': str(celebration.id),
                 'type': celebration.type,
                 'title': celebration.title,
-     
+               
                 'date': celebration.date.isoformat(),
-                'images': images if images else ['/placeholder.png'],
+                'images': images,
                 'message': celebration.message,
                 'wishes': wishes_count,
                 'is_auto': False
@@ -86,16 +109,15 @@ class CelebrationViewSet(viewsets.ModelViewSet):
                         employee=emp,
                         celebration_type='birthday'
                     ).count()
-                    
                     # Convert position_group to string
                     position = str(emp.position_group) if emp.position_group else 'Employee'
-                    
                     auto_celebrations.append({
                         'id': f'birthday-{emp.id}',
                         'type': 'birthday',
                         'employee_name': f'{emp.first_name} {emp.last_name}',
                         'employee_id': emp.id,
                         'position': position,
+             
                         'date': this_year_birthday.isoformat(),
                         'images': ['https://www.sugar.org/wp-content/uploads/Birthday-Cake-1.png'],
                         'message': f"Wishing you a wonderful {age}th birthday filled with joy and happiness! Thank you for all your contributions to the team.",
@@ -121,10 +143,7 @@ class CelebrationViewSet(viewsets.ModelViewSet):
                             employee=emp,
                             celebration_type='work_anniversary'
                         ).count()
-                        
-                        # Convert position_group to string
                         position = str(emp.position_group) if emp.position_group else 'Employee'
-                        
                         auto_celebrations.append({
                             'id': f'anniversary-{emp.id}',
                             'type': 'work_anniversary',
@@ -133,13 +152,14 @@ class CelebrationViewSet(viewsets.ModelViewSet):
                             'position': position,
                             'date': this_year_anniversary.isoformat(),
                             'years': years,
-                            'images': ['https://img.freepik.com/free-vector/gradient-work-anniversary-illustration_23-2149372483.jpg'],
+                            'images': ['https://media.istockphoto.com/id/2219719967/vector/happy-work-anniversary-clipart-design-company-office-celebration-greeting-text-clip-art-with.jpg?s=612x612&w=0&k=20&c=tLT5yhtCjLw2gSsUNElBOOPHBFeVjCtSzcJTQzuPY1M='],
                             'message': f"Congratulations on {years} {'year' if years == 1 else 'years'} with Almet Holding! Thank you for your dedication and valuable contributions to our team.",
                             'wishes': wishes_count,
                             'is_auto': True
                         })
         
         return auto_celebrations
+    
     @action(detail=True, methods=['post'])
     def add_wish(self, request, pk=None):
         """

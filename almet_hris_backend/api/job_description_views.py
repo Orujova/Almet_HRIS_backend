@@ -389,9 +389,7 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
             return Response({'error': 'Vacant assignment not found'}, status=status.HTTP_404_NOT_FOUND)
         except Employee.DoesNotExist:
             return Response({'error': 'Employee not found'}, status=status.HTTP_404_NOT_FOUND)
-    
-    # api/job_description_views.py - PART 2: Approval actions
-# Bu hissəni Part 1-in ardınca JobDescriptionViewSet class-ına əlavə edin
+
 
     # ==================== APPROVAL WORKFLOW ACTIONS ====================
     
@@ -745,14 +743,12 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )    
     
-    # api/job_description_views.py - PART 3: Preview, Stats, and Resource ViewSets
-# Bu hissəni Part 2-nin ardınca əlavə edin
 
     # ==================== PREVIEW AND UTILITY ACTIONS ====================
     
     @swagger_auto_schema(
         method='post',
-        operation_description="Preview eligible employees and vacancies",
+        operation_description="Preview eligible employees and vacancies with assignment strategy",
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
             required=['job_title', 'business_function', 'department', 'job_function', 'position_group', 'grading_levels'],
@@ -763,7 +759,9 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                 'unit': openapi.Schema(type=openapi.TYPE_INTEGER),
                 'job_function': openapi.Schema(type=openapi.TYPE_INTEGER),
                 'position_group': openapi.Schema(type=openapi.TYPE_INTEGER),
-                'grading_levels': openapi.Schema(type=openapi.TYPE_ARRAY, items=openapi.Schema(type=openapi.TYPE_STRING))
+                'grading_levels': openapi.Schema(type=openapi.TYPE_ARRAY, items=openapi.Schema(type=openapi.TYPE_STRING)),
+                'max_preview': openapi.Schema(type=openapi.TYPE_INTEGER, default=50),
+                'include_vacancies': openapi.Schema(type=openapi.TYPE_BOOLEAN, default=True)
             }
         )
     )
@@ -778,6 +776,8 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
             job_function_id = request.data.get('job_function')
             position_group_id = request.data.get('position_group')
             grading_levels = request.data.get('grading_levels', [])
+            max_preview = request.data.get('max_preview', 50)
+            include_vacancies = request.data.get('include_vacancies', True)
             
             if isinstance(grading_levels, str):
                 grading_levels = [grading_levels]
@@ -811,47 +811,148 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
             )
             
             # Get eligible vacancies
-            eligible_vacancies = self._get_eligible_vacant_positions(
-                job_title=job_title,
-                business_function_id=business_function_id,
-                department_id=department_id,
-                unit_id=unit_id,
-                job_function_id=job_function_id,
-                position_group_id=position_group_id,
-                grading_levels=grading_levels
-            )
+            eligible_vacancies = []
+            vacancies_count = 0
+            if include_vacancies:
+                eligible_vacancies = self._get_eligible_vacant_positions(
+                    job_title=job_title,
+                    business_function_id=business_function_id,
+                    department_id=department_id,
+                    unit_id=unit_id,
+                    job_function_id=job_function_id,
+                    position_group_id=position_group_id,
+                    grading_levels=grading_levels
+                )
+                vacancies_count = eligible_vacancies.count()
             
-            employees_data = EmployeeBasicSerializer(eligible_employees[:50], many=True).data
+            employees_count = eligible_employees.count()
+            total_count = employees_count + vacancies_count
             
+            # Determine assignment strategy
+            strategy = None
+            strategy_message = ""
+            requires_manual_selection = False
+            
+            if total_count == 0:
+                strategy = "no_employees_found"
+                strategy_message = "No matching employees or vacant positions found. Job description will be created as unassigned."
+            elif total_count == 1:
+                strategy = "auto_assign_single"
+                if employees_count == 1:
+                    strategy_message = "One matching employee found. Job description will be automatically assigned to this employee."
+                else:
+                    strategy_message = "One vacant position found. Job description will be assigned to this vacant position."
+            else:
+                strategy = "manual_selection_required"
+                strategy_message = f"Multiple matches found ({employees_count} employees, {vacancies_count} vacancies). Please select which positions to assign during creation."
+                requires_manual_selection = True
+            
+            # Serialize employees
+            employees_data = EmployeeBasicSerializer(
+                eligible_employees[:max_preview], 
+                many=True
+            ).data
+            
+            # Serialize vacancies
             vacancies_data = []
-            for v in eligible_vacancies[:50]:
-                vacancies_data.append({
-                    'id': v.original_employee_pk or v.id,
-                    'position_id': v.position_id,
-                    'job_title': v.job_title,
-                    'is_vacancy': True,
-                    'reports_to': v.reporting_to.full_name if v.reporting_to else None,
-                    'grading_level': v.grading_level
-                })
+            if include_vacancies:
+                for v in eligible_vacancies[:max_preview]:
+                    vacancies_data.append({
+                        'id': v.original_employee_pk or v.id,
+                        'employee_id': v.position_id,
+                        'full_name': f"VACANT - {v.position_id}",
+                        'name': f"VACANT - {v.position_id}",
+                        'position_id': v.position_id,
+                        'job_title': v.job_title,
+                        'is_vacancy': True,
+                        'record_type': 'vacancy',
+                        'reports_to': v.reporting_to.full_name if v.reporting_to else None,
+                        'line_manager_name': v.reporting_to.full_name if v.reporting_to else None,
+                        'line_manager_id': v.reporting_to.id if v.reporting_to else None,
+                        'grading_level': v.grading_level,
+                        'business_function_name': v.business_function.name if v.business_function else None,
+                        'department_name': v.department.name if v.department else None,
+                        'unit_name': v.unit.name if v.unit else None,
+                        'job_function_name': v.job_function.name if v.job_function else None,
+                        'position_group_name': v.position_group.name if v.position_group else None,
+                        'vacancy_details': {
+                            'created_at': v.created_at.isoformat() if v.created_at else None,
+                            'notes': getattr(v, 'notes', '')
+                        }
+                    })
             
-            total = eligible_employees.count() + eligible_vacancies.count()
+            # Mark records as vacancy
+            for emp in employees_data:
+                emp['is_vacancy'] = False
+                emp['record_type'] = 'employee'
             
-            return Response({
-                'total_eligible': total,
-                'employees_count': eligible_employees.count(),
-                'vacancies_count': eligible_vacancies.count(),
+            # Unified list for frontend
+            unified_list = employees_data + vacancies_data
+            
+            # Build criteria info
+            criteria_info = {
+                'job_title': job_title,
+                'business_function_id': business_function_id,
+                'department_id': department_id,
+                'unit_id': unit_id,
+                'job_function_id': job_function_id,
+                'position_group_id': position_group_id,
+                'grading_levels': grading_levels
+            }
+            
+            response_data = {
+                # Strategy info
+                'assignment_strategy': strategy,
+                'strategy': strategy,
+                'strategy_message': strategy_message,
+                'message': strategy_message,
+                'requires_manual_selection': requires_manual_selection,
+                
+                # Counts
+                'total_eligible_count': total_count,
+                'total_eligible': total_count,
+                'eligible_employees_count': employees_count,
+                'employees_count': employees_count,
+                'eligible_vacancies_count': vacancies_count,
+                'vacancies_count': vacancies_count,
+                
+                # Data arrays
                 'employees': employees_data,
                 'vacancies': vacancies_data,
-                'requires_selection': total > 1
-            })
+                'unified_list': unified_list,
+                
+                # Metadata
+                'criteria': criteria_info,
+                'max_preview': max_preview,
+                'showing_all': total_count <= max_preview,
+                
+                # Next steps guidance
+                'next_steps': {
+                    'strategy': strategy,
+                    'action_required': requires_manual_selection,
+                    'can_auto_assign': strategy == 'auto_assign_single',
+                    'instruction': (
+                        'Select employees to assign' if requires_manual_selection
+                        else 'Proceed with creation' if strategy == 'auto_assign_single'
+                        else 'Job description will be created without assignments'
+                    )
+                }
+            }
+            
+            logger.info(f"Preview completed: strategy={strategy}, total={total_count}, employees={employees_count}, vacancies={vacancies_count}")
+            
+            return Response(response_data)
             
         except Exception as e:
-            logger.error(f"Error in preview: {str(e)}")
+            logger.error(f"Error in preview: {str(e)}", exc_info=True)
             return Response(
-                {'error': f'Preview failed: {str(e)}'},
+                {
+                    'error': f'Preview failed: {str(e)}',
+                    'strategy': 'error',
+                    'message': 'Failed to load preview'
+                },
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-    
     def _get_eligible_vacant_positions(self, **kwargs):
         """Get eligible vacant positions"""
         queryset = VacantPosition.objects.filter(
