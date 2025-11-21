@@ -974,7 +974,7 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
     
     @action(detail=True, methods=['get'])
     def download_pdf(self, request, pk=None):
-        """Download job description as PDF"""
+        """Download comprehensive job description as PDF"""
         if not HAS_REPORTLAB:
             return HttpResponse("PDF library not available", status=500)
         
@@ -982,42 +982,375 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
             job_description = self.get_object()
             buffer = BytesIO()
             
-            # Simple PDF generation
-            doc = SimpleDocTemplate(buffer, pagesize=A4)
+            # Create PDF document with margins
+            doc = SimpleDocTemplate(
+                buffer,
+                pagesize=A4,
+                topMargin=2*cm,
+                bottomMargin=2*cm,
+                leftMargin=2*cm,
+                rightMargin=2*cm
+            )
+            
+            # Define custom styles
             styles = getSampleStyleSheet()
+            
+            # Title style
+            title_style = ParagraphStyle(
+                'CustomTitle',
+                parent=styles['Heading1'],
+                fontSize=18,
+                textColor=colors.HexColor('#1e3a8a'),
+                spaceAfter=30,
+                alignment=TA_CENTER,
+                fontName='Helvetica-Bold'
+            )
+            
+            # Heading styles
+            heading2_style = ParagraphStyle(
+                'CustomHeading2',
+                parent=styles['Heading2'],
+                fontSize=14,
+                textColor=colors.HexColor('#1e40af'),
+                spaceAfter=12,
+                spaceBefore=20,
+                fontName='Helvetica-Bold',
+                borderWidth=1,
+                borderColor=colors.HexColor('#93c5fd'),
+                borderPadding=5,
+                backColor=colors.HexColor('#eff6ff')
+            )
+            
+            heading3_style = ParagraphStyle(
+                'CustomHeading3',
+                parent=styles['Heading3'],
+                fontSize=12,
+                textColor=colors.HexColor('#1e40af'),
+                spaceAfter=8,
+                spaceBefore=12,
+                fontName='Helvetica-Bold'
+            )
+            
+            # Body text style
+            body_style = ParagraphStyle(
+                'CustomBody',
+                parent=styles['Normal'],
+                fontSize=10,
+                leading=14,
+                alignment=TA_JUSTIFY,
+                spaceAfter=6
+            )
+            
+            # Build PDF content
             story = []
             
-            # Title
-            story.append(Paragraph(f"Job Description: {job_description.job_title}", styles['Title']))
-            story.append(Spacer(1, 0.5*inch))
+            # ============================================
+            # HEADER SECTION
+            # ============================================
+            story.append(Paragraph("JOB DESCRIPTION", title_style))
+            story.append(Spacer(1, 0.3*cm))
             
-            # Assignments
-            story.append(Paragraph("Assigned To:", styles['Heading2']))
-            for assignment in job_description.assignments.filter(is_active=True):
-                story.append(Paragraph(
-                    f"• {assignment.get_display_name()} - {assignment.get_status_display()}",
-                    styles['Normal']
-                ))
+            # Basic Info Table
+            basic_info_data = [
+                ['Job Title:', job_description.job_title],
+                ['Business Function:', job_description.business_function.name],
+                ['Department:', job_description.department.name],
+                ['Unit:', job_description.unit.name if job_description.unit else 'N/A'],
+                ['Job Function:', job_description.job_function.name],
+                ['Position Group:', job_description.position_group.name],
+                ['Grading Levels:', ', '.join(job_description.grading_levels)],
+                ['Version:', str(job_description.version)],
+                ['Created:', job_description.created_at.strftime('%d %B %Y')],
+            ]
             
-            story.append(Spacer(1, 0.3*inch))
+            basic_table = Table(basic_info_data, colWidths=[4*cm, 13*cm])
+            basic_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#f3f4f6')),
+                ('TEXTCOLOR', (0, 0), (0, -1), colors.HexColor('#374151')),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+                ('FONTNAME', (1, 0), (1, -1), 'Helvetica'),
+                ('FONTSIZE', (0, 0), (-1, -1), 10),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#d1d5db')),
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                ('LEFTPADDING', (0, 0), (-1, -1), 8),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+                ('TOPPADDING', (0, 0), (-1, -1), 6),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+            ]))
+            story.append(basic_table)
+            story.append(Spacer(1, 0.5*cm))
             
-            # Purpose
-            story.append(Paragraph("Job Purpose:", styles['Heading2']))
-            story.append(Paragraph(job_description.job_purpose, styles['Normal']))
+            # ============================================
+            # ASSIGNMENTS SECTION
+            # ============================================
+            assignments = job_description.assignments.filter(is_active=True)
+            if assignments.exists():
+                story.append(Paragraph("ASSIGNED EMPLOYEES & POSITIONS", heading2_style))
+                
+                assignment_data = [['Name', 'Type', 'Status', 'Reports To']]
+                
+                for assignment in assignments:
+                    # Wrap text in Paragraph for better text handling
+                    name_para = Paragraph(assignment.get_display_name(), body_style)
+                    type_text = 'Employee' if not assignment.is_vacancy else 'Vacant'
+                    status_para = Paragraph(assignment.get_status_display(), body_style)
+                    reports_para = Paragraph(
+                        assignment.reports_to.full_name if assignment.reports_to else 'N/A',
+                        body_style
+                    )
+                    
+                    assignment_data.append([
+                        name_para,
+                        type_text,
+                        status_para,
+                        reports_para
+                    ])
+                
+                # Better column widths - total = 17cm (fits in A4 with margins)
+                assignment_table = Table(assignment_data, colWidths=[5.5*cm, 2.5*cm, 4.5*cm, 4.5*cm])
+                assignment_table.setStyle(TableStyle([
+                    ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1e40af')),
+                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                    ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                    ('FONTSIZE', (0, 0), (-1, 0), 10),
+                    ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+                    ('FONTSIZE', (0, 1), (-1, -1), 9),
+                    ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#d1d5db')),
+                    ('VALIGN', (0, 0), (-1, -1), 'TOP'),  # TOP alignment for better text wrapping
+                    ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f9fafb')]),
+                    ('LEFTPADDING', (0, 0), (-1, -1), 8),
+                    ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+                    ('TOPPADDING', (0, 0), (-1, -1), 8),
+                    ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+                ]))
+                story.append(assignment_table)
+                story.append(Spacer(1, 0.5*cm))
             
+            # ============================================
+            # JOB PURPOSE
+            # ============================================
+            story.append(Paragraph("JOB PURPOSE", heading2_style))
+            story.append(Paragraph(job_description.job_purpose, body_style))
+            story.append(Spacer(1, 0.3*cm))
+            
+            # ============================================
+            # SECTIONS (Critical Duties, KPIs, etc.)
+            # ============================================
+            sections = job_description.sections.all().order_by('order')
+            if sections.exists():
+                for section in sections:
+                    story.append(Paragraph(section.title.upper(), heading2_style))
+                    story.append(Paragraph(section.content, body_style))
+                    story.append(Spacer(1, 0.3*cm))
+            
+            # ============================================
+            # REQUIRED SKILLS
+            # ============================================
+            skills = job_description.required_skills.select_related('skill', 'skill__group').all()
+            if skills.exists():
+                story.append(Paragraph("REQUIRED SKILLS", heading2_style))
+                
+                skills_by_group = {}
+                for jd_skill in skills:
+                    group_name = jd_skill.skill.group.name if jd_skill.skill.group else 'Other'
+                    if group_name not in skills_by_group:
+                        skills_by_group[group_name] = []
+                    skills_by_group[group_name].append(jd_skill.skill.name)
+                
+                for group_name, skill_list in skills_by_group.items():
+                    story.append(Paragraph(f"<b>{group_name}:</b>", heading3_style))
+                    for skill_name in skill_list:
+                        story.append(Paragraph(f"• {skill_name}", body_style))
+                
+                story.append(Spacer(1, 0.3*cm))
+            
+            # ============================================
+            # BEHAVIORAL COMPETENCIES
+            # ============================================
+            competencies = job_description.behavioral_competencies.select_related(
+                'competency', 'competency__group'
+            ).all()
+            if competencies.exists():
+                story.append(Paragraph("BEHAVIORAL COMPETENCIES", heading2_style))
+                
+                comp_by_group = {}
+                for jd_comp in competencies:
+                    group_name = jd_comp.competency.group.name if jd_comp.competency.group else 'Other'
+                    if group_name not in comp_by_group:
+                        comp_by_group[group_name] = []
+                    comp_by_group[group_name].append(jd_comp.competency.name)
+                
+                for group_name, comp_list in comp_by_group.items():
+                    story.append(Paragraph(f"<b>{group_name}:</b>", heading3_style))
+                    for comp_name in comp_list:
+                        story.append(Paragraph(f"• {comp_name}", body_style))
+                
+                story.append(Spacer(1, 0.3*cm))
+            
+            # ============================================
+            # BUSINESS RESOURCES
+            # ============================================
+            resources = job_description.business_resources.select_related('resource').prefetch_related(
+                'specific_items'
+            ).all()
+            if resources.exists():
+                story.append(Paragraph("BUSINESS RESOURCES", heading2_style))
+                
+                for jd_resource in resources:
+                    resource_name = jd_resource.resource.name
+                    items = jd_resource.specific_items.all()
+                    
+                    if items.exists():
+                        items_text = ', '.join([item.name for item in items])
+                        story.append(Paragraph(
+                            f"<b>{resource_name}:</b> {items_text}",
+                            body_style
+                        ))
+                    else:
+                        story.append(Paragraph(
+                            f"<b>{resource_name}:</b> All items",
+                            body_style
+                        ))
+                
+                story.append(Spacer(1, 0.3*cm))
+            
+            # ============================================
+            # ACCESS RIGHTS
+            # ============================================
+            access_rights = job_description.access_rights.select_related('access_matrix').prefetch_related(
+                'specific_items'
+            ).all()
+            if access_rights.exists():
+                story.append(Paragraph("ACCESS RIGHTS & PERMISSIONS", heading2_style))
+                
+                for jd_access in access_rights:
+                    access_name = jd_access.access_matrix.name
+                    items = jd_access.specific_items.all()
+                    
+                    if items.exists():
+                        items_text = ', '.join([item.name for item in items])
+                        story.append(Paragraph(
+                            f"<b>{access_name}:</b> {items_text}",
+                            body_style
+                        ))
+                    else:
+                        story.append(Paragraph(
+                            f"<b>{access_name}:</b> All items",
+                            body_style
+                        ))
+                
+                story.append(Spacer(1, 0.3*cm))
+            
+            # ============================================
+            # COMPANY BENEFITS
+            # ============================================
+            benefits = job_description.company_benefits.select_related('benefit').prefetch_related(
+                'specific_items'
+            ).all()
+            if benefits.exists():
+                story.append(Paragraph("COMPANY BENEFITS", heading2_style))
+                
+                for jd_benefit in benefits:
+                    benefit_name = jd_benefit.benefit.name
+                    items = jd_benefit.specific_items.all()
+                    
+                    if items.exists():
+                        for item in items:
+                            value_text = f" ({item.value})" if item.value else ""
+                            story.append(Paragraph(
+                                f"<b>{benefit_name} - {item.name}:</b>{value_text} {item.description}",
+                                body_style
+                            ))
+                    else:
+                        story.append(Paragraph(
+                            f"<b>{benefit_name}:</b> Standard package",
+                            body_style
+                        ))
+                
+                story.append(Spacer(1, 0.3*cm))
+            
+            # ============================================
+            # APPROVAL SIGNATURES (if any approved)
+            # ============================================
+            approved_assignments = job_description.assignments.filter(
+                is_active=True,
+                status='APPROVED'
+            )
+            
+            if approved_assignments.exists():
+                story.append(PageBreak())
+                story.append(Paragraph("APPROVAL SIGNATURES", heading2_style))
+                
+                for assignment in approved_assignments:
+                    story.append(Paragraph(
+                        f"<b>Position:</b> {assignment.get_display_name()}",
+                        heading3_style
+                    ))
+                    
+                    if assignment.line_manager_approved_at:
+                        story.append(Paragraph(
+                            f"<b>Line Manager:</b> {assignment.reports_to.full_name if assignment.reports_to else 'N/A'}",
+                            body_style
+                        ))
+                        story.append(Paragraph(
+                            f"<b>Approved:</b> {assignment.line_manager_approved_at.strftime('%d %B %Y, %H:%M')}",
+                            body_style
+                        ))
+                        if assignment.line_manager_comments:
+                            story.append(Paragraph(
+                                f"<b>Comments:</b> {assignment.line_manager_comments}",
+                                body_style
+                            ))
+                    
+                    if assignment.employee_approved_at and not assignment.is_vacancy:
+                        story.append(Paragraph(
+                            f"<b>Employee:</b> {assignment.employee.full_name}",
+                            body_style
+                        ))
+                        story.append(Paragraph(
+                            f"<b>Approved:</b> {assignment.employee_approved_at.strftime('%d %B %Y, %H:%M')}",
+                            body_style
+                        ))
+                        if assignment.employee_comments:
+                            story.append(Paragraph(
+                                f"<b>Comments:</b> {assignment.employee_comments}",
+                                body_style
+                            ))
+                    
+                    story.append(Spacer(1, 0.5*cm))
+            
+            # ============================================
+            # FOOTER
+            # ============================================
+            story.append(Spacer(1, 1*cm))
+            footer_style = ParagraphStyle(
+                'Footer',
+                parent=styles['Normal'],
+                fontSize=8,
+                textColor=colors.HexColor('#6b7280'),
+                alignment=TA_CENTER
+            )
+            story.append(Paragraph(
+                f"Generated on {datetime.now().strftime('%d %B %Y at %H:%M')} | Version {job_description.version}",
+                footer_style
+            ))
+            
+            # Build PDF
             doc.build(story)
             buffer.seek(0)
             
-            filename = f"JD_{job_description.job_title.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d')}.pdf"
+            # Generate filename
+            filename = f"JobDescription_{job_description.job_title.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf"
             
             response = HttpResponse(buffer.getvalue(), content_type='application/pdf')
             response['Content-Disposition'] = f'attachment; filename="{filename}"'
             return response
             
         except Exception as e:
-            logger.error(f"PDF error: {str(e)}")
-            return HttpResponse(f"PDF Error: {str(e)}", status=500)
-
+            logger.error(f"PDF generation error: {str(e)}", exc_info=True)
+            return HttpResponse(f"PDF Generation Error: {str(e)}", status=500)
 
 # ==================== RESOURCE VIEWSETS ====================
 

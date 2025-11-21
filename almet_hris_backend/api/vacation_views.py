@@ -8,7 +8,7 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from django.db import transaction
 from django.db.models import Q, Count, Sum
 from datetime import date, datetime, timedelta
-from collections import defaultdict
+
 from .vacation_models import *
 from .vacation_serializers import *
 from .models import Employee
@@ -20,8 +20,6 @@ from drf_yasg import openapi
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Border, Side, Alignment
 from openpyxl.utils import get_column_letter
-from openpyxl.worksheet.table import Table, TableStyleInfo
-from openpyxl.chart import BarChart, Reference
 from datetime import datetime, date
 import pandas as pd
 from .role_models import EmployeeRole
@@ -134,6 +132,8 @@ def my_vacation_permissions(request):
     })
 
 # ==================== DASHBOARD ====================
+# vacation_views.py
+
 @swagger_auto_schema(
     method='get',
     operation_description="Dashboard məlumatları - 6 stat card və əsas statistika",
@@ -163,16 +163,30 @@ def my_vacation_permissions(request):
 def vacation_dashboard(request):
     """Dashboard - 6 stat card"""
     try:
-        emp = Employee.objects.get(user=request.user)
+        emp = Employee.objects.get(user=request.user, is_deleted=False)
         year = date.today().year
         
-        balance, created = EmployeeVacationBalance.objects.get_or_create(
-            employee=emp, 
-            year=year,
-           
-        )
+        # ✅ DÜZƏLİŞ: get_or_create SILINDI - yalnız mövcud balansı tap
+        try:
+            balance = EmployeeVacationBalance.objects.get(
+                employee=emp, 
+                year=year,
+                is_deleted=False
+            )
+        except EmployeeVacationBalance.DoesNotExist:
+            # ✅ Balance yoxdursa, 0 göstər (avtomatik yaratma)
+            return Response({
+                'balance': {
+                    'total_balance': 0,
+                    'yearly_balance': 0,
+                    'used_days': 0,
+                    'remaining_balance': 0,
+                    'scheduled_days': 0,
+                    'should_be_planned': 0
+                }
+            })
         
-        # ✅ Refresh from DB to ensure latest values
+        # Balance varsa, refresh et
         balance.refresh_from_db()
         
         return Response({
@@ -190,6 +204,7 @@ def vacation_dashboard(request):
             'error': 'Employee profili tapılmadı'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
+        logger.error(f"Dashboard error: {e}")
         return Response({
             'balance': {
                 'total_balance': 0, 
@@ -201,8 +216,280 @@ def vacation_dashboard(request):
             }
         })
 
-
 # ==================== PRODUCTION CALENDAR SETTINGS ====================
+# vacation_views.py
+
+from collections import defaultdict
+from datetime import datetime, timedelta
+
+@swagger_auto_schema(
+    method='get',
+    operation_description="Calendar view - holidays və vacation events",
+    operation_summary="Get Calendar Events",
+    tags=['Vacation'],
+    manual_parameters=[
+        openapi.Parameter(
+            'month',
+            openapi.IN_QUERY,
+            description="Ay (1-12)",
+            type=openapi.TYPE_INTEGER,
+            required=False
+        ),
+        openapi.Parameter(
+            'year',
+            openapi.IN_QUERY,
+            description="İl (məsələn: 2025)",
+            type=openapi.TYPE_INTEGER,
+            required=False
+        ),
+        openapi.Parameter(
+            'employee_id',
+            openapi.IN_QUERY,
+            description="Employee ID (filter üçün)",
+            type=openapi.TYPE_INTEGER,
+            required=False
+        ),
+        openapi.Parameter(
+            'department_id',
+            openapi.IN_QUERY,
+            description="Department ID (filter üçün)",
+            type=openapi.TYPE_INTEGER,
+            required=False
+        ),
+        openapi.Parameter(
+            'business_function_id',
+            openapi.IN_QUERY,
+            description="Business Function ID (filter üçün)",
+            type=openapi.TYPE_INTEGER,
+            required=False
+        ),
+    ],
+    responses={
+        200: openapi.Response(
+            description='Calendar events',
+            examples={
+                'application/json': {
+                    'holidays': [
+                        {
+                            'date': '2025-01-01',
+                            'name': 'New Year',
+                            'type': 'holiday'
+                        }
+                    ],
+                    'vacations': [
+                        {
+                            'id': 1,
+                            'type': 'request',
+                            'employee_name': 'John Doe',
+                            'employee_id': 'EMP001',
+                            'vacation_type': 'Annual Leave',
+                            'start_date': '2025-01-10',
+                            'end_date': '2025-01-15',
+                            'status': 'Approved',
+                            'days': 4
+                        }
+                    ],
+                    'summary': {
+                        'total_holidays': 10,
+                        'total_vacations': 25,
+                        'employees_on_vacation': 15
+                    }
+                }
+            }
+        )
+    }
+)
+@api_view(['GET'])
+@has_any_vacation_permission([
+    'vacation.calendar.view_all',
+    'vacation.calendar.view_team',
+    'vacation.calendar.view_own'
+])
+@permission_classes([IsAuthenticated])
+def get_calendar_events(request):
+    """Calendar view - holidays və vacation events"""
+    from .vacation_permissions import is_admin_user
+    
+    try:
+        # Get filters
+        month = request.GET.get('month')
+        year = request.GET.get('year')
+        employee_id = request.GET.get('employee_id')
+        department_id = request.GET.get('department_id')
+        business_function_id = request.GET.get('business_function_id')
+        
+        # Default to current month/year
+        if not month or not year:
+            today = date.today()
+            month = month or today.month
+            year = year or today.year
+        
+        month = int(month)
+        year = int(year)
+        
+        # Calculate date range
+        start_date = date(year, month, 1)
+        # Last day of month
+        if month == 12:
+            end_date = date(year + 1, 1, 1) - timedelta(days=1)
+        else:
+            end_date = date(year, month + 1, 1) - timedelta(days=1)
+        
+        # ✅ Get holidays from settings
+        settings = VacationSetting.get_active()
+        holidays = []
+        
+        if settings and settings.non_working_days:
+            for holiday in settings.non_working_days:
+                if isinstance(holiday, dict):
+                    holiday_date = datetime.strptime(holiday['date'], '%Y-%m-%d').date()
+                    if start_date <= holiday_date <= end_date:
+                        holidays.append({
+                            'date': holiday['date'],
+                            'name': holiday.get('name', 'Holiday'),
+                            'type': 'holiday'
+                        })
+        
+        # ✅ Get vacation requests
+        requests_qs = VacationRequest.objects.filter(
+            is_deleted=False,
+            status__in=['PENDING_LINE_MANAGER', 'PENDING_HR', 'APPROVED']
+        ).filter(
+            Q(start_date__lte=end_date) & Q(end_date__gte=start_date)
+        ).select_related(
+            'employee', 
+            'employee__department', 
+            'employee__business_function',
+            'vacation_type'
+        )
+        
+        # ✅ Get vacation schedules
+        schedules_qs = VacationSchedule.objects.filter(
+            is_deleted=False,
+            status__in=['SCHEDULED', 'REGISTERED']
+        ).filter(
+            Q(start_date__lte=end_date) & Q(end_date__gte=start_date)
+        ).select_related(
+            'employee', 
+            'employee__department', 
+            'employee__business_function',
+            'vacation_type'
+        )
+        
+        # ✅ Permission-based filtering
+        is_admin = is_admin_user(request.user)
+        has_view_all, _ = check_vacation_permission(request.user, 'vacation.calendar.view_all')
+        has_view_team, _ = check_vacation_permission(request.user, 'vacation.calendar.view_team')
+        
+        if not (is_admin or has_view_all):
+            if has_view_team:
+                # Team member-ləri göstər
+                try:
+                    emp = Employee.objects.get(user=request.user, is_deleted=False)
+                    team_employees = Employee.objects.filter(
+                        line_manager=emp,
+                        is_deleted=False
+                    ).values_list('id', flat=True)
+                    
+                    allowed_employee_ids = list(team_employees) + [emp.id]
+                    
+                    requests_qs = requests_qs.filter(employee_id__in=allowed_employee_ids)
+                    schedules_qs = schedules_qs.filter(employee_id__in=allowed_employee_ids)
+                except Employee.DoesNotExist:
+                    # Yalnız özü
+                    requests_qs = requests_qs.filter(employee__user=request.user)
+                    schedules_qs = schedules_qs.filter(employee__user=request.user)
+            else:
+                # Yalnız özünü göstər
+                requests_qs = requests_qs.filter(employee__user=request.user)
+                schedules_qs = schedules_qs.filter(employee__user=request.user)
+        
+        # ✅ Apply additional filters
+        if employee_id:
+            requests_qs = requests_qs.filter(employee_id=employee_id)
+            schedules_qs = schedules_qs.filter(employee_id=employee_id)
+        
+        if department_id:
+            requests_qs = requests_qs.filter(employee__department_id=department_id)
+            schedules_qs = schedules_qs.filter(employee__department_id=department_id)
+        
+        if business_function_id:
+            requests_qs = requests_qs.filter(employee__business_function_id=business_function_id)
+            schedules_qs = schedules_qs.filter(employee__business_function_id=business_function_id)
+        
+        # ✅ Build vacation events
+        vacations = []
+        employee_ids_on_vacation = set()
+        
+        for req in requests_qs:
+            vacations.append({
+                'id': req.id,
+                'type': 'request',
+                'request_id': req.request_id,
+                'employee_id': req.employee.id,
+                'employee_name': req.employee.full_name,
+                'employee_code': getattr(req.employee, 'employee_id', ''),
+                'department': req.employee.department.name if req.employee.department else '',
+                'business_function': req.employee.business_function.name if req.employee.business_function else '',
+                'vacation_type': req.vacation_type.name,
+                'vacation_type_id': req.vacation_type.id,
+                'start_date': req.start_date.strftime('%Y-%m-%d'),
+                'end_date': req.end_date.strftime('%Y-%m-%d'),
+                'status': req.get_status_display(),
+                'status_code': req.status,
+                'days': float(req.number_of_days),
+                'comment': req.comment
+            })
+            employee_ids_on_vacation.add(req.employee.id)
+        
+        for sch in schedules_qs:
+            vacations.append({
+                'id': sch.id,
+                'type': 'schedule',
+                'request_id': f'SCH{sch.id}',
+                'employee_id': sch.employee.id,
+                'employee_name': sch.employee.full_name,
+                'employee_code': getattr(sch.employee, 'employee_id', ''),
+                'department': sch.employee.department.name if sch.employee.department else '',
+                'business_function': sch.employee.business_function.name if sch.employee.business_function else '',
+                'vacation_type': sch.vacation_type.name,
+                'vacation_type_id': sch.vacation_type.id,
+                'start_date': sch.start_date.strftime('%Y-%m-%d'),
+                'end_date': sch.end_date.strftime('%Y-%m-%d'),
+                'status': sch.get_status_display(),
+                'status_code': sch.status,
+                'days': float(sch.number_of_days),
+                'comment': sch.comment
+            })
+            employee_ids_on_vacation.add(sch.employee.id)
+        
+        # ✅ Summary
+        summary = {
+            'total_holidays': len(holidays),
+            'total_vacations': len(vacations),
+            'employees_on_vacation': len(employee_ids_on_vacation),
+            'month': month,
+            'year': year
+        }
+        
+        return Response({
+            'holidays': holidays,
+            'vacations': vacations,
+            'summary': summary,
+            'filters_applied': {
+                'month': month,
+                'year': year,
+                'employee_id': employee_id,
+                'department_id': department_id,
+                'business_function_id': business_function_id
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Calendar events error: {e}")
+        return Response({
+            'error': str(e)
+        }, status=status.HTTP_400_BAD_REQUEST)
 
 @swagger_auto_schema(
     method='put',
@@ -1090,7 +1377,8 @@ def get_all_balances(request):
     
     # Get filters
     year = request.GET.get('year', datetime.now().year)
-    department = request.GET.get('department', '')
+    department_id = request.GET.get('department_id', '')  # ✅ Changed from department name to ID
+    business_function_id = request.GET.get('business_function_id', '')  # ✅ YENİ
     min_remaining = request.GET.get('min_remaining', '')
     max_remaining = request.GET.get('max_remaining', '')
     
@@ -1098,13 +1386,15 @@ def get_all_balances(request):
     queryset = EmployeeVacationBalance.objects.filter(
         is_deleted=False,
         year=year
-    ).select_related('employee', 'employee__department')
+    ).select_related('employee', 'employee__department', 'employee__business_function')
     
     # Apply filters
-    if department:
-        queryset = queryset.filter(
-            employee__department__name__icontains=department
-        )
+    if department_id:
+        queryset = queryset.filter(employee__department_id=department_id)
+    
+    # ✅ YENİ: Business Function filter
+    if business_function_id:
+        queryset = queryset.filter(employee__business_function_id=business_function_id)
     
     # Calculate filtered balances
     balances_list = []
@@ -1140,12 +1430,12 @@ def get_all_balances(request):
         'summary': summary,
         'filters_applied': {
             'year': year,
-            'department': department,
+            'department_id': department_id,
+            'business_function_id': business_function_id,  # ✅ YENİ
             'min_remaining': min_remaining,
             'max_remaining': max_remaining
         }
     })
-
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
@@ -1160,10 +1450,10 @@ def export_all_balances(request):
     
     # Get filters
     year = request.GET.get('year', datetime.now().year)
-    department = request.GET.get('department', '')
+    department_id = request.GET.get('department_id', '')
     min_remaining = request.GET.get('min_remaining', '')
     max_remaining = request.GET.get('max_remaining', '')
-    
+    business_function_id = request.GET.get('business_function_id', '')
     queryset = EmployeeVacationBalance.objects.filter(
         is_deleted=False,
         year=year
@@ -1171,8 +1461,12 @@ def export_all_balances(request):
         'employee__department__name', 'employee__full_name'
     )
     
-    if department:
-        queryset = queryset.filter(employee__department__name__icontains=department)
+    if department_id:
+        queryset = queryset.filter(employee__department_id=department_id)
+    
+    # ✅ YENİ: Business Function filter
+    if business_function_id:
+        queryset = queryset.filter(employee__business_function_id=business_function_id)
     
     # Apply remaining balance filters
     balances_list = []
@@ -1391,23 +1685,32 @@ def create_immediate_request(request):
         
         validated_data = serializer.validated_data
         
-        requester_emp = Employee.objects.get(user=request.user, is_deleted=False)
+        # ✅ FIX: Get requester employee first
+        try:
+            requester_emp = Employee.objects.get(user=request.user, is_deleted=False)
+        except Employee.DoesNotExist:
+            return Response({
+                'error': 'Employee profile not found for current user'
+            }, status=status.HTTP_404_NOT_FOUND)
         
-        # Balance check
-        settings = VacationSetting.get_active()
-        year = date.today().year
-        
-        # Determine employee
+        # ✅ FIX: Determine target employee BEFORE using it
         if validated_data['requester_type'] == 'for_me':
             employee = requester_emp
         else:
             if validated_data.get('employee_id'):
-                employee = Employee.objects.get(id=validated_data['employee_id'])
-                if employee.line_manager != requester_emp:
+                try:
+                    employee = Employee.objects.get(id=validated_data['employee_id'], is_deleted=False)
+                    # Check if requester is line manager
+                    if employee.line_manager != requester_emp:
+                        return Response({
+                            'error': 'This employee is not in your team'
+                        }, status=status.HTTP_403_FORBIDDEN)
+                except Employee.DoesNotExist:
                     return Response({
-                        'error': 'This employee is not in your team'
-                    }, status=status.HTTP_403_FORBIDDEN)
+                        'error': 'Employee not found'
+                    }, status=status.HTTP_404_NOT_FOUND)
             else:
+                # Manual employee
                 manual_data = validated_data.get('employee_manual', {})
                 if not manual_data.get('name'):
                     return Response({
@@ -1420,6 +1723,25 @@ def create_immediate_request(request):
                     line_manager=requester_emp,
                     created_by=request.user
                 )
+        
+        # ✅ NOW employee is defined - check conflicts
+        temp_request = VacationRequest(
+            employee=employee,
+            start_date=validated_data['start_date'],
+            end_date=validated_data['end_date']
+        )
+        
+        has_conflict, conflicts = temp_request.check_date_conflicts()
+        if has_conflict:
+            return Response({
+                'error': 'Bu tarixlərdə artıq vacation mövcuddur',
+                'conflicts': conflicts,
+                'message': 'Zəhmət olmasa başqa tarix seçin'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Balance check
+        settings = VacationSetting.get_active()
+        year = date.today().year
         
         # Get or create balance
         balance, created = EmployeeVacationBalance.objects.get_or_create(
@@ -1549,6 +1871,7 @@ def create_immediate_request(request):
     except Exception as e:
         logger.error(f"Error creating vacation request: {e}")
         return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
 # ==================== CREATE SCHEDULE ====================
 @swagger_auto_schema(
     method='post',
@@ -1659,7 +1982,19 @@ def create_schedule(request):
                     line_manager=requester_emp,
                     created_by=request.user
                 )
+        temp_schedule = VacationSchedule(
+            employee=employee,
+            start_date=data['start_date'],
+            end_date=data['end_date']
+        )
         
+        has_conflict, conflicts = temp_schedule.check_date_conflicts()
+        if has_conflict:
+            return Response({
+                'error': 'Bu tarixlərdə artıq vacation mövcuddur',
+                'conflicts': conflicts,
+                'message': 'Zəhmət olmasa başqa tarix seçin'
+            }, status=status.HTTP_400_BAD_REQUEST)
         # Balance tap və ya yarat
         balance, created = EmployeeVacationBalance.objects.get_or_create(
             employee=employee,
@@ -1945,6 +2280,14 @@ def edit_schedule(request, pk):
             schedule.end_date = request.data['end_date']
         if 'comment' in request.data:
             schedule.comment = request.data['comment']
+        
+        has_conflict, conflicts = schedule.check_date_conflicts()
+        if has_conflict:
+            return Response({
+                'error': 'Bu tarixlərdə artıq vacation mövcuddur',
+                'conflicts': conflicts,
+                'message': 'Zəhmət olmasa başqa tarix seçin'
+            }, status=status.HTTP_400_BAD_REQUEST)
         
         schedule.edit_count += 1
         schedule.last_edited_at = timezone.now()
@@ -2429,6 +2772,7 @@ def my_all_requests_schedules(request):
         return Response({
             'error': str(e)
         }, status=http_status.HTTP_400_BAD_REQUEST)
+
 @swagger_auto_schema(
     method='get',
     operation_description="Get detailed information of a vacation request including attachments and approval history",
@@ -2597,7 +2941,6 @@ def get_vacation_request_detail(request, pk):
             'error': str(e)
         }, status=status.HTTP_400_BAD_REQUEST)
                 
-
 @swagger_auto_schema(
     method='get',
     operation_description="Bütün vacation request və schedule-ları göstər (hamı görə bilər)",
@@ -2622,6 +2965,14 @@ def get_vacation_request_detail(request, pk):
             'department_id',
             openapi.IN_QUERY,
             description="Department filteri",
+            type=openapi.TYPE_INTEGER,
+            required=False
+        ),
+        # ✅ YENİ: Business Function filter
+        openapi.Parameter(
+            'business_function_id',
+            openapi.IN_QUERY,
+            description="Business Function (Company) filteri",
             type=openapi.TYPE_INTEGER,
             required=False
         ),
@@ -2667,6 +3018,7 @@ def get_vacation_request_detail(request, pk):
                             'employee_name': 'John Doe',
                             'employee_id': 'EMP001',
                             'department': 'IT',
+                            'business_function': 'Almet Trading',
                             'vacation_type': 'Annual Leave',
                             'start_date': '2025-10-15',
                             'end_date': '2025-10-20',
@@ -2695,6 +3047,7 @@ def all_vacation_records(request):
         status_filter = request.GET.get('status')
         vacation_type_id = request.GET.get('vacation_type_id')
         department_id = request.GET.get('department_id')
+        business_function_id = request.GET.get('business_function_id')  # ✅ YENİ
         start_date = request.GET.get('start_date')
         end_date = request.GET.get('end_date')
         employee_name = request.GET.get('employee_name')
@@ -2705,7 +3058,7 @@ def all_vacation_records(request):
             'employee', 'employee__department', 'employee__business_function', 
             'vacation_type', 'line_manager', 'hr_representative',
             'line_manager_approved_by', 'hr_approved_by', 'rejected_by'
-        ).prefetch_related('attachments')  # ✅ Added
+        ).prefetch_related('attachments')
         
         # All schedules  
         schedules_qs = VacationSchedule.objects.filter(is_deleted=False).select_related(
@@ -2725,6 +3078,11 @@ def all_vacation_records(request):
         if department_id:
             requests_qs = requests_qs.filter(employee__department_id=department_id)
             schedules_qs = schedules_qs.filter(employee__department_id=department_id)
+        
+        # ✅ YENİ: Business Function filter
+        if business_function_id:
+            requests_qs = requests_qs.filter(employee__business_function_id=business_function_id)
+            schedules_qs = schedules_qs.filter(employee__business_function_id=business_function_id)
         
         if start_date:
             requests_qs = requests_qs.filter(start_date__gte=start_date)
@@ -2751,7 +3109,6 @@ def all_vacation_records(request):
         
         # Add requests
         for req in requests:
-            # ✅ Count attachments (only non-deleted)
             attachments_count = req.attachments.filter(is_deleted=False).count()
             
             all_records.append({
@@ -2772,8 +3129,8 @@ def all_vacation_records(request):
                 'comment': req.comment,
                 'line_manager': req.line_manager.full_name if req.line_manager else '',
                 'hr_representative': req.hr_representative.full_name if req.hr_representative else '',
-                'attachments_count': attachments_count,  # ✅ Added
-                'has_attachments': attachments_count > 0,  # ✅ Added - helper boolean
+                'attachments_count': attachments_count,
+                'has_attachments': attachments_count > 0,
                 'created_at': req.created_at.isoformat() if req.created_at else None,
                 'updated_at': req.updated_at.isoformat() if req.updated_at else None
             })
@@ -2799,8 +3156,8 @@ def all_vacation_records(request):
                 'can_edit': sch.can_edit(),
                 'edit_count': sch.edit_count,
                 'created_by': sch.created_by.get_full_name() if sch.created_by else '',
-                'attachments_count': 0,  # ✅ Schedules don't have attachments
-                'has_attachments': False,  # ✅ Added
+                'attachments_count': 0,
+                'has_attachments': False,
                 'created_at': sch.created_at.isoformat() if sch.created_at else None,
                 'updated_at': sch.updated_at.isoformat() if sch.updated_at else None
             })
@@ -2817,6 +3174,7 @@ def all_vacation_records(request):
                 'status': status_filter,
                 'vacation_type_id': vacation_type_id,
                 'department_id': department_id,
+                'business_function_id': business_function_id,  # ✅ YENİ
                 'start_date': start_date,
                 'end_date': end_date,
                 'employee_name': employee_name,
@@ -2922,7 +3280,7 @@ def export_all_vacation_records(request):
         year = request.GET.get('year')
         export_format = request.GET.get('format', 'dashboard')
         include_charts = request.GET.get('include_charts', 'true').lower() == 'true'
-        
+        business_function_id = request.GET.get('business_function_id') 
         # ✅ Permission-based filtering
         is_admin = is_admin_user(request.user)
         has_hr_permission, _ = check_vacation_permission(request.user, 'vacation.request.export_all')
@@ -2991,7 +3349,9 @@ def export_all_vacation_records(request):
         if end_date:
             requests_qs = requests_qs.filter(end_date__lte=end_date)
             schedules_qs = schedules_qs.filter(end_date__lte=end_date)
-        
+        if business_function_id:
+            requests_qs = requests_qs.filter(employee__business_function_id=business_function_id)
+            schedules_qs = schedules_qs.filter(employee__business_function_id=business_function_id)
         if employee_name:
             requests_qs = requests_qs.filter(employee__full_name__icontains=employee_name)
             schedules_qs = schedules_qs.filter(employee__full_name__icontains=employee_name)

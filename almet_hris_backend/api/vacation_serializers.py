@@ -144,19 +144,26 @@ class VacationAttachmentSerializer(serializers.ModelSerializer):
 
 # ============= BALANCE =============
 
+# vacation_serializers.py
+
 class EmployeeVacationBalanceSerializer(serializers.ModelSerializer):
     employee_name = serializers.CharField(source='employee.full_name', read_only=True)
     employee_id = serializers.CharField(source='employee.employee_id', read_only=True)
     department_name = serializers.CharField(source='employee.department.name', read_only=True)
+    business_function_name = serializers.CharField(source='employee.business_function.name', read_only=True)  # ✅ YENİ
     total_balance = serializers.ReadOnlyField()
     remaining_balance = serializers.ReadOnlyField()
     should_be_planned = serializers.ReadOnlyField()
     
     class Meta:
         model = EmployeeVacationBalance
-        fields = ['id', 'employee', 'employee_name', 'employee_id', 'department_name', 'year', 
-                  'start_balance', 'yearly_balance', 'used_days', 'scheduled_days', 'total_balance', 
-                  'remaining_balance', 'should_be_planned', 'updated_at']
+        fields = [
+            'id', 'employee', 'employee_name', 'employee_id', 
+            'department_name', 'business_function_name',  # ✅ YENİ
+            'year', 'start_balance', 'yearly_balance', 
+            'used_days', 'scheduled_days', 'total_balance', 
+            'remaining_balance', 'should_be_planned', 'updated_at'
+        ]
 
 
 # ============= REQUEST SERIALIZERS =============

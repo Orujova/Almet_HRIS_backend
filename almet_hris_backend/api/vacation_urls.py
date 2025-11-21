@@ -64,7 +64,7 @@ urlpatterns = [
     # ============= BALANCE MANAGEMENT (GET/POST/PUT) =============
     path('balances/bulk-upload/', views.bulk_upload_balances, name='vacation-bulk-upload-balances'),
     path('balances/template/', views.download_balance_template, name='vacation-download-balance-template'),
- 
+  path('calendar/', views.get_calendar_events, name='calendar-events'),
 
     path('balances/', views.get_all_balances, name='get_all_balances'),
     path('balances/export/',  views.export_all_balances, name='export_all_balances'),

@@ -82,10 +82,11 @@ class VacationSetting(SoftDeleteModel):
         super().save(*args, **kwargs)
     
     def is_working_day(self, check_date):
-        """Verilən tarixi iş günü olub-olmadığını yoxlayır"""
-        if check_date.weekday() >= 5:  # Həftəsonu (Saturday=5, Sunday=6)
-            return False
+        """Verilən tarixi iş günü olub-olmadığını yoxlayır
         
+        ✅ Həftəsonu günləri (Saturday, Sunday) də iş günü sayılır
+        ❌ Yalnız non_working_days siyahısındakı günlər istisna edilir
+        """
         # Non-working days yoxla
         date_str = check_date.strftime('%Y-%m-%d')
         for holiday in self.non_working_days:
@@ -94,7 +95,7 @@ class VacationSetting(SoftDeleteModel):
             elif isinstance(holiday, str) and holiday == date_str:
                 return False
         
-        return True
+        return True  # Həftəsonu da daxil olmaqla bütün günlər iş günüdür
     
     def calculate_working_days(self, start, end):
         """İki tarix arasındakı iş günlərinin sayını hesablayır"""
@@ -327,10 +328,70 @@ class VacationRequest(SoftDeleteModel):
     def __str__(self):
         return f"{self.request_id} - {self.employee.full_name} - {self.vacation_type.name}"
     
+    def check_date_conflicts(self):
+        """
+        Eyni employee üçün kəsişən tarixlərdə request/schedule olub-olmadığını yoxla
+        Returns: (has_conflict, conflicting_records)
+        """
+        # Mövcud approved/pending requestlər
+        conflicting_requests = VacationRequest.objects.filter(
+            employee=self.employee,
+            is_deleted=False,
+            status__in=['PENDING_LINE_MANAGER', 'PENDING_HR', 'APPROVED']
+        ).filter(
+            start_date__lte=self.end_date,
+            end_date__gte=self.start_date
+        ).exclude(pk=self.pk)
+        
+        # Scheduled schedules
+        conflicting_schedules = VacationSchedule.objects.filter(
+            employee=self.employee,
+            is_deleted=False,
+            status='SCHEDULED'
+        ).filter(
+            start_date__lte=self.end_date,
+            end_date__gte=self.start_date
+        )
+        
+        conflicts = []
+        
+        for req in conflicting_requests:
+            conflicts.append({
+                'type': 'request',
+                'id': req.request_id,
+                'start_date': req.start_date,
+                'end_date': req.end_date,
+                'vacation_type': req.vacation_type.name,
+                'status': req.get_status_display()
+            })
+        
+        for sch in conflicting_schedules:
+            conflicts.append({
+                'type': 'schedule',
+                'id': f'SCH{sch.id}',
+                'start_date': sch.start_date,
+                'end_date': sch.end_date,
+                'vacation_type': sch.vacation_type.name,
+                'status': sch.get_status_display()
+            })
+        
+        return len(conflicts) > 0, conflicts
+    
     def clean(self):
         """Validation"""
         if self.start_date and self.end_date and self.start_date >= self.end_date:
             raise ValidationError("End date start date-dən böyük olmalıdır")
+        
+        # ✅ Kəsişmə yoxla
+        has_conflict, conflicts = self.check_date_conflicts()
+        if has_conflict:
+            conflict_details = ", ".join([
+                f"{c['id']} ({c['start_date']} - {c['end_date']})" 
+                for c in conflicts
+            ])
+            raise ValidationError(
+                f"Bu tarixlərdə artıq vacation var: {conflict_details}"
+            )
     
     def save(self, *args, **kwargs):
         # Generate request ID
@@ -476,10 +537,70 @@ class VacationSchedule(SoftDeleteModel):
     def __str__(self):
         return f"{self.employee.full_name} - {self.vacation_type.name} - {self.start_date} to {self.end_date}"
     
+    def check_date_conflicts(self):
+        """
+        Eyni employee üçün kəsişən tarixlərdə request/schedule olub-olmadığını yoxla
+        Returns: (has_conflict, conflicting_records)
+        """
+        # Mövcud approved/pending requestlər
+        conflicting_requests = VacationRequest.objects.filter(
+            employee=self.employee,
+            is_deleted=False,
+            status__in=['PENDING_LINE_MANAGER', 'PENDING_HR', 'APPROVED']
+        ).filter(
+            start_date__lte=self.end_date,
+            end_date__gte=self.start_date
+        )
+        
+        # Başqa scheduled schedules
+        conflicting_schedules = VacationSchedule.objects.filter(
+            employee=self.employee,
+            is_deleted=False,
+            status='SCHEDULED'
+        ).filter(
+            start_date__lte=self.end_date,
+            end_date__gte=self.start_date
+        ).exclude(pk=self.pk)
+        
+        conflicts = []
+        
+        for req in conflicting_requests:
+            conflicts.append({
+                'type': 'request',
+                'id': req.request_id,
+                'start_date': req.start_date,
+                'end_date': req.end_date,
+                'vacation_type': req.vacation_type.name,
+                'status': req.get_status_display()
+            })
+        
+        for sch in conflicting_schedules:
+            conflicts.append({
+                'type': 'schedule',
+                'id': f'SCH{sch.id}',
+                'start_date': sch.start_date,
+                'end_date': sch.end_date,
+                'vacation_type': sch.vacation_type.name,
+                'status': sch.get_status_display()
+            })
+        
+        return len(conflicts) > 0, conflicts
+    
     def clean(self):
         """Validation"""
         if self.start_date and self.end_date and self.start_date >= self.end_date:
             raise ValidationError("End date start date-dən böyük olmalıdır")
+        
+        # ✅ Kəsişmə yoxla
+        has_conflict, conflicts = self.check_date_conflicts()
+        if has_conflict:
+            conflict_details = ", ".join([
+                f"{c['id']} ({c['start_date']} - {c['end_date']})" 
+                for c in conflicts
+            ])
+            raise ValidationError(
+                f"Bu tarixlərdə artıq vacation var: {conflict_details}"
+            )
     
     def save(self, *args, **kwargs):
         # Calculate working days and return date
