@@ -57,7 +57,7 @@ class NotificationSettings(models.Model):
         help_text="Subject prefix for company news emails"
     )
     company_news_sender_email = models.EmailField(
-        default='shadmin@almettrading.com',
+        default='myalmet@almettrading.com',
         help_text="Email address for sending company news (must be valid Outlook/Exchange mailbox)"
     )
     
@@ -104,7 +104,7 @@ class NotificationSettings(models.Model):
                 'business_trip_subject_prefix': '[BUSINESS TRIP]',
                 'vacation_subject_prefix': '[VACATION]',
                 'company_news_subject_prefix': '[COMPANY NEWS]',  # ✅ NEW
-                'company_news_sender_email': 'shadmin@almettrading.com',  # ✅ NEW
+                'company_news_sender_email': 'myalmet@almettrading.com',  # ✅ NEW
             }
         )
         return settings

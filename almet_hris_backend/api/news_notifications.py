@@ -31,7 +31,7 @@ class NewsNotificationManager:
                 from types import SimpleNamespace
                 self._settings = SimpleNamespace(
                     enable_email_notifications=True,
-                    company_news_sender_email='shadmin@almettrading.com',
+                    company_news_sender_email='myalmet@almettrading.com',
                     company_news_subject_prefix='[COMPANY NEWS]'
                 )
         return self._settings

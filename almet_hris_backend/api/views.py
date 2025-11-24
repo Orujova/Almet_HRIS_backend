@@ -3303,8 +3303,6 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             # Get default status
             default_status = EmployeeStatus.objects.filter(is_default_for_new_employees=True).first()
             if not default_status:
-                default_status = EmployeeStatus.objects.filter(name='ONBOARDING').first()
-            if not default_status:
                 default_status = EmployeeStatus.objects.filter(is_active=True).first()
             
             if not default_status:
@@ -3435,9 +3433,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                         try:
                             if not ContractTypeConfig.objects.filter(contract_type=contract_duration, is_active=True).exists():
                                 available_durations = list(ContractTypeConfig.objects.filter(is_active=True).values_list('contract_type', flat=True))
-                                if not available_durations:
-                                    ContractTypeConfig.get_or_create_defaults()
-                                    available_durations = list(ContractTypeConfig.objects.filter(is_active=True).values_list('contract_type', flat=True))
+              
                                 
                                 if not available_durations:
                                     available_durations = ['3_MONTHS', '6_MONTHS', '1_YEAR', '2_YEARS', '3_YEARS', 'PERMANENT']

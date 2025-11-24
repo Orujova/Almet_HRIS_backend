@@ -152,7 +152,7 @@ urlpatterns = [
          name='asset-export'),
     
 
-    
+     path('trainings/', include('api.training_urls')),
     # Module URLs
     path('vacation/', include('api.vacation_urls')),
     path('business-trips/', include('api.business_trip_urls')),

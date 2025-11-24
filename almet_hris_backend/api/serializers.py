@@ -490,7 +490,7 @@ class ContractTypeConfigSerializer(serializers.ModelSerializer):
         model = ContractTypeConfig
         fields = [
             'id', 'contract_type', 'display_name', 
-            'onboarding_days', 'probation_days', 'total_days_until_active',
+           'probation_days', 'total_days_until_active',
             'enable_auto_transitions', 'transition_to_inactive_on_end',
             'notify_days_before_end', 'employee_count', 'is_active', 'created_at'
         ]
@@ -780,9 +780,7 @@ class VacancyToEmployeeConversionSerializer(serializers.Serializer):
             ContractTypeConfig.objects.get(contract_type=value, is_active=True)
         except ContractTypeConfig.DoesNotExist:
             available_choices = list(ContractTypeConfig.objects.filter(is_active=True).values_list('contract_type', flat=True))
-            if not available_choices:
-                ContractTypeConfig.get_or_create_defaults()
-                available_choices = list(ContractTypeConfig.objects.filter(is_active=True).values_list('contract_type', flat=True))
+           
             
             raise serializers.ValidationError(
                 f"Invalid contract duration '{value}'. Available choices: {', '.join(available_choices)}"

@@ -296,7 +296,7 @@ class ContractTypeConfig(SoftDeleteModel):
     display_name = models.CharField(max_length=100)
     
     # Status Configuration
-    onboarding_days = models.IntegerField(default=7, help_text="Days for onboarding status")
+
     probation_days = models.IntegerField(default=0, help_text="Days for probation status after onboarding")
     
     # Auto-transition settings
@@ -312,7 +312,7 @@ class ContractTypeConfig(SoftDeleteModel):
     
     def get_total_days_until_active(self):
         """Get total days until employee becomes active"""
-        return self.onboarding_days + self.probation_days
+        return  self.probation_days
     
     @classmethod
     def get_contract_choices(cls):
@@ -320,37 +320,37 @@ class ContractTypeConfig(SoftDeleteModel):
         active_configs = cls.objects.filter(is_active=True)
         return [(config.contract_type, config.display_name) for config in active_configs]
     
-    @classmethod
-    def get_or_create_defaults(cls):
-        """Create default contract configurations"""
-        defaults = [
-            ('3_MONTHS', '3 Months Contract', 7, 7, True, True, 7),
-            ('6_MONTHS', '6 Months Contract', 7, 14, True, True, 14),
-            ('1_YEAR', '1 Year Contract', 7, 90, True, True, 30),
-            ('2_YEARS', '2 Years Contract', 7, 90, True, True, 30),
-            ('3_YEARS', '3 Years Contract', 7, 90, True, True, 30),
-            ('PERMANENT', 'Permanent Contract', 7, 0, True, False, 0),
-        ]
+    # @classmethod
+    # def get_or_create_defaults(cls):
+    #     """Create default contract configurations"""
+    #     defaults = [
+    #         ('3_MONTHS', '3 Months Contract', 7, 7, True, True, 7),
+    #         ('6_MONTHS', '6 Months Contract', 7, 14, True, True, 14),
+    #         ('1_YEAR', '1 Year Contract', 7, 90, True, True, 30),
+    #         ('2_YEARS', '2 Years Contract', 7, 90, True, True, 30),
+    #         ('3_YEARS', '3 Years Contract', 7, 90, True, True, 30),
+    #         ('PERMANENT', 'Permanent Contract', 7, 0, True, False, 0),
+    #     ]
         
-        created_configs = {}
-        for contract_type, display_name, onboarding, probation, auto_trans, inactive_on_end, notify_days in defaults:
-            config, created = cls.objects.get_or_create(
-                contract_type=contract_type,
-                defaults={
-                    'display_name': display_name,
-                    'onboarding_days': onboarding,
-                    'probation_days': probation,
-                    'enable_auto_transitions': auto_trans,
-                    'transition_to_inactive_on_end': inactive_on_end,
-                    'notify_days_before_end': notify_days,
-                    'is_active': True
-                }
-            )
-            created_configs[contract_type] = config
-            if created:
-                logger.info(f"Created default contract config: {contract_type}")
+    #     created_configs = {}
+    #     for contract_type, display_name, onboarding, probation, auto_trans, inactive_on_end, notify_days in defaults:
+    #         config, created = cls.objects.get_or_create(
+    #             contract_type=contract_type,
+    #             defaults={
+    #                 'display_name': display_name,
+    #                 'onboarding_days': onboarding,
+    #                 'probation_days': probation,
+    #                 'enable_auto_transitions': auto_trans,
+    #                 'transition_to_inactive_on_end': inactive_on_end,
+    #                 'notify_days_before_end': notify_days,
+    #                 'is_active': True
+    #             }
+    #         )
+    #         created_configs[contract_type] = config
+    #         if created:
+    #             logger.info(f"Created default contract config: {contract_type}")
         
-        return created_configs
+    #     return created_configs
     
     def __str__(self):
         return self.display_name
@@ -364,26 +364,16 @@ class EmployeeStatus(SoftDeleteModel):
     STATUS_TYPES = [
         ('ACTIVE', 'Active'),
         ('INACTIVE', 'Inactive'),
-        ('ONBOARDING', 'Onboarding'),
-        ('PROBATION', 'Probation'),
-        ('NOTICE_PERIOD', 'Notice Period'),
-      
-      
-        ('VACANT', 'Vacant Position'),  # ENHANCED: Added VACANT status
+        ('PROBATION', 'Probation'),  # ✅ ONBOARDING silindi
+        ('VACANT', 'Vacant Position'),
     ]
     
-    # Color hierarchy for automatic assignment
     STATUS_COLOR_HIERARCHY = {
         'ACTIVE': '#10B981',      # Green
-        'ONBOARDING': '#3B82F6',  # Blue
         'PROBATION': '#F59E0B',   # Yellow
-        'NOTICE_PERIOD': '#EF4444', # Red
-    
-        'LEAVE': '#8B5CF6',       # Purple
         'VACANT': '#F97316',      # Orange
-        'INACTIVE': '#9CA3AF',    # Light Gray
+        'INACTIVE': '#9CA3AF',    # Gray
     }
-    
     # Basic Information
     name = models.CharField(max_length=50, unique=True)
     status_type = models.CharField(max_length=20, choices=STATUS_TYPES, default='ACTIVE')
@@ -428,62 +418,58 @@ class EmployeeStatus(SoftDeleteModel):
         # Auto-assign order based on status type if not set
         if not self.order:
             status_order_mapping = {
-                'ONBOARDING': 1,
-                'PROBATION': 2,
-                'ACTIVE': 3,
-                'NOTICE_PERIOD': 4,
-                'LEAVE': 5,
-           
-                'INACTIVE': 6,
-                
-                'VACANT': 7,
+             
+                'PROBATION': 1,
+                'ACTIVE': 2,
+                'INACTIVE': 3,      
+                'VACANT': 4,
             }
             self.order = status_order_mapping.get(self.status_type, 99)
         
         # Auto-set transitional flag for certain status types
-        if self.status_type in ['ONBOARDING', 'PROBATION', 'NOTICE_PERIOD']:
+        if self.status_type in [ 'PROBATION']:
             self.is_transitional = True
         
         super().save(*args, **kwargs)
 
-    @classmethod
-    def get_or_create_default_statuses(cls):
-        """Create default statuses including VACANT"""
-        default_statuses = [
-            # name, status_type, affects_headcount, allows_org_chart, order, auto_transition, is_transitional, is_default
-            ('ONBOARDING', 'ONBOARDING', True, True, 1, True, True, True),
-            ('PROBATION', 'PROBATION', True, True, 2, True, True, False),
-            ('ACTIVE', 'ACTIVE', True, True, 3, False, False, False),
-            ('INACTIVE', 'INACTIVE', False, False, 7, False, False, False),
+    # @classmethod
+    # def get_or_create_default_statuses(cls):
+    #     """Create default statuses including VACANT"""
+    #     default_statuses = [
+    #         # name, status_type, affects_headcount, allows_org_chart, order, auto_transition, is_transitional, is_default
+    #         ('ONBOARDING', 'ONBOARDING', True, True, 1, True, True, True),
+    #         ('PROBATION', 'PROBATION', True, True, 2, True, True, False),
+    #         ('ACTIVE', 'ACTIVE', True, True, 3, False, False, False),
+    #         ('INACTIVE', 'INACTIVE', False, False, 7, False, False, False),
           
-            ('VACANT', 'VACANT', True, True, 10, False, False, False),  # ENHANCED: VACANT status counts in headcount
-        ]
+    #         ('VACANT', 'VACANT', True, True, 10, False, False, False),  # ENHANCED: VACANT status counts in headcount
+    #     ]
         
-        created_statuses = {}
-        for name, status_type, affects_headcount, allows_org_chart, order, auto_transition, is_transitional, is_default in default_statuses:
-            status, created = cls.objects.get_or_create(
-                name=name,
-                defaults={
-                    'status_type': status_type,
-                    'affects_headcount': affects_headcount,
-                    'allows_org_chart': allows_org_chart,
-                    'order': order,
-                    'auto_transition_enabled': auto_transition,
-                    'is_transitional': is_transitional,
-                    'is_default_for_new_employees': is_default,
-                    'send_notifications': False,
-                    'notification_template': '',
-                    'is_system_status': True,
-                    'transition_priority': 0,
-                    'is_active': True,
-                    'color': '#F97316' if status_type == 'VACANT' else '#10B981'  # Orange for vacant, green for others
-                }
-            )
-            created_statuses[name] = status
-            if created:
-                logger.info(f"Created default status: {name}")
+    #     created_statuses = {}
+    #     for name, status_type, affects_headcount, allows_org_chart, order, auto_transition, is_transitional, is_default in default_statuses:
+    #         status, created = cls.objects.get_or_create(
+    #             name=name,
+    #             defaults={
+    #                 'status_type': status_type,
+    #                 'affects_headcount': affects_headcount,
+    #                 'allows_org_chart': allows_org_chart,
+    #                 'order': order,
+    #                 'auto_transition_enabled': auto_transition,
+    #                 'is_transitional': is_transitional,
+    #                 'is_default_for_new_employees': is_default,
+    #                 'send_notifications': False,
+    #                 'notification_template': '',
+    #                 'is_system_status': True,
+    #                 'transition_priority': 0,
+    #                 'is_active': True,
+    #                 'color': '#F97316' if status_type == 'VACANT' else '#10B981'  # Orange for vacant, green for others
+    #             }
+    #         )
+    #         created_statuses[name] = status
+    #         if created:
+    #             logger.info(f"Created default status: {name}")
         
-        return created_statuses
+    #     return created_statuses
     
     def __str__(self):
         return self.name
@@ -1297,54 +1283,61 @@ class Employee(SoftDeleteModel):
         return self.email or (self.user.email if self.user else None)
     
     def auto_assign_status(self):
-        """UPDATED: Öz yaratdığınız statuslara əsasən avtomatik status təyin et"""
+        """✅ UPDATED: Yeni employee üçün status"""
         try:
-            # Əvvəlcə mövcud aktiv statuslardan uyğun olanı tap
+            # ✅ PERMANENT contract → directly ACTIVE
+            if self.contract_duration == 'PERMANENT':
+                active_status = EmployeeStatus.objects.filter(
+                    status_type='ACTIVE',
+                    is_active=True
+                ).first()
+                
+                if active_status:
+                    self.status = active_status
+                    return
             
-            # ONBOARDING status-u tap
-            onboarding_status = EmployeeStatus.objects.filter(
-                status_type='ONBOARDING',
+            # ✅ Digər contracts → PROBATION
+            probation_status = EmployeeStatus.objects.filter(
+                status_type='PROBATION',
                 is_active=True
             ).first()
             
-            if not onboarding_status:
-                # Əgər ONBOARDING yoxdursa, ümumi default tap
+            if not probation_status:
+                # Fallback to default or first active
                 default_status = EmployeeStatus.objects.filter(
                     is_default_for_new_employees=True,
                     is_active=True
                 ).first()
                 
                 if not default_status:
-                    # Son variant - ilk aktiv status
                     default_status = EmployeeStatus.objects.filter(is_active=True).first()
                 
                 self.status = default_status
             else:
-                self.status = onboarding_status
+                self.status = probation_status
                 
         except Exception as e:
             logger.error(f"Error auto-assigning status: {e}")
-            # Əgər heç nə tapılmasa, mövcud status saxla
             if not self.status:
-                # Çox kritik hal - ən azı bir status olmalıdır
                 fallback_status = EmployeeStatus.objects.first()
                 if fallback_status:
                     self.status = fallback_status
+    
+    
     def get_required_status_based_on_contract(self):
-        """Get required status based on contract configuration and dates"""
+        """✅ UPDATED: Contract-based status (ONBOARDING yoxdur)"""
         try:
             current_date = date.today()
             
-            # Check if contract has ended
+            # Contract bitib?
             if self.contract_end_date and self.contract_end_date <= current_date:
                 inactive_status = EmployeeStatus.objects.filter(status_type='INACTIVE').first()
                 return inactive_status, f"Contract ended on {self.contract_end_date}"
             
-            # Get contract configuration
+            # Contract config
             try:
                 contract_config = ContractTypeConfig.objects.get(contract_type=self.contract_duration)
             except ContractTypeConfig.DoesNotExist:
-                # Create default config if it doesn't exist
                 contract_configs = ContractTypeConfig.get_or_create_defaults()
                 contract_config = contract_configs.get(self.contract_duration)
                 if not contract_config:
@@ -1353,30 +1346,29 @@ class Employee(SoftDeleteModel):
             if not contract_config.enable_auto_transitions:
                 return self.status, "Auto transitions disabled for this contract type"
             
-            # Calculate days since start
+            # ✅ PERMANENT → directly ACTIVE
+            if self.contract_duration == 'PERMANENT':
+                active_status = EmployeeStatus.objects.filter(status_type='ACTIVE').first()
+                return active_status, "Permanent contract - no probation period"
+            
+            # Days since start
             days_since_start = (current_date - self.start_date).days
             
-            # Determine required status based on contract configuration
-            if days_since_start <= contract_config.onboarding_days:
-                # Still in onboarding period
-                onboarding_status = EmployeeStatus.objects.filter(status_type='ONBOARDING').first()
-                return onboarding_status, f"Onboarding period ({days_since_start}/{contract_config.onboarding_days} days)"
-            
-            elif days_since_start <= (contract_config.onboarding_days + contract_config.probation_days):
-                # In probation period
+            # ✅ Probation period?
+            if days_since_start <= contract_config.probation_days:
                 probation_status = EmployeeStatus.objects.filter(status_type='PROBATION').first()
-                remaining_days = (contract_config.onboarding_days + contract_config.probation_days) - days_since_start
+                remaining_days = contract_config.probation_days - days_since_start
                 return probation_status, f"Probation period ({remaining_days} days remaining)"
             
             else:
-                # Should be active
+                # ✅ Probation completed → ACTIVE
                 active_status = EmployeeStatus.objects.filter(status_type='ACTIVE').first()
-                return active_status, "Onboarding and probation completed"
+                return active_status, "Probation period completed"
                 
         except Exception as e:
             logger.error(f"Error calculating required status for {self.employee_id}: {e}")
             return self.status, f"Error: {str(e)}"
-
+    
     def update_status_automatically(self, force_update=False):
         """Update employee status based on contract configuration"""
         try:

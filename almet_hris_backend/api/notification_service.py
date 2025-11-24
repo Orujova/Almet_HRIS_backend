@@ -31,7 +31,7 @@ class NotificationService:
                     business_trip_subject_prefix='[BUSINESS TRIP]',
                     vacation_subject_prefix='[VACATION]',
                     company_news_subject_prefix='[COMPANY NEWS]',
-                    company_news_sender_email='shadmin@almettrading.com'
+                    company_news_sender_email='myalmet@almettrading.com'
                 )
         return self._settings
     
