@@ -13,10 +13,7 @@ class EmployeeStatusManager:
     Contract configuration əsasında statusları idarə edir
     """
     
-    # @staticmethod
-    # def get_or_create_default_statuses():
-    #     """Default status-ları yarat və ya gətir"""
-    #     return EmployeeStatus.get_or_create_default_statuses()
+   
     
     @staticmethod
     def calculate_required_status(employee):

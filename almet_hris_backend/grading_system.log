@@ -1,0 +1,225 @@
+INFO 2025-11-25 10:31:07,774 views 34336 5248 User info request for user: n.orujova
+INFO 2025-11-25 10:31:07,902 views 34336 5248 [n.orujova] Employee profile found: HLD29
+INFO 2025-11-25 10:31:07,903 views 34336 5248 [n.orujova] User info response prepared successfully
+WARNING 2025-11-25 10:37:08,201 notification_views 34336 5248 No Graph token for user n.orujova
+INFO 2025-11-25 10:45:53,766 views 34336 7348 Token length: 1274, Graph token: True
+INFO 2025-11-25 10:45:53,766 auth 34336 7348 === Starting Microsoft token validation ===
+INFO 2025-11-25 10:45:53,875 auth 34336 7348    - Access token length: 228
+INFO 2025-11-25 10:45:53,876 auth 34336 7348    - Refresh token length: 229
+INFO 2025-11-25 10:50:35,435 views 17652 38316 User info request for user: n.orujova
+INFO 2025-11-25 10:50:35,533 views 17652 38316 [n.orujova] Employee profile found: HLD29
+INFO 2025-11-25 10:50:35,535 views 17652 38316 [n.orujova] User info response prepared successfully
+INFO 2025-11-25 10:51:34,190 views 17652 37572 User info request for user: n.orujova
+INFO 2025-11-25 10:51:34,356 views 17652 37572 [n.orujova] Employee profile found: HLD29
+INFO 2025-11-25 10:51:34,358 views 17652 37572 [n.orujova] User info response prepared successfully
+INFO 2025-11-25 10:52:05,970 views 29720 18640 User info request for user: n.orujova
+INFO 2025-11-25 10:52:06,091 views 29720 18640 [n.orujova] Employee profile found: HLD29
+INFO 2025-11-25 10:52:06,092 views 29720 18640 [n.orujova] User info response prepared successfully
+INFO 2025-11-25 10:52:07,975 views 29720 31392 User info request for user: n.orujova
+INFO 2025-11-25 10:52:08,078 views 29720 31392 [n.orujova] Employee profile found: HLD29
+INFO 2025-11-25 10:52:08,080 views 29720 31392 [n.orujova] User info response prepared successfully
+INFO 2025-11-25 10:52:37,982 views 29720 29632 User info request for user: n.orujova
+INFO 2025-11-25 10:52:38,115 views 29720 29632 [n.orujova] Employee profile found: HLD29
+INFO 2025-11-25 10:52:38,116 views 29720 29632 [n.orujova] User info response prepared successfully
+INFO 2025-11-25 10:52:46,057 views 29720 31392 User info request for user: n.orujova
+INFO 2025-11-25 10:52:46,149 views 29720 31392 [n.orujova] Employee profile found: HLD29
+INFO 2025-11-25 10:52:46,151 views 29720 31392 [n.orujova] User info response prepared successfully
+INFO 2025-11-25 10:53:15,792 views 32056 18568 User info request for user: n.orujova
+INFO 2025-11-25 10:53:15,905 views 32056 18568 [n.orujova] Employee profile found: HLD29
+INFO 2025-11-25 10:53:15,906 views 32056 18568 [n.orujova] User info response prepared successfully
+INFO 2025-11-25 10:54:53,868 training_views 32056 38964 Training TRN0002 created by n.orujova
+INFO 2025-11-25 11:05:47,545 training_views 2128 38384 Training TRN0003 created by n.orujova
+INFO 2025-11-25 11:06:07,491 views 2128 38384 User info request for user: n.orujova
+INFO 2025-11-25 11:06:07,605 views 2128 38384 [n.orujova] Employee profile found: HLD29
+INFO 2025-11-25 11:06:07,606 views 2128 38384 [n.orujova] User info response prepared successfully
+INFO 2025-11-25 11:06:27,337 training_views 2128 27432 Training TRN0001 created by n.orujova
+INFO 2025-11-25 11:07:16,942 training_views 2128 27432 Training TRN0001 updated by n.orujova
+INFO 2025-11-25 11:09:01,436 training_views 2128 27432 Training TRN0002 created by n.orujova
+INFO 2025-11-25 11:10:17,793 training_views 36596 7704 Training TRN0003 created by n.orujova
+INFO 2025-11-25 11:14:15,267 training_views 36596 7704 Training TRN0003 updated by n.orujova
+INFO 2025-11-25 11:14:21,893 views 36596 7704 User info request for user: n.orujova
+INFO 2025-11-25 11:14:22,008 views 36596 7704 [n.orujova] Employee profile found: HLD29
+INFO 2025-11-25 11:14:22,009 views 36596 7704 [n.orujova] User info response prepared successfully
+INFO 2025-11-25 11:14:46,308 training_views 36596 40088 Training TRN0001 created by n.orujova
+INFO 2025-11-25 11:15:54,017 views 36596 40088 User info request for user: n.orujova
+INFO 2025-11-25 11:15:54,121 views 36596 40088 [n.orujova] Employee profile found: HLD29
+INFO 2025-11-25 11:15:54,122 views 36596 40088 [n.orujova] User info response prepared successfully
+INFO 2025-11-25 11:19:16,759 models 5568 40160 Archive record created for employee GEO11: 54-GEO11
+INFO 2025-11-25 11:19:16,895 models 5568 40160 Employee GEO11 - Robin Medina hard deleted and archived (Archive ID: 54). NO VACANCY CREATED.
+INFO 2025-11-25 11:19:29,904 models 5568 23876 Archive record created for employee HLD30: 55-HLD30
+INFO 2025-11-25 11:19:30,224 models 5568 23876 Employee HLD30 - Nigar Veliyeb hard deleted and archived (Archive ID: 55). NO VACANCY CREATED.
+INFO 2025-11-25 11:19:32,390 models 5568 23876 Archive record created for employee HLD29: 56-HLD29
+INFO 2025-11-25 11:19:32,532 models 5568 23876 Employee HLD29 - Narmin Orujova hard deleted and archived (Archive ID: 56). NO VACANCY CREATED.
+INFO 2025-11-25 11:19:43,738 views 5568 40160 Token length: 1274, Graph token: True
+INFO 2025-11-25 11:19:43,739 auth 5568 40160 === Starting Microsoft token validation ===
+INFO 2025-11-25 11:19:43,749 auth 5568 40160 Microsoft user not found, checking employee by email...
+ERROR 2025-11-25 11:19:43,782 auth 5568 40160 Error finding employee: Access denied for n.orujova@almettrading.com. No employee record found. Please contact HR department.
+INFO 2025-11-25 11:19:50,274 views 5568 40160 Token length: 1274, Graph token: True
+INFO 2025-11-25 11:19:50,275 auth 5568 40160 === Starting Microsoft token validation ===
+INFO 2025-11-25 11:19:50,287 auth 5568 40160 Microsoft user not found, checking employee by email...
+ERROR 2025-11-25 11:19:50,293 auth 5568 40160 Error finding employee: Access denied for n.orujova@almettrading.com. No employee record found. Please contact HR department.
+INFO 2025-11-25 11:27:17,957 views 5568 38900 Token length: 1274, Graph token: True
+INFO 2025-11-25 11:27:17,957 auth 5568 38900 === Starting Microsoft token validation ===
+INFO 2025-11-25 11:27:18,012 auth 5568 38900 Microsoft user not found, checking employee by email...
+INFO 2025-11-25 11:27:18,014 auth 5568 38900 Found employee with email n.orujova@almettrading.com: HLD50
+INFO 2025-11-25 11:27:18,015 auth 5568 38900 Employee has existing user: n.orujova@almettrading.com
+INFO 2025-11-25 11:27:18,038 auth 5568 38900    - Access token length: 228
+INFO 2025-11-25 11:27:18,038 auth 5568 38900    - Refresh token length: 229
+INFO 2025-11-25 11:27:22,968 views 5568 33416 User info request for user: n.orujova@almettrading.com
+INFO 2025-11-25 11:27:23,057 views 5568 33416 [n.orujova@almettrading.com] Employee profile found: HLD50
+INFO 2025-11-25 11:27:23,058 views 5568 33416 [n.orujova@almettrading.com] User info response prepared successfully
+INFO 2025-11-25 11:27:29,565 views 5568 33416 User info request for user: n.orujova@almettrading.com
+INFO 2025-11-25 11:27:29,625 views 5568 33416 [n.orujova@almettrading.com] Employee profile found: HLD50
+INFO 2025-11-25 11:27:29,628 views 5568 33416 [n.orujova@almettrading.com] User info response prepared successfully
+INFO 2025-11-25 11:31:27,642 training_views 5568 22864 Training TRN0002 created by n.orujova@almettrading.com
+INFO 2025-11-25 11:32:18,578 views 5568 22864 User info request for user: n.orujova@almettrading.com
+INFO 2025-11-25 11:32:18,684 views 5568 22864 [n.orujova@almettrading.com] Employee profile found: HLD50
+INFO 2025-11-25 11:32:18,686 views 5568 22864 [n.orujova@almettrading.com] User info response prepared successfully
+INFO 2025-11-25 11:32:35,461 training_views 5568 34712 Training TRN0001 created by n.orujova@almettrading.com
+INFO 2025-11-25 12:16:27,572 views 5568 40292 User info request for user: n.orujova@almettrading.com
+INFO 2025-11-25 12:16:27,720 views 5568 40292 [n.orujova@almettrading.com] Employee profile found: HLD50
+INFO 2025-11-25 12:16:27,722 views 5568 40292 [n.orujova@almettrading.com] User info response prepared successfully
+INFO 2025-11-25 12:17:11,265 training_views 5568 40200 Training TRN0001 created by n.orujova@almettrading.com
+INFO 2025-11-25 12:35:44,015 views 5568 9368 Token length: 1274, Graph token: True
+INFO 2025-11-25 12:35:44,016 auth 5568 9368 === Starting Microsoft token validation ===
+INFO 2025-11-25 12:35:44,176 auth 5568 9368    - Access token length: 228
+INFO 2025-11-25 12:35:44,176 auth 5568 9368    - Refresh token length: 229
+INFO 2025-11-25 12:36:47,616 views 5568 39968 User info request for user: n.orujova@almettrading.com
+INFO 2025-11-25 12:36:47,794 views 5568 39968 [n.orujova@almettrading.com] Employee profile found: HLD50
+INFO 2025-11-25 12:36:47,796 views 5568 39968 [n.orujova@almettrading.com] User info response prepared successfully
+INFO 2025-11-25 12:38:54,152 views 5568 31564 User info request for user: n.orujova@almettrading.com
+INFO 2025-11-25 12:38:54,317 views 5568 31564 [n.orujova@almettrading.com] Employee profile found: HLD50
+INFO 2025-11-25 12:38:54,319 views 5568 31564 [n.orujova@almettrading.com] User info response prepared successfully
+INFO 2025-11-25 12:40:13,043 views 5568 39276 User info request for user: n.orujova@almettrading.com
+INFO 2025-11-25 12:40:13,150 views 5568 39276 [n.orujova@almettrading.com] Employee profile found: HLD50
+INFO 2025-11-25 12:40:13,154 views 5568 39276 [n.orujova@almettrading.com] User info response prepared successfully
+INFO 2025-11-25 12:41:26,810 views 5568 8752 User info request for user: n.orujova@almettrading.com
+INFO 2025-11-25 12:41:26,971 views 5568 8752 [n.orujova@almettrading.com] Employee profile found: HLD50
+INFO 2025-11-25 12:41:26,975 views 5568 8752 [n.orujova@almettrading.com] User info response prepared successfully
+INFO 2025-11-25 12:41:42,674 views 5568 31564 Employee update request for GEO12
+INFO 2025-11-25 12:41:42,691 views 5568 31564 Employee GEO12 updated successfully
+INFO 2025-11-25 12:41:44,226 views 5568 37056 Employee update request for GEO12
+INFO 2025-11-25 12:41:44,260 views 5568 37056 Employee GEO12 updated successfully
+INFO 2025-11-25 12:41:45,046 views 5568 37056 Employee update request for GEO12
+INFO 2025-11-25 12:41:45,057 views 5568 37056 Employee GEO12 updated successfully
+INFO 2025-11-25 12:41:52,859 views 5568 31564 Employee update request for GEO12
+INFO 2025-11-25 12:41:52,908 views 5568 31564 Employee GEO12 updated successfully
+INFO 2025-11-25 12:42:03,854 views 5568 37056 Employee update request for GEO12
+INFO 2025-11-25 12:42:03,909 views 5568 37056 Employee GEO12 updated successfully
+INFO 2025-11-25 12:52:44,413 training_views 5568 11808 Training TRN0001 created by n.orujova@almettrading.com
+INFO 2025-11-25 13:13:52,756 views 22952 26884 User info request for user: n.orujova@almettrading.com
+INFO 2025-11-25 13:13:52,973 views 22952 26884 [n.orujova@almettrading.com] Employee profile found: HLD50
+INFO 2025-11-25 13:13:52,976 views 22952 26884 [n.orujova@almettrading.com] User info response prepared successfully
+INFO 2025-11-25 17:44:31,737 views 22952 38276 Token length: 1274, Graph token: True
+INFO 2025-11-25 17:44:31,738 auth 22952 38276 === Starting Microsoft token validation ===
+INFO 2025-11-25 17:44:31,874 auth 22952 38276    - Access token length: 228
+INFO 2025-11-25 17:44:31,874 auth 22952 38276    - Refresh token length: 229
+INFO 2025-11-25 18:16:23,887 views 22952 18376 User info request for user: n.orujova@almettrading.com
+INFO 2025-11-25 18:16:24,007 views 22952 18376 [n.orujova@almettrading.com] Employee profile found: HLD50
+INFO 2025-11-25 18:16:24,009 views 22952 18376 [n.orujova@almettrading.com] User info response prepared successfully
+ERROR 2025-11-25 18:27:45,411 training_views 8304 19980 Training creation failed: {'materials_data': [{'non_field_errors': [ErrorDetail(string="Either 'file' or 'external_link' must be provided", code='invalid')]}]}
+ERROR 2025-11-25 18:27:56,698 training_views 8304 19980 Training creation failed: {'materials_data': [{'non_field_errors': [ErrorDetail(string="Either 'file' or 'external_link' must be provided", code='invalid')]}]}
+ERROR 2025-11-25 18:28:19,150 training_views 8304 19980 Training creation failed: {'materials_data': [{'non_field_errors': [ErrorDetail(string="Either 'file' or 'external_link' must be provided", code='invalid')]}]}
+WARNING 2025-11-25 18:43:27,291 notification_views 8304 40556 No Graph token for user n.orujova@almettrading.com
+INFO 2025-11-25 18:43:31,337 views 8304 40556 Token length: 1274, Graph token: True
+INFO 2025-11-25 18:43:31,338 auth 8304 40556 === Starting Microsoft token validation ===
+INFO 2025-11-25 18:43:31,458 auth 8304 40556    - Access token length: 228
+INFO 2025-11-25 18:43:31,459 auth 8304 40556    - Refresh token length: 229
+ERROR 2025-11-25 18:43:49,876 training_views 8304 18240 Training creation failed: null value in column "title" of relation "api_trainingmaterial" violates not-null constraint
+DETAIL:  Failing row contains (3, f, null, null, null, , https://www.sakewy.co.uk, null, null, null, 2025-11-25 14:43:49.760785+00, null, 12, 1).
+
+ERROR 2025-11-25 18:45:49,704 training_views 8304 13376 Training creation failed: 'TrainingMaterial' object has no attribute 'title'
+INFO 2025-11-25 18:47:28,643 training_views 10988 25312 Training TRN0003 created by n.orujova@almettrading.com
+INFO 2025-11-25 18:52:29,697 views 10988 6948 User info request for user: n.orujova@almettrading.com
+INFO 2025-11-25 18:52:29,780 views 10988 6948 [n.orujova@almettrading.com] Employee profile found: HLD50
+INFO 2025-11-25 18:52:29,781 views 10988 6948 [n.orujova@almettrading.com] User info response prepared successfully
+INFO 2025-11-25 18:54:28,455 training_views 10988 25312 Training TRN0001 created by n.orujova@almettrading.com
+INFO 2025-11-25 18:57:35,733 views 38296 17556 User info request for user: n.orujova@almettrading.com
+INFO 2025-11-25 18:57:35,880 views 38296 17556 [n.orujova@almettrading.com] Employee profile found: HLD50
+INFO 2025-11-25 18:57:35,882 views 38296 17556 [n.orujova@almettrading.com] User info response prepared successfully
+INFO 2025-11-25 19:04:36,488 views 16112 30684 User info request for user: n.orujova@almettrading.com
+INFO 2025-11-25 19:04:36,714 views 16112 30684 [n.orujova@almettrading.com] Employee profile found: HLD50
+INFO 2025-11-25 19:04:36,716 views 16112 30684 [n.orujova@almettrading.com] User info response prepared successfully
+INFO 2025-11-25 19:06:07,200 views 16112 33784 User info request for user: n.orujova@almettrading.com
+INFO 2025-11-25 19:06:07,392 views 16112 33784 [n.orujova@almettrading.com] Employee profile found: HLD50
+INFO 2025-11-25 19:06:07,397 views 16112 33784 [n.orujova@almettrading.com] User info response prepared successfully
+ERROR 2025-11-25 19:06:08,252 notification_service 16112 33784 Failed to get RECEIVED emails: 401
+ERROR 2025-11-25 19:06:08,927 notification_service 16112 33784 Failed to get RECEIVED emails: 401
+ERROR 2025-11-25 19:06:09,577 notification_service 16112 33784 Failed to get RECEIVED emails: 401
+ERROR 2025-11-25 19:06:10,245 notification_service 16112 33784 Failed to get RECEIVED emails: 401
+ERROR 2025-11-25 19:06:10,952 notification_service 16112 33784 Failed to get RECEIVED emails: 401
+ERROR 2025-11-25 19:06:11,616 notification_service 16112 33784 Failed to get RECEIVED emails: 401
+ERROR 2025-11-25 19:06:12,272 notification_service 16112 33784 Failed to get RECEIVED emails: 401
+ERROR 2025-11-25 19:06:13,111 notification_service 16112 33784 Failed to get RECEIVED emails: 401
+INFO 2025-11-25 19:06:24,358 views 16112 38512 User info request for user: n.orujova@almettrading.com
+INFO 2025-11-25 19:06:24,600 views 16112 38512 [n.orujova@almettrading.com] Employee profile found: HLD50
+INFO 2025-11-25 19:06:24,602 views 16112 38512 [n.orujova@almettrading.com] User info response prepared successfully
+ERROR 2025-11-25 19:06:25,538 notification_service 16112 38512 Failed to get RECEIVED emails: 401
+ERROR 2025-11-25 19:06:26,197 notification_service 16112 38512 Failed to get RECEIVED emails: 401
+ERROR 2025-11-25 19:06:26,855 notification_service 16112 38512 Failed to get RECEIVED emails: 401
+ERROR 2025-11-25 19:06:27,523 notification_service 16112 38512 Failed to get RECEIVED emails: 401
+ERROR 2025-11-25 19:06:28,213 notification_service 16112 38512 Failed to get RECEIVED emails: 401
+ERROR 2025-11-25 19:06:28,994 notification_service 16112 38512 Failed to get RECEIVED emails: 401
+ERROR 2025-11-25 19:06:29,631 notification_service 16112 38512 Failed to get RECEIVED emails: 401
+ERROR 2025-11-25 19:06:30,292 notification_service 16112 38512 Failed to get RECEIVED emails: 401
+ERROR 2025-11-25 19:06:46,848 training_views 16112 38512 Training creation failed: {'materials_data': [{'non_field_errors': [ErrorDetail(string="Either 'file' or 'external_link' must be provided", code='invalid')]}]}
+INFO 2025-11-25 19:07:26,831 training_views 16112 38512 Training TRN0002 created by n.orujova@almettrading.com
+ERROR 2025-11-25 19:08:25,937 notification_service 16112 38512 Failed to get RECEIVED emails: 401
+ERROR 2025-11-25 19:08:26,629 notification_service 16112 38512 Failed to get RECEIVED emails: 401
+ERROR 2025-11-25 19:08:27,331 notification_service 16112 38512 Failed to get RECEIVED emails: 401
+ERROR 2025-11-25 19:10:26,428 notification_service 36272 23696 Failed to get RECEIVED emails: 401
+ERROR 2025-11-25 19:10:27,179 notification_service 36272 23696 Failed to get RECEIVED emails: 401
+ERROR 2025-11-25 19:10:28,005 notification_service 36272 23696 Failed to get RECEIVED emails: 401
+ERROR 2025-11-25 19:10:28,817 notification_service 36272 23696 Failed to get RECEIVED emails: 401
+ERROR 2025-11-25 19:12:08,453 notification_service 36272 23696 Failed to get RECEIVED emails: 401
+ERROR 2025-11-25 19:12:09,097 notification_service 36272 23696 Failed to get RECEIVED emails: 401
+ERROR 2025-11-25 19:12:09,845 notification_service 36272 23696 Failed to get RECEIVED emails: 401
+ERROR 2025-11-25 19:12:10,523 notification_service 36272 23696 Failed to get RECEIVED emails: 401
+ERROR 2025-11-25 19:13:19,415 training_views 36272 23696 Training creation failed: {'materials_data': [{'non_field_errors': [ErrorDetail(string="Either 'file'  must be provided", code='invalid')]}]}
+ERROR 2025-11-25 19:13:31,772 training_views 36272 23696 Training creation failed: {'materials_data': [{'non_field_errors': [ErrorDetail(string="Either 'file'  must be provided", code='invalid')]}]}
+ERROR 2025-11-25 19:13:38,438 training_views 36272 23696 Training creation failed: {'materials_data': [{'non_field_errors': [ErrorDetail(string="Either 'file'  must be provided", code='invalid')]}]}
+ERROR 2025-11-25 19:13:38,687 training_views 36272 23696 Training creation failed: {'materials_data': [{'non_field_errors': [ErrorDetail(string="Either 'file'  must be provided", code='invalid')]}]}
+ERROR 2025-11-25 19:13:39,482 training_views 36272 23696 Training creation failed: {'materials_data': [{'non_field_errors': [ErrorDetail(string="Either 'file'  must be provided", code='invalid')]}]}
+ERROR 2025-11-25 19:14:08,371 notification_service 36272 23696 Failed to get RECEIVED emails: 401
+ERROR 2025-11-25 19:14:09,118 notification_service 36272 23696 Failed to get RECEIVED emails: 401
+ERROR 2025-11-25 19:14:09,890 notification_service 36272 23696 Failed to get RECEIVED emails: 401
+ERROR 2025-11-25 19:14:10,577 notification_service 36272 23696 Failed to get RECEIVED emails: 401
+ERROR 2025-11-25 19:14:12,127 training_views 36272 23696 Training creation failed: {'materials_data': [{'non_field_errors': [ErrorDetail(string="Either 'file'  must be provided", code='invalid')]}]}
+ERROR 2025-11-25 19:14:13,348 training_views 36272 23696 Training creation failed: {'materials_data': [{'non_field_errors': [ErrorDetail(string="Either 'file'  must be provided", code='invalid')]}]}
+ERROR 2025-11-25 19:16:09,371 notification_service 36272 1448 Failed to get RECEIVED emails: 401
+ERROR 2025-11-25 19:16:10,095 notification_service 36272 1448 Failed to get RECEIVED emails: 401
+ERROR 2025-11-25 19:16:10,756 notification_service 36272 1448 Failed to get RECEIVED emails: 401
+ERROR 2025-11-25 19:16:11,440 notification_service 36272 1448 Failed to get RECEIVED emails: 401
+ERROR 2025-11-25 19:17:15,878 training_views 36272 32504 Training creation failed: {'materials_data': [{'non_field_errors': [ErrorDetail(string="Either 'file'  must be provided", code='invalid')]}]}
+ERROR 2025-11-25 19:18:09,105 notification_service 36272 32504 Failed to get RECEIVED emails: 401
+ERROR 2025-11-25 19:18:09,924 notification_service 36272 32504 Failed to get RECEIVED emails: 401
+ERROR 2025-11-25 19:18:10,648 notification_service 36272 32504 Failed to get RECEIVED emails: 401
+ERROR 2025-11-25 19:18:11,380 notification_service 36272 32504 Failed to get RECEIVED emails: 401
+ERROR 2025-11-25 19:20:08,935 notification_service 36272 32504 Failed to get RECEIVED emails: 401
+ERROR 2025-11-25 19:20:09,694 notification_service 36272 32504 Failed to get RECEIVED emails: 401
+ERROR 2025-11-25 19:20:10,407 notification_service 36272 32504 Failed to get RECEIVED emails: 401
+ERROR 2025-11-25 19:20:11,189 notification_service 36272 32504 Failed to get RECEIVED emails: 401
+ERROR 2025-11-25 19:22:08,929 notification_service 36272 32504 Failed to get RECEIVED emails: 401
+ERROR 2025-11-25 19:22:09,666 notification_service 36272 32504 Failed to get RECEIVED emails: 401
+ERROR 2025-11-25 19:22:10,447 notification_service 36272 32504 Failed to get RECEIVED emails: 401
+ERROR 2025-11-25 19:22:11,109 notification_service 36272 32504 Failed to get RECEIVED emails: 401
+ERROR 2025-11-25 19:24:09,244 notification_service 36272 36512 Failed to get RECEIVED emails: 401
+ERROR 2025-11-25 19:24:09,903 notification_service 36272 36512 Failed to get RECEIVED emails: 401
+ERROR 2025-11-25 19:24:10,552 notification_service 36272 36512 Failed to get RECEIVED emails: 401
+ERROR 2025-11-25 19:24:11,278 notification_service 36272 36512 Failed to get RECEIVED emails: 401
+ERROR 2025-11-25 19:27:01,998 notification_service 36272 36512 Failed to get RECEIVED emails: 401
+ERROR 2025-11-25 19:27:02,644 notification_service 36272 36512 Failed to get RECEIVED emails: 401
+ERROR 2025-11-25 19:27:03,301 notification_service 36272 36512 Failed to get RECEIVED emails: 401
+ERROR 2025-11-25 19:27:04,147 notification_service 36272 36512 Failed to get RECEIVED emails: 401
+ERROR 2025-11-25 19:29:01,894 notification_service 36272 36512 Failed to get RECEIVED emails: 401
+ERROR 2025-11-25 19:29:02,542 notification_service 36272 36512 Failed to get RECEIVED emails: 401
+ERROR 2025-11-25 19:29:03,368 notification_service 36272 36512 Failed to get RECEIVED emails: 401
+ERROR 2025-11-25 19:29:04,123 notification_service 36272 36512 Failed to get RECEIVED emails: 401
+ERROR 2025-11-25 19:31:01,922 notification_service 36272 36512 Failed to get RECEIVED emails: 401
+ERROR 2025-11-25 19:31:02,636 notification_service 36272 36512 Failed to get RECEIVED emails: 401
+ERROR 2025-11-25 19:31:03,381 notification_service 36272 36512 Failed to get RECEIVED emails: 401
+ERROR 2025-11-25 19:31:04,171 notification_service 36272 36512 Failed to get RECEIVED emails: 401
+ERROR 2025-11-25 19:33:03,160 notification_service 31560 39836 Failed to get RECEIVED emails: 401
+ERROR 2025-11-25 19:33:03,824 notification_service 31560 39836 Failed to get RECEIVED emails: 401
+ERROR 2025-11-25 19:33:04,599 notification_service 31560 39836 Failed to get RECEIVED emails: 401
+ERROR 2025-11-25 19:33:05,269 notification_service 31560 39836 Failed to get RECEIVED emails: 401

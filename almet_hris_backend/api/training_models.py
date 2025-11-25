@@ -19,12 +19,6 @@ class Training(SoftDeleteModel):
     
 
     
-    # Duration
-    estimated_duration_hours = models.DecimalField(
-        max_digits=5, 
-        decimal_places=2,
-        help_text="Estimated duration in hours"
-    )
 
     is_active = models.BooleanField(default=True)
     
@@ -82,54 +76,46 @@ class Training(SoftDeleteModel):
     def __str__(self):
         return f"{self.training_id} - {self.title}"
 
+
 class TrainingMaterial(SoftDeleteModel):
-    """Training materialları (PDF, video, etc.)"""
+    """Training materials (PDF, video, etc.)"""
     
-    MATERIAL_TYPES = [
-        ('PDF', 'PDF Document'),
-        ('VIDEO', 'Video'),
-        ('PRESENTATION', 'Presentation'),
-        ('DOCUMENT', 'Document'),
-        ('LINK', 'External Link'),
-        ('OTHER', 'Other'),
-    ]
+    training = models.ForeignKey(
+        Training, 
+        on_delete=models.CASCADE, 
+        related_name='materials'
+    )
     
-    training = models.ForeignKey(Training, on_delete=models.CASCADE, related_name='materials')
-    title = models.CharField(max_length=200)
-    material_type = models.CharField(max_length=20, choices=MATERIAL_TYPES)
-    
-    # File or Link
+    # File upload
     file = models.FileField(
         upload_to='training_materials/%Y/%m/',
         null=True,
         blank=True,
         help_text="Upload file for PDF, Video, etc."
     )
-    external_link = models.URLField(
-        max_length=500,
-        null=True,
-        blank=True,
-        help_text="External link for online resources"
-    )
     
     # Metadata
-    file_size = models.BigIntegerField(null=True, blank=True, help_text="File size in bytes")
-    duration_minutes = models.IntegerField(null=True, blank=True, help_text="For videos")
+    file_size = models.BigIntegerField(
+        null=True, 
+        blank=True, 
+        help_text="File size in bytes"
+    )
     
-
-    is_required = models.BooleanField(default=True, help_text="Must be viewed to complete training")
-    
-    uploaded_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
+    uploaded_by = models.ForeignKey(
+        User, 
+        on_delete=models.SET_NULL, 
+        null=True
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     
     class Meta:
-        ordering = ['training',  'created_at']
+        ordering = ['training', 'created_at']
         verbose_name = 'Training Material'
         verbose_name_plural = 'Training Materials'
     
     def __str__(self):
-        return f"{self.training.training_id} - {self.title}"
-
+        filename = self.file.name.split('/')[-1] if self.file else 'No file'
+        return f"{self.training.training_id} - {filename}"
 class TrainingAssignment(SoftDeleteModel):
     """Training assignment to employees"""
     

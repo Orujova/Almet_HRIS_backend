@@ -320,38 +320,7 @@ class ContractTypeConfig(SoftDeleteModel):
         active_configs = cls.objects.filter(is_active=True)
         return [(config.contract_type, config.display_name) for config in active_configs]
     
-    # @classmethod
-    # def get_or_create_defaults(cls):
-    #     """Create default contract configurations"""
-    #     defaults = [
-    #         ('3_MONTHS', '3 Months Contract', 7, 7, True, True, 7),
-    #         ('6_MONTHS', '6 Months Contract', 7, 14, True, True, 14),
-    #         ('1_YEAR', '1 Year Contract', 7, 90, True, True, 30),
-    #         ('2_YEARS', '2 Years Contract', 7, 90, True, True, 30),
-    #         ('3_YEARS', '3 Years Contract', 7, 90, True, True, 30),
-    #         ('PERMANENT', 'Permanent Contract', 7, 0, True, False, 0),
-    #     ]
-        
-    #     created_configs = {}
-    #     for contract_type, display_name, onboarding, probation, auto_trans, inactive_on_end, notify_days in defaults:
-    #         config, created = cls.objects.get_or_create(
-    #             contract_type=contract_type,
-    #             defaults={
-    #                 'display_name': display_name,
-    #                 'onboarding_days': onboarding,
-    #                 'probation_days': probation,
-    #                 'enable_auto_transitions': auto_trans,
-    #                 'transition_to_inactive_on_end': inactive_on_end,
-    #                 'notify_days_before_end': notify_days,
-    #                 'is_active': True
-    #             }
-    #         )
-    #         created_configs[contract_type] = config
-    #         if created:
-    #             logger.info(f"Created default contract config: {contract_type}")
-        
-    #     return created_configs
-    
+
     def __str__(self):
         return self.display_name
     
@@ -432,45 +401,7 @@ class EmployeeStatus(SoftDeleteModel):
         
         super().save(*args, **kwargs)
 
-    # @classmethod
-    # def get_or_create_default_statuses(cls):
-    #     """Create default statuses including VACANT"""
-    #     default_statuses = [
-    #         # name, status_type, affects_headcount, allows_org_chart, order, auto_transition, is_transitional, is_default
-    #         ('ONBOARDING', 'ONBOARDING', True, True, 1, True, True, True),
-    #         ('PROBATION', 'PROBATION', True, True, 2, True, True, False),
-    #         ('ACTIVE', 'ACTIVE', True, True, 3, False, False, False),
-    #         ('INACTIVE', 'INACTIVE', False, False, 7, False, False, False),
-          
-    #         ('VACANT', 'VACANT', True, True, 10, False, False, False),  # ENHANCED: VACANT status counts in headcount
-    #     ]
-        
-    #     created_statuses = {}
-    #     for name, status_type, affects_headcount, allows_org_chart, order, auto_transition, is_transitional, is_default in default_statuses:
-    #         status, created = cls.objects.get_or_create(
-    #             name=name,
-    #             defaults={
-    #                 'status_type': status_type,
-    #                 'affects_headcount': affects_headcount,
-    #                 'allows_org_chart': allows_org_chart,
-    #                 'order': order,
-    #                 'auto_transition_enabled': auto_transition,
-    #                 'is_transitional': is_transitional,
-    #                 'is_default_for_new_employees': is_default,
-    #                 'send_notifications': False,
-    #                 'notification_template': '',
-    #                 'is_system_status': True,
-    #                 'transition_priority': 0,
-    #                 'is_active': True,
-    #                 'color': '#F97316' if status_type == 'VACANT' else '#10B981'  # Orange for vacant, green for others
-    #             }
-    #         )
-    #         created_statuses[name] = status
-    #         if created:
-    #             logger.info(f"Created default status: {name}")
-        
-    #     return created_statuses
-    
+
     def __str__(self):
         return self.name
 

@@ -16,9 +16,8 @@ class TrainingMaterialSerializer(serializers.ModelSerializer):
     class Meta:
         model = TrainingMaterial
         fields = [
-            'id', 'title', 'material_type', 'file', 'file_url', 
-            'external_link', 'file_size', 'file_size_display',
-            'duration_minutes', 'is_required',
+            'id', 'file', 'file_url', 
+             'file_size', 'file_size_display',
             'uploaded_by_name', 'created_at'
         ]
     
@@ -30,31 +29,33 @@ class TrainingMaterialSerializer(serializers.ModelSerializer):
         return None
     
     def get_file_size_display(self, obj):
-        if obj.file_size:
+        """Display file size or link info"""
+        parts = []
+        
+        # Add file size if file exists
+        if obj.file and obj.file_size:
             if obj.file_size < 1024:
-                return f"{obj.file_size} B"
+                parts.append(f"{obj.file_size} B")
             elif obj.file_size < 1024 * 1024:
-                return f"{obj.file_size / 1024:.1f} KB"
+                parts.append(f"{obj.file_size / 1024:.1f} KB")
             else:
-                return f"{obj.file_size / (1024 * 1024):.1f} MB"
-        return "N/A"
+                parts.append(f"{obj.file_size / (1024 * 1024):.1f} MB")
+        
+     
+        
+        return " • ".join(parts) if parts else None
 
 
 class TrainingMaterialCreateSerializer(serializers.Serializer):
     """Serializer for creating training materials within training creation"""
-    title = serializers.CharField(max_length=200)
-    material_type = serializers.ChoiceField(
-        choices=['PDF', 'VIDEO', 'PRESENTATION', 'DOCUMENT', 'LINK', 'OTHER']
-    )
+
     file = serializers.FileField(required=False, allow_null=True)
-    external_link = serializers.URLField(max_length=500, required=False, allow_blank=True, allow_null=True)
-    is_required = serializers.BooleanField(default=True)
-    duration_minutes = serializers.IntegerField(required=False, allow_null=True)
-    
+
+
     def validate(self, data):
-        if not data.get('file') and not data.get('external_link'):
+        if not data.get('file') :
             raise serializers.ValidationError(
-                "Either 'file' or 'external_link' must be provided"
+                "Either 'file'  must be provided"
             )
         return data
 
@@ -68,7 +69,6 @@ class TrainingListSerializer(serializers.ModelSerializer):
         model = Training
         fields = [
             'id', 'training_id', 'title', 'description',
-            'estimated_duration_hours',
             'is_active', 'materials_count',
             'assignments_count', 'completion_rate', 
             'requires_completion', 'created_at'
@@ -290,20 +290,13 @@ class TrainingAssignToEmployeeSerializer(serializers.Serializer):
 
 class TrainingMaterialUploadSerializer(serializers.Serializer):
     """Serializer for uploading training materials"""
-    title = serializers.CharField(max_length=200, required=True)
-    material_type = serializers.ChoiceField(
-        choices=['PDF', 'VIDEO', 'PRESENTATION', 'DOCUMENT', 'LINK', 'OTHER'],
-        required=True
-    )
     file = serializers.FileField(required=False, allow_null=True)
-    external_link = serializers.URLField(max_length=500, required=False, allow_blank=True, allow_null=True)
-    is_required = serializers.BooleanField(default=True, required=False)
-    duration_minutes = serializers.IntegerField(required=False, allow_null=True)
+
     
     def validate(self, data):
-        """Validate that either file or external_link is provided"""
-        if not data.get('file') and not data.get('external_link'):
+        """Validate that either filenk is provided"""
+        if not data.get('file'):
             raise serializers.ValidationError(
-                "Either 'file' or 'external_link' must be provided"
+                "Either 'file'  must be provided"
             )
         return data
