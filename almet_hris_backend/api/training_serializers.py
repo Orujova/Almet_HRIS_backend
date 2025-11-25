@@ -1,17 +1,11 @@
 # api/training_serializers.py
 from rest_framework import serializers
 from .training_models import (
- Training, TrainingMaterial, 
+    Training, TrainingMaterial, 
     TrainingAssignment, TrainingActivity
 )
 from .models import Employee
 from django.utils import timezone
-# api/training_serializers.py
-
-# Əvvəlki import-ların sonuna əlavə et
-from rest_framework import serializers
-
-# Faylın sonuna əlavə et:
 
 
 class TrainingMaterialSerializer(serializers.ModelSerializer):
@@ -24,7 +18,7 @@ class TrainingMaterialSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'title', 'material_type', 'file', 'file_url', 
             'external_link', 'file_size', 'file_size_display',
-            'duration_minutes',  'is_required',
+            'duration_minutes', 'is_required',
             'uploaded_by_name', 'created_at'
         ]
     
@@ -45,9 +39,27 @@ class TrainingMaterialSerializer(serializers.ModelSerializer):
                 return f"{obj.file_size / (1024 * 1024):.1f} MB"
         return "N/A"
 
-class TrainingListSerializer(serializers.ModelSerializer):
-  
 
+class TrainingMaterialCreateSerializer(serializers.Serializer):
+    """Serializer for creating training materials within training creation"""
+    title = serializers.CharField(max_length=200)
+    material_type = serializers.ChoiceField(
+        choices=['PDF', 'VIDEO', 'PRESENTATION', 'DOCUMENT', 'LINK', 'OTHER']
+    )
+    file = serializers.FileField(required=False, allow_null=True)
+    external_link = serializers.URLField(max_length=500, required=False, allow_blank=True, allow_null=True)
+    is_required = serializers.BooleanField(default=True)
+    duration_minutes = serializers.IntegerField(required=False, allow_null=True)
+    
+    def validate(self, data):
+        if not data.get('file') and not data.get('external_link'):
+            raise serializers.ValidationError(
+                "Either 'file' or 'external_link' must be provided"
+            )
+        return data
+
+
+class TrainingListSerializer(serializers.ModelSerializer):
     materials_count = serializers.SerializerMethodField()
     assignments_count = serializers.SerializerMethodField()
     completion_rate = serializers.SerializerMethodField()
@@ -56,9 +68,8 @@ class TrainingListSerializer(serializers.ModelSerializer):
         model = Training
         fields = [
             'id', 'training_id', 'title', 'description',
-          'training_type',
-            'difficulty_level', 'estimated_duration_hours',
-            'priority', 'is_active', 'materials_count',
+            'estimated_duration_hours',
+            'is_active', 'materials_count',
             'assignments_count', 'completion_rate', 
             'requires_completion', 'created_at'
         ]
@@ -76,9 +87,10 @@ class TrainingListSerializer(serializers.ModelSerializer):
         completed = obj.assignments.filter(status='COMPLETED', is_deleted=False).count()
         return round((completed / total) * 100, 2)
 
-class TrainingDetailSerializer(serializers.ModelSerializer):
 
+class TrainingDetailSerializer(serializers.ModelSerializer):
     materials = TrainingMaterialSerializer(many=True, read_only=True)
+    materials_data = TrainingMaterialCreateSerializer(many=True, write_only=True, required=False)
     
     # Organizational filters
     business_function_names = serializers.SerializerMethodField()
@@ -98,6 +110,48 @@ class TrainingDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = Training
         fields = '__all__'
+        extra_kwargs = {
+            'materials_data': {'write_only': True}
+        }
+    
+    def create(self, validated_data):
+        materials_data = validated_data.pop('materials_data', [])
+        training = Training.objects.create(**validated_data)
+        
+        # Create materials
+        for material_data in materials_data:
+            material = TrainingMaterial.objects.create(
+                training=training,
+                uploaded_by=self.context['request'].user,
+                **material_data
+            )
+            if material.file:
+                material.file_size = material.file.size
+                material.save()
+        
+        return training
+    
+    def update(self, instance, validated_data):
+        materials_data = validated_data.pop('materials_data', None)
+        
+        # Update training fields
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+        
+        # Update materials if provided
+        if materials_data is not None:
+            for material_data in materials_data:
+                material = TrainingMaterial.objects.create(
+                    training=instance,
+                    uploaded_by=self.context['request'].user,
+                    **material_data
+                )
+                if material.file:
+                    material.file_size = material.file.size
+                    material.save()
+        
+        return instance
     
     def get_business_function_names(self, obj):
         return [bf.name for bf in obj.business_functions.all()]
@@ -129,7 +183,6 @@ class TrainingDetailSerializer(serializers.ModelSerializer):
     
     def get_average_completion_time(self, obj):
         from django.db.models import Avg, F, ExpressionWrapper, fields
-        from datetime import timedelta
         
         completed = obj.assignments.filter(
             status='COMPLETED',
@@ -153,10 +206,10 @@ class TrainingDetailSerializer(serializers.ModelSerializer):
         
         return None
 
+
 class TrainingAssignmentSerializer(serializers.ModelSerializer):
     training_title = serializers.CharField(source='training.title', read_only=True)
     training_id = serializers.CharField(source='training.training_id', read_only=True)
-  
     employee_name = serializers.CharField(source='employee.full_name', read_only=True)
     employee_id = serializers.CharField(source='employee.employee_id', read_only=True)
     assigned_by_name = serializers.CharField(source='assigned_by.get_full_name', read_only=True)
@@ -170,7 +223,7 @@ class TrainingAssignmentSerializer(serializers.ModelSerializer):
         model = TrainingAssignment
         fields = [
             'id', 'training', 'training_title', 'training_id',
-          'employee', 'employee_name', 'employee_id',
+            'employee', 'employee_name', 'employee_id',
             'status', 'assigned_date', 'due_date', 'started_date',
             'completed_date', 'progress_percentage', 'is_mandatory',
             'materials_completed_count', 'total_materials',
@@ -193,33 +246,31 @@ class TrainingAssignmentSerializer(serializers.ModelSerializer):
             return delta
         return None
 
+
 class BulkTrainingAssignmentSerializer(serializers.Serializer):
-    """Bulk training assignment"""
-    training_id = serializers.IntegerField()
+    """Bulk training assignment - multiple trainings to multiple employees"""
+    training_ids = serializers.ListField(
+        child=serializers.IntegerField(),
+        help_text="List of training IDs to assign"
+    )
     employee_ids = serializers.ListField(
         child=serializers.IntegerField(),
-        help_text="List of employee IDs to assign training"
+        help_text="List of employee IDs to assign trainings"
     )
     due_date = serializers.DateField(required=False, allow_null=True)
     is_mandatory = serializers.BooleanField(default=False)
     notes = serializers.CharField(max_length=500, required=False, allow_blank=True)
     
-    def validate_training_id(self, value):
-        try:
-            Training.objects.get(id=value, is_active=True)
-        except Training.DoesNotExist:
-            raise serializers.ValidationError("Training not found or inactive.")
+    def validate_training_ids(self, value):
+        if not value:
+            raise serializers.ValidationError("At least one training ID is required.")
         return value
     
     def validate_employee_ids(self, value):
         if not value:
             raise serializers.ValidationError("At least one employee ID is required.")
-        
-        employees = Employee.objects.filter(id__in=value, is_deleted=False)
-        if employees.count() != len(value):
-            raise serializers.ValidationError("Some employee IDs not found.")
-        
         return value
+
 
 class TrainingAssignByTrainingSerializer(serializers.Serializer):
     """Assign one training to multiple employees"""
@@ -228,14 +279,14 @@ class TrainingAssignByTrainingSerializer(serializers.Serializer):
     due_date = serializers.DateField(required=False, allow_null=True)
     is_mandatory = serializers.BooleanField(default=False)
 
+
 class TrainingAssignToEmployeeSerializer(serializers.Serializer):
     """Assign multiple trainings to one employee"""
     employee_id = serializers.IntegerField()
     training_ids = serializers.ListField(child=serializers.IntegerField())
     due_date = serializers.DateField(required=False, allow_null=True)
     is_mandatory = serializers.BooleanField(default=False)
-    
-    
+
 
 class TrainingMaterialUploadSerializer(serializers.Serializer):
     """Serializer for uploading training materials"""
@@ -247,7 +298,6 @@ class TrainingMaterialUploadSerializer(serializers.Serializer):
     file = serializers.FileField(required=False, allow_null=True)
     external_link = serializers.URLField(max_length=500, required=False, allow_blank=True, allow_null=True)
     is_required = serializers.BooleanField(default=True, required=False)
-
     duration_minutes = serializers.IntegerField(required=False, allow_null=True)
     
     def validate(self, data):
@@ -256,4 +306,4 @@ class TrainingMaterialUploadSerializer(serializers.Serializer):
             raise serializers.ValidationError(
                 "Either 'file' or 'external_link' must be provided"
             )
-        return data    
+        return data

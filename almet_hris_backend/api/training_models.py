@@ -9,17 +9,7 @@ from .models import Employee, SoftDeleteModel
 class Training(SoftDeleteModel):
     """Əsas training modeli"""
     
-    TRAINING_TYPES = [
-        ('MANDATORY', 'Mandatory'),
-        ('OPTIONAL', 'Optional'),
-        ('ROLE_BASED', 'Role Based'),
-    ]
     
-    DIFFICULTY_LEVELS = [
-        ('BEGINNER', 'Beginner'),
-        ('INTERMEDIATE', 'Intermediate'),
-        ('ADVANCED', 'Advanced'),
-    ]
     
     # Basic Information
     training_id = models.CharField(max_length=50, unique=True, editable=False)
@@ -27,9 +17,7 @@ class Training(SoftDeleteModel):
     description = models.TextField()
 
     
-    # Type & Settings
-    training_type = models.CharField(max_length=20, choices=TRAINING_TYPES, default='OPTIONAL')
-    difficulty_level = models.CharField(max_length=20, choices=DIFFICULTY_LEVELS, default='BEGINNER')
+
     
     # Duration
     estimated_duration_hours = models.DecimalField(
@@ -37,9 +25,7 @@ class Training(SoftDeleteModel):
         decimal_places=2,
         help_text="Estimated duration in hours"
     )
-    
-    # Priority & Status
-    priority = models.IntegerField(default=0, help_text="Higher number = higher priority")
+
     is_active = models.BooleanField(default=True)
     
     # Filters - Business Structure
@@ -89,7 +75,7 @@ class Training(SoftDeleteModel):
         super().save(*args, **kwargs)
     
     class Meta:
-        ordering = ['-priority', '-created_at']
+        ordering = [ '-created_at']
         verbose_name = 'Training'
         verbose_name_plural = 'Trainings'
     

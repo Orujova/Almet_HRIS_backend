@@ -12,7 +12,7 @@ from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 
 from .training_models import (
-  Training, TrainingMaterial,
+    Training, TrainingMaterial,
     TrainingAssignment, TrainingActivity
 )
 from .training_serializers import (
@@ -20,7 +20,7 @@ from .training_serializers import (
     TrainingDetailSerializer, TrainingMaterialSerializer,
     TrainingAssignmentSerializer, BulkTrainingAssignmentSerializer,
     TrainingAssignByTrainingSerializer, TrainingAssignToEmployeeSerializer,
-    TrainingMaterialUploadSerializer  # YENİ
+    TrainingMaterialUploadSerializer
 )
 from .models import Employee
 from .views import ModernPagination
@@ -35,10 +35,10 @@ class TrainingViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     pagination_class = ModernPagination
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = [ 'training_type', 'difficulty_level', 'is_active']
+    filterset_fields = ['is_active']
     search_fields = ['title', 'description', 'training_id']
-    ordering_fields = ['created_at', 'priority', 'title']
-    ordering = ['-priority', '-created_at']
+    ordering_fields = ['created_at', 'title']
+    ordering = ['-created_at']
     
     def get_queryset(self):
         return Training.objects.prefetch_related(
@@ -51,12 +51,12 @@ class TrainingViewSet(viewsets.ModelViewSet):
         return TrainingDetailSerializer
     
     @swagger_auto_schema(
-        operation_description="Create a new training",
+        operation_description="Create a new training with materials",
         request_body=TrainingDetailSerializer,
         responses={201: TrainingDetailSerializer}
     )
     def create(self, request, *args, **kwargs):
-        """Create training"""
+        """Create training with materials"""
         try:
             serializer = self.get_serializer(data=request.data)
             serializer.is_valid(raise_exception=True)
@@ -89,15 +89,6 @@ class TrainingViewSet(viewsets.ModelViewSet):
             total_trainings = trainings.count()
             active_trainings = trainings.filter(is_active=True).count()
             
-            # By type
-            by_type = {}
-            for t_type, t_label in Training.TRAINING_TYPES:
-                count = trainings.filter(training_type=t_type).count()
-                if count > 0:
-                    by_type[t_label] = count
-            
-            
-            
             # Assignment statistics
             total_assignments = TrainingAssignment.objects.filter(is_deleted=False).count()
             completed = TrainingAssignment.objects.filter(
@@ -123,8 +114,6 @@ class TrainingViewSet(viewsets.ModelViewSet):
                     'active_trainings': active_trainings,
                     'inactive_trainings': total_trainings - active_trainings,
                 },
-                'by_type': by_type,
-              
                 'assignments': {
                     'total': total_assignments,
                     'completed': completed,
@@ -170,7 +159,6 @@ class TrainingViewSet(viewsets.ModelViewSet):
                 file=validated_data.get('file'),
                 external_link=validated_data.get('external_link'),
                 is_required=validated_data.get('is_required', True),
-            
                 duration_minutes=validated_data.get('duration_minutes'),
                 uploaded_by=request.user
             )
@@ -194,85 +182,105 @@ class TrainingViewSet(viewsets.ModelViewSet):
             )
     
     @swagger_auto_schema(
-        operation_description="Assign training to employees",
+        operation_description="Bulk assign trainings to employees",
         request_body=BulkTrainingAssignmentSerializer,
         responses={200: openapi.Response(description="Assignment completed")}
     )
-    @action(detail=True, methods=['post'])
-    def assign_to_employees(self, request, pk=None):
-        """Assign this training to multiple employees"""
+    @action(detail=False, methods=['post'])
+    def bulk_assign(self, request):
+        """Assign multiple trainings to multiple employees"""
         try:
-            training = self.get_object()
-            
             serializer = BulkTrainingAssignmentSerializer(data=request.data)
             if not serializer.is_valid():
                 return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
             
+            training_ids = serializer.validated_data['training_ids']
             employee_ids = serializer.validated_data['employee_ids']
             due_date = serializer.validated_data.get('due_date')
             is_mandatory = serializer.validated_data.get('is_mandatory', False)
             
-            # Calculate due date if not provided
-            if not due_date and training.completion_deadline_days:
-                due_date = timezone.now().date() + timedelta(days=training.completion_deadline_days)
-            
+            # Get trainings and employees
+            trainings = Training.objects.filter(id__in=training_ids, is_active=True, is_deleted=False)
             employees = Employee.objects.filter(id__in=employee_ids, is_deleted=False)
+            
+            if trainings.count() != len(training_ids):
+                return Response(
+                    {'error': 'Some trainings not found or inactive'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            if employees.count() != len(employee_ids):
+                return Response(
+                    {'error': 'Some employees not found'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
             
             created = []
             skipped = []
             
             with transaction.atomic():
-                for employee in employees:
-                    # Check if already assigned
-                    existing = TrainingAssignment.objects.filter(
-                        training=training,
-                        employee=employee,
-                        is_deleted=False
-                    ).first()
+                for training in trainings:
+                    # Calculate due date for this training if not provided
+                    calculated_due_date = due_date
+                    if not calculated_due_date and training.completion_deadline_days:
+                        calculated_due_date = timezone.now().date() + timedelta(
+                            days=training.completion_deadline_days
+                        )
                     
-                    if existing:
-                        skipped.append({
+                    for employee in employees:
+                        # Check if already assigned
+                        existing = TrainingAssignment.objects.filter(
+                            training=training,
+                            employee=employee,
+                            is_deleted=False
+                        ).first()
+                        
+                        if existing:
+                            skipped.append({
+                                'training_id': training.training_id,
+                                'training_title': training.title,
+                                'employee_id': employee.employee_id,
+                                'employee_name': employee.full_name,
+                                'reason': 'Already assigned'
+                            })
+                            continue
+                        
+                        # Create assignment
+                        assignment = TrainingAssignment.objects.create(
+                            training=training,
+                            employee=employee,
+                            due_date=calculated_due_date,
+                            is_mandatory=is_mandatory,
+                            assigned_by=request.user
+                        )
+                        
+                        # Log activity
+                        TrainingActivity.objects.create(
+                            assignment=assignment,
+                            activity_type='ASSIGNED',
+                            description=f"Training assigned to {employee.full_name}",
+                            performed_by=request.user,
+                            metadata={
+                                'due_date': str(calculated_due_date) if calculated_due_date else None,
+                                'is_mandatory': is_mandatory
+                            }
+                        )
+                        
+                        created.append({
+                            'training_id': training.training_id,
+                            'training_title': training.title,
                             'employee_id': employee.employee_id,
                             'employee_name': employee.full_name,
-                            'reason': 'Already assigned'
+                            'assignment_id': assignment.id
                         })
-                        continue
-                    
-                    # Create assignment
-                    assignment = TrainingAssignment.objects.create(
-                        training=training,
-                        employee=employee,
-                        due_date=due_date,
-                        is_mandatory=is_mandatory,
-                        assigned_by=request.user
-                    )
-                    
-                    # Log activity
-                    TrainingActivity.objects.create(
-                        assignment=assignment,
-                        activity_type='ASSIGNED',
-                        description=f"Training assigned to {employee.full_name}",
-                        performed_by=request.user,
-                        metadata={
-                            'due_date': str(due_date) if due_date else None,
-                            'is_mandatory': is_mandatory
-                        }
-                    )
-                    
-                    created.append({
-                        'employee_id': employee.employee_id,
-                        'employee_name': employee.full_name,
-                        'assignment_id': assignment.id
-                    })
             
             return Response({
                 'success': True,
-                'message': f'Training assigned to {len(created)} employees',
-                'training_title': training.title,
+                'message': f'{len(created)} assignments created',
                 'created': created,
                 'skipped': skipped,
                 'summary': {
-                    'total_requested': len(employee_ids),
+                    'total_requested': len(training_ids) * len(employee_ids),
                     'created': len(created),
                     'skipped': len(skipped)
                 }
@@ -285,6 +293,7 @@ class TrainingViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
+
 class TrainingAssignmentViewSet(viewsets.ModelViewSet):
     """Training Assignment ViewSet"""
     serializer_class = TrainingAssignmentSerializer
@@ -294,11 +303,11 @@ class TrainingAssignmentViewSet(viewsets.ModelViewSet):
     filterset_fields = ['training', 'employee', 'status', 'is_mandatory']
     search_fields = ['training__title', 'employee__full_name', 'employee__employee_id']
     ordering_fields = ['assigned_date', 'due_date', 'completed_date']
-    ordering = ['-assigned_date' , 'due_date']
+    ordering = ['-assigned_date', 'due_date']
     
     def get_queryset(self):
         return TrainingAssignment.objects.select_related(
-            'training',  'employee', 'assigned_by'
+            'training', 'employee', 'assigned_by'
         ).prefetch_related('materials_completed').filter(is_deleted=False)
     
     @swagger_auto_schema(
@@ -425,112 +434,6 @@ class TrainingAssignmentViewSet(viewsets.ModelViewSet):
             )
     
     @swagger_auto_schema(
-        operation_description="Bulk assign trainings to one employee",
-        request_body=TrainingAssignToEmployeeSerializer,
-        responses={200: openapi.Response(description="Assignment completed")}
-    )
-    @action(detail=False, methods=['post'])
-    def assign_to_employee(self, request):
-        """Assign multiple trainings to one employee"""
-        try:
-            serializer = TrainingAssignToEmployeeSerializer(data=request.data)
-            if not serializer.is_valid():
-                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-            
-            employee_id = serializer.validated_data['employee_id']
-            training_ids = serializer.validated_data['training_ids']
-            due_date = serializer.validated_data.get('due_date')
-            is_mandatory = serializer.validated_data.get('is_mandatory', False)
-            
-            try:
-                employee = Employee.objects.get(id=employee_id, is_deleted=False)
-            except Employee.DoesNotExist:
-                return Response(
-                    {'error': 'Employee not found'},
-                    status=status.HTTP_404_NOT_FOUND
-                )
-            
-            trainings = Training.objects.filter(
-                id__in=training_ids,
-                is_active=True,
-                is_deleted=False
-            )
-            
-            created = []
-            skipped = []
-            
-            with transaction.atomic():
-                for training in trainings:
-                    # Check if already assigned
-                    existing = TrainingAssignment.objects.filter(
-                        training=training,
-                        employee=employee,
-                        is_deleted=False
-                    ).first()
-                    
-                    if existing:
-                        skipped.append({
-                            'training_id': training.training_id,
-                            'training_title': training.title,
-                            'reason': 'Already assigned'
-                        })
-                        continue
-                    
-                    # Calculate due date if not provided
-                    calculated_due_date = due_date
-                    if not calculated_due_date and training.completion_deadline_days:
-                        calculated_due_date = timezone.now().date() + timedelta(
-                            days=training.completion_deadline_days
-                        )
-                    
-                    # Create assignment
-                    assignment = TrainingAssignment.objects.create(
-                        training=training,
-                        employee=employee,
-                        due_date=calculated_due_date,
-                        is_mandatory=is_mandatory,
-                        assigned_by=request.user
-                    )
-                    
-                    # Log activity
-                    TrainingActivity.objects.create(
-                        assignment=assignment,
-                        activity_type='ASSIGNED',
-                        description=f"Training assigned to {employee.full_name}",
-                        performed_by=request.user
-                    )
-                    
-                    created.append({
-                        'training_id': training.training_id,
-                        'training_title': training.title,
-                        'assignment_id': assignment.id
-                    })
-            
-            return Response({
-                'success': True,
-                'message': f'{len(created)} trainings assigned to {employee.full_name}',
-                'employee': {
-                    'id': employee.id,
-                    'name': employee.full_name,
-                    'employee_id': employee.employee_id
-                },
-                'created': created,
-                'skipped': skipped,
-                'summary': {
-                    'total_requested': len(training_ids),
-                    'created': len(created),
-                    'skipped': len(skipped)
-                }
-            })
-            
-        except Exception as e:
-            logger.error(f"Assign to employee failed: {str(e)}")
-            return Response(
-                {'error': str(e)},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-    
-    @swagger_auto_schema(
         operation_description="Get overdue assignments",
         responses={200: TrainingAssignmentSerializer(many=True)}
     )
@@ -561,6 +464,7 @@ class TrainingAssignmentViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
+
 class TrainingMaterialViewSet(viewsets.ModelViewSet):
     """Training Material ViewSet"""
     serializer_class = TrainingMaterialSerializer
@@ -568,7 +472,7 @@ class TrainingMaterialViewSet(viewsets.ModelViewSet):
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['training', 'material_type', 'is_required']
     search_fields = ['title']
-    ordering_fields = [ 'created_at' , 'title' ]
+    ordering_fields = ['created_at', 'title']
 
     def get_queryset(self):
         return TrainingMaterial.objects.select_related(
