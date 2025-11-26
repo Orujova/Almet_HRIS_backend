@@ -50,106 +50,144 @@ class TrainingViewSet(viewsets.ModelViewSet):
             return TrainingListSerializer
         return TrainingDetailSerializer
     
+    # Replace the entire create method in TrainingViewSet (training_views.py)
+
     @swagger_auto_schema(
-   
         responses={
             201: TrainingDetailSerializer,
             400: 'Bad Request',
             500: 'Internal Server Error'
         },
-        # 🔥 Swagger-ı disable et bu endpoint üçün
         auto_schema=None
     )
     def create(self, request, *args, **kwargs):
         """Create training with materials"""
         try:
-            # 🔥 DEBUG: Request data-nı yoxla
-            print("=" * 50)
-            print("📥 REQUEST DATA:")
+            # Debug logging
+            print("=" * 70)
+            print("🔥 TRAINING CREATE REQUEST")
             print(f"Content-Type: {request.content_type}")
             print(f"POST data keys: {list(request.data.keys())}")
             print(f"FILES keys: {list(request.FILES.keys())}")
-            print("=" * 50)
+            print("=" * 70)
             
-            # Parse materials_data from JSON string if present
-            data = request.data.copy()
+            # Validate required fields
+            title = request.data.get('title')
+            description = request.data.get('description')
             
-            if 'materials_data' in data:
-                print(f"📋 Raw materials_data: {data['materials_data']}")
-                if isinstance(data['materials_data'], str):
-                    import json
-                    data['materials_data'] = json.loads(data['materials_data'])
-                print(f"📋 Parsed materials_data: {data['materials_data']}")
+            if not title or not description:
+                return Response(
+                    {'error': 'Title and description are required'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
             
-            serializer = self.get_serializer(data=data)
-            serializer.is_valid(raise_exception=True)
+            # Get basic data with proper type conversion
+            data = {
+                'title': str(title).strip(),
+                'description': str(description).strip(),
+                'is_active': str(request.data.get('is_active', 'true')).lower() == 'true',
+                'requires_completion': str(request.data.get('requires_completion', 'false')).lower() == 'true',
+            }
             
-            # Get materials data before saving
-            materials_data = serializer.validated_data.pop('materials_data', [])
-            print(f"📦 Materials to create: {len(materials_data)}")
+            print(f"📋 Basic training data: {data}")
+            
+            # Add optional completion deadline
+            completion_deadline_days = request.data.get('completion_deadline_days')
+            if completion_deadline_days:
+                try:
+                    data['completion_deadline_days'] = int(completion_deadline_days)
+                    print(f"⏰ Completion deadline: {data['completion_deadline_days']} days")
+                except (ValueError, TypeError):
+                    print(f"⚠️  Invalid completion_deadline_days: {completion_deadline_days}")
             
             # Create training
             training = Training.objects.create(
                 created_by=request.user,
-                **serializer.validated_data
+                **data
             )
-            print(f"✅ Training created: {training.training_id}")
+            print(f"✅ Training created: {training.training_id} (ID: {training.id})")
             
-            # Create materials with files
-            for i, material_data in enumerate(materials_data):
-                file_index = material_data.pop('file_index', None)
-                print(f"📎 Processing material {i}: file_index={file_index}")
+            # Process materials
+            materials_data_str = request.data.get('materials_data')
+            if materials_data_str:
+                print(f"📦 Processing materials_data: {materials_data_str}")
                 
-                # Get file from request.FILES if file_index provided
-                file_obj = None
-                if file_index is not None:
-                    file_key = f'material_{file_index}_file'
-                    file_obj = request.FILES.get(file_key)
-                    print(f"📎 File for {file_key}: {file_obj}")
-                
-                material = TrainingMaterial.objects.create(
-                    training=training,
-                    uploaded_by=request.user,
-                    file=file_obj,
-                    **material_data
-                )
-                
-                # Set file size
-                if material.file:
-                    material.file_size = material.file.size
-                    material.save()
-                    print(f"✅ Material created with file: ({material.file_size} bytes)")
-                else:
-                    print(f"✅ Material created without file")
+                try:
+                    import json
+                    materials_data = json.loads(materials_data_str)
+                    print(f"📦 Parsed {len(materials_data)} material(s)")
+                    
+                    materials_created = 0
+                    for material_info in materials_data:
+                        file_index = material_info.get('file_index')
+                        print(f"🔎 Processing material with file_index={file_index}")
+                        
+                        # Get file from request.FILES
+                        if file_index is not None:
+                            file_key = f'material_{file_index}_file'
+                            file_obj = request.FILES.get(file_key)
+                            
+                            if file_obj:
+                                print(f"📎 Found file: {file_obj.name} ({file_obj.size} bytes)")
+                                
+                                # Create material with file
+                                material = TrainingMaterial.objects.create(
+                                    training=training,
+                                    uploaded_by=request.user,
+                                    file=file_obj,
+                                    file_size=file_obj.size
+                                )
+                                materials_created += 1
+                                print(f"✅ Material created: ID={material.id}, File={material.file.name}")
+                            else:
+                                print(f"⚠️  No file found for key: {file_key}")
+                        else:
+                            print(f"⚠️  No file_index in material_info")
+                    
+                    print(f"✅ Created {materials_created} material(s)")
+                    
+                except json.JSONDecodeError as e:
+                    print(f"❌ JSON decode error: {str(e)}")
+                    print(f"❌ Raw materials_data: {materials_data_str}")
+                except Exception as e:
+                    print(f"❌ Error processing materials: {str(e)}")
+                    import traceback
+                    traceback.print_exc()
+            else:
+                print("ℹ️  No materials_data provided")
             
+            # Log success
             logger.info(f"Training {training.training_id} created by {request.user.username}")
             
-            return Response(
-                TrainingDetailSerializer(training, context={'request': request}).data,
-                status=status.HTTP_201_CREATED
-            )
+            # Return created training with all data
+            serializer = TrainingDetailSerializer(training, context={'request': request})
+            print("=" * 70)
+            print("✅ SUCCESS - Training created successfully")
+            print("=" * 70)
+            
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+            
         except Exception as e:
-            print(f"❌ ERROR: {str(e)}")
+            print("=" * 70)
+            print(f"❌ FATAL ERROR: {str(e)}")
             import traceback
             traceback.print_exc()
+            print("=" * 70)
+            
             logger.error(f"Training creation failed: {str(e)}")
             return Response(
                 {'error': f'Failed to create training: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+    # Replace the entire update method in TrainingViewSet (training_views.py)
+
     @swagger_auto_schema(
-        operation_description="""
-        Update training with materials (multipart/form-data)
-        
-        Same format as create endpoint
-        """,
         responses={
             200: TrainingDetailSerializer,
             400: 'Bad Request',
             404: 'Not Found',
             500: 'Internal Server Error'
         },
-        # 🔥 Swagger-ı disable et
         auto_schema=None
     )
     def update(self, request, *args, **kwargs):
@@ -158,58 +196,114 @@ class TrainingViewSet(viewsets.ModelViewSet):
             partial = kwargs.pop('partial', False)
             instance = self.get_object()
             
-            # Parse materials_data from JSON string if present
-            data = request.data.copy()
+            print("=" * 70)
+            print(f"🔥 TRAINING UPDATE REQUEST for {instance.training_id}")
+            print(f"Content-Type: {request.content_type}")
+            print(f"POST data keys: {list(request.data.keys())}")
+            print(f"FILES keys: {list(request.FILES.keys())}")
+            print("=" * 70)
             
-            if 'materials_data' in data and isinstance(data['materials_data'], str):
-                import json
-                data['materials_data'] = json.loads(data['materials_data'])
+            # Update basic fields
+            if 'title' in request.data:
+                instance.title = str(request.data.get('title')).strip()
+                print(f"📝 Updating title: {instance.title}")
+                
+            if 'description' in request.data:
+                instance.description = str(request.data.get('description')).strip()
+                print(f"📝 Updating description")
+                
+            if 'is_active' in request.data:
+                instance.is_active = str(request.data.get('is_active', 'true')).lower() == 'true'
+                print(f"📝 Updating is_active: {instance.is_active}")
+                
+            if 'requires_completion' in request.data:
+                instance.requires_completion = str(request.data.get('requires_completion', 'false')).lower() == 'true'
+                print(f"📝 Updating requires_completion: {instance.requires_completion}")
             
-            serializer = self.get_serializer(instance, data=data, partial=partial)
-            serializer.is_valid(raise_exception=True)
+            # Update completion deadline
+            if 'completion_deadline_days' in request.data:
+                completion_deadline_days = request.data.get('completion_deadline_days')
+                if completion_deadline_days:
+                    try:
+                        instance.completion_deadline_days = int(completion_deadline_days)
+                        print(f"📝 Updating completion_deadline_days: {instance.completion_deadline_days}")
+                    except (ValueError, TypeError):
+                        print(f"⚠️  Invalid completion_deadline_days: {completion_deadline_days}")
+                else:
+                    instance.completion_deadline_days = None
+                    print(f"📝 Clearing completion_deadline_days")
             
-            # Get materials data before saving
-            materials_data = serializer.validated_data.pop('materials_data', [])
-            
-            # Update training
-            for attr, value in serializer.validated_data.items():
-                setattr(instance, attr, value)
+            # Save training
             instance.save()
+            print(f"✅ Training {instance.training_id} updated")
             
-            # Create new materials if provided
-            for i, material_data in enumerate(materials_data):
-                file_index = material_data.pop('file_index', None)
+            # Process new materials if provided
+            materials_data_str = request.data.get('materials_data')
+            if materials_data_str:
+                print(f"📦 Processing materials_data: {materials_data_str}")
                 
-                # Get file from request.FILES if file_index provided
-                file_obj = None
-                if file_index is not None:
-                    file_key = f'material_{file_index}_file'
-                    file_obj = request.FILES.get(file_key)
-                
-                material = TrainingMaterial.objects.create(
-                    training=instance,
-                    uploaded_by=request.user,
-                    file=file_obj,
-                    **material_data
-                )
-                
-                # Set file size
-                if material.file:
-                    material.file_size = material.file.size
-                    material.save()
+                try:
+                    import json
+                    materials_data = json.loads(materials_data_str)
+                    print(f"📦 Parsed {len(materials_data)} material(s)")
+                    
+                    materials_created = 0
+                    for material_info in materials_data:
+                        file_index = material_info.get('file_index')
+                        print(f"🔎 Processing material with file_index={file_index}")
+                        
+                        if file_index is not None:
+                            file_key = f'material_{file_index}_file'
+                            file_obj = request.FILES.get(file_key)
+                            
+                            if file_obj:
+                                print(f"📎 Found file: {file_obj.name} ({file_obj.size} bytes)")
+                                
+                                material = TrainingMaterial.objects.create(
+                                    training=instance,
+                                    uploaded_by=request.user,
+                                    file=file_obj,
+                                    file_size=file_obj.size
+                                )
+                                materials_created += 1
+                                print(f"✅ Material created: ID={material.id}, File={material.file.name}")
+                            else:
+                                print(f"⚠️  No file found for key: {file_key}")
+                    
+                    print(f"✅ Created {materials_created} new material(s)")
+                    
+                except json.JSONDecodeError as e:
+                    print(f"❌ JSON decode error: {str(e)}")
+                except Exception as e:
+                    print(f"❌ Error processing materials: {str(e)}")
+                    import traceback
+                    traceback.print_exc()
+            else:
+                print("ℹ️  No new materials to add")
             
+            # Log success
             logger.info(f"Training {instance.training_id} updated by {request.user.username}")
             
-            return Response(
-                TrainingDetailSerializer(instance, context={'request': request}).data
-            )
+            # Return updated training
+            serializer = TrainingDetailSerializer(instance, context={'request': request})
+            print("=" * 70)
+            print("✅ SUCCESS - Training updated successfully")
+            print("=" * 70)
+            
+            return Response(serializer.data)
+            
         except Exception as e:
+            print("=" * 70)
+            print(f"❌ FATAL ERROR: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            print("=" * 70)
+            
             logger.error(f"Training update failed: {str(e)}")
             return Response(
                 {'error': f'Failed to update training: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-    
     @swagger_auto_schema(
         operation_description="Partial update training",
         responses={
