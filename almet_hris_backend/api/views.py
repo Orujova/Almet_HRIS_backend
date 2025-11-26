@@ -1064,6 +1064,7 @@ class JobTitleViewSet(viewsets.ModelViewSet):
     queryset = JobTitle.objects.all().order_by('name')
     serializer_class = JobTitleSerializer
     permission_classes = [IsAuthenticated]
+    pagination_class = ModernPagination
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = [ 'is_active']
     search_fields = ['name', 'description']
@@ -1223,6 +1224,7 @@ class JobFunctionViewSet(viewsets.ModelViewSet):
     """UPDATED: Employee count əlavə olundu"""
     queryset = JobFunction.objects.all().order_by('name')
     serializer_class = JobFunctionSerializer
+    pagination_class = ModernPagination
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
     filterset_fields = ['is_active']

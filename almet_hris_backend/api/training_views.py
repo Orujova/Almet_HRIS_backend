@@ -50,7 +50,7 @@ class TrainingViewSet(viewsets.ModelViewSet):
             return TrainingListSerializer
         return TrainingDetailSerializer
     
-    # Replace the entire create method in TrainingViewSet (training_views.py)
+
 
     @swagger_auto_schema(
         responses={
@@ -63,7 +63,6 @@ class TrainingViewSet(viewsets.ModelViewSet):
     def create(self, request, *args, **kwargs):
         """Create training with materials"""
         try:
-            # Debug logging
             print("=" * 70)
             print("🔥 TRAINING CREATE REQUEST")
             print(f"Content-Type: {request.content_type}")
@@ -179,7 +178,6 @@ class TrainingViewSet(viewsets.ModelViewSet):
                 {'error': f'Failed to create training: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-    # Replace the entire update method in TrainingViewSet (training_views.py)
 
     @swagger_auto_schema(
         responses={

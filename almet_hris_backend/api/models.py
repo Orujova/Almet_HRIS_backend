@@ -1385,22 +1385,63 @@ class Employee(SoftDeleteModel):
             logger.error(f"Error extending contract for {self.employee_id}: {e}")
             return False, f"Error extending contract: {str(e)}"
 
+    # models.py - Employee model-də add_tag metodunu yenilə
+
     def add_tag(self, tag, user=None):
-        """Add a tag to the employee"""
+        """
+        ✅ UPDATED: Add tag and auto-set status to INACTIVE
+        """
         if not self.tags.filter(id=tag.id).exists():
             self.tags.add(tag)
             
-            # Log activity
+            # ✅ YENİ: Status-u INACTIVE et
+            old_status = self.status
+            
+            try:
+                inactive_status = EmployeeStatus.objects.filter(
+                    status_type='INACTIVE',
+                    is_active=True
+                ).first()
+                
+                if inactive_status and self.status != inactive_status:
+                    self.status = inactive_status
+                    self.save()
+                    
+                    # Log the status change
+                    EmployeeActivity.objects.create(
+                        employee=self,
+                        activity_type='STATUS_CHANGED',
+                        description=f"Status automatically changed to INACTIVE when tag '{tag.name}' was added",
+                        performed_by=user,
+                        metadata={
+                            'tag_id': tag.id,
+                            'tag_name': tag.name,
+                            'old_status': old_status.name if old_status else None,
+                            'new_status': inactive_status.name,
+                            'auto_change_reason': 'tag_added',
+                            'automatic': True
+                        }
+                    )
+                    
+                    logger.info(f"Employee {self.employee_id} status changed to INACTIVE when tag '{tag.name}' was added")
+            except Exception as e:
+                logger.error(f"Error setting INACTIVE status for employee {self.employee_id}: {e}")
+            
+            # Log tag addition
             EmployeeActivity.objects.create(
                 employee=self,
                 activity_type='TAG_ADDED',
-                description=f"Tag '{tag.name}' added",
+                description=f"Tag '{tag.name}' added - Status changed to INACTIVE",
                 performed_by=user,
-                metadata={'tag_id': tag.id, 'tag_name': tag.name}
+                metadata={
+                    'tag_id': tag.id, 
+                    'tag_name': tag.name,
+                    'status_changed_to_inactive': True
+                }
             )
+            
             return True
         return False
-
     def remove_tag(self, tag, user=None):
         """Remove a tag from the employee"""
         if self.tags.filter(id=tag.id).exists():
@@ -1770,14 +1811,18 @@ class Employee(SoftDeleteModel):
 
     def soft_delete_and_create_vacancy(self, user=None):
         """
-        ENHANCED: Soft delete employee, create vacancy AND archive the employee data
-        FIXED: Properly preserve original_employee_pk with explicit database operations
+        ✅ UPDATED: Soft delete employee, remove name from all processes, add end_date
         """
         with transaction.atomic():
-            # CRITICAL: Store the original employee PK BEFORE any database operations
+            # Store original employee PK
             original_employee_pk = self.pk
+            deletion_date = timezone.now().date()
             
             logger.info(f"Starting soft delete for employee {self.employee_id} (PK: {original_employee_pk})")
+            
+            # ✅ YENİ: End date əlavə et
+            if not self.end_date:
+                self.end_date = deletion_date
             
             # Store employee data for vacancy creation
             employee_data = {
@@ -1790,10 +1835,13 @@ class Employee(SoftDeleteModel):
                 'grading_level': self.grading_level,
                 'reporting_to': self.line_manager,
                 'is_visible_in_org_chart': self.is_visible_in_org_chart,
-                'notes': f"Position vacated by {self.full_name} ({self.employee_id}) on {timezone.now().date()}"
+                'notes': f"Position vacated by [{self.employee_id}] on {deletion_date}"  # ✅ Adı deyil, ID göstər
             }
             
-            # FIXED: Create vacancy with EXPLICIT original_employee_pk setting
+            # ✅ YENİ: Remove name from all related processes
+            self._remove_name_from_processes()
+            
+            # Create vacancy with explicit original_employee_pk setting
             vacancy = VacantPosition(
                 job_title=employee_data['job_title'],
                 business_function=employee_data['business_function'],
@@ -1809,38 +1857,21 @@ class Employee(SoftDeleteModel):
                 created_by=user
             )
             
-            # CRITICAL: Set original_employee_pk BEFORE save
             vacancy.original_employee_pk = original_employee_pk
-            
-            # Save with explicit logging
-            logger.info(f"Saving vacancy with original_employee_pk={original_employee_pk}")
             vacancy.save()
             
-            # CRITICAL: Verify the PK was saved correctly with multiple checks
+            # Verify vacancy PK
             vacancy.refresh_from_db()
-            
             if vacancy.original_employee_pk != original_employee_pk:
-                logger.error(f"CRITICAL: original_employee_pk not saved correctly! Expected: {original_employee_pk}, Got: {vacancy.original_employee_pk}")
-                
-                # Force update using raw SQL as a fallback
                 from django.db import connection
                 with connection.cursor() as cursor:
                     cursor.execute(
                         "UPDATE api_vacantposition SET original_employee_pk = %s WHERE id = %s",
                         [original_employee_pk, vacancy.id]
                     )
-                
-                # Re-verify
                 vacancy.refresh_from_db()
-                
-                if vacancy.original_employee_pk != original_employee_pk:
-                    raise Exception(f"Failed to preserve original_employee_pk after multiple attempts: {original_employee_pk}")
-                
-                logger.warning(f"Had to force-update original_employee_pk using raw SQL: {vacancy.original_employee_pk}")
             
-            logger.info(f"Vacancy {vacancy.position_id} created successfully with original_employee_pk={vacancy.original_employee_pk}")
-            
-            # Update direct reports to report to this employee's manager
+            # Update direct reports
             direct_reports_updated = 0
             if self.line_manager:
                 direct_reports = self.direct_reports.filter(is_deleted=False)
@@ -1850,61 +1881,137 @@ class Employee(SoftDeleteModel):
                     report.save()
                     direct_reports_updated += 1
                     
-                    # Log activity for each direct report
+                    # ✅ Activity log-da da ID göstər
                     EmployeeActivity.objects.create(
                         employee=report,
                         activity_type='MANAGER_CHANGED',
-                        description=f"Line manager changed from {self.full_name} to {self.line_manager.full_name} due to manager departure",
+                        description=f"Line manager changed from [{self.employee_id}] to {self.line_manager.full_name} due to manager departure",
                         performed_by=user,
                         metadata={
                             'reason': 'manager_departure',
-                            'old_manager_id': self.id,
-                            'old_manager_name': self.full_name,
+                            'old_manager_id': self.employee_id,
                             'new_manager_id': self.line_manager.id,
-                            'new_manager_name': self.line_manager.full_name,
                             'vacancy_created': vacancy.id
                         }
                     )
             
-            # Create archive record for soft delete
+            # Create archive record
             archive = self._create_archive_record(
-                deletion_notes=f"Employee soft deleted and vacancy {vacancy.position_id} created",
+                deletion_notes=f"Employee [{self.employee_id}] soft deleted and vacancy {vacancy.position_id} created. End date set to {deletion_date}.",
                 deleted_by=user,
-                preserve_original_data=True  # Keep employee data in database
+                preserve_original_data=True
             )
             
-            # Soft delete the employee (keeps all data in database)
+            # Soft delete the employee
             self.soft_delete(user)
             
-            # Log the soft delete activity with preserved PK
+            # Log the soft delete activity
             EmployeeActivity.objects.create(
                 employee=self,
                 activity_type='SOFT_DELETED',
-                description=f"Employee {self.full_name} soft deleted, vacancy {vacancy.position_id} created, and archived (Archive ID: {archive.id if archive else 'N/A'})",
+                description=f"Employee [{self.employee_id}] soft deleted, vacancy {vacancy.position_id} created, end date set to {deletion_date}",
                 performed_by=user,
                 metadata={
                     'delete_type': 'soft_with_vacancy',
                     'vacancy_created': True,
                     'vacancy_id': vacancy.id,
                     'vacancy_position_id': vacancy.position_id,
-                    'original_employee_pk': original_employee_pk,  # Store the preserved PK
-                    'direct_reports_updated': direct_reports_updated,
-                    'employee_data_preserved': True,
-                    'can_be_restored': True,
-                    'archive_id': archive.id if archive else None,
-                    'archive_reference': archive.get_archive_reference() if archive else None
+                    'original_employee_pk': original_employee_pk,
+                    'end_date_set': str(deletion_date),
+                    'name_removed_from_processes': True
                 }
             )
             
-            # FINAL VERIFICATION: Log the final state
-            final_check_vacancy = VacantPosition.objects.get(id=vacancy.id)
-            logger.info(f"FINAL VERIFICATION: Vacancy {final_check_vacancy.position_id} has original_employee_pk={final_check_vacancy.original_employee_pk}")
-            
-            if final_check_vacancy.original_employee_pk != original_employee_pk:
-                raise Exception(f"FINAL CHECK FAILED: original_employee_pk mismatch! Expected: {original_employee_pk}, Got: {final_check_vacancy.original_employee_pk}")
-            
-            logger.info(f"Employee {self.employee_id} - {self.full_name} soft deleted successfully. Vacancy created with preserved PK.")
+            logger.info(f"Employee {self.employee_id} soft deleted successfully with end_date={deletion_date}")
             return vacancy, archive
+    
+    def _remove_name_from_processes(self):
+        """
+        ✅ YENİ: Remove employee name from all related processes
+        Name → Employee ID conversion everywhere
+        """
+        try:
+            # 1. Job Descriptions - manager assignments
+            from .job_description_models import JobDescriptionAssignment
+            
+            jd_assignments = JobDescriptionAssignment.objects.filter(
+                reports_to=self,
+                is_active=True
+            )
+            
+            # Update notes to show ID instead of name
+            for assignment in jd_assignments:
+                if self.full_name in assignment.notes:
+                    assignment.notes = assignment.notes.replace(
+                        self.full_name, 
+                        f"[{self.employee_id}]"
+                    )
+                    assignment.save()
+            
+            # 2. Performance Management - if employee is evaluator/manager
+            from .performance_models import EmployeePerformance
+            
+            performances = EmployeePerformance.objects.filter(
+                Q(employee__line_manager=self) | 
+                Q(created_by=self.user)
+            )
+            
+            # Update any notes or comments that contain employee name
+            for perf in performances:
+                if hasattr(perf, 'objectives_comments') and self.full_name in str(perf.objectives_comments):
+                    perf.objectives_comments = str(perf.objectives_comments).replace(
+                        self.full_name, 
+                        f"[{self.employee_id}]"
+                    )
+                    perf.save()
+            
+            # 3. Asset Management - if employee is in asset activities
+            from .asset_models import AssetActivity
+            
+            asset_activities = AssetActivity.objects.filter(
+                performed_by=self.user
+            )
+            
+            for activity in asset_activities:
+                if self.full_name in activity.description:
+                    activity.description = activity.description.replace(
+                        self.full_name, 
+                        f"[{self.employee_id}]"
+                    )
+                    activity.save()
+            
+            # 4. Employee Activities - update all descriptions
+            activities = EmployeeActivity.objects.filter(
+                Q(employee=self) | Q(performed_by=self.user)
+            )
+            
+            for activity in activities:
+                if self.full_name in activity.description:
+                    activity.description = activity.description.replace(
+                        self.full_name, 
+                        f"[{self.employee_id}]"
+                    )
+                    activity.save()
+            
+            # 5. Update full_name field in Employee model to show ID
+            # Keep original name in metadata for archive purposes
+            original_full_name = self.full_name
+            self.full_name = f"[DELETED-{self.employee_id}]"
+            self.first_name = "[DELETED]"
+            self.last_name = self.employee_id
+            
+            # Store original name in notes for reference
+            if self.notes:
+                self.notes = f"[ORIGINAL NAME: {original_full_name}]\n\n{self.notes}"
+            else:
+                self.notes = f"[ORIGINAL NAME: {original_full_name}]"
+            
+            logger.info(f"Name removed from all processes for employee {self.employee_id}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error removing name from processes: {e}")
+            return False
     def hard_delete_with_archive(self, user=None):
         """
         FIXED: Hard delete employee completely and create comprehensive archive - NO VACANCY CREATION
