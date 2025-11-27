@@ -3783,15 +3783,50 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         except (Employee.DoesNotExist, EmployeeTag.DoesNotExist) as e:
             return Response({'error': str(e)}, status=status.HTTP_404_NOT_FOUND)
     
+    # views.py - EmployeeViewSet-də bulk_add_tag metodunu tamamilə yenilə
+
     @swagger_auto_schema(
         method='post',
-        operation_description="Add tag to multiple employees",
+        operation_description="Add tag to multiple employees and set status to INACTIVE",
         request_body=BulkEmployeeTagUpdateSerializer,
-        responses={200: "Tags added successfully", 400: "Bad request"}
+        responses={
+            200: openapi.Response(
+                description="Tags added and statuses updated successfully",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'success': openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                        'message': openapi.Schema(type=openapi.TYPE_STRING),
+                        'total_employees': openapi.Schema(type=openapi.TYPE_INTEGER),
+                        'added_count': openapi.Schema(type=openapi.TYPE_INTEGER),
+                        'already_had_count': openapi.Schema(type=openapi.TYPE_INTEGER),
+                        'status_changed_count': openapi.Schema(type=openapi.TYPE_INTEGER),
+                        'results': openapi.Schema(
+                            type=openapi.TYPE_ARRAY,
+                            items=openapi.Schema(
+                                type=openapi.TYPE_OBJECT,
+                                properties={
+                                    'employee_id': openapi.Schema(type=openapi.TYPE_INTEGER),
+                                    'employee_name': openapi.Schema(type=openapi.TYPE_STRING),
+                                    'status': openapi.Schema(type=openapi.TYPE_STRING),
+                                    'tag_added': openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                                    'status_changed': openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                                    'old_status': openapi.Schema(type=openapi.TYPE_STRING),
+                                    'new_status': openapi.Schema(type=openapi.TYPE_STRING)
+                                }
+                            )
+                        )
+                    }
+                )
+            ),
+            400: "Bad request"
+        }
     )
     @action(detail=False, methods=['post'], url_path='bulk-add-tag')
     def bulk_add_tag(self, request):
-        """Add tag to multiple employees using employee IDs"""
+        """
+        ✅ UPDATED: Add tag to multiple employees and automatically set status to INACTIVE
+        """
         serializer = BulkEmployeeTagUpdateSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -3803,39 +3838,86 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             tag = EmployeeTag.objects.get(id=tag_id)
             employees = Employee.objects.filter(id__in=employee_ids)
             
+            # Get INACTIVE status
+            inactive_status = EmployeeStatus.objects.filter(
+                status_type='INACTIVE',
+                is_active=True
+            ).first()
+            
+            if not inactive_status:
+                logger.warning("INACTIVE status not found in system")
+            
             added_count = 0
             already_had_count = 0
+            status_changed_count = 0
             results = []
             
             with transaction.atomic():
                 for employee in employees:
-                    if employee.add_tag(tag, request.user):
-                        added_count += 1
-                        results.append({
-                            'employee_id': employee.id,
-                            'employee_name': employee.full_name,
-                            'status': 'added'
-                        })
+                    result_data = {
+                        'employee_id': employee.id,
+                        'employee_name': employee.full_name,
+                        'employee_hc_id': employee.employee_id,
+                        'tag_added': False,
+                        'status_changed': False,
+                        'old_status': employee.status.name if employee.status else None,
+                        'new_status': None
+                    }
+                    
+                    # Check if tag already exists
+                    tag_existed = employee.tags.filter(id=tag.id).exists()
+                    
+                    if not tag_existed:
+                        # Add tag using the updated add_tag method
+                        # This will automatically change status to INACTIVE
+                        tag_added = employee.add_tag(tag, request.user)
+                        
+                        if tag_added:
+                            added_count += 1
+                            result_data['tag_added'] = True
+                            result_data['status'] = 'added'
+                            
+                            # Refresh to get updated status
+                            employee.refresh_from_db()
+                            result_data['new_status'] = employee.status.name if employee.status else None
+                            
+                            # Check if status was changed
+                            if result_data['old_status'] != result_data['new_status']:
+                                status_changed_count += 1
+                                result_data['status_changed'] = True
+                                
+                                logger.info(
+                                    f"Employee {employee.employee_id}: "
+                                    f"Tag added, Status changed {result_data['old_status']} → {result_data['new_status']}"
+                                )
                     else:
                         already_had_count += 1
-                        results.append({
-                            'employee_id': employee.id,
-                            'employee_name': employee.full_name,
-                            'status': 'already_had'
-                        })
+                        result_data['status'] = 'already_had'
+                        result_data['new_status'] = result_data['old_status']
+                    
+                    results.append(result_data)
             
             return Response({
                 'success': True,
-                'message': f'Tag "{tag.name}" processed for {len(employee_ids)} employees',
+                'message': f"Tag '{tag.name}' processed for {len(employee_ids)} employees. {status_changed_count} statuses changed to INACTIVE.",
                 'tag_name': tag.name,
                 'total_employees': len(employee_ids),
                 'added_count': added_count,
                 'already_had_count': already_had_count,
+                'status_changed_count': status_changed_count,
+                'inactive_status_available': bool(inactive_status),
                 'results': results
             })
+            
         except EmployeeTag.DoesNotExist:
             return Response({'error': 'Tag not found'}, status=status.HTTP_404_NOT_FOUND)
-      
+        except Exception as e:
+            logger.error(f"Bulk add tag failed: {str(e)}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return Response(
+                {'error': f'Bulk add tag failed: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            ) 
     @swagger_auto_schema(
         method='post',
         operation_description="Accept assigned asset (Employee approval)",
@@ -5041,14 +5123,16 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             )   
     
     @swagger_auto_schema(
-        method='post',
-        operation_description="Remove tag from multiple employees",
-        request_body=BulkEmployeeTagUpdateSerializer,
-        responses={200: "Tags removed successfully", 400: "Bad request"}
-    )
+    method='post',
+    operation_description="Remove tag from multiple employees and set status to ACTIVE",
+    request_body=BulkEmployeeTagUpdateSerializer,
+    responses={200: "Tags removed and statuses updated successfully", 400: "Bad request"}
+)
     @action(detail=False, methods=['post'], url_path='bulk-remove-tag')
     def bulk_remove_tag(self, request):
-        """Remove tag from multiple employees using employee IDs"""
+        """
+        ✅ UPDATED: Remove tag from multiple employees and automatically set status to ACTIVE
+        """
         serializer = BulkEmployeeTagUpdateSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -5060,39 +5144,86 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             tag = EmployeeTag.objects.get(id=tag_id)
             employees = Employee.objects.filter(id__in=employee_ids)
             
+            # Get ACTIVE status
+            active_status = EmployeeStatus.objects.filter(
+                status_type='ACTIVE',
+                is_active=True
+            ).first()
+            
+            if not active_status:
+                logger.warning("ACTIVE status not found in system")
+            
             removed_count = 0
             didnt_have_count = 0
+            status_changed_count = 0
             results = []
             
             with transaction.atomic():
                 for employee in employees:
-                    if employee.remove_tag(tag, request.user):
-                        removed_count += 1
-                        results.append({
-                            'employee_id': employee.id,
-                            'employee_name': employee.full_name,
-                            'status': 'removed'
-                        })
+                    result_data = {
+                        'employee_id': employee.id,
+                        'employee_name': employee.full_name,
+                        'employee_hc_id': employee.employee_id,
+                        'tag_removed': False,
+                        'status_changed': False,
+                        'old_status': employee.status.name if employee.status else None,
+                        'new_status': None
+                    }
+                    
+                    # Check if tag exists
+                    tag_existed = employee.tags.filter(id=tag.id).exists()
+                    
+                    if tag_existed:
+                        # Remove tag using the updated remove_tag method
+                        # This will automatically change status to ACTIVE
+                        tag_removed = employee.remove_tag(tag, request.user)
+                        
+                        if tag_removed:
+                            removed_count += 1
+                            result_data['tag_removed'] = True
+                            result_data['status'] = 'removed'
+                            
+                            # Refresh to get updated status
+                            employee.refresh_from_db()
+                            result_data['new_status'] = employee.status.name if employee.status else None
+                            
+                            # Check if status was changed
+                            if result_data['old_status'] != result_data['new_status']:
+                                status_changed_count += 1
+                                result_data['status_changed'] = True
+                                
+                                logger.info(
+                                    f"Employee {employee.employee_id}: "
+                                    f"Tag removed, Status changed {result_data['old_status']} → {result_data['new_status']}"
+                                )
                     else:
                         didnt_have_count += 1
-                        results.append({
-                            'employee_id': employee.id,
-                            'employee_name': employee.full_name,
-                            'status': 'didnt_have'
-                        })
+                        result_data['status'] = 'didnt_have'
+                        result_data['new_status'] = result_data['old_status']
+                    
+                    results.append(result_data)
             
             return Response({
                 'success': True,
-                'message': f'Tag "{tag.name}" removal processed for {len(employee_ids)} employees',
+                'message': f"Tag '{tag.name}' removal processed for {len(employee_ids)} employees. {status_changed_count} statuses changed to ACTIVE.",
                 'tag_name': tag.name,
                 'total_employees': len(employee_ids),
                 'removed_count': removed_count,
                 'didnt_have_count': didnt_have_count,
+                'status_changed_count': status_changed_count,
+                'active_status_available': bool(active_status),
                 'results': results
             })
+            
         except EmployeeTag.DoesNotExist:
             return Response({'error': 'Tag not found'}, status=status.HTTP_404_NOT_FOUND)
-
+        except Exception as e:
+            logger.error(f"Bulk remove tag failed: {str(e)}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return Response(
+                {'error': f'Bulk remove tag failed: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
     @swagger_auto_schema(
         method='post',
         operation_description="Assign line manager to single employee",

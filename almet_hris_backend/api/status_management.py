@@ -17,11 +17,26 @@ class EmployeeStatusManager:
     
     @staticmethod
     def calculate_required_status(employee):
-        """✅ UPDATED: Status hesablanması - ONBOARDING yoxdur"""
+        """✅ FIXED: Status calculation with start_date validation"""
         try:
             current_date = date.today()
             
-            # Contract bitib?
+            # ✅ CRITICAL: Check if employee has started yet
+            if employee.start_date and employee.start_date > current_date:
+                # Employee hasn't started yet - keep current status or set to a "Not Started" status
+                return employee.status, f"Employee start date is in future: {employee.start_date}"
+            
+            # ✅ Days since START (not since creation!)
+            if not employee.start_date:
+                return employee.status, "No start date set"
+            
+            days_since_start = (current_date - employee.start_date).days
+            
+            # ✅ If negative days (shouldn't happen after above check, but safety)
+            if days_since_start < 0:
+                return employee.status, f"Employee hasn't started yet (starts in {abs(days_since_start)} days)"
+            
+            # Contract ended?
             if employee.contract_end_date and employee.contract_end_date <= current_date:
                 inactive_status = EmployeeStatus.objects.filter(
                     status_type='INACTIVE',
@@ -29,19 +44,19 @@ class EmployeeStatusManager:
                 ).first()
                 return inactive_status, f"Contract ended on {employee.contract_end_date}"
             
-            # Contract config
+            # Get contract config
             try:
                 contract_config = ContractTypeConfig.objects.get(
                     contract_type=employee.contract_duration,
                     is_active=True
                 )
             except ContractTypeConfig.DoesNotExist:
-                return employee.status, f"No contract configuration found"
+                return employee.status, "No contract configuration found"
             
             if not contract_config.enable_auto_transitions:
                 return employee.status, "Auto transitions disabled"
             
-            # ✅ PERMANENT → directly ACTIVE (no probation)
+            # ✅ PERMANENT → directly ACTIVE (if started)
             if employee.contract_duration == 'PERMANENT':
                 active_status = EmployeeStatus.objects.filter(
                     status_type='ACTIVE',
@@ -49,10 +64,7 @@ class EmployeeStatusManager:
                 ).first()
                 return active_status, "Permanent contract - directly active"
             
-            # ✅ Days since start
-            days_since_start = (current_date - employee.start_date).days
-            
-            # ✅ Probation period?
+            # ✅ Probation period check
             if days_since_start <= contract_config.probation_days:
                 probation_status = EmployeeStatus.objects.filter(
                     status_type='PROBATION',
@@ -60,7 +72,6 @@ class EmployeeStatusManager:
                 ).first()
                 
                 if not probation_status:
-                    # No PROBATION status → go to ACTIVE
                     active_status = EmployeeStatus.objects.filter(
                         status_type='ACTIVE',
                         is_active=True

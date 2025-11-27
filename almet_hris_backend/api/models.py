@@ -1387,77 +1387,138 @@ class Employee(SoftDeleteModel):
 
     # models.py - Employee model-də add_tag metodunu yenilə
 
-    def add_tag(self, tag, user=None):
+    def add_tag(self, tag, user=None, skip_status_change=False):
         """
-        ✅ UPDATED: Add tag and auto-set status to INACTIVE
+        ✅ UPDATED: Add tag and optionally auto-set status to INACTIVE
+        
+        Args:
+            tag: EmployeeTag instance to add
+            user: User performing the action
+            skip_status_change: If True, don't auto-change status (for advanced use)
         """
         if not self.tags.filter(id=tag.id).exists():
             self.tags.add(tag)
             
-            # ✅ YENİ: Status-u INACTIVE et
+            # ✅ Status-u INACTIVE et (əgər skip edilməyibsə)
+            status_changed = False
             old_status = self.status
             
-            try:
-                inactive_status = EmployeeStatus.objects.filter(
-                    status_type='INACTIVE',
-                    is_active=True
-                ).first()
-                
-                if inactive_status and self.status != inactive_status:
-                    self.status = inactive_status
-                    self.save()
+            if not skip_status_change:
+                try:
+                    inactive_status = EmployeeStatus.objects.filter(
+                        status_type='INACTIVE',
+                        is_active=True
+                    ).first()
                     
-                    # Log the status change
-                    EmployeeActivity.objects.create(
-                        employee=self,
-                        activity_type='STATUS_CHANGED',
-                        description=f"Status automatically changed to INACTIVE when tag '{tag.name}' was added",
-                        performed_by=user,
-                        metadata={
-                            'tag_id': tag.id,
-                            'tag_name': tag.name,
-                            'old_status': old_status.name if old_status else None,
-                            'new_status': inactive_status.name,
-                            'auto_change_reason': 'tag_added',
-                            'automatic': True
-                        }
-                    )
-                    
-                    logger.info(f"Employee {self.employee_id} status changed to INACTIVE when tag '{tag.name}' was added")
-            except Exception as e:
-                logger.error(f"Error setting INACTIVE status for employee {self.employee_id}: {e}")
+                    if inactive_status and self.status != inactive_status:
+                        self.status = inactive_status
+                        self.save()
+                        status_changed = True
+                        
+                        # Log the status change
+                        EmployeeActivity.objects.create(
+                            employee=self,
+                            activity_type='STATUS_CHANGED',
+                            description=f"Status automatically changed to INACTIVE when tag '{tag.name}' was added",
+                            performed_by=user,
+                            metadata={
+                                'tag_id': tag.id,
+                                'tag_name': tag.name,
+                                'old_status': old_status.name if old_status else None,
+                                'new_status': inactive_status.name,
+                                'auto_change_reason': 'tag_added',
+                                'automatic': True
+                            }
+                        )
+                        
+                        logger.info(
+                            f"Employee {self.employee_id} status changed to INACTIVE "
+                            f"when tag '{tag.name}' was added"
+                        )
+                except Exception as e:
+                    logger.error(f"Error setting INACTIVE status for employee {self.employee_id}: {e}")
             
             # Log tag addition
             EmployeeActivity.objects.create(
                 employee=self,
                 activity_type='TAG_ADDED',
-                description=f"Tag '{tag.name}' added - Status changed to INACTIVE",
+                description=f"Tag '{tag.name}' added" + (
+                    " - Status changed to INACTIVE" if status_changed else ""
+                ),
                 performed_by=user,
                 metadata={
                     'tag_id': tag.id, 
                     'tag_name': tag.name,
-                    'status_changed_to_inactive': True
+                    'status_changed_to_inactive': status_changed,
+                    'skip_status_change': skip_status_change
                 }
             )
             
             return True
         return False
+    
     def remove_tag(self, tag, user=None):
-        """Remove a tag from the employee"""
+        """
+        ✅ UPDATED: Remove tag and auto-set status to ACTIVE
+        """
         if self.tags.filter(id=tag.id).exists():
             self.tags.remove(tag)
             
-            # Log activity
+            # ✅ Status-u ACTIVE et
+            status_changed = False
+            old_status = self.status
+            
+            try:
+                active_status = EmployeeStatus.objects.filter(
+                    status_type='ACTIVE',
+                    is_active=True
+                ).first()
+                
+                if active_status and self.status != active_status:
+                    self.status = active_status
+                    self.save()
+                    status_changed = True
+                    
+                    # Log the status change
+                    EmployeeActivity.objects.create(
+                        employee=self,
+                        activity_type='STATUS_CHANGED',
+                        description=f"Status automatically changed to ACTIVE when tag '{tag.name}' was removed",
+                        performed_by=user,
+                        metadata={
+                            'tag_id': tag.id,
+                            'tag_name': tag.name,
+                            'old_status': old_status.name if old_status else None,
+                            'new_status': active_status.name,
+                            'auto_change_reason': 'tag_removed',
+                            'automatic': True
+                        }
+                    )
+                    
+                    logger.info(
+                        f"Employee {self.employee_id} status changed to ACTIVE "
+                        f"when tag '{tag.name}' was removed"
+                    )
+            except Exception as e:
+                logger.error(f"Error setting ACTIVE status for employee {self.employee_id}: {e}")
+            
+            # Log tag removal
             EmployeeActivity.objects.create(
                 employee=self,
                 activity_type='TAG_REMOVED',
-                description=f"Tag '{tag.name}' removed",
+                description=f"Tag '{tag.name}' removed" + (
+                    " - Status changed to ACTIVE" if status_changed else ""
+                ),
                 performed_by=user,
-                metadata={'tag_id': tag.id, 'tag_name': tag.name}
+                metadata={
+                    'tag_id': tag.id, 
+                    'tag_name': tag.name,
+                    'status_changed_to_active': status_changed
+                }
             )
+            
             return True
         return False
-
     def change_line_manager(self, new_manager, user=None):
         """Change employee's line manager"""
         old_manager = self.line_manager

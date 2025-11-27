@@ -3022,13 +3022,26 @@ class SingleLineManagerAssignmentSerializer(serializers.Serializer):
                 raise serializers.ValidationError("Line manager not found.")
         return value
 
+
+
 class BulkEmployeeTagUpdateSerializer(serializers.Serializer):
-    """Simple bulk tag operations using employee IDs"""
+    """
+    ✅ UPDATED: Bulk tag operations with automatic INACTIVE status change
+    """
     employee_ids = serializers.ListField(
         child=serializers.IntegerField(),
         help_text="List of employee IDs to update"
     )
-    tag_id = serializers.IntegerField(help_text="Tag ID to add or remove")
+    tag_id = serializers.IntegerField(
+        help_text="Tag ID to add or remove"
+    )
+    
+    # ✅ YENİ: Optional field to override auto-INACTIVE behavior
+    skip_status_change = serializers.BooleanField(
+        default=False,
+        required=False,
+        help_text="Set to true to skip automatic status change to INACTIVE (advanced use only)"
+    )
     
     def validate_employee_ids(self, value):
         if not value:
@@ -3046,7 +3059,6 @@ class BulkEmployeeTagUpdateSerializer(serializers.Serializer):
         except EmployeeTag.DoesNotExist:
             raise serializers.ValidationError("Tag not found.")
         return value
-
 class SingleEmployeeTagUpdateSerializer(serializers.Serializer):
     """Single employee tag operations"""
     employee_id = serializers.IntegerField(help_text="Employee ID")

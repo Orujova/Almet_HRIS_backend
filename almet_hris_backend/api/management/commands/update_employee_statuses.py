@@ -81,24 +81,45 @@ class Command(BaseCommand):
             self.stdout.write(self.style.ERROR(f'❌ Employee {employee_id} not found'))
     
     def _update_all_employees(self, force, dry_run):
-        """Update all employees"""
-        employees = Employee.objects.filter(is_deleted=False).select_related('status')
+        """✅ FIXED: Only update employees who have started"""
+        
+        # ✅ CRITICAL: Only employees who have STARTED
+        employees = Employee.objects.filter(
+            is_deleted=False,
+            start_date__lte=timezone.now().date()  # ✅ Only started employees
+        ).select_related('status')
         
         total = employees.count()
         updated = 0
         no_update_needed = 0
         errors = 0
+        future_start = 0
         
-        self.stdout.write(f"\n📊 Processing {total} employees\n")
+        self.stdout.write(f"\n📊 Processing {total} employees (who have started)\n")
+        
+        # ✅ Show future employees separately
+        future_employees = Employee.objects.filter(
+            is_deleted=False,
+            start_date__gt=timezone.now().date()
+        ).count()
+        
+        if future_employees > 0:
+            self.stdout.write(f"ℹ️  {future_employees} employees with future start dates (will be skipped)\n")
         
         for employee in employees:
             try:
                 preview = EmployeeStatusManager.get_status_preview(employee)
                 
+                # ✅ Double-check: Skip if future start
+                if "future" in preview['reason'].lower() or "hasn't started" in preview['reason'].lower():
+                    future_start += 1
+                    continue
+                
                 if preview['needs_update'] or force:
                     self.stdout.write(f"⚡ {employee.employee_id} ({employee.full_name})")
                     self.stdout.write(f"   {preview['current_status']} → {preview['required_status']}")
                     self.stdout.write(f"   Reason: {preview['reason']}")
+                    self.stdout.write(f"   Days Since Start: {preview['days_since_start']}")
                     
                     if not dry_run:
                         result = EmployeeStatusManager.update_employee_status(employee, force_update=force, user=None)
@@ -118,8 +139,9 @@ class Command(BaseCommand):
                 self.stdout.write(self.style.ERROR(f"❌ Error for {employee.employee_id}: {str(e)}"))
         
         self.stdout.write(f"\n📊 Summary:")
-        self.stdout.write(f"   Total Employees: {total}")
+        self.stdout.write(f"   Total Employees (Started): {total}")
         self.stdout.write(self.style.SUCCESS(f"   Updated: {updated}"))
         self.stdout.write(f"   No Update Needed: {no_update_needed}")
+        self.stdout.write(f"   Future Start Dates: {future_start}")
         if errors > 0:
             self.stdout.write(self.style.ERROR(f"   Errors: {errors}"))
