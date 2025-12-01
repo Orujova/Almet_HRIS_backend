@@ -1214,7 +1214,7 @@ class Employee(SoftDeleteModel):
         return self.email or (self.user.email if self.user else None)
     
     def auto_assign_status(self):
-        """✅ UPDATED: Yeni employee üçün status"""
+        """✅ UPDATED: New employee üçün status - PROBATION for all except PERMANENT"""
         try:
             # ✅ PERMANENT contract → directly ACTIVE
             if self.contract_duration == 'PERMANENT':
@@ -1225,16 +1225,21 @@ class Employee(SoftDeleteModel):
                 
                 if active_status:
                     self.status = active_status
+                    logger.info(f"New employee {self.employee_id}: PERMANENT contract → ACTIVE status")
                     return
             
-            # ✅ Digər contracts → PROBATION
+            # ✅ ALL OTHER contracts → PROBATION
             probation_status = EmployeeStatus.objects.filter(
                 status_type='PROBATION',
                 is_active=True
             ).first()
             
-            if not probation_status:
+            if probation_status:
+                self.status = probation_status
+                logger.info(f"New employee {self.employee_id}: {self.contract_duration} contract → PROBATION status")
+            else:
                 # Fallback to default or first active
+                logger.warning("PROBATION status not found! Using fallback...")
                 default_status = EmployeeStatus.objects.filter(
                     is_default_for_new_employees=True,
                     is_active=True
@@ -1244,8 +1249,6 @@ class Employee(SoftDeleteModel):
                     default_status = EmployeeStatus.objects.filter(is_active=True).first()
                 
                 self.status = default_status
-            else:
-                self.status = probation_status
                 
         except Exception as e:
             logger.error(f"Error auto-assigning status: {e}")
@@ -1253,8 +1256,6 @@ class Employee(SoftDeleteModel):
                 fallback_status = EmployeeStatus.objects.first()
                 if fallback_status:
                     self.status = fallback_status
-    
-    
     def get_required_status_based_on_contract(self):
         """✅ UPDATED: Contract-based status (ONBOARDING yoxdur)"""
         try:
