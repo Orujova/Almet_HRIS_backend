@@ -4,7 +4,6 @@ from django.utils import timezone
 from datetime import timedelta, date
 from .models import Employee, EmployeeStatus, EmployeeActivity, ContractTypeConfig
 import logging
-import traceback
 logger = logging.getLogger(__name__)
 
 class EmployeeStatusManager:
@@ -23,19 +22,19 @@ class EmployeeStatusManager:
             
             # ✅ Check if employee has started yet
             if not employee.start_date:
-                logger.warning(f"Employee {employee.employee_id} has no start_date!")
+              
                 return employee.status, "No start date defined"
             
             if employee.start_date > current_date:
                 # Employee hasn't started yet - MUST keep current status
                 days_until_start = (employee.start_date - current_date).days
-                logger.info(f"Employee {employee.employee_id} starts in {days_until_start} days")
+            
                 return employee.status, f"Employee hasn't started yet (starts in {days_until_start} days: {employee.start_date})"
             
             # ✅ Calculate days since ACTUAL start
             days_since_start = (current_date - employee.start_date).days
             
-            logger.info(f"Employee {employee.employee_id}: Days since start = {days_since_start}")
+      
             
             # ✅ If negative days (shouldn't happen after above check, but safety)
             if days_since_start < 0:
@@ -56,7 +55,7 @@ class EmployeeStatusManager:
                     is_active=True
                 )
             except ContractTypeConfig.DoesNotExist:
-                logger.warning(f"No contract configuration found for {employee.contract_duration}")
+            
                 return employee.status, "No contract configuration found"
             
             if not contract_config.enable_auto_transitions:
@@ -73,12 +72,7 @@ class EmployeeStatusManager:
             # ✅ CRITICAL FIX: For ALL other contracts, check probation period
             probation_days = contract_config.probation_days
             
-            logger.info(
-                f"Employee {employee.employee_id}: "
-                f"Contract={employee.contract_duration}, "
-                f"Probation period={probation_days} days, "
-                f"Days since start={days_since_start}"
-            )
+         
             
             # ✅ Probation period check (0 days since start is still day 1!)
             if days_since_start <= probation_days:
@@ -88,7 +82,7 @@ class EmployeeStatusManager:
                 ).first()
                 
                 if not probation_status:
-                    logger.warning("PROBATION status not found - falling back to ACTIVE")
+                   
                     active_status = EmployeeStatus.objects.filter(
                         status_type='ACTIVE',
                         is_active=True
@@ -112,8 +106,7 @@ class EmployeeStatusManager:
                 return active_status, f"Probation period completed (started {days_since_start} days ago)"
                 
         except Exception as e:
-            logger.error(f"Error calculating required status for {employee.employee_id}: {e}")
-            logger.error(f"Traceback: {traceback.format_exc()}")
+         
             return employee.status, f"Error: {str(e)}"
     
     @staticmethod
@@ -150,7 +143,7 @@ class EmployeeStatusManager:
                     }
                 )
                 
-                logger.info(f"Employee {employee.employee_id} status updated: {old_status.name} → {required_status.name}")
+              
                 return True
         
         return False
@@ -176,7 +169,7 @@ class EmployeeStatusManager:
                 error_count += 1
                 logger.error(f"Error updating status for {employee.employee_id}: {e}")
         
-        logger.info(f"Bulk status update completed: {updated_count} updated, {error_count} errors")
+       
         return {'updated': updated_count, 'errors': error_count}
     
     @staticmethod

@@ -221,32 +221,54 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(instance)
         return Response(serializer.data)
     
+    # In EmployeePerformanceViewSet - performance_views.py
+
     @action(detail=False, methods=['get'])
     def my_permissions(self, request):
-        """Get current user's performance permissions"""
-        from .performance_permissions import get_user_performance_permissions
+        """✅ FIXED: Get current user's performance permissions"""
+        from .performance_permissions import (
+            get_user_performance_permissions,
+            get_accessible_employees_for_performance,
+            is_admin_user
+        )
         
         permissions = get_user_performance_permissions(request.user)
-        accessible_ids, can_view_all = get_accessible_employees_for_performance(request.user)
+        accessible_ids, can_view_all, is_manager = get_accessible_employees_for_performance(request.user)
         
         try:
             employee = Employee.objects.get(user=request.user, is_deleted=False)
+            
+            # ✅ Get email from user if not in employee
+            email = employee.email if hasattr(employee, 'email') and employee.email else request.user.email
+            
             employee_info = {
                 'id': employee.id,
                 'name': employee.full_name,
-                'employee_id': employee.employee_id
+                'employee_id': employee.employee_id,
+                'email': email,  # ✅ Always return email
+                # ✅ Add line_manager info for filtering
+                'line_manager_id': employee.line_manager.id if employee.line_manager else None,
+                'department': employee.department.name if employee.department else None
             }
         except Employee.DoesNotExist:
             employee_info = None
         
+        # ✅ Calculate accessible employee count
+        if can_view_all:
+            accessible_count = Employee.objects.filter(is_deleted=False).count()
+        elif isinstance(accessible_ids, list):
+            accessible_count = len(accessible_ids)
+        else:
+            accessible_count = 0
+        
         return Response({
             'is_admin': is_admin_user(request.user),
-            'permissions': permissions,
             'can_view_all': can_view_all,
-            'accessible_employee_count': 'all' if can_view_all else len(accessible_ids) if accessible_ids else 0,
+            'is_manager': is_manager,  # ✅ Critical for frontend filtering
+            'permissions': permissions,
+            'accessible_employee_count': accessible_count,
             'employee': employee_info
         })
-    
     @action(detail=False, methods=['post'])
     @has_performance_permission('performance.initialize')
     def initialize(self, request):
@@ -2093,14 +2115,15 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
 
 # ============ DASHBOARD VIEWSET ============
 
+# In performance_views.py - Add to PerformanceDashboardViewSet
+
 class PerformanceDashboardViewSet(viewsets.ViewSet):
     """Performance Dashboard Statistics with Access Control"""
     permission_classes = [IsAuthenticated]
     
-    
     @action(detail=False, methods=['get'])
     def statistics(self, request):
-        """Get dashboard statistics - FIXED"""
+        """✅ FIXED: Get dashboard statistics - filtered by access"""
         year = request.query_params.get('year')
         
         if not year:
@@ -2116,8 +2139,16 @@ class PerformanceDashboardViewSet(viewsets.ViewSet):
         except PerformanceYear.DoesNotExist:
             return Response({'error': f'Performance year {year} not found'}, status=status.HTTP_404_NOT_FOUND)
         
-        performances = EmployeePerformance.objects.filter(performance_year=perf_year)
-        performances = filter_viewable_performances(request.user, performances)
+        # ✅ Get accessible employees based on permissions
+        from .performance_permissions import get_accessible_employees_for_analytics
+        
+        accessible_employees, can_view_all, is_manager = get_accessible_employees_for_analytics(request.user)
+        
+        # Filter performances by accessible employees
+        performances = EmployeePerformance.objects.filter(
+            performance_year=perf_year,
+            employee__in=accessible_employees
+        ).select_related('employee', 'employee__department')
         
         total_employees = performances.count()
         
@@ -2128,36 +2159,27 @@ class PerformanceDashboardViewSet(viewsets.ViewSet):
         
         mid_year_completed = performances.filter(mid_year_completed=True).count()
         
-        # ✅ FIXED: Count only truly completed performances
+        # Count only truly completed performances
         end_year_completed = 0
         
         for perf in performances:
-            # Must have COMPLETED status
             if perf.approval_status != 'COMPLETED':
                 continue
             
-            # Must have competencies submitted
             if not perf.competencies_submitted:
-                logger.info(f"⚠️ {perf.employee.full_name}: Not completed - competencies not submitted")
                 continue
             
-            # Must have all objectives rated
             objectives = perf.objectives.filter(is_cancelled=False)
             if objectives.exists():
                 all_rated = all(obj.end_year_rating is not None for obj in objectives)
                 if not all_rated:
-                    logger.info(f"⚠️ {perf.employee.full_name}: Not completed - some objectives not rated")
                     continue
             
-            # Must have final_rating calculated
             if not perf.final_rating or perf.final_rating == 'N/A':
-                logger.info(f"⚠️ {perf.employee.full_name}: Not completed - no final rating")
                 continue
             
-            logger.info(f"✅ {perf.employee.full_name}: COMPLETED")
             end_year_completed += 1
         
-        logger.info(f"📊 End year completed: {end_year_completed}/{total_employees}")
         pending_employee_approval = performances.filter(
             approval_status='PENDING_EMPLOYEE_APPROVAL'
         ).count()
@@ -2170,6 +2192,7 @@ class PerformanceDashboardViewSet(viewsets.ViewSet):
             approval_status='NEED_CLARIFICATION'
         ).count()
         
+        # Department stats - only for accessible employees
         by_department = []
         accessible_dept_names = performances.values_list(
             'employee__department__name', 
@@ -2191,6 +2214,7 @@ class PerformanceDashboardViewSet(viewsets.ViewSet):
                 'end_year_complete': dept_performances.filter(end_year_completed=True).count()
             })
         
+        # Recent activities - only for accessible employees
         performance_ids = performances.values_list('id', flat=True)
         recent_logs = PerformanceActivityLog.objects.filter(
             performance_id__in=performance_ids
@@ -2198,10 +2222,10 @@ class PerformanceDashboardViewSet(viewsets.ViewSet):
         
         recent_activities = PerformanceActivityLogSerializer(recent_logs, many=True).data
         
+        # Competency grade distribution
         competency_grade_distribution = self._get_grade_distribution(performances)
         
-        accessible_ids, can_view_all = get_accessible_employees_for_performance(request.user)
-        
+        # ✅ Return access level info
         return Response({
             'total_employees': total_employees,
             'objectives_completed': objectives_completed,
@@ -2213,7 +2237,8 @@ class PerformanceDashboardViewSet(viewsets.ViewSet):
             'current_period': perf_year.get_current_period(),
             'year': year,
             'can_view_all': can_view_all,
-            'viewing_scope': 'all' if can_view_all else f'{total_employees} employees',
+            'is_manager': is_manager,
+            'viewing_scope': 'all employees' if can_view_all else f'{total_employees} employees (you + team)',
             'timeline': {
                 'goal_setting': {
                     'employee_start': perf_year.goal_setting_employee_start,
@@ -2247,7 +2272,6 @@ class PerformanceDashboardViewSet(viewsets.ViewSet):
             'total': completed.count(),
             'grades': dict(distribution)
         }
-
 
 class PerformanceNotificationTemplateViewSet(viewsets.ModelViewSet):
     """Performance Notification Templates"""

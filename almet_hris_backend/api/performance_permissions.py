@@ -1,4 +1,4 @@
-# api/performance_permissions.py - UPDATED with better access control
+# api/performance_permissions.py - FIXED ACCESS CONTROL
 
 from functools import wraps
 from rest_framework.response import Response
@@ -26,7 +26,7 @@ def is_admin_user(user):
 def has_performance_permission(permission_codename):
     """
     Decorator to check performance permissions
-    Admin role bütün permission-lara sahib
+    Admin role has all permissions
     
     FIXED: Works with both function views and ViewSet methods
     """
@@ -34,34 +34,30 @@ def has_performance_permission(permission_codename):
         @wraps(view_func)
         def wrapper(self_or_request, *args, **kwargs):
             # Determine if this is a ViewSet method or a function view
-            # ViewSet methods: first arg is 'self', second is 'request'
-            # Function views: first arg is 'request'
             if hasattr(self_or_request, 'request'):
-                # This is a ViewSet instance (self)
                 request = self_or_request.request
                 view_func_args = (self_or_request,) + args
             else:
-                # This is a request object (function view)
                 request = self_or_request
                 view_func_args = args
             
             user = request.user
             
-            # Admin role yoxla
+            # Admin check
             if is_admin_user(user):
                 return view_func(*((self_or_request,) + args), **kwargs)
             
-            # Employee tap
+            # Get employee
             try:
                 from .models import Employee
                 employee = Employee.objects.get(user=user, is_deleted=False)
             except Employee.DoesNotExist:
                 return Response({
-                    'error': 'Employee profili tapılmadı',
-                    'detail': 'Performance sisteminə daxil olmaq üçün employee profili lazımdır'
+                    'error': 'Employee profile not found',
+                    'detail': 'You need an employee profile to access performance system'
                 }, status=status.HTTP_403_FORBIDDEN)
             
-            # Employee-in rollarını tap
+            # Get active roles
             employee_roles = EmployeeRole.objects.filter(
                 employee=employee,
                 is_active=True
@@ -69,11 +65,11 @@ def has_performance_permission(permission_codename):
             
             if not employee_roles.exists():
                 return Response({
-                    'error': 'Aktiv rol tapılmadı',
-                    'detail': 'Bu əməliyyat üçün sizə rol təyin edilməlidir'
+                    'error': 'No active role found',
+                    'detail': 'You must have an assigned role for this operation'
                 }, status=status.HTTP_403_FORBIDDEN)
             
-            # Permission yoxla
+            # Check permission
             has_permission = False
             for emp_role in employee_roles:
                 role = emp_role.role
@@ -86,8 +82,8 @@ def has_performance_permission(permission_codename):
             
             if not has_permission:
                 return Response({
-                    'error': 'İcazə yoxdur',
-                    'detail': f'Bu əməliyyat üçün "{permission_codename}" icazəsi lazımdır',
+                    'error': 'Permission denied',
+                    'detail': f'You need "{permission_codename}" permission for this operation',
                     'your_roles': [er.role.name for er in employee_roles]
                 }, status=status.HTTP_403_FORBIDDEN)
             
@@ -95,6 +91,7 @@ def has_performance_permission(permission_codename):
         
         return wrapper
     return decorator
+
 
 def check_performance_permission(user, permission_codename):
     """
@@ -161,7 +158,7 @@ def get_user_performance_permissions(user):
 
 def can_view_performance(user, performance):
     """
-    Check if user can view specific performance record
+    ✅ FIXED: Check if user can view specific performance record
     - Admin: can view all
     - With performance.view_all permission: can view all  
     - With performance.view_team permission: can view direct reports
@@ -195,7 +192,7 @@ def can_view_performance(user, performance):
 
 
 def can_edit_performance(user, performance):
-   
+    """Check if user can edit performance"""
     if is_admin_user(user):
         return True
     
@@ -225,31 +222,30 @@ def can_edit_performance(user, performance):
 
 def get_accessible_employees_for_performance(user):
     """
-    Get list of employee IDs that user can view performance for
-    Returns: QuerySet of Employee IDs or None (if all accessible)
-    
-    NEW: Returns a tuple (employee_ids, can_view_all)
+    ✅ FIXED: Get list of employee IDs that user can view performance for
+    Returns: (employee_ids, can_view_all, is_manager)
     """
     from .models import Employee
     
     # Admin sees all
     if is_admin_user(user):
-        return None, True  # None means "all employees", True means "can_view_all"
+        return None, True, True  # None means "all employees"
     
     try:
         employee = Employee.objects.get(user=user, is_deleted=False)
     except Employee.DoesNotExist:
-        return Employee.objects.none(), False
+        return Employee.objects.none(), False, False
     
     # Check view_all permission
     has_view_all, _ = check_performance_permission(user, 'performance.view_all')
     if has_view_all:
-        return None, True  # All employees
+        return None, True, False  # All employees, but track if true admin
     
-    # Check view_team permission
+    # Check view_team permission (manager)
     has_view_team, _ = check_performance_permission(user, 'performance.view_team')
     
     accessible_ids = [employee.id]  # Always include self
+    is_manager = False
     
     if has_view_team:
         # Add direct reports
@@ -257,18 +253,20 @@ def get_accessible_employees_for_performance(user):
             line_manager=employee,
             is_deleted=False
         ).values_list('id', flat=True)
-        accessible_ids.extend(list(direct_reports))
+        
+        if direct_reports.exists():
+            accessible_ids.extend(list(direct_reports))
+            is_manager = True
     
-    return accessible_ids, False
+    return accessible_ids, False, is_manager
 
 
-# NEW: Helper to check if user can view a list of performances
 def filter_viewable_performances(user, queryset):
     """
     Filter performance queryset based on user permissions
     Returns filtered queryset
     """
-    accessible_ids, can_view_all = get_accessible_employees_for_performance(user)
+    accessible_ids, can_view_all, is_manager = get_accessible_employees_for_performance(user)
     
     if can_view_all:
         # User can see all performances
@@ -276,3 +274,44 @@ def filter_viewable_performances(user, queryset):
     
     # Filter by accessible employee IDs
     return queryset.filter(employee_id__in=accessible_ids)
+
+
+def get_accessible_employees_for_analytics(user):
+    """
+    ✅ NEW: Get employees accessible for analytics/statistics
+    Returns: (employee_queryset, can_view_all, is_manager)
+    """
+    from .models import Employee
+    
+    # Admin sees all
+    if is_admin_user(user):
+        return Employee.objects.filter(is_deleted=False), True, True
+    
+    try:
+        employee = Employee.objects.get(user=user, is_deleted=False)
+    except Employee.DoesNotExist:
+        return Employee.objects.none(), False, False
+    
+    # Check view_all permission
+    has_view_all, _ = check_performance_permission(user, 'performance.view_all')
+    if has_view_all:
+        return Employee.objects.filter(is_deleted=False), True, False
+    
+    # Check view_team permission
+    has_view_team, _ = check_performance_permission(user, 'performance.view_team')
+    
+    accessible_ids = [employee.id]  # Always include self
+    is_manager = False
+    
+    if has_view_team:
+        # Add direct reports
+        direct_reports = Employee.objects.filter(
+            line_manager=employee,
+            is_deleted=False
+        ).values_list('id', flat=True)
+        
+        if direct_reports.exists():
+            accessible_ids.extend(list(direct_reports))
+            is_manager = True
+    
+    return Employee.objects.filter(id__in=accessible_ids, is_deleted=False), False, is_manager

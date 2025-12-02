@@ -1,15 +1,12 @@
-from django.shortcuts import render
 from django.utils import timezone
 from rest_framework import status, viewsets
-from django.db.models import Q, Count, Case, When, Value
+from django.db.models import Q, Count
 from rest_framework.decorators import api_view, permission_classes, action
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
-from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework import status, viewsets, filters
 from rest_framework.pagination import PageNumberPagination
 from django_filters.rest_framework import DjangoFilterBackend
-from django_filters import rest_framework as django_filters
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 from django.db import models 
@@ -22,18 +19,10 @@ from django.utils.dateparse import parse_date
 from django.db import transaction
 from django.http import HttpResponse
 import csv
-import openpyxl
-from openpyxl.styles import Font, PatternFill
-from openpyxl.utils.dataframe import dataframe_to_rows
 import io
 import pandas as pd
 from django.contrib.auth.models import User
-from .models import (
-    Employee, BusinessFunction, Department, Unit, JobFunction, 
-    PositionGroup, EmployeeTag, EmployeeStatus,
-    EmployeeActivity, VacantPosition, ContractTypeConfig,
-    ContractStatusManager,EmployeeArchive
-)
+
 from .asset_serializers import (
     AssetAcceptanceSerializer, AssetClarificationRequestSerializer,
     AssetCancellationSerializer, AssetClarificationProvisionSerializer
@@ -485,64 +474,45 @@ class ComprehensiveEmployeeFilter:
         # FIXED: Job Functions (array)
         job_function_ids = self.get_int_filter_values('job_function')
         if job_function_ids:
-            print(f"💼 Applying job function filter: {job_function_ids}")
+ 
             queryset = queryset.filter(job_function__id__in=job_function_ids)
         
         # FIXED: Position Groups (array)
         position_group_ids = self.get_int_filter_values('position_group')
         if position_group_ids:
-            print(f"📊 Applying position group filter: {position_group_ids}")
+         
             queryset = queryset.filter(position_group__id__in=position_group_ids)
         
-        # FIXED: Employment Status (array) - Special handling for status names
-        status_values = self.get_filter_values('status')
-        if status_values:
-            # Filter out "VACANT" - it's for vacancies, not employees
-            employee_status_values = [
-                val for val in status_values 
-                if val.upper() not in ['VACANT', 'VACANCY']
-            ]
-            
-            if employee_status_values:
-                print(f"🎯 Applying employee status filter: {employee_status_values}")
-                status_q = Q()
-                for status_val in employee_status_values:
-                    try:
-                        status_id = int(status_val)
-                        status_q |= Q(status__id=status_id)
-                    except (ValueError, TypeError):
-                        status_q |= Q(status__name=status_val)
+
+           
                 
-                if status_q:
-                    queryset = queryset.filter(status_q)
-        # FIXED: Grading Levels (array)
         grading_levels = self.get_filter_values('grading_level')
         if grading_levels:
-            print(f"📈 Applying grading level filter: {grading_levels}")
+         
             queryset = queryset.filter(grading_level__in=grading_levels)
         
         # FIXED: Contract Duration (array)
         contract_durations = self.get_filter_values('contract_duration')
         if contract_durations:
-            print(f"📋 Applying contract duration filter: {contract_durations}")
+        
             queryset = queryset.filter(contract_duration__in=contract_durations)
         
         # FIXED: Line Managers (array)
         line_manager_ids = self.get_int_filter_values('line_manager')
         if line_manager_ids:
-            print(f"👨‍💼 Applying line manager filter: {line_manager_ids}")
+        
             queryset = queryset.filter(line_manager__id__in=line_manager_ids)
         
         # FIXED: Tags (array)
         tag_ids = self.get_int_filter_values('tags')
         if tag_ids:
-            print(f"🏷️ Applying tags filter: {tag_ids}")
+           
             queryset = queryset.filter(tags__id__in=tag_ids).distinct()
         
         # FIXED: Gender (array)
         genders = self.get_filter_values('gender')
         if genders:
-            print(f"👤 Applying gender filter: {genders}")
+           
             queryset = queryset.filter(gender__in=genders)
         
         # ===========================================
@@ -556,7 +526,7 @@ class ComprehensiveEmployeeFilter:
             try:
                 start_date_from_parsed = parse_date(start_date_from)
                 if start_date_from_parsed:
-                    print(f"📅 Applying start date from: {start_date_from_parsed}")
+               
                     queryset = queryset.filter(start_date__gte=start_date_from_parsed)
             except:
                 pass
@@ -564,7 +534,7 @@ class ComprehensiveEmployeeFilter:
             try:
                 start_date_to_parsed = parse_date(start_date_to)
                 if start_date_to_parsed:
-                    print(f"📅 Applying start date to: {start_date_to_parsed}")
+              
                     queryset = queryset.filter(start_date__lte=start_date_to_parsed)
             except:
                 pass
@@ -576,7 +546,7 @@ class ComprehensiveEmployeeFilter:
             try:
                 contract_end_from_parsed = parse_date(contract_end_date_from)
                 if contract_end_from_parsed:
-                    print(f"📅 Applying contract end date from: {contract_end_from_parsed}")
+                 
                     queryset = queryset.filter(contract_end_date__gte=contract_end_from_parsed)
             except:
                 pass
@@ -584,7 +554,7 @@ class ComprehensiveEmployeeFilter:
             try:
                 contract_end_to_parsed = parse_date(contract_end_date_to)
                 if contract_end_to_parsed:
-                    print(f"📅 Applying contract end date to: {contract_end_to_parsed}")
+                   
                     queryset = queryset.filter(contract_end_date__lte=contract_end_to_parsed)
             except:
                 pass
@@ -605,7 +575,7 @@ class ComprehensiveEmployeeFilter:
                     min_years = float(years_of_service_min)
                     # Employee should have started at least min_years ago
                     min_date = today - timedelta(days=int(min_years * 365.25))
-                    print(f"🕐 Applying years of service min: {min_years} years (start date <= {min_date})")
+                   
                     queryset = queryset.filter(start_date__lte=min_date)
                 except:
                     pass
@@ -615,7 +585,7 @@ class ComprehensiveEmployeeFilter:
                     max_years = float(years_of_service_max)
                     # Employee should have started at most max_years ago
                     max_date = today - timedelta(days=int(max_years * 365.25))
-                    print(f"🕐 Applying years of service max: {max_years} years (start date >= {max_date})")
+                 
                     queryset = queryset.filter(start_date__gte=max_date)
                 except:
                     pass
@@ -628,7 +598,7 @@ class ComprehensiveEmployeeFilter:
         is_active = self.params.get('is_active')
         if is_active:
             if is_active.lower() == 'true':
-                print(f"✅ Applying is_active: True")
+               
                 queryset = queryset.filter(status__affects_headcount=True)
             elif is_active.lower() == 'false':
                 print(f"❌ Applying is_active: False")
@@ -638,7 +608,7 @@ class ComprehensiveEmployeeFilter:
         is_visible_in_org_chart = self.params.get('is_visible_in_org_chart')
         if is_visible_in_org_chart:
             visible = is_visible_in_org_chart.lower() == 'true'
-            print(f"👁️ Applying org chart visible: {visible}")
+      
             queryset = queryset.filter(is_visible_in_org_chart=visible)
         
         # Is Deleted (for admin purposes)
@@ -668,7 +638,7 @@ class ComprehensiveEmployeeFilter:
         # Status needs update (handled in view after filtering)
         status_needs_update = self.params.get('status_needs_update')
         if status_needs_update and status_needs_update.lower() == 'true':
-            print(f"🔄 Status needs update filter will be applied in view")
+        
             pass
         
         # Contract expiring soon
@@ -677,7 +647,7 @@ class ComprehensiveEmployeeFilter:
             try:
                 days = int(contract_expiring_days)
                 expiry_date = date.today() + timedelta(days=days)
-                print(f"⏰ Applying contract expiring in {days} days (before {expiry_date})")
+          
                 queryset = queryset.filter(
                     contract_end_date__lte=expiry_date,
                     contract_end_date__gte=date.today()
@@ -1617,136 +1587,130 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
    
+    # views.py - EmployeeViewSet._get_unified_employee_vacancy_list - TAM YENİ VERSİYA
+
     def _get_unified_employee_vacancy_list(self, request, should_paginate):
         """Get unified list of employees and vacant positions"""
         
-        # ✅ CRITICAL: Parse status filter values properly
-        status_filter_values = []
+        # ✅ Parse status filter
+        status_param = request.query_params.get('status', '')
+        status_values = [s.strip() for s in status_param.split(',') if s.strip()]
         
-        # Get from query params - handle both getlist() and get()
-        if hasattr(request.query_params, 'getlist'):
-            status_values = request.query_params.getlist('status')
-            for status_val in status_values:
-                if status_val:
-                    if ',' in str(status_val):
-                        status_filter_values.extend([v.strip() for v in str(status_val).split(',') if v.strip()])
-                    else:
-                        status_filter_values.append(str(status_val).strip())
-        else:
-            status_param = request.query_params.get('status')
-            if status_param:
-                if ',' in str(status_param):
-                    status_filter_values.extend([v.strip() for v in str(status_param).split(',') if v.strip()])
-                else:
-                    status_filter_values.append(str(status_param).strip())
+        print(f"[STATUS] Raw param: '{status_param}'")
+        print(f"[STATUS] Parsed values: {status_values}")
         
-        logger.info(f"🔍 Status filter values: {status_filter_values}")
+        # ✅ Check what's requested
+        has_vacant = any(s.upper() in ['VACANT', 'VACANCY'] for s in status_values)
+        has_employee_status = any(s.upper() not in ['VACANT', 'VACANCY'] for s in status_values)
         
-        # ✅ Check if "VACANT" status is requested
-        vacancy_status_requested = any(
-            val.upper() in ['VACANT', 'VACANCY'] for val in status_filter_values
-        )
-        
-        # ✅ Get employee status IDs (non-vacant statuses)
-        employee_status_ids = []
-        for status_val in status_filter_values:
-            if status_val.upper() not in ['VACANT', 'VACANCY']:
-                try:
-                    # Try as integer ID
-                    employee_status_ids.append(int(status_val))
-                except (ValueError, TypeError):
-                    # Try to find by name
-                    try:
-                        status_obj = EmployeeStatus.objects.get(name=status_val, is_active=True)
-                        employee_status_ids.append(status_obj.id)
-                    except EmployeeStatus.DoesNotExist:
-                        logger.warning(f"Status not found: {status_val}")
-        
-        logger.info(f"📊 Vacancy requested: {vacancy_status_requested}, Employee status IDs: {employee_status_ids}")
+        print(f"[STATUS] Has VACANT: {has_vacant}")
+        print(f"[STATUS] Has employee status: {has_employee_status}")
         
         # ✅ Decide what to include
-        include_employees = True
-        include_vacancies = True
-        
-        if status_filter_values:  # Status filter is applied
-            if vacancy_status_requested and not employee_status_ids:
-                # ONLY "VACANT" selected
-                include_employees = False
-                include_vacancies = True
-                logger.info("✅ Showing ONLY vacancies")
-            elif employee_status_ids and not vacancy_status_requested:
-                # ONLY employee statuses selected
-                include_employees = True
-                include_vacancies = False
-                logger.info("✅ Showing ONLY employees with selected statuses")
-            else:
-                # BOTH selected
-                include_employees = True
-                include_vacancies = True
-                logger.info("✅ Showing BOTH employees and vacancies")
-        else:
-            # No status filter - show all
+        if not status_values:
+            # No filter → show all
             include_employees = True
             include_vacancies = True
-        
-        # Get employees
-        employee_queryset = self.get_queryset()
-        
-        # ✅ Apply employee status filter if needed
-        if include_employees and employee_status_ids:
-            employee_queryset = employee_queryset.filter(status__id__in=employee_status_ids)
-            logger.info(f"Filtered employees by status IDs: {employee_status_ids}")
-        
-        # Apply other filters
-        employee_filter = ComprehensiveEmployeeFilter(employee_queryset, request.query_params)
-        filtered_employees = employee_filter.filter()
-        
-        # Get vacant positions
-        vacancy_queryset = VacantPosition.objects.filter(
-            is_filled=False,
-            is_deleted=False,
-            include_in_headcount=True
-        ).select_related(
-            'business_function', 'department', 'unit', 'job_function',
-            'position_group', 'vacancy_status', 'reporting_to'
-        )
-        
-        # Apply same organizational filters to vacancies
-        vacancy_filter = self._get_vacancy_filter_from_employee_params(request.query_params)
-        if vacancy_filter:
-            filtered_vacancies = vacancy_queryset.filter(vacancy_filter)
+            print("[MODE] SHOW ALL")
+        elif has_vacant and not has_employee_status:
+            # Only VACANT → show only vacancies
+            include_employees = False
+            include_vacancies = True
+            print("[MODE] ONLY VACANCIES")
+        elif has_employee_status and not has_vacant:
+            # Only employee statuses → show only employees
+            include_employees = True
+            include_vacancies = False
+            print("[MODE] ONLY EMPLOYEES")
         else:
-            filtered_vacancies = vacancy_queryset
+            # Both → show both
+            include_employees = True
+            include_vacancies = True
+            print("[MODE] BOTH")
         
-        logger.info(f"📊 Before inclusion filter - Employees: {filtered_employees.count()}, Vacancies: {filtered_vacancies.count()}")
-        
-        # ✅ Apply inclusion logic
-        if not include_employees:
+        # ====== GET EMPLOYEES ======
+        if include_employees:
+            employee_queryset = self.get_queryset()
+            print(f"[EMP] Initial count: {employee_queryset.count()}")
+            
+            # Apply status filter if needed
+            if has_employee_status:
+                employee_status_ids = []
+                for status_val in status_values:
+                    if status_val.upper() not in ['VACANT', 'VACANCY']:
+                        try:
+                            employee_status_ids.append(int(status_val))
+                        except:
+                            try:
+                                status_obj = EmployeeStatus.objects.get(name__iexact=status_val)
+                                employee_status_ids.append(status_obj.id)
+                            except:
+                                pass
+                
+                if employee_status_ids:
+                    employee_queryset = employee_queryset.filter(status__id__in=employee_status_ids)
+                    print(f"[EMP] After status filter: {employee_queryset.count()}")
+            
+            # Apply OTHER filters (NOT status)
+            filter_params = request.query_params.copy()
+            if 'status' in filter_params:
+                del filter_params['status']  # Remove status from other filters
+            
+            employee_filter = ComprehensiveEmployeeFilter(employee_queryset, filter_params)
+            filtered_employees = employee_filter.filter()
+            print(f"[EMP] After other filters: {filtered_employees.count()}")
+        else:
             filtered_employees = Employee.objects.none()
+            print("[EMP] Excluded (0)")
         
-        if not include_vacancies:
+        # ====== GET VACANCIES ======
+        if include_vacancies:
+            vacancy_queryset = VacantPosition.objects.filter(
+                is_filled=False,
+                is_deleted=False,
+                include_in_headcount=True
+            ).select_related(
+                'business_function', 'department', 'unit', 'job_function',
+                'position_group', 'vacancy_status', 'reporting_to'
+            )
+            print(f"[VAC] Initial count: {vacancy_queryset.count()}")
+            
+            # Apply organizational filters
+            filter_params = request.query_params.copy()
+            if 'status' in filter_params:
+                del filter_params['status']
+            
+            vacancy_filter = self._get_vacancy_filter_from_employee_params(filter_params)
+            if vacancy_filter:
+                filtered_vacancies = vacancy_queryset.filter(vacancy_filter)
+                print(f"[VAC] After filters: {filtered_vacancies.count()}")
+            else:
+                filtered_vacancies = vacancy_queryset
+                print(f"[VAC] No filters applied")
+        else:
             filtered_vacancies = VacantPosition.objects.none()
+            print("[VAC] Excluded (0)")
         
-        logger.info(f"📊 After inclusion filter - Employees: {filtered_employees.count()}, Vacancies: {filtered_vacancies.count()}")
-        
-        # Convert to unified format
+        # ====== BUILD UNIFIED DATA ======
         unified_data = []
         
         # Add employees
-        if include_employees:
+        if filtered_employees.exists():
             employee_serializer = EmployeeListSerializer(filtered_employees, many=True, context={'request': request})
             for emp_data in employee_serializer.data:
                 emp_data['is_vacancy'] = False
                 emp_data['record_type'] = 'employee'
                 unified_data.append(emp_data)
+            print(f"[UNIFIED] Added {len(employee_serializer.data)} employees")
         
         # Add vacancies
-        if include_vacancies:
+        if filtered_vacancies.exists():
             for vacancy in filtered_vacancies:
                 vacancy_data = self._convert_vacancy_to_employee_format(vacancy, request)
                 unified_data.append(vacancy_data)
+            print(f"[UNIFIED] Added {filtered_vacancies.count()} vacancies")
         
-        logger.info(f"📊 Final unified data count: {len(unified_data)}")
+        print(f"[UNIFIED] TOTAL: {len(unified_data)}")
         
         # Apply sorting
         sorting_params = self._get_sorting_params_from_request(request)
@@ -1755,36 +1719,24 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         else:
             unified_data.sort(key=lambda x: x.get('name', ''))
         
-        # Apply pagination if requested
+        # Return response
         if should_paginate:
             return self._paginate_unified_data(unified_data, request)
         else:
-            total_count = len(unified_data)
-            employee_count = filtered_employees.count() if include_employees else 0
-            vacancy_count = filtered_vacancies.count() if include_vacancies else 0
-            
             return Response({
-                'count': total_count,
-                'total_pages': 1,
-                'current_page': 1,
-                'page_size': total_count,
-                'page_size_options': [10, 20, 50, 100, 500, 1000, "All"],
-                'has_next': False,
-                'has_previous': False,
-                'next': None,
-                'previous': None,
+                'count': len(unified_data),
                 'pagination_used': False,
                 'results': unified_data,
                 'summary': {
-                    'total_records': total_count,
-                    'employee_records': employee_count,
-                    'vacancy_records': vacancy_count,
+                    'total_records': len(unified_data),
+                    'employee_records': filtered_employees.count(),
+                    'vacancy_records': filtered_vacancies.count(),
                     'includes_vacancies': include_vacancies,
                     'includes_employees': include_employees,
-                    'unified_view': True,
-                    'status_filter_active': bool(status_filter_values),
-                    'vacancy_status_requested': vacancy_status_requested,
-                    'employee_status_ids': employee_status_ids
+                    'status_filter': status_values,
+                    'mode': 'only_vacancies' if (not include_employees and include_vacancies) else
+                            'only_employees' if (include_employees and not include_vacancies) else
+                            'both' if (include_employees and include_vacancies) else 'none'
                 }
             })
     def _get_employee_only_list(self, request, should_paginate):
@@ -1907,10 +1859,21 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         
         return values
     
+    # views.py - EmployeeViewSet._convert_vacancy_to_employee_format metodunda
+
     def _convert_vacancy_to_employee_format(self, vacancy, request):
         """Convert vacancy to employee-like format for unified display"""
+        
+        # ✅ CRITICAL FIX: Ensure vacancy status is properly set
+        vacancy_status_name = 'VACANT'
+        vacancy_status_color = '#F97316'  # Orange color for vacancies
+        
+        if vacancy.vacancy_status:
+            vacancy_status_name = vacancy.vacancy_status.name
+            vacancy_status_color = vacancy.vacancy_status.color
+        
         return {
-            'id': vacancy.original_employee_pk,  # FIXED: Use original employee PK instead of None
+            'id': vacancy.original_employee_pk or vacancy.id,  
             'employee_id': vacancy.position_id,
             'name': "VACANT",
             'email': None,
@@ -1920,17 +1883,17 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             'phone': None,
             'business_function_name': vacancy.business_function.name if vacancy.business_function else 'N/A',
             'business_function_code': vacancy.business_function.code if vacancy.business_function else 'N/A',
-            'business_function_id': vacancy.business_function.id if vacancy.business_function else 'N/A',
+            'business_function_id': vacancy.business_function.id if vacancy.business_function else None,
             'department_name': vacancy.department.name if vacancy.department else 'N/A',
-            'department_id': vacancy.department.id if vacancy.department else 'N/A',
+            'department_id': vacancy.department.id if vacancy.department else None,
             'unit_name': vacancy.unit.name if vacancy.unit else None,
             'unit_id': vacancy.unit.id if vacancy.unit else None,
             'job_function_name': vacancy.job_function.name if vacancy.job_function else 'N/A',
-            'job_function_id': vacancy.job_function.id if vacancy.job_function else 'N/A',
+            'job_function_id': vacancy.job_function.id if vacancy.job_function else None,
             'job_title': vacancy.job_title,
             'position_group_name': vacancy.position_group.get_name_display() if vacancy.position_group else 'N/A',
             'position_group_level': vacancy.position_group.hierarchy_level if vacancy.position_group else 0,
-            'position_group_id': vacancy.position_group.id if vacancy.position_group else 0,
+            'position_group_id': vacancy.position_group.id if vacancy.position_group else None,
             'grading_level': vacancy.grading_level,
             'start_date': None,
             'end_date': None,
@@ -1942,11 +1905,15 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             'last_extension_date': None,
             'line_manager_name': vacancy.reporting_to.full_name if vacancy.reporting_to else None,
             'line_manager_hc_number': vacancy.reporting_to.employee_id if vacancy.reporting_to else None,
-            'status_name': vacancy.vacancy_status.name if vacancy.vacancy_status else 'VACANT',
-            'status_color': vacancy.vacancy_status.color if vacancy.vacancy_status else '#F97316',
+            'line_manager_email': vacancy.reporting_to.user.email if (vacancy.reporting_to and vacancy.reporting_to.user) else None,
+            
+            # ✅ CRITICAL: Status fields that frontend checks
+            'status_name': vacancy_status_name,
+            'status_color': vacancy_status_color,
+            'current_status_display': vacancy_status_name,
+            
             'tag_names': [],
             'years_of_service': 0,
-            'current_status_display': 'Vacant Position',
             'is_visible_in_org_chart': vacancy.is_visible_in_org_chart,
             'direct_reports_count': 0,
             'status_needs_update': False,
@@ -1954,8 +1921,11 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             'updated_at': vacancy.updated_at,
             'profile_image_url': None,
             'is_deleted': False,
+            
+            # ✅ CRITICAL: Mark as vacancy for filtering
             'is_vacancy': True,
             'record_type': 'vacancy',
+            
             'vacancy_details': {
                 'internal_id': vacancy.id,
                 'position_id': vacancy.position_id,
@@ -1963,7 +1933,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 'is_filled': vacancy.is_filled,
                 'filled_date': vacancy.filled_date,
                 'notes': vacancy.notes,
-                'original_employee_pk': vacancy.original_employee_pk  # FIXED: Include original employee PK in details
+                'original_employee_pk': vacancy.original_employee_pk
             }
         }
     def _get_sorting_params_from_request(self, request):
