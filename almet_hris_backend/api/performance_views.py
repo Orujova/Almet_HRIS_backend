@@ -1098,11 +1098,12 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
         })
     # ==================== OBJECTIVES ENDPOINTS ====================
 
+    # performance_views.py - save_objectives_draft endpoint
+
     @action(detail=True, methods=['post'])
     def save_objectives_draft(self, request, pk=None):
         """
-        ✅ Save objectives draft - works in both GOAL_SETTING and END_YEAR periods
-        Also allows saving when clarification is requested
+        ✅ FIXED: Save objectives draft with proper end_year_rating handling
         """
         performance = self.get_object()
         
@@ -1120,6 +1121,16 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
             for idx, obj_data in enumerate(objectives_data):
                 obj_id = obj_data.get('id')
                 
+                # ✅ CRITICAL: Extract all fields including end_year_rating
+                title = obj_data.get('title', '')
+                description = obj_data.get('description', '')
+                linked_dept_obj_id = obj_data.get('linked_department_objective')
+                weight = obj_data.get('weight', 0)
+                progress = obj_data.get('progress', 0)
+                status_id = obj_data.get('status')
+                end_year_rating_id = obj_data.get('end_year_rating')  # ✅ GET THIS
+                calculated_score = obj_data.get('calculated_score', 0)
+                
                 if obj_id:
                     # ✅ UPDATE existing objective
                     obj = EmployeeObjective.objects.filter(
@@ -1128,42 +1139,41 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
                     ).first()
                     
                     if obj:
-                        obj.title = obj_data.get('title', obj.title)
-                        obj.description = obj_data.get('description', obj.description)
-                        obj.linked_department_objective_id = obj_data.get('linked_department_objective')
-                        obj.weight = obj_data.get('weight', obj.weight)
-                        obj.progress = obj_data.get('progress', obj.progress)
-                        obj.status_id = obj_data.get('status', obj.status_id)
+                        obj.title = title
+                        obj.description = description
+                        obj.linked_department_objective_id = linked_dept_obj_id
+                        obj.weight = weight
+                        obj.progress = progress
+                        obj.status_id = status_id
                         obj.display_order = idx
+                        obj.calculated_score = calculated_score
                         
-                        # ✅ Save end_year_rating (can be null)
-                        if 'end_year_rating' in obj_data:
-                            obj.end_year_rating_id = obj_data.get('end_year_rating')
-                        
-                        # ✅ Save calculated_score
-                        if 'calculated_score' in obj_data:
-                            obj.calculated_score = obj_data.get('calculated_score', 0)
+                        # ✅ CRITICAL FIX: Set end_year_rating
+                        if end_year_rating_id is not None:
+                            obj.end_year_rating_id = end_year_rating_id
+                        else:
+                            obj.end_year_rating = None  # Allow clearing
                         
                         obj.save()
                         updated_ids.append(obj.id)
                         
-                        logger.info(f"✅ Updated objective {obj.id}: {obj.title[:30]}, rating={obj.end_year_rating_id}, score={obj.calculated_score}")
+                        logger.info(f"✅ Updated objective {obj.id}: rating={obj.end_year_rating_id}, score={obj.calculated_score}")
                 else:
-                    # ✅ Create new objective
+                    # ✅ CREATE new objective
                     new_obj = EmployeeObjective.objects.create(
                         performance=performance,
-                        title=obj_data.get('title', ''),
-                        description=obj_data.get('description', ''),
-                        linked_department_objective_id=obj_data.get('linked_department_objective'),
-                        weight=obj_data.get('weight', 0),
-                        progress=obj_data.get('progress', 0),
-                        status_id=obj_data.get('status'),
-                        end_year_rating_id=obj_data.get('end_year_rating'),
-                        calculated_score=obj_data.get('calculated_score', 0),
+                        title=title,
+                        description=description,
+                        linked_department_objective_id=linked_dept_obj_id,
+                        weight=weight,
+                        progress=progress,
+                        status_id=status_id,
+                        end_year_rating_id=end_year_rating_id,  # ✅ SET THIS
+                        calculated_score=calculated_score,
                         display_order=idx
                     )
                     updated_ids.append(new_obj.id)
-                    logger.info(f"➕ Created objective {new_obj.id}")
+                    logger.info(f"➕ Created objective {new_obj.id}: rating={new_obj.end_year_rating_id}")
             
             # Delete objectives not in the list
             deleted_count = performance.objectives.exclude(id__in=updated_ids).count()
@@ -1196,11 +1206,12 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
             'objectives_percentage': str(performance.objectives_percentage)
         })
     
-    
+    # performance_views.py - submit_objectives endpoint
+
     @action(detail=True, methods=['post'])
     def submit_objectives(self, request, pk=None):
         """
-        ✅ FIX: Submit objectives for approval (allows resubmit during clarification)
+        ✅ FIXED: Submit objectives with proper end_year_rating handling
         """
         performance = self.get_object()
         
@@ -1218,11 +1229,10 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
             except Employee.DoesNotExist:
                 return Response({'error': 'Employee profile not found'}, status=status.HTTP_404_NOT_FOUND)
         
-        # ✅ FIX: Check period - allow if clarification requested even if period ended
+        # ✅ Check period - allow if clarification requested even if period ended
         is_clarification = performance.approval_status == 'NEED_CLARIFICATION'
         
         if not is_clarification:
-            # Normal case - check if manager period is active
             if not performance.performance_year.is_goal_setting_manager_active():
                 return Response({
                     'error': 'Manager goal setting period has ended',
@@ -1234,62 +1244,81 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
                     }
                 }, status=status.HTTP_400_BAD_REQUEST)
         else:
-            # ✅ Clarification case - allow submit even if period ended
             logger.info(f"✅ Allowing submit during clarification - Period ended but clarification active")
         
-        # ✅ Get objectives data from request (if provided) and save them first
+        # ✅ SAVE objectives data BEFORE validation (if provided)
         objectives_data = request.data.get('objectives', [])
         
         if objectives_data:
+            logger.info(f"💾 Saving {len(objectives_data)} objectives before submit")
+            
             with transaction.atomic():
                 updated_ids = []
                 for idx, obj_data in enumerate(objectives_data):
                     obj_id = obj_data.get('id')
                     
+                    # ✅ Extract all fields including end_year_rating
+                    title = obj_data.get('title', '')
+                    description = obj_data.get('description', '')
+                    linked_dept_obj_id = obj_data.get('linked_department_objective')
+                    weight = obj_data.get('weight', 0)
+                    progress = obj_data.get('progress', 0)
+                    status_id = obj_data.get('status')
+                    end_year_rating_id = obj_data.get('end_year_rating')  # ✅ CRITICAL
+                    calculated_score = obj_data.get('calculated_score', 0)
+                    
                     if obj_id:
-                        # Update existing objective
+                        # ✅ UPDATE existing
                         obj = EmployeeObjective.objects.filter(
                             id=obj_id, 
                             performance=performance
                         ).first()
                         
                         if obj:
-                            obj.title = obj_data.get('title', obj.title)
-                            obj.description = obj_data.get('description', obj.description)
-                            obj.linked_department_objective_id = obj_data.get('linked_department_objective')
-                            obj.weight = obj_data.get('weight', obj.weight)
-                            obj.progress = obj_data.get('progress', obj.progress)
-                            obj.status_id = obj_data.get('status', obj.status_id)
+                            obj.title = title
+                            obj.description = description
+                            obj.linked_department_objective_id = linked_dept_obj_id
+                            obj.weight = weight
+                            obj.progress = progress
+                            obj.status_id = status_id
                             obj.display_order = idx
+                            obj.calculated_score = calculated_score
                             
-                            if 'end_year_rating' in obj_data:
-                                obj.end_year_rating_id = obj_data.get('end_year_rating')
-                            
-                            if 'calculated_score' in obj_data:
-                                obj.calculated_score = obj_data.get('calculated_score', 0)
+                            # ✅ CRITICAL: Save end_year_rating
+                            if end_year_rating_id is not None:
+                                obj.end_year_rating_id = end_year_rating_id
+                            else:
+                                obj.end_year_rating = None
                             
                             obj.save()
                             updated_ids.append(obj.id)
+                            
+                            logger.info(f"✅ Updated objective {obj.id}: {title[:30]}, rating={obj.end_year_rating_id}")
                     else:
-                        # Create new objective
+                        # ✅ CREATE new
                         new_obj = EmployeeObjective.objects.create(
                             performance=performance,
-                            title=obj_data.get('title', ''),
-                            description=obj_data.get('description', ''),
-                            linked_department_objective_id=obj_data.get('linked_department_objective'),
-                            weight=obj_data.get('weight', 0),
-                            progress=obj_data.get('progress', 0),
-                            status_id=obj_data.get('status'),
-                            end_year_rating_id=obj_data.get('end_year_rating'),
-                            calculated_score=obj_data.get('calculated_score', 0),
+                            title=title,
+                            description=description,
+                            linked_department_objective_id=linked_dept_obj_id,
+                            weight=weight,
+                            progress=progress,
+                            status_id=status_id,
+                            end_year_rating_id=end_year_rating_id,  # ✅ CRITICAL
+                            calculated_score=calculated_score,
                             display_order=idx
                         )
                         updated_ids.append(new_obj.id)
+                        logger.info(f"➕ Created objective {new_obj.id}: rating={new_obj.end_year_rating_id}")
                 
                 # Delete objectives not in the list
+                deleted_count = performance.objectives.exclude(id__in=updated_ids).count()
                 performance.objectives.exclude(id__in=updated_ids).delete()
+                
+                if deleted_count > 0:
+                    logger.info(f"🗑️ Deleted {deleted_count} objectives")
         
-        # Validate objectives
+        # ✅ NOW validate objectives AFTER saving
         objectives = performance.objectives.filter(is_cancelled=False)
         goal_config = GoalLimitConfig.get_active_config()
         
@@ -1351,12 +1380,13 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
         )
         
         return Response({
-        'success': True,
-        'message': 'Objectives resubmitted successfully - Waiting for employee review' if was_clarification_needed else 'Objectives submitted for employee approval',
-        'next_step': 'Waiting for employee to review and approve',
-        'objectives_count': objectives_count,
-        'was_clarification_response': was_clarification_needed
-    })   
+            'success': True,
+            'message': 'Objectives resubmitted successfully - Waiting for employee review' if was_clarification_needed else 'Objectives submitted for employee approval',
+            'next_step': 'Waiting for employee to review and approve',
+            'objectives_count': objectives_count,
+            'was_clarification_response': was_clarification_needed
+        })
+        
     # ==================== COMPETENCIES ENDPOINTS ====================
     
     def _sync_to_behavioral_assessment(self, employee, competencies_data):
