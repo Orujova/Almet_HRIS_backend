@@ -1433,22 +1433,23 @@ class VacantPositionViewSet(viewsets.ModelViewSet):
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 class EmployeeViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
-
     pagination_class = ModernPagination  # Use modern pagination
     parser_classes = [JSONParser, MultiPartParser, FormParser]
     
     def get_queryset(self):
+        """✅ UPDATED: Filter based on user access"""
         from .models import Employee
-        return Employee.objects.select_related(
+        
+        base_queryset = Employee.objects.select_related(
             'user', 'business_function', 'department', 'unit', 'job_function',
             'position_group', 'status', 'line_manager', 'original_vacancy'
         ).prefetch_related(
             'tags', 'documents', 'activities'
         ).all().order_by('full_name')
         
-        return filter_headcount_queryset(self.request.user, base_queryset)
-    
-    
+        # Apply access control
+        return filter_headcount_queryset(self.request.user, base_queryset)    
+
     def _clean_form_data(self, data):
         """Comprehensive data cleaning for form data"""
         cleaned_data = {}
@@ -1541,7 +1542,19 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             return EmployeeDetailSerializer
     
     def list(self, request, *args, **kwargs):
-        """FIXED: Proper pagination-filter coordination WITH SORTING"""
+        """✅ UPDATED: Add access info to response with full filtering and pagination"""
+        access = get_headcount_access(request.user)
+        
+        # Regular employee - no access
+        if not access['is_manager'] and not access['can_view_all']:
+            return Response({
+                'error': 'Access Denied',
+                'message': 'You do not have permission to view headcount data.',
+                'detail': 'Only managers and administrators can access the headcount table.',
+                'can_view_all': False,
+                'is_manager': False,
+                
+            }, status=status.HTTP_403_FORBIDDEN)
         
         try:
             include_vacancies = request.query_params.get('include_vacancies', 'true').lower() == 'true'
@@ -1569,18 +1582,239 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 active_filters = {k: request.query_params.get(k) for k in filter_params if request.query_params.get(k)}
                 logger.info(f"🔍 Active filters: {active_filters}")
             
+            # ✅ Manager can only select their accessible business functions
+            if not access['can_view_all'] and access['accessible_business_functions']:
+                bf_filter = request.query_params.get('business_function')
+                if bf_filter:
+                    bf_ids = [int(id) for id in bf_filter.split(',')]
+                    # Check if requested BFs are accessible
+                    invalid_bfs = set(bf_ids) - set(access['accessible_business_functions'])
+                    if invalid_bfs:
+                        return Response({
+                            'error': 'Access Denied',
+                            'message': 'You cannot access the selected company(ies)',
+                            'invalid_business_functions': list(invalid_bfs)
+                        }, status=status.HTTP_403_FORBIDDEN)
+            
             should_paginate = bool(page_param or page_size_param or use_pagination)
             
             if include_vacancies:
-                return self._get_unified_employee_vacancy_list(request, should_paginate)
+                response = self._get_unified_employee_vacancy_list(request, should_paginate)
             else:
-                return self._get_employee_only_list(request, should_paginate)
+                response = self._get_employee_only_list(request, should_paginate)
+            
+            # ✅ Add access info to response
+            if isinstance(response.data, dict):
+                response.data['access_info'] = {
+                    'can_view_all': access['can_view_all'],
+                    'is_manager': access['is_manager'],
+                    'accessible_count': len(access['accessible_employee_ids']) if access['accessible_employee_ids'] else 'all',
+                    'accessible_business_functions': access['accessible_business_functions'] if not access['can_view_all'] else None
+                }
+            
+            return response
                 
         except Exception as e:
             logger.error(f"Error in employee list view: {str(e)}")
             logger.error(f"Traceback: {traceback.format_exc()}")
             return Response(
                 {'error': f'Failed to retrieve employees: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+
+    @swagger_auto_schema(
+        operation_description="Get detailed information for a specific employee",
+        responses={
+            200: openapi.Response(
+                description="Employee details",
+                schema=EmployeeDetailSerializer
+            ),
+            403: "Access denied - not allowed to view this employee",
+            404: "Employee not found"
+        }
+    )
+    def retrieve(self, request, *args, **kwargs):
+        """
+        ✅ UPDATED: Allow users to view their own profile even without headcount access
+        """
+        try:
+            employee_id = kwargs.get('pk')
+            
+            # Try to get employee
+            try:
+                employee = Employee.objects.select_related(
+                    'user', 'business_function', 'department', 'unit', 'job_function',
+                    'position_group', 'status', 'line_manager', 'original_vacancy'
+                ).prefetch_related(
+                    'tags', 'documents', 'activities'
+                ).get(pk=employee_id)
+            except Employee.DoesNotExist:
+                return Response(
+                    {'detail': 'Employee not found'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            
+            # Check access
+            access = get_headcount_access(request.user)
+            
+            # ✅ CRITICAL: Allow users to view their own profile
+            is_own_profile = employee.user and employee.user.id == request.user.id
+            
+            if is_own_profile:
+                # User viewing their own profile - always allow
+                logger.info(f"✅ User {request.user.username} viewing own profile: {employee.employee_id}")
+            elif access['can_view_all']:
+                # Admin can view all
+                logger.info(f"✅ Admin {request.user.username} viewing employee: {employee.employee_id}")
+            elif access['is_manager'] and access['accessible_employee_ids']:
+                # Manager can only view accessible employees
+                if employee.id not in access['accessible_employee_ids']:
+                    logger.warning(f"⚠️ Manager {request.user.username} attempted to view unauthorized employee: {employee.employee_id}")
+                    return Response(
+                        {
+                            'error': 'Access Denied',
+                            'message': 'You do not have permission to view this employee.',
+                            'detail': 'You can only view employees in your team or company.',
+                        },
+                        status=status.HTTP_403_FORBIDDEN
+                    )
+            else:
+                # Regular employee without access
+                logger.warning(f"⚠️ User {request.user.username} attempted to view employee without access: {employee.employee_id}")
+                return Response(
+                    {
+                        'error': 'Access Denied',
+                        'message': 'You do not have permission to view employee profiles.',
+                        'detail': 'Only managers and administrators can view employee profiles.',
+                    },
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            
+            # Serialize and return
+            serializer = self.get_serializer(employee)
+            
+            # Add context information
+            response_data = serializer.data
+            response_data['access_context'] = {
+                'is_own_profile': is_own_profile,
+                'can_edit': is_own_profile or access['can_view_all'],
+                'can_view_team': access['is_manager'] or access['can_view_all'],
+                'viewer_is_admin': access['can_view_all']
+            }
+            
+            return Response(response_data)
+            
+        except Exception as e:
+            logger.error(f"❌ Error retrieving employee: {str(e)}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return Response(
+                {'error': f'Failed to retrieve employee: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    @swagger_auto_schema(
+        method='get',
+        operation_description="Get current logged-in user's employee profile",
+        responses={
+            200: openapi.Response(
+                description="Current user's employee profile",
+                schema=EmployeeDetailSerializer
+            ),
+            404: "Employee profile not found for current user"
+        }
+    )
+    @action(detail=False, methods=['get'])
+    def get_my_profile(self, request):
+        """
+        ✅ NEW: Get current user's own employee profile
+        Accessible to ALL authenticated users regardless of headcount access
+        """
+        try:
+            # Get current user's employee profile
+            try:
+                employee = Employee.objects.select_related(
+                    'user', 'business_function', 'department', 'unit', 'job_function',
+                    'position_group', 'status', 'line_manager', 'original_vacancy'
+                ).prefetch_related(
+                    'tags', 'documents', 'activities'
+                ).get(user=request.user)
+                
+                logger.info(f"✅ Employee profile found for user {request.user.username}: {employee.employee_id}")
+                
+            except Employee.DoesNotExist:
+                logger.warning(f"⚠️ No employee profile found for user: {request.user.username}")
+                return Response(
+                    {
+                        'error': 'Employee profile not found',
+                        'message': 'No employee record is associated with your user account.',
+                        'user_email': request.user.email,
+                        'contact_hr': 'Please contact HR to create your employee profile.'
+                    },
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            
+            # Serialize employee data
+            serializer = EmployeeDetailSerializer(employee, context={'request': request})
+            
+            # Get additional context
+            direct_reports_count = employee.direct_reports.filter(
+                status__affects_headcount=True,
+                is_deleted=False
+            ).count()
+            
+            # Get team members if user is a manager
+            team_members = []
+            if direct_reports_count > 0:
+                team = employee.direct_reports.filter(
+                    status__affects_headcount=True,
+                    is_deleted=False
+                ).select_related('position_group', 'department')[:10]
+                
+                team_members = [{
+                    'id': member.id,
+                    'employee_id': member.employee_id,
+                    'name': member.full_name,
+                    'job_title': member.job_title,
+                    'department': member.department.name if member.department else None
+                } for member in team]
+            
+            # Get manager chain
+            manager_chain = []
+            current_manager = employee.line_manager
+            visited = set()
+            
+            while current_manager and current_manager.id not in visited and len(manager_chain) < 5:
+                visited.add(current_manager.id)
+                manager_chain.append({
+                    'id': current_manager.id,
+                    'employee_id': current_manager.employee_id,
+                    'name': current_manager.full_name,
+                    'job_title': current_manager.job_title
+                })
+                current_manager = current_manager.line_manager
+            
+            return Response({
+                'employee': serializer.data,
+                'profile_context': {
+                    'is_manager': direct_reports_count > 0,
+                    'direct_reports_count': direct_reports_count,
+                    'team_members': team_members,
+                    'manager_chain': manager_chain,
+                    'levels_to_top': len(manager_chain)
+                },
+                'access_info': {
+                    'can_view_headcount': False,  # Will be updated by middleware if needed
+                    'can_edit_own_profile': True,
+              
+                }
+            })
+            
+        except Exception as e:
+            logger.error(f"❌ Error getting my profile: {str(e)}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return Response(
+                {'error': f'Failed to retrieve profile: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
     
@@ -5721,51 +5955,11 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         except Exception as e:
             return Response({'error': f'Bulk contract update failed: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
-    @action(detail=False, methods=['get'], url_path='contract-expiry-alerts')
-    def get_contract_expiry_alerts(self, request):
-        """Get employees whose contracts are expiring soon with notification capabilities"""
-        days = int(request.query_params.get('days', 30))
-        
-        from .status_management import EmployeeStatusManager
-        expiry_analysis = EmployeeStatusManager.get_contract_expiry_analysis(days)
-        
-        # Group employees by urgency
-        urgent_employees = [emp for emp in expiry_analysis['employees'] if emp['urgency'] in ['critical', 'high']]
-        
-        return Response({
-            'success': True,
-            'days_ahead': days,
-            'total_expiring': expiry_analysis['total_expiring'],
-            'urgency_breakdown': expiry_analysis['by_urgency'],
-            'department_breakdown': expiry_analysis['by_department'],
-            'line_manager_breakdown': expiry_analysis['by_line_manager'],
-            'urgent_employees': urgent_employees,
-            'all_employees': expiry_analysis['employees'],
-            'notification_recommendations': {
-                'critical_contracts': [emp for emp in expiry_analysis['employees'] if emp['urgency'] == 'critical'],
-              
-                'manager_notifications': list(set([emp['line_manager'] for emp in expiry_analysis['employees'] if emp['line_manager']]))
-            }
-        })
-    
-    @action(detail=False, methods=['get'])
-    def contracts_expiring_soon(self, request):
-        """Get employees whose contracts are expiring soon"""
-        days = int(request.query_params.get('days', 30))
-        
-        expiring_employees = ContractStatusManager.get_contract_expiring_soon(days)
-        
-        serializer = EmployeeListSerializer(expiring_employees, many=True)
-        
-        return Response({
-            'days': days,
-            'count': expiring_employees.count(),
-            'employees': serializer.data
-        })
-    
+    # views.py - EmployeeViewSet içində
+
     @action(detail=False, methods=['get'])
     def statistics(self, request):
-        """Get comprehensive employee statistics"""
+        """✅ COMPLETE: Get comprehensive employee statistics with vacant positions"""
         queryset = self.get_queryset()
         
         # Apply filtering
@@ -5786,12 +5980,38 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                     'affects_headcount': emp_status.affects_headcount
                 }
         
-        # By business function
+        # ✅ By business function with ALL info
         function_stats = {}
         for func in BusinessFunction.objects.filter(is_active=True):
-            count = queryset.filter(business_function=func).count()
-            if count > 0:
-                function_stats[func.name] = count
+            emp_count = queryset.filter(business_function=func).count()
+            active_count = queryset.filter(
+                business_function=func, 
+                status__affects_headcount=True
+            ).count()
+            
+            # Recent hires in this function
+            recent_hires = queryset.filter(
+                business_function=func,
+                start_date__gte=date.today() - timedelta(days=30)
+            ).count()
+            
+            function_stats[func.name] = {
+                'count': emp_count,
+                'active': active_count,
+                'recent_hires': recent_hires
+            }
+        
+        # ✅ Vacant positions by business function
+        vacant_by_function = {}
+        vacant_positions = VacantPosition.objects.filter(
+            is_filled=False,
+            is_deleted=False,
+            include_in_headcount=True
+        ).select_related('business_function')
+        
+        for func in BusinessFunction.objects.filter(is_active=True):
+            vacant_count = vacant_positions.filter(business_function=func).count()
+            vacant_by_function[func.name] = vacant_count
         
         # By position group
         position_stats = {}
@@ -5800,25 +6020,26 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             if count > 0:
                 position_stats[pos.get_name_display()] = count
         
-        # FIXED: Contract analysis using proper method
+        # Contract duration statistics
         contract_stats = {}
         try:
-            # Get all unique contract types from employees
             contract_types = queryset.values_list('contract_duration', flat=True).distinct()
             for contract_type in contract_types:
                 if contract_type:
                     count = queryset.filter(contract_duration=contract_type).count()
                     if count > 0:
                         try:
-                            config = ContractTypeConfig.objects.get(contract_type=contract_type, is_active=True)
+                            config = ContractTypeConfig.objects.get(
+                                contract_type=contract_type, 
+                                is_active=True
+                            )
                             display_name = config.display_name
                         except ContractTypeConfig.DoesNotExist:
-                            # Fallback to formatted display name
                             display_name = contract_type.replace('_', ' ').title()
                         contract_stats[display_name] = count
         except Exception as e:
             logger.error(f"Error calculating contract statistics: {e}")
-            contract_stats = {'Error': 'Could not calculate contract statistics'}
+            contract_stats = {}
         
         # Recent activity
         recent_hires = queryset.filter(
@@ -5841,7 +6062,8 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             
             for update_info in employees_needing_updates:
                 transition = f"{update_info['current_status']} → {update_info['required_status']}"
-                status_update_stats['status_transitions'][transition] = status_update_stats['status_transitions'].get(transition, 0) + 1
+                status_update_stats['status_transitions'][transition] = \
+                    status_update_stats['status_transitions'].get(transition, 0) + 1
         except Exception as e:
             status_update_stats = {
                 'employees_needing_updates': 0,
@@ -5849,19 +6071,23 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 'error': str(e)
             }
         
+        # ✅ Total vacant positions
+        total_vacant = vacant_positions.count()
+        
         return Response({
             'total_employees': total_employees,
             'active_employees': active_employees,
             'inactive_employees': total_employees - active_employees,
+            'total_vacant_positions': total_vacant,  # ✅ NEW
             'by_status': status_stats,
             'by_business_function': function_stats,
+            'vacant_positions_by_business_function': vacant_by_function,  # ✅ NEW
             'by_position_group': position_stats,
             'by_contract_duration': contract_stats,
             'recent_hires_30_days': recent_hires,
             'upcoming_contract_endings_30_days': upcoming_contract_endings,
             'status_update_analysis': status_update_stats
         })
-   
     @action(detail=True, methods=['get'])
     def activities(self, request, pk=None):
         """Get employee activity history"""
@@ -6097,109 +6323,7 @@ class BulkEmployeeUploadViewSet(viewsets.ViewSet):
                 {'error': f'Failed to generate template: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )    
-
-class EmployeeGradingViewSet(viewsets.ViewSet):
-    """ViewSet for employee grading integration"""
-    permission_classes = [IsAuthenticated]
-    
-    def list(self, request):
-        """Get employees with grading information"""
-        employees = Employee.objects.select_related(
-            'position_group'
-        ).filter(status__affects_headcount=True)
-        
-        serializer = EmployeeGradingListSerializer(employees, many=True)
-        return Response({
-            'count': employees.count(),
-            'employees': serializer.data
-        })
-        
-    @swagger_auto_schema(
-        method='post',
-        operation_description="Bulk update employee grades and grading levels",
-        request_body=BulkEmployeeGradingUpdateSerializer,
-        responses={
-            200: openapi.Response(
-                description="Successfully updated grades",
-                schema=openapi.Schema(
-                    type=openapi.TYPE_OBJECT,
-                    properties={
-                        'message': openapi.Schema(type=openapi.TYPE_STRING),
-                        'updated_count': openapi.Schema(type=openapi.TYPE_INTEGER)
-                    }
-                )
-            ),
-            400: openapi.Response(
-                description="Bad request - validation errors",
-                schema=openapi.Schema(
-                    type=openapi.TYPE_OBJECT,
-                    properties={
-                        'error': openapi.Schema(type=openapi.TYPE_STRING)
-                    }
-                )
-            )
-        }
-    )
-    
-    @action(detail=False, methods=['post'])
-    def bulk_update_grades(self, request):
-        """Bulk update employee grades"""
-        serializer = BulkEmployeeGradingUpdateSerializer(data=request.data)
-        if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-        
-        updates = serializer.validated_data['updates']
-        
-        if not updates:
-            return Response(
-                {'error': 'updates list is required'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        try:
-            with transaction.atomic():
-                updated_count = 0
-                
-                for update in updates:
-                    employee_id = update['employee_id']
-                    grading_level = update.get('grading_level')
-                    
-                    try:
-                        employee = Employee.objects.get(id=employee_id)
-                        
-                        changes = []
-                        if grading_level and employee.grading_level != grading_level:
-                            old_level = employee.grading_level
-                            employee.grading_level = grading_level
-                            changes.append(f"Grading Level: {old_level} → {grading_level}")
-                        
-                        if changes:
-                            employee.save()
-                            updated_count += 1
-                            
-                            # Log activity
-                            EmployeeActivity.objects.create(
-                                employee=employee,
-                                activity_type='GRADE_CHANGED',
-                                description=f"Grading updated: {'; '.join(changes)}",
-                                performed_by=request.user,
-                                metadata={'changes': changes}
-                            )
-                            
-                    except Employee.DoesNotExist:
-                        continue
-            
-            return Response({
-                'message': f'Successfully updated grades for {updated_count} employees',
-                'updated_count': updated_count
-            })
-        except Exception as e:
-            logger.error(f"Bulk grade update failed: {str(e)}")
-            return Response(
-                {'error': 'Bulk grade update failed', 'details': str(e)},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-
+       
 class OrgChartFilter:
     """
     Comprehensive filter system for organizational chart

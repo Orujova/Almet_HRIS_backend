@@ -10,7 +10,7 @@ from .competency_views import (
     SkillGroupViewSet, SkillViewSet,
     BehavioralCompetencyGroupViewSet, BehavioralCompetencyViewSet,
     LeadershipCompetencyMainGroupViewSet, LeadershipCompetencyChildGroupViewSet, 
-    LeadershipCompetencyItemViewSet,  # UPDATED: Added Leadership
+    LeadershipCompetencyItemViewSet,  
     CompetencyStatsView
 )
 
@@ -29,19 +29,17 @@ from .asset_views import (
     AssetViewSet,
 )
 
-# UPDATED: Competency Assessment Views Import with Leadership
 from .competency_assessment_views import (
     CoreCompetencyScaleViewSet, BehavioralScaleViewSet, LetterGradeMappingViewSet,
     PositionCoreAssessmentViewSet, PositionBehavioralAssessmentViewSet,
-    PositionLeadershipAssessmentViewSet,  # NEW: Leadership Position Assessment
+    PositionLeadershipAssessmentViewSet,  
     EmployeeCoreAssessmentViewSet, EmployeeBehavioralAssessmentViewSet,
-    EmployeeLeadershipAssessmentViewSet,  # NEW: Leadership Employee Assessment
+    EmployeeLeadershipAssessmentViewSet,  
     AssessmentDashboardViewSet
 )
 
 from .role_views import RoleViewSet, PermissionViewSet, EmployeeRoleViewSet
 
-router = DefaultRouter()
 
 from .timeoff_views import (
     TimeOffBalanceViewSet,
@@ -57,6 +55,7 @@ router.register(r'timeoff/requests', TimeOffRequestViewSet, basename='timeoff-re
 router.register(r'timeoff/settings', TimeOffSettingsViewSet, basename='timeoff-settings')
 router.register(r'timeoff/activity', TimeOffActivityViewSet, basename='timeoff-activity')
 router.register(r'timeoff/dashboard', TimeOffDashboardViewSet, basename='timeoff-dashboard')
+
 # ==================== ROLE & PERMISSION MANAGEMENT ====================
 router.register(r'roles', RoleViewSet, basename='role')
 router.register(r'permissions', PermissionViewSet, basename='permission')
@@ -80,7 +79,6 @@ router.register(r'profile-images', views.ProfileImageViewSet, basename='profilei
 router.register(r'contract-configs', views.ContractTypeConfigViewSet, basename='contractconfig')
 router.register(r'vacant-positions', views.VacantPositionViewSet, basename='vacantposition')
 router.register(r'org-chart', views.OrgChartViewSet, basename='orgchart')
-router.register(r'employee-grading', views.EmployeeGradingViewSet, basename='employeegrading')
 router.register(r'bulk-upload', views.BulkEmployeeUploadViewSet, basename='bulkupload')
 
 
@@ -93,13 +91,13 @@ router.register(r'competency/skills', SkillViewSet, basename='competency-skill')
 router.register(r'competency/behavioral-groups', BehavioralCompetencyGroupViewSet, basename='competency-behavioralgroup')
 router.register(r'competency/behavioral-competencies', BehavioralCompetencyViewSet, basename='competency-behavioral')
 
-# Leadership Competencies - NEW
+# Leadership Competencies
 router.register(r'competency/leadership-main-groups', LeadershipCompetencyMainGroupViewSet, basename='competency-leadership-main')
 router.register(r'competency/leadership-child-groups', LeadershipCompetencyChildGroupViewSet, basename='competency-leadership-child')
 router.register(r'competency/leadership-items', LeadershipCompetencyItemViewSet, basename='competency-leadership-items')
 
 
-# ==================== JOB DESCRIPTIONS ====================
+# ========================== JOB DESCRIPTIONS ========================================
 router.register(r'job-descriptions', JobDescriptionViewSet, basename='jobdescription')
 router.register(r'job-description/business-resources', JobBusinessResourceViewSet, basename='jobbusinessresource')
 router.register(r'job-description/access-matrix', AccessMatrixViewSet, basename='accessmatrix')
@@ -134,15 +132,15 @@ router.register(r'assessments/dashboard', AssessmentDashboardViewSet, basename='
 
 # ==================== URL PATTERNS ====================
 urlpatterns = [
-    # Authentication
+    
     path('auth/microsoft/', views.authenticate_microsoft, name='auth_microsoft'),
     path('auth/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('me/', views.user_info, name='user_info'),
     
-    # Competency Stats
+    
     path('competency/stats/', CompetencyStatsView.as_view(), name='competency-stats'),
     
-    # Asset Activities & Export
+    
     path('assets/assets/<uuid:pk>/activities/', 
          AssetViewSet.as_view({'get': 'activities'}), 
          name='asset-activities'),
@@ -151,9 +149,8 @@ urlpatterns = [
          AssetViewSet.as_view({'post': 'export_assets'}), 
          name='asset-export'),
     
-
-     path('trainings/', include('api.training_urls')),
-    # Module URLs
+     path('handovers/', include('api.handover_urls')),
+    path('trainings/', include('api.training_urls')),
     path('vacation/', include('api.vacation_urls')),
     path('business-trips/', include('api.business_trip_urls')),
     path('notifications/', include('api.notification_urls')),
@@ -161,6 +158,6 @@ urlpatterns = [
     path('performance/', include('api.performance_urls')),
     path('policies/', include('api.policy_urls')),
     path('', include('api.celebration_urls')),
-    # Router URLs
+    
     path('', include(router.urls)),
 ]
