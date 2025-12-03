@@ -22,6 +22,7 @@ import csv
 import io
 import pandas as pd
 from django.contrib.auth.models import User
+from .headcount_permissions import get_headcount_access, filter_headcount_queryset
 
 from .asset_serializers import (
     AssetAcceptanceSerializer, AssetClarificationRequestSerializer,
@@ -1444,6 +1445,8 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         ).prefetch_related(
             'tags', 'documents', 'activities'
         ).all().order_by('full_name')
+        
+        return filter_headcount_queryset(self.request.user, base_queryset)
     
     
     def _clean_form_data(self, data):
@@ -1525,6 +1528,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                     cleaned_data[key] = str(value).strip() if value else ''
         
         return cleaned_data
+    
     def get_serializer_class(self):
         from .serializers import (
             EmployeeListSerializer, EmployeeDetailSerializer, EmployeeCreateUpdateSerializer
@@ -1537,7 +1541,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             return EmployeeDetailSerializer
     
     def list(self, request, *args, **kwargs):
-        """FIXED: Proper pagination-filter coordination"""
+        """FIXED: Proper pagination-filter coordination WITH SORTING"""
         
         try:
             include_vacancies = request.query_params.get('include_vacancies', 'true').lower() == 'true'
@@ -1565,13 +1569,6 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 active_filters = {k: request.query_params.get(k) for k in filter_params if request.query_params.get(k)}
                 logger.info(f"🔍 Active filters: {active_filters}")
             
-            # ✅ FIX: Əgər filter var və page explicitly set edilməyibsə, page=1 et
-            # BUT preserve all filter parameters
-            if has_filters and not page_param:
-                logger.info(f"🔄 Filter detected without page param - will reset to page 1")
-                # DON'T modify request.query_params - let it flow naturally
-                # The pagination will handle it
-            
             should_paginate = bool(page_param or page_size_param or use_pagination)
             
             if include_vacancies:
@@ -1586,166 +1583,20 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 {'error': f'Failed to retrieve employees: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-   
-    # views.py - EmployeeViewSet._get_unified_employee_vacancy_list - TAM YENİ VERSİYA
-
-    def _get_unified_employee_vacancy_list(self, request, should_paginate):
-        """Get unified list of employees and vacant positions"""
-        
-        # ✅ Parse status filter
-        status_param = request.query_params.get('status', '')
-        status_values = [s.strip() for s in status_param.split(',') if s.strip()]
-        
-        print(f"[STATUS] Raw param: '{status_param}'")
-        print(f"[STATUS] Parsed values: {status_values}")
-        
-        # ✅ Check what's requested
-        has_vacant = any(s.upper() in ['VACANT', 'VACANCY'] for s in status_values)
-        has_employee_status = any(s.upper() not in ['VACANT', 'VACANCY'] for s in status_values)
-        
-        print(f"[STATUS] Has VACANT: {has_vacant}")
-        print(f"[STATUS] Has employee status: {has_employee_status}")
-        
-        # ✅ Decide what to include
-        if not status_values:
-            # No filter → show all
-            include_employees = True
-            include_vacancies = True
-            print("[MODE] SHOW ALL")
-        elif has_vacant and not has_employee_status:
-            # Only VACANT → show only vacancies
-            include_employees = False
-            include_vacancies = True
-            print("[MODE] ONLY VACANCIES")
-        elif has_employee_status and not has_vacant:
-            # Only employee statuses → show only employees
-            include_employees = True
-            include_vacancies = False
-            print("[MODE] ONLY EMPLOYEES")
-        else:
-            # Both → show both
-            include_employees = True
-            include_vacancies = True
-            print("[MODE] BOTH")
-        
-        # ====== GET EMPLOYEES ======
-        if include_employees:
-            employee_queryset = self.get_queryset()
-            print(f"[EMP] Initial count: {employee_queryset.count()}")
-            
-            # Apply status filter if needed
-            if has_employee_status:
-                employee_status_ids = []
-                for status_val in status_values:
-                    if status_val.upper() not in ['VACANT', 'VACANCY']:
-                        try:
-                            employee_status_ids.append(int(status_val))
-                        except:
-                            try:
-                                status_obj = EmployeeStatus.objects.get(name__iexact=status_val)
-                                employee_status_ids.append(status_obj.id)
-                            except:
-                                pass
-                
-                if employee_status_ids:
-                    employee_queryset = employee_queryset.filter(status__id__in=employee_status_ids)
-                    print(f"[EMP] After status filter: {employee_queryset.count()}")
-            
-            # Apply OTHER filters (NOT status)
-            filter_params = request.query_params.copy()
-            if 'status' in filter_params:
-                del filter_params['status']  # Remove status from other filters
-            
-            employee_filter = ComprehensiveEmployeeFilter(employee_queryset, filter_params)
-            filtered_employees = employee_filter.filter()
-            print(f"[EMP] After other filters: {filtered_employees.count()}")
-        else:
-            filtered_employees = Employee.objects.none()
-            print("[EMP] Excluded (0)")
-        
-        # ====== GET VACANCIES ======
-        if include_vacancies:
-            vacancy_queryset = VacantPosition.objects.filter(
-                is_filled=False,
-                is_deleted=False,
-                include_in_headcount=True
-            ).select_related(
-                'business_function', 'department', 'unit', 'job_function',
-                'position_group', 'vacancy_status', 'reporting_to'
-            )
-            print(f"[VAC] Initial count: {vacancy_queryset.count()}")
-            
-            # Apply organizational filters
-            filter_params = request.query_params.copy()
-            if 'status' in filter_params:
-                del filter_params['status']
-            
-            vacancy_filter = self._get_vacancy_filter_from_employee_params(filter_params)
-            if vacancy_filter:
-                filtered_vacancies = vacancy_queryset.filter(vacancy_filter)
-                print(f"[VAC] After filters: {filtered_vacancies.count()}")
-            else:
-                filtered_vacancies = vacancy_queryset
-                print(f"[VAC] No filters applied")
-        else:
-            filtered_vacancies = VacantPosition.objects.none()
-            print("[VAC] Excluded (0)")
-        
-        # ====== BUILD UNIFIED DATA ======
-        unified_data = []
-        
-        # Add employees
-        if filtered_employees.exists():
-            employee_serializer = EmployeeListSerializer(filtered_employees, many=True, context={'request': request})
-            for emp_data in employee_serializer.data:
-                emp_data['is_vacancy'] = False
-                emp_data['record_type'] = 'employee'
-                unified_data.append(emp_data)
-            print(f"[UNIFIED] Added {len(employee_serializer.data)} employees")
-        
-        # Add vacancies
-        if filtered_vacancies.exists():
-            for vacancy in filtered_vacancies:
-                vacancy_data = self._convert_vacancy_to_employee_format(vacancy, request)
-                unified_data.append(vacancy_data)
-            print(f"[UNIFIED] Added {filtered_vacancies.count()} vacancies")
-        
-        print(f"[UNIFIED] TOTAL: {len(unified_data)}")
-        
-        # Apply sorting
-        sorting_params = self._get_sorting_params_from_request(request)
-        if sorting_params:
-            unified_data = self._sort_unified_data(unified_data, sorting_params)
-        else:
-            unified_data.sort(key=lambda x: x.get('name', ''))
-        
-        # Return response
-        if should_paginate:
-            return self._paginate_unified_data(unified_data, request)
-        else:
-            return Response({
-                'count': len(unified_data),
-                'pagination_used': False,
-                'results': unified_data,
-                'summary': {
-                    'total_records': len(unified_data),
-                    'employee_records': filtered_employees.count(),
-                    'vacancy_records': filtered_vacancies.count(),
-                    'includes_vacancies': include_vacancies,
-                    'includes_employees': include_employees,
-                    'status_filter': status_values,
-                    'mode': 'only_vacancies' if (not include_employees and include_vacancies) else
-                            'only_employees' if (include_employees and not include_vacancies) else
-                            'both' if (include_employees and include_vacancies) else 'none'
-                }
-            })
+    
     def _get_employee_only_list(self, request, should_paginate):
-        """Original employee-only list logic"""
+        """FIXED: Employee-only list logic WITH PROPER SORTING"""
+        
+        # ✅ 1. GET BASE QUERYSET
         queryset = self.get_queryset()
+        
+        # ✅ 2. APPLY FILTERS FIRST (BEFORE SORTING!)
         employee_filter = ComprehensiveEmployeeFilter(queryset, request.query_params)
         queryset = employee_filter.filter()
         
-        # Apply sorting
+        logger.info(f"📊 After filtering: {queryset.count()} employees")
+        
+        # ✅ 3. APPLY SORTING TO FILTERED QUERYSET
         sorting_data = request.query_params.get('sorting')
         if sorting_data:
             try:
@@ -1763,14 +1614,16 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         else:
             sorting_params = []
         
+        # ✅ CRITICAL: Apply sorting to FILTERED queryset
         if not sorting_params:
             queryset = queryset.order_by('full_name')
         else:
             employee_sorter = AdvancedEmployeeSorter(queryset, sorting_params)
-        queryset = employee_sorter.sort()
-        
+            queryset = employee_sorter.sort()
+            logger.info(f"🔀 Sorting applied: {sorting_params}")
         
         total_count = queryset.count()
+        logger.info(f"✅ Final queryset: {total_count} employees")
         
         if not should_paginate:
             serializer = self.get_serializer(queryset, many=True)
@@ -1800,34 +1653,257 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 }
                 return paginated_response
     
+    def _get_unified_employee_vacancy_list(self, request, should_paginate):
+        """COMPLETELY FIXED: Get unified list of employees and vacant positions WITH PROPER VACANT STATUS DETECTION"""
+        
+        # ✅ Parse status filter
+        status_param = request.query_params.get('status', '')
+        status_values = [s.strip() for s in status_param.split(',') if s.strip()]
+        
+        logger.info(f"[STATUS] Raw param: '{status_param}'")
+        logger.info(f"[STATUS] Parsed values: {status_values}")
+        
+        # ✅ CRITICAL: Check if status is VACANT by ID or name
+        has_vacant = False
+        has_employee_status = False
+        employee_status_ids = []
+        
+        # Get VACANT status from database
+        try:
+            vacant_statuses = EmployeeStatus.objects.filter(
+                Q(name__iexact='VACANT') | Q(name__iexact='VACANCY')
+            )
+            vacant_status_ids = list(vacant_statuses.values_list('id', flat=True))
+            vacant_status_names = list(vacant_statuses.values_list('name', flat=True))
+            
+            logger.info(f"[STATUS] VACANT status IDs in DB: {vacant_status_ids}")
+            logger.info(f"[STATUS] VACANT status names in DB: {vacant_status_names}")
+        except Exception as e:
+            logger.error(f"[STATUS] Error getting VACANT statuses: {e}")
+            vacant_status_ids = []
+            vacant_status_names = []
+        
+        # Check each status value
+        for status_val in status_values:
+            is_vacant_status = False
+            
+            # Check by name
+            if status_val.upper() in ['VACANT', 'VACANCY']:
+                is_vacant_status = True
+                logger.info(f"[STATUS] '{status_val}' detected as VACANT by name")
+            
+            # Check by ID
+            try:
+                status_id = int(status_val)
+                if status_id in vacant_status_ids:
+                    is_vacant_status = True
+                    logger.info(f"[STATUS] ID {status_id} detected as VACANT by ID")
+                else:
+                    # This is an employee status ID
+                    employee_status_ids.append(status_id)
+                    logger.info(f"[STATUS] ID {status_id} detected as employee status")
+            except (ValueError, TypeError):
+                # Not an integer, check by name in database
+                try:
+                    status_obj = EmployeeStatus.objects.get(name__iexact=status_val)
+                    if status_obj.id in vacant_status_ids:
+                        is_vacant_status = True
+                        logger.info(f"[STATUS] '{status_val}' detected as VACANT by DB lookup")
+                    else:
+                        employee_status_ids.append(status_obj.id)
+                        logger.info(f"[STATUS] '{status_val}' detected as employee status by DB lookup")
+                except EmployeeStatus.DoesNotExist:
+                    logger.warning(f"[STATUS] '{status_val}' not found in database")
+            
+            if is_vacant_status:
+                has_vacant = True
+            else:
+                has_employee_status = True
+        
+        logger.info(f"[STATUS] Has VACANT: {has_vacant}")
+        logger.info(f"[STATUS] Has employee status: {has_employee_status}")
+        logger.info(f"[STATUS] Employee status IDs: {employee_status_ids}")
+        
+        # ✅ Decide what to include
+        if not status_values:
+            # No filter → show all
+            include_employees = True
+            include_vacancies = True
+            logger.info("[MODE] SHOW ALL")
+        elif has_vacant and not has_employee_status:
+            # Only VACANT → show only vacancies
+            include_employees = False
+            include_vacancies = True
+            logger.info("[MODE] ONLY VACANCIES")
+        elif has_employee_status and not has_vacant:
+            # Only employee statuses → show only employees
+            include_employees = True
+            include_vacancies = False
+            logger.info("[MODE] ONLY EMPLOYEES")
+        else:
+            # Both → show both
+            include_employees = True
+            include_vacancies = True
+            logger.info("[MODE] BOTH")
+        
+        # ====== GET EMPLOYEES ======
+        if include_employees:
+            employee_queryset = self.get_queryset()
+            logger.info(f"[EMP] Initial count: {employee_queryset.count()}")
+            
+            # Apply status filter if needed
+            if employee_status_ids:
+                employee_queryset = employee_queryset.filter(status__id__in=employee_status_ids)
+                logger.info(f"[EMP] After status filter ({employee_status_ids}): {employee_queryset.count()}")
+            
+            # ✅ CRITICAL: Apply OTHER filters (NOT status) using ComprehensiveEmployeeFilter
+            filter_params = request.query_params.copy()
+            if 'status' in filter_params:
+                del filter_params['status']  # Remove status from other filters
+            
+            employee_filter = ComprehensiveEmployeeFilter(employee_queryset, filter_params)
+            filtered_employees = employee_filter.filter()
+            logger.info(f"[EMP] After all filters: {filtered_employees.count()}")
+        else:
+            filtered_employees = Employee.objects.none()
+            logger.info("[EMP] Excluded (0)")
+        
+        # ====== GET VACANCIES ======
+        if include_vacancies:
+            vacancy_queryset = VacantPosition.objects.filter(
+                is_filled=False,
+                is_deleted=False,
+                include_in_headcount=True
+            ).select_related(
+                'business_function', 'department', 'unit', 'job_function',
+                'position_group', 'vacancy_status', 'reporting_to'
+            )
+            logger.info(f"[VAC] Initial count: {vacancy_queryset.count()}")
+            
+            # ✅ CRITICAL: Apply organizational filters to vacancies
+            filter_params = request.query_params.copy()
+            if 'status' in filter_params:
+                del filter_params['status']
+            
+            # Build vacancy filter using same filter params
+            vacancy_filter_q = self._get_vacancy_filter_from_employee_params(filter_params)
+            if vacancy_filter_q:
+                vacancy_queryset = vacancy_queryset.filter(vacancy_filter_q)
+                logger.info(f"[VAC] After filters: {vacancy_queryset.count()}")
+            
+            filtered_vacancies = vacancy_queryset
+            logger.info(f"[VAC] Final count: {filtered_vacancies.count()}")
+        else:
+            filtered_vacancies = VacantPosition.objects.none()
+            logger.info("[VAC] Excluded (0)")
+        
+        # ====== BUILD UNIFIED DATA ======
+        unified_data = []
+        
+        # Add employees
+        if filtered_employees.exists():
+            employee_serializer = EmployeeListSerializer(filtered_employees, many=True, context={'request': request})
+            for emp_data in employee_serializer.data:
+                emp_data['is_vacancy'] = False
+                emp_data['record_type'] = 'employee'
+                unified_data.append(emp_data)
+            logger.info(f"[UNIFIED] Added {len(employee_serializer.data)} employees")
+        
+        # Add vacancies
+        if filtered_vacancies.exists():
+            for vacancy in filtered_vacancies:
+                vacancy_data = self._convert_vacancy_to_employee_format(vacancy, request)
+                unified_data.append(vacancy_data)
+            logger.info(f"[UNIFIED] Added {filtered_vacancies.count()} vacancies")
+        
+        logger.info(f"[UNIFIED] TOTAL: {len(unified_data)}")
+        
+        # ✅ CRITICAL: Apply sorting to unified data
+        sorting_params = self._get_sorting_params_from_request(request)
+        if sorting_params:
+            unified_data = self._sort_unified_data(unified_data, sorting_params)
+            logger.info(f"🔀 Unified sorting applied: {sorting_params}")
+        else:
+            # Default sorting by name
+            unified_data.sort(key=lambda x: x.get('name', ''))
+            logger.info("🔀 Default sorting by name applied")
+        
+        # ✅ Return response with proper summary
+        if should_paginate:
+            return self._paginate_unified_data(unified_data, request)
+        else:
+            return Response({
+                'count': len(unified_data),
+                'pagination_used': False,
+                'results': unified_data,
+                'summary': {
+                    'total_records': len(unified_data),
+                    'employee_records': filtered_employees.count() if include_employees else 0,
+                    'vacancy_records': filtered_vacancies.count() if include_vacancies else 0,
+                    'includes_vacancies': include_vacancies,
+                    'includes_employees': include_employees,
+                    'status_filter': status_values,
+                    'has_vacant_filter': has_vacant,
+                    'has_employee_status_filter': has_employee_status,
+                    'vacant_status_ids_in_db': vacant_status_ids if has_vacant else [],
+                    'mode': 'only_vacancies' if (not include_employees and include_vacancies) else
+                            'only_employees' if (include_employees and not include_vacancies) else
+                            'both' if (include_employees and include_vacancies) else 'none',
+                    'filters_applied': {
+                        'status': status_values if status_values else None,
+                        'business_function': filter_params.get('business_function'),
+                        'department': filter_params.get('department'),
+                        'has_filters': bool(filter_params)
+                    }
+                }
+            })
     def _get_vacancy_filter_from_employee_params(self, params):
         """Convert employee filter parameters to vacancy filters where applicable"""
         filters = Q()
+        
+        logger.info(f"[VAC FILTER] Building vacancy filters from params: {dict(params)}")
         
         # Business function filter
         business_function_ids = self._get_int_list_param(params, 'business_function')
         if business_function_ids:
             filters &= Q(business_function__id__in=business_function_ids)
+            logger.info(f"[VAC FILTER] Business function filter: {business_function_ids}")
         
         # Department filter
         department_ids = self._get_int_list_param(params, 'department')
         if department_ids:
             filters &= Q(department__id__in=department_ids)
+            logger.info(f"[VAC FILTER] Department filter: {department_ids}")
         
         # Unit filter
         unit_ids = self._get_int_list_param(params, 'unit')
         if unit_ids:
             filters &= Q(unit__id__in=unit_ids)
+            logger.info(f"[VAC FILTER] Unit filter: {unit_ids}")
         
         # Job function filter
         job_function_ids = self._get_int_list_param(params, 'job_function')
         if job_function_ids:
             filters &= Q(job_function__id__in=job_function_ids)
+            logger.info(f"[VAC FILTER] Job function filter: {job_function_ids}")
         
         # Position group filter
         position_group_ids = self._get_int_list_param(params, 'position_group')
         if position_group_ids:
             filters &= Q(position_group__id__in=position_group_ids)
+            logger.info(f"[VAC FILTER] Position group filter: {position_group_ids}")
+        
+        # Grading level filter
+        grading_levels = self._get_string_list_param(params, 'grading_level')
+        if grading_levels:
+            filters &= Q(grading_level__in=grading_levels)
+            logger.info(f"[VAC FILTER] Grading level filter: {grading_levels}")
+        
+        # Line manager filter (reporting_to in vacancy)
+        line_manager_ids = self._get_int_list_param(params, 'line_manager')
+        if line_manager_ids:
+            filters &= Q(reporting_to__id__in=line_manager_ids)
+            logger.info(f"[VAC FILTER] Line manager filter: {line_manager_ids}")
         
         # General search
         search = params.get('search')
@@ -1839,6 +1915,31 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 Q(department__name__icontains=search) |
                 Q(notes__icontains=search)
             )
+            logger.info(f"[VAC FILTER] Search filter: {search}")
+        
+        # Job title search
+        job_title_search = params.get('job_title_search')
+        if job_title_search:
+            filters &= Q(job_title__icontains=job_title_search)
+            logger.info(f"[VAC FILTER] Job title search: {job_title_search}")
+        
+        # Department search
+        department_search = params.get('department_search')
+        if department_search:
+            filters &= Q(department__name__icontains=department_search)
+            logger.info(f"[VAC FILTER] Department search: {department_search}")
+        
+        # Org chart visibility
+        is_visible_in_org_chart = params.get('is_visible_in_org_chart')
+        if is_visible_in_org_chart:
+            visible = is_visible_in_org_chart.lower() == 'true'
+            filters &= Q(is_visible_in_org_chart=visible)
+            logger.info(f"[VAC FILTER] Org chart visibility: {visible}")
+        
+        if filters.children:
+            logger.info(f"[VAC FILTER] Total filters applied: {len(filters.children)}")
+        else:
+            logger.info("[VAC FILTER] No filters applied")
         
         return filters if filters.children else None
     
@@ -1859,8 +1960,23 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         
         return values
     
-    # views.py - EmployeeViewSet._convert_vacancy_to_employee_format metodunda
-
+    def _get_string_list_param(self, params, param_name):
+        """Helper to get string list from parameters"""
+        values = []
+        if hasattr(params, 'getlist'):
+            param_values = params.getlist(param_name)
+        else:
+            param_values = [params.get(param_name)] if params.get(param_name) else []
+        
+        for value in param_values:
+            if value:
+                if ',' in str(value):
+                    values.extend([v.strip() for v in str(value).split(',') if v.strip()])
+                else:
+                    values.append(str(value).strip())
+        
+        return values
+    
     def _convert_vacancy_to_employee_format(self, vacancy, request):
         """Convert vacancy to employee-like format for unified display"""
         
@@ -1936,6 +2052,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 'original_employee_pk': vacancy.original_employee_pk
             }
         }
+    
     def _get_sorting_params_from_request(self, request):
         """Extract sorting parameters from request"""
         sorting_data = request.query_params.get('sorting')
@@ -1986,7 +2103,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                         return None
             
             return None
-        
+            
         def get_sort_key(item, field, direction):
             value = item.get(field, '')
             
@@ -2024,12 +2141,14 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                         key=lambda x: get_sort_key(x, field, direction),
                         reverse=(direction == 'desc')
                     )
+                    logger.info(f"🔀 Sorted by {field} ({direction})")
                 except Exception as e:
                     logger.error(f"Error sorting by {field}: {e}")
                     # Skip this sort field if it fails
                     continue
         
         return data
+    
     def _paginate_unified_data(self, data, request):
         """Apply pagination to unified data"""
         page_size = int(request.query_params.get('page_size', 20))
@@ -2075,8 +2194,8 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             'page_size_options': [10, 20, 50, 100, 500, 1000, "All"],
             'has_next': has_next,
             'has_previous': has_previous,
-            'next': None,  # Could build next URL if needed
-            'previous': None,  # Could build previous URL if needed
+            'next': None,
+            'previous': None,
             'page_numbers': page_numbers,
             'start_page': start_page,
             'end_page': end_page,
@@ -2095,7 +2214,6 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 'current_page_vacancies': len([item for item in paginated_data if item.get('is_vacancy', False)])
             }
         })
-    
     @swagger_auto_schema(
         auto_schema=FileUploadAutoSchema,
         operation_description="Create a new employee with optional document and profile photo",
@@ -2728,7 +2846,6 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         bool_validation.add("V3:V1000")
         worksheet.add_data_validation(bool_validation)
     
-    
     def _add_instructions_sheet(self, workbook):
         """Add instructions sheet to the workbook"""
         from openpyxl.styles import Font, PatternFill
@@ -3282,7 +3399,6 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         
         logger.info(f"✅ FIXED: CSV export completed with {len(fields)} fields for {queryset.count()} employees")
         return response
-    
     
     def _process_bulk_employee_data_from_excel(self, df, user):
         """Excel data-sını process et və employee-lar yarat"""
@@ -3908,7 +4024,6 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         except (Employee.DoesNotExist, EmployeeTag.DoesNotExist) as e:
             return Response({'error': str(e)}, status=status.HTTP_404_NOT_FOUND)
     
-    # views.py - EmployeeViewSet-də bulk_add_tag metodunu tamamilə yenilə
 
     @swagger_auto_schema(
         method='post',
@@ -4043,6 +4158,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 {'error': f'Bulk add tag failed: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             ) 
+    
     @swagger_auto_schema(
         method='post',
         operation_description="Accept assigned asset (Employee approval)",
@@ -6327,9 +6443,7 @@ class OrgChartFilter:
         
         return queryset
 
-# views.py - OrgChartViewSet-i TAMAMILƏ yenilə
-
-class OrgChartViewSet(viewsets.ViewSet):  # ✅ ReadOnlyModelViewSet → ViewSet-ə çevir
+class OrgChartViewSet(viewsets.ViewSet):  
     """
     ✅ UPDATED: Tree-based organizational chart ViewSet
     - NO list() endpoint

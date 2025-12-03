@@ -7,22 +7,16 @@ from django.db import transaction
 from rest_framework.exceptions import AuthenticationFailed
 from rest_framework_simplejwt.tokens import RefreshToken
 from .models import MicrosoftUser, Employee, UserGraphToken
-from datetime import datetime, timedelta
-from django.utils import timezone
+
 
 logger = logging.getLogger(__name__)
 
 class MicrosoftTokenValidator:
     @staticmethod
     def validate_token_and_create_jwt(id_token, graph_access_token=None):
-        """
-        ✅ FIXED: Validate Microsoft ID token, store Graph token, 
-        and CREATE YOUR OWN JWT for API access
         
-        Returns: (user, your_jwt_access_token, your_jwt_refresh_token)
-        """
         try:
-            logger.info('=== Starting Microsoft token validation ===')
+           
             
             # Decode ID token without signature verification for development
             payload = jwt.decode(id_token, options={"verify_signature": False})
