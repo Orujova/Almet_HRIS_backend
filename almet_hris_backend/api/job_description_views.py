@@ -19,7 +19,7 @@ from io import BytesIO
 from rest_framework import serializers
 from .job_description_permissions import (
     get_job_description_access, 
-    filter_job_description_queryset
+    filter_job_description_queryset,can_user_view_job_description
 )
 
 # Reportlab imports
