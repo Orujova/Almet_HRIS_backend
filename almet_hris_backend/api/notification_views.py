@@ -5,18 +5,12 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status, viewsets
-from django.utils import timezone
-from datetime import timedelta
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 
-from .notification_models import NotificationSettings, EmailTemplate, NotificationLog
-from .notification_serializers import (
-    EmailTemplateSerializer,
+from .notification_models import NotificationSettings, NotificationLog
 
-)
 from .notification_service import notification_service
-from .business_trip_permissions import is_admin_user
 from .models import UserGraphToken
 
 logger = logging.getLogger(__name__)
@@ -49,37 +43,6 @@ def get_graph_token_from_request(request):
     return None
 
 
-# ==================== EMAIL TEMPLATES ====================
-
-class EmailTemplateViewSet(viewsets.ModelViewSet):
-    """Email Template CRUD ViewSet"""
-    
-    queryset = EmailTemplate.objects.all()
-    serializer_class = EmailTemplateSerializer
-    permission_classes = [IsAuthenticated]
-    
-    def get_queryset(self):
-        return EmailTemplate.objects.filter(is_active=True).order_by('template_type')
-    
-    def perform_create(self, serializer):
-        if not is_admin_user(self.request.user):
-            from rest_framework.exceptions import PermissionDenied
-            raise PermissionDenied("Admin permission required")
-        serializer.save(created_by=self.request.user)
-    
-    def perform_update(self, serializer):
-        if not is_admin_user(self.request.user):
-            from rest_framework.exceptions import PermissionDenied
-            raise PermissionDenied("Admin permission required")
-        serializer.save()
-    
-    def destroy(self, request, *args, **kwargs):
-        if not is_admin_user(request.user):
-            return Response(
-                {'error': 'Admin permission required'},
-                status=status.HTTP_403_FORBIDDEN
-            )
-        return super().destroy(request, *args, **kwargs)
 
 
 # ==================== OUTLOOK INTEGRATION WITH SENT/RECEIVED ====================

@@ -1,6 +1,6 @@
 # api/notification_serializers.py
 from rest_framework import serializers
-from .notification_models import NotificationSettings, EmailTemplate
+from .notification_models import NotificationSettings
 
 
 class NotificationSettingsSerializer(serializers.ModelSerializer):
@@ -22,19 +22,5 @@ class NotificationSettingsSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'created_at', 'updated_at']
 
 
-class EmailTemplateSerializer(serializers.ModelSerializer):
-    """Email Template Serializer"""
-    
-    template_type_display = serializers.CharField(source='get_template_type_display', read_only=True)
-    
-    class Meta:
-        model = EmailTemplate
-        fields = [
-            'id', 'template_type', 'template_type_display',
-            'subject', 'body_html', 'body_text',
-            'available_variables', 'is_active',
-            'created_at', 'updated_at'
-        ]
-        read_only_fields = ['id', 'created_at', 'updated_at']
 
 

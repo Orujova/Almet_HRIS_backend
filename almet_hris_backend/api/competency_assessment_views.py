@@ -14,7 +14,14 @@ import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
-
+from .assessment_permissions import (
+    get_assessment_access,
+    filter_assessment_queryset,
+    can_user_view_assessment,
+    can_user_create_assessment,
+    can_user_edit_assessment,
+    can_user_delete_assessment
+)
 from .competency_assessment_models import (
     CoreCompetencyScale, BehavioralScale, LetterGradeMapping,
     PositionCoreAssessment, PositionBehavioralAssessment,
@@ -328,11 +335,9 @@ class PositionLeadershipAssessmentViewSet(viewsets.ModelViewSet):
         except ValueError:
             return Response({'error': 'Invalid employee_id format'}, 
                           status=status.HTTP_400_BAD_REQUEST)
-    
-
 
 class EmployeeLeadershipAssessmentViewSet(viewsets.ModelViewSet):
-    """Employee Leadership Competency Assessments for senior positions"""
+    """Employee Leadership Assessments - With Permission Control"""
     queryset = EmployeeLeadershipAssessment.objects.all()
     permission_classes = [IsAuthenticated]
     
@@ -342,10 +347,15 @@ class EmployeeLeadershipAssessmentViewSet(viewsets.ModelViewSet):
         return EmployeeLeadershipAssessmentSerializer
     
     def get_queryset(self):
+        """✅ Apply permission filtering"""
         queryset = EmployeeLeadershipAssessment.objects.select_related(
             'employee', 'position_assessment'
         ).prefetch_related('competency_ratings__leadership_item__child_group__main_group')
         
+        # ✅ Filter based on user permissions
+        queryset = filter_assessment_queryset(self.request.user, queryset)
+        
+        # Additional filters
         employee_id = self.request.query_params.get('employee_id')
         if employee_id:
             queryset = queryset.filter(employee_id=employee_id)
@@ -354,14 +364,8 @@ class EmployeeLeadershipAssessmentViewSet(viewsets.ModelViewSet):
         if assessment_status:
             queryset = queryset.filter(status=assessment_status)
         
-        date_from = self.request.query_params.get('date_from')
-        date_to = self.request.query_params.get('date_to')
-        if date_from:
-            queryset = queryset.filter(assessment_date__gte=date_from)
-        if date_to:
-            queryset = queryset.filter(assessment_date__lte=date_to)
-        
         return queryset.order_by('-assessment_date')
+    
     
     def perform_create(self, serializer):
         """Always create as DRAFT"""
@@ -1004,7 +1008,7 @@ class PositionBehavioralAssessmentViewSet(viewsets.ModelViewSet):
     
  
 class EmployeeCoreAssessmentViewSet(viewsets.ModelViewSet):
-    """Employee Core Competency Assessments - Simplified"""
+    """Employee Core Competency Assessments - With Permission Control"""
     queryset = EmployeeCoreAssessment.objects.all()
     permission_classes = [IsAuthenticated]
     
@@ -1014,37 +1018,84 @@ class EmployeeCoreAssessmentViewSet(viewsets.ModelViewSet):
         return EmployeeCoreAssessmentSerializer
     
     def get_queryset(self):
+        """✅ Apply permission filtering"""
         queryset = EmployeeCoreAssessment.objects.select_related(
             'employee', 'position_assessment'
         ).prefetch_related('competency_ratings__skill__group')
         
-        # Filter by employee
+        # ✅ Filter based on user permissions
+        queryset = filter_assessment_queryset(self.request.user, queryset)
+        
+        # Additional filters (keep your existing filters)
         employee_id = self.request.query_params.get('employee_id')
         if employee_id:
             queryset = queryset.filter(employee_id=employee_id)
         
-        # Filter by status
         assessment_status = self.request.query_params.get('status')
         if assessment_status:
             queryset = queryset.filter(status=assessment_status)
         
         return queryset.order_by('-assessment_date')
     
+    def retrieve(self, request, *args, **kwargs):
+        """✅ Check view permission"""
+        assessment = self.get_object()
+        
+        can_view, reason = can_user_view_assessment(request.user, assessment)
+        if not can_view:
+            return Response({
+                'error': 'Permission denied',
+                'detail': reason
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        serializer = self.get_serializer(assessment)
+        return Response(serializer.data)
+    
     def perform_create(self, serializer):
-        """Always create as DRAFT"""
+        """✅ Check create permission"""
+        employee_id = serializer.validated_data.get('employee').id
+        
+        can_create, reason = can_user_create_assessment(self.request.user, employee_id)
+        if not can_create:
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied(f"Cannot create assessment: {reason}")
+        
+        # Always create as DRAFT
         assessment = serializer.save(status='DRAFT')
         return assessment
     
     def perform_update(self, serializer):
-        """Keep as DRAFT unless explicitly submitting"""
-        assessment = serializer.save()
-        # Status only changes through specific actions
-        return assessment
+        """✅ Check edit permission"""
+        assessment = self.get_object()
+        
+        can_edit, reason = can_user_edit_assessment(self.request.user, assessment)
+        if not can_edit:
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied(f"Cannot edit assessment: {reason}")
+        
+        return serializer.save()
+    
+    def perform_destroy(self, instance):
+        """✅ Check delete permission"""
+        can_delete, reason = can_user_delete_assessment(self.request.user, instance)
+        if not can_delete:
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied(f"Cannot delete assessment: {reason}")
+        
+        instance.delete()
     
     @action(detail=True, methods=['post'])
     def submit(self, request, pk=None):
-        """Submit core assessment as completed (finalizes assessment)"""
+        """✅ Submit with permission check"""
         assessment = self.get_object()
+        
+        # Check edit permission
+        can_edit, reason = can_user_edit_assessment(request.user, assessment)
+        if not can_edit:
+            return Response({
+                'error': 'Permission denied',
+                'detail': reason
+            }, status=status.HTTP_403_FORBIDDEN)
         
         # Can only submit DRAFT assessments
         if assessment.status != 'DRAFT':
@@ -1062,15 +1113,13 @@ class EmployeeCoreAssessmentViewSet(viewsets.ModelViewSet):
             )
             
             if serializer.is_valid():
-                # Save with COMPLETED status
                 updated_assessment = serializer.save()
-                updated_assessment.status = 'COMPLETED'  # Explicitly set status
+                updated_assessment.status = 'COMPLETED'
                 updated_assessment.save()
                 assessment = updated_assessment
             else:
                 return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         else:
-            # No data provided, just change status
             assessment.status = 'COMPLETED'
             assessment.save()
         
@@ -1082,6 +1131,7 @@ class EmployeeCoreAssessmentViewSet(viewsets.ModelViewSet):
             'message': 'Core assessment submitted successfully',
             'assessment': EmployeeCoreAssessmentSerializer(assessment).data
         })
+    
     
     @action(detail=True, methods=['post'])
     def reopen(self, request, pk=None):
@@ -1259,7 +1309,7 @@ class EmployeeCoreAssessmentViewSet(viewsets.ModelViewSet):
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class EmployeeBehavioralAssessmentViewSet(viewsets.ModelViewSet):
-    """Employee Behavioral Competency Assessments - Simplified"""
+    """Employee Behavioral Assessments - With Permission Control"""
     queryset = EmployeeBehavioralAssessment.objects.all()
     permission_classes = [IsAuthenticated]
     
@@ -1269,10 +1319,15 @@ class EmployeeBehavioralAssessmentViewSet(viewsets.ModelViewSet):
         return EmployeeBehavioralAssessmentSerializer
     
     def get_queryset(self):
+        """✅ Apply permission filtering"""
         queryset = EmployeeBehavioralAssessment.objects.select_related(
             'employee', 'position_assessment'
         ).prefetch_related('competency_ratings__behavioral_competency__group')
         
+        # ✅ Filter based on user permissions
+        queryset = filter_assessment_queryset(self.request.user, queryset)
+        
+        # Additional filters
         employee_id = self.request.query_params.get('employee_id')
         if employee_id:
             queryset = queryset.filter(employee_id=employee_id)
@@ -1281,25 +1336,52 @@ class EmployeeBehavioralAssessmentViewSet(viewsets.ModelViewSet):
         if assessment_status:
             queryset = queryset.filter(status=assessment_status)
         
-        date_from = self.request.query_params.get('date_from')
-        date_to = self.request.query_params.get('date_to')
-        if date_from:
-            queryset = queryset.filter(assessment_date__gte=date_from)
-        if date_to:
-            queryset = queryset.filter(assessment_date__lte=date_to)
-        
         return queryset.order_by('-assessment_date')
     
+    def retrieve(self, request, *args, **kwargs):
+        """✅ Check view permission"""
+        assessment = self.get_object()
+        
+        can_view, reason = can_user_view_assessment(request.user, assessment)
+        if not can_view:
+            return Response({
+                'error': 'Permission denied',
+                'detail': reason
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        serializer = self.get_serializer(assessment)
+        return Response(serializer.data)
+    
     def perform_create(self, serializer):
-        """Always create as DRAFT"""
-        assessment = serializer.save(status='DRAFT')
-        return assessment
+        """✅ Check create permission"""
+        employee_id = serializer.validated_data.get('employee').id
+        
+        can_create, reason = can_user_create_assessment(self.request.user, employee_id)
+        if not can_create:
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied(f"Cannot create assessment: {reason}")
+        
+        return serializer.save(status='DRAFT')
     
     def perform_update(self, serializer):
-        """Keep as DRAFT unless explicitly submitting"""
-        assessment = serializer.save()
-        # Status only changes through specific actions
-        return assessment
+        """✅ Check edit permission"""
+        assessment = self.get_object()
+        
+        can_edit, reason = can_user_edit_assessment(self.request.user, assessment)
+        if not can_edit:
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied(f"Cannot edit assessment: {reason}")
+        
+        return serializer.save()
+    
+    def perform_destroy(self, instance):
+        """✅ Check delete permission"""
+        can_delete, reason = can_user_delete_assessment(self.request.user, instance)
+        if not can_delete:
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied(f"Cannot delete assessment: {reason}")
+        
+        instance.delete()
     
     @action(detail=True, methods=['post'])
     def submit(self, request, pk=None):
@@ -1624,14 +1706,18 @@ class AssessmentDashboardViewSet(viewsets.ViewSet):
     @action(detail=False, methods=['get'])
     def summary(self, request):
         """Get assessment summary statistics including leadership"""
+        access = get_assessment_access(request.user)
+        core_qs = filter_assessment_queryset(request.user, EmployeeCoreAssessment.objects.all())
+        behavioral_qs = filter_assessment_queryset(request.user, EmployeeBehavioralAssessment.objects.all())
+        leadership_qs = filter_assessment_queryset(request.user, EmployeeLeadershipAssessment.objects.all())
         # Basic counts
-        total_core = EmployeeCoreAssessment.objects.count()
-        total_behavioral = EmployeeBehavioralAssessment.objects.count()
-        total_leadership = EmployeeLeadershipAssessment.objects.count()  # NEW
+        total_core = core_qs.count()
+        total_behavioral = behavioral_qs.count()
+        total_leadership = leadership_qs.count()
         
-        completed_core = EmployeeCoreAssessment.objects.filter(status='COMPLETED').count()
-        completed_behavioral = EmployeeBehavioralAssessment.objects.filter(status='COMPLETED').count()
-        completed_leadership = EmployeeLeadershipAssessment.objects.filter(status='COMPLETED').count()  # NEW
+        completed_core = core_qs.filter(status='COMPLETED').count()
+        completed_behavioral = behavioral_qs.filter(status='COMPLETED').count()
+        completed_leadership = leadership_qs.filter(status='COMPLETED').count()
         
         # Recent assessments
         recent_core = EmployeeCoreAssessment.objects.select_related(
@@ -1702,6 +1788,11 @@ class AssessmentDashboardViewSet(viewsets.ViewSet):
         ]
         
         return Response({
+            'user_access': {
+                'role': 'Admin' if access['can_view_all'] else ('Manager' if access['is_manager'] else 'Employee'),
+                'can_view_all': access['can_view_all'],
+                'accessible_employees_count': len(access['accessible_employee_ids']) if access['accessible_employee_ids'] else 'All'
+            },
             'summary_statistics': {
                 'total_core_assessments': total_core,
                 'total_behavioral_assessments': total_behavioral,

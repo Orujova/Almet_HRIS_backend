@@ -4,7 +4,7 @@ from rest_framework.routers import DefaultRouter
 from . import notification_views
 
 router = DefaultRouter()
-router.register(r'templates', notification_views.EmailTemplateViewSet, basename='notification-template')
+
 
 urlpatterns = [
 
