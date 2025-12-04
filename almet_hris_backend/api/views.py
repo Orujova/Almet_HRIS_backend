@@ -4122,31 +4122,80 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             results['failed'] = results['total_rows']
             return results
     
+    # views.py - EmployeeViewSet içində job description endpointləri
+
     @swagger_auto_schema(
-    method='get',
-    operation_description="Get job descriptions assigned to this employee",
-    responses={
-        200: openapi.Response(
-            description="Job descriptions retrieved successfully",
-            schema=openapi.Schema(
-                type=openapi.TYPE_OBJECT,
-                properties={
-                    'employee': openapi.Schema(type=openapi.TYPE_OBJECT),
-                    'job_descriptions': openapi.Schema(type=openapi.TYPE_ARRAY, items=openapi.Schema(type=openapi.TYPE_OBJECT)),
-                    'pending_approval_count': openapi.Schema(type=openapi.TYPE_INTEGER),
-                    'total_count': openapi.Schema(type=openapi.TYPE_INTEGER),
-                }
-            )
-        ),
-        404: "Employee not found"
-    }
-)
+        method='get',
+        operation_description="Get job descriptions assigned to this employee",
+        responses={
+            200: openapi.Response(
+                description="Job descriptions retrieved successfully",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'employee': openapi.Schema(type=openapi.TYPE_OBJECT),
+                        'job_descriptions': openapi.Schema(type=openapi.TYPE_ARRAY, items=openapi.Schema(type=openapi.TYPE_OBJECT)),
+                        'pending_approval_count': openapi.Schema(type=openapi.TYPE_INTEGER),
+                        'total_count': openapi.Schema(type=openapi.TYPE_INTEGER),
+                    }
+                )
+            ),
+            403: "Access denied - not authorized to view this employee's job descriptions",
+            404: "Employee not found"
+        }
+    )
     @action(detail=True, methods=['get'])
     def job_descriptions(self, request, pk=None):
-        """✅ FIXED: Get job descriptions assigned to employee via JobDescriptionAssignment"""
-        employee = self.get_object()
+        """✅ FIXED: Get job descriptions with proper access control"""
         
-        # ✅ Job descriptions assigned to this employee through assignments
+        # Get the employee whose job descriptions we want to view
+        try:
+            employee = Employee.objects.select_related('line_manager', 'user').get(pk=pk)
+        except Employee.DoesNotExist:
+            return Response(
+                {'error': 'Employee not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # ✅ CRITICAL: Check access permissions
+        access = get_headcount_access(request.user)
+        
+        # Check if user can view this employee's job descriptions
+        can_view = False
+        access_reason = None
+        
+        # 1. Admin can view all
+        if access['can_view_all']:
+            can_view = True
+            access_reason = 'admin'
+            logger.info(f"✅ Admin {request.user.username} viewing job descriptions for employee {employee.employee_id}")
+        
+        # 2. User viewing their own job descriptions
+        elif employee.user and employee.user.id == request.user.id:
+            can_view = True
+            access_reason = 'own_profile'
+            logger.info(f"✅ User {request.user.username} viewing own job descriptions")
+        
+        # 3. Manager viewing direct report's job descriptions
+        elif access['is_manager'] and access['accessible_employee_ids']:
+            if employee.id in access['accessible_employee_ids']:
+                can_view = True
+                access_reason = 'manager'
+                logger.info(f"✅ Manager {request.user.username} viewing direct report {employee.employee_id}'s job descriptions")
+        
+        # ❌ Access denied
+        if not can_view:
+            logger.warning(f"⚠️ User {request.user.username} attempted unauthorized access to employee {employee.employee_id}'s job descriptions")
+            return Response(
+                {
+                    'error': 'Access Denied',
+                    'message': 'You do not have permission to view this employee\'s job descriptions.',
+                    'detail': 'You can only view your own job descriptions or those of your direct reports.',
+                },
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # ✅ Get job descriptions through assignments
         job_description_assignments = JobDescriptionAssignment.objects.filter(
             employee=employee,
             is_active=True
@@ -4176,26 +4225,92 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             'pending_approval_count': job_description_assignments.filter(
                 status__in=['PENDING_EMPLOYEE', 'PENDING_LINE_MANAGER']
             ).count(),
-            'total_count': job_description_assignments.count()
+            'total_count': job_description_assignments.count(),
+            'access_context': {
+                'accessed_as': access_reason,
+                'can_edit': access_reason in ['admin', 'own_profile'],
+                'is_manager_view': access_reason == 'manager'
+            }
         })
     
     @action(detail=True, methods=['get'])
     def team_job_descriptions(self, request, pk=None):
-        """UPDATED: Get job descriptions for manager's direct reports"""
-        manager = self.get_object()
+        """✅ FIXED: Get job descriptions for manager's direct reports with access control"""
         
-        # Job descriptions where this employee is the reports_to manager
-        team_job_descriptions = JobDescription.objects.filter(
-            reports_to=manager
+        # Get the manager
+        try:
+            manager = Employee.objects.select_related('user').get(pk=pk)
+        except Employee.DoesNotExist:
+            return Response(
+                {'error': 'Manager not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # ✅ CRITICAL: Check access permissions
+        access = get_headcount_access(request.user)
+        
+        # Check if user can view this manager's team job descriptions
+        can_view = False
+        access_reason = None
+        
+        # 1. Admin can view all
+        if access['can_view_all']:
+            can_view = True
+            access_reason = 'admin'
+            logger.info(f"✅ Admin {request.user.username} viewing team job descriptions for manager {manager.employee_id}")
+        
+        # 2. Manager viewing their own team's job descriptions
+        elif manager.user and manager.user.id == request.user.id:
+            can_view = True
+            access_reason = 'own_team'
+            logger.info(f"✅ Manager {request.user.username} viewing own team's job descriptions")
+        
+        # 3. Upper manager viewing lower manager's team (manager's manager)
+        elif access['is_manager'] and access['accessible_employee_ids']:
+            if manager.id in access['accessible_employee_ids']:
+                can_view = True
+                access_reason = 'upper_manager'
+                logger.info(f"✅ Upper manager {request.user.username} viewing lower manager {manager.employee_id}'s team job descriptions")
+        
+        # ❌ Access denied
+        if not can_view:
+            logger.warning(f"⚠️ User {request.user.username} attempted unauthorized access to manager {manager.employee_id}'s team job descriptions")
+            return Response(
+                {
+                    'error': 'Access Denied',
+                    'message': 'You do not have permission to view this team\'s job descriptions.',
+                    'detail': 'You can only view job descriptions for your own team or teams you manage.',
+                },
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # ✅ Get job description assignments for team members
+        team_job_description_assignments = JobDescriptionAssignment.objects.filter(
+            employee__line_manager=manager,
+            employee__status__affects_headcount=True,
+            employee__is_deleted=False,
+            is_active=True
         ).select_related(
-            'assigned_employee', 'business_function', 'department', 'job_function', 'created_by'
+            'employee',
+            'job_description__business_function',
+            'job_description__department',
+            'job_description__job_function',
+            'job_description__position_group',
+            'reports_to'
         ).order_by('-created_at')
         
         serializer = ManagerJobDescriptionSerializer(
-            team_job_descriptions, 
+            team_job_description_assignments, 
             many=True, 
             context={'request': request}
         )
+        
+        # Get team member count
+        team_members_count = Employee.objects.filter(
+            line_manager=manager, 
+            status__affects_headcount=True,
+            is_deleted=False
+        ).count()
         
         return Response({
             'manager': {
@@ -4205,17 +4320,17 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 'job_title': manager.job_title
             },
             'team_job_descriptions': serializer.data,
-            'pending_approval_count': team_job_descriptions.filter(
+            'pending_approval_count': team_job_description_assignments.filter(
                 status='PENDING_LINE_MANAGER'
             ).count(),
-            'total_count': team_job_descriptions.count(),
-            'total_team_members': Employee.objects.filter(
-                line_manager=manager, 
-                status__affects_headcount=True,
-                is_deleted=False
-            ).count()
+            'total_count': team_job_description_assignments.count(),
+            'total_team_members': team_members_count,
+            'access_context': {
+                'accessed_as': access_reason,
+                'can_approve': access_reason in ['admin', 'own_team', 'upper_manager'],
+                'is_admin_view': access_reason == 'admin'
+            }
         })
-    
    
     @swagger_auto_schema(
         method='post',
