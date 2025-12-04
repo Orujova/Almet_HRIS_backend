@@ -731,14 +731,13 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
     
     @action(detail=False, methods=['get'])
     def pending_approvals(self, request):
-        """Get all assignments pending approval for current user"""
+        """✅ Get pending approvals with access control"""
         try:
             user = request.user
             access = get_job_description_access(user)
             
             logger.info(f"Getting pending approvals for user: {user.username}")
             
-            # Get employee record
             employee = access['employee']
             
             # ✅ Admin sees all pending
@@ -753,12 +752,14 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                     is_active=True
                 ).select_related('job_description', 'employee', 'reports_to')
             else:
-                # Pending line manager approval (for direct reports)
-                line_manager_pending = JobDescriptionAssignment.objects.filter(
-                    status='PENDING_LINE_MANAGER',
-                    reports_to=employee,
-                    is_active=True
-                ).select_related('job_description', 'employee', 'reports_to')
+                # Pending line manager approval (for direct reports if manager)
+                line_manager_pending = JobDescriptionAssignment.objects.none()
+                if employee and access['is_manager']:
+                    line_manager_pending = JobDescriptionAssignment.objects.filter(
+                        status='PENDING_LINE_MANAGER',
+                        reports_to=employee,
+                        is_active=True
+                    ).select_related('job_description', 'employee', 'reports_to')
                 
                 # Pending employee approval (only own)
                 employee_pending = JobDescriptionAssignment.objects.none()
@@ -801,7 +802,6 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                 {'error': f'Failed to get pending approvals: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-
     # ==================== PREVIEW AND UTILITY ACTIONS ====================
     
     @swagger_auto_schema(
