@@ -17,6 +17,10 @@ import logging
 from datetime import datetime
 from io import BytesIO
 from rest_framework import serializers
+from .job_description_permissions import (
+    get_job_description_access, 
+    filter_job_description_queryset
+)
 
 # Reportlab imports
 try:
@@ -156,7 +160,8 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
     parser_classes = [JSONParser, MultiPartParser, FormParser]
     
     def get_queryset(self):
-        return JobDescription.objects.select_related(
+        """✅ Filter based on user role"""
+        base_queryset = JobDescription.objects.select_related(
             'business_function', 'department', 'unit', 'job_function', 'position_group',
             'created_by', 'updated_by'
         ).prefetch_related(
@@ -173,7 +178,65 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
             'company_benefits__benefit__items',
             'company_benefits__specific_items'
         ).all()
+        
+        # ✅ Apply access control
+        return filter_job_description_queryset(self.request.user, base_queryset)
     
+    @action(detail=False, methods=['get'])
+    def my_access_info(self, request):
+        """Get current user's job description access info"""
+        from .job_description_permissions import get_job_description_access
+        
+        access = get_job_description_access(request.user)
+        
+        return Response({
+            'can_view_all': access['can_view_all'],
+            'is_manager': access['is_manager'],
+            'is_admin': access['can_view_all'],  # Admin has full access
+            'access_level': (
+                'Admin - Full Access' if access['can_view_all']
+                else 'Manager - Team Access' if access['is_manager']
+                else 'Employee - Personal Access'
+            ),
+            'accessible_count': (
+                'All' if access['can_view_all']
+                else len(access['accessible_employee_ids']) if access['accessible_employee_ids']
+                else 0
+            )
+        })
+    @action(detail=True, methods=['get'])
+    def check_access(self, request, pk=None):
+        """Check if user can access this job description"""
+        job_description = self.get_object()
+        access = get_job_description_access(request.user)
+        
+        # Admin can access everything
+        if access['can_view_all']:
+            return Response({
+                'has_access': True,
+                'reason': 'Admin - Full Access'
+            })
+        
+        # Check if any assignment belongs to accessible employees
+        accessible_assignments = job_description.assignments.filter(
+            employee_id__in=access['accessible_employee_ids'],
+            is_active=True
+        )
+        
+        if accessible_assignments.exists():
+            assignment = accessible_assignments.first()
+            return Response({
+                'has_access': True,
+                'reason': (
+                    'Your job description' if assignment.employee_id == access['employee'].id
+                    else f'Direct report: {assignment.employee.full_name}'
+                )
+            })
+        
+        return Response({
+            'has_access': False,
+            'reason': 'No access to this job description'
+        }, status=status.HTTP_403_FORBIDDEN)
     def get_serializer_class(self):
         action = getattr(self, 'action', None)
         
@@ -667,35 +730,40 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
         """Get all assignments pending approval for current user"""
         try:
             user = request.user
+            access = get_job_description_access(user)
             
             logger.info(f"Getting pending approvals for user: {user.username}")
             
             # Get employee record
-            employee = None
-            try:
-                employee = user.employee_profile
-            except:
-                pass
+            employee = access['employee']
             
-            # Pending line manager approval
-            line_manager_pending = JobDescriptionAssignment.objects.filter(
-                status='PENDING_LINE_MANAGER',
-                reports_to__user=user,
-                is_active=True
-            ).select_related(
-                'job_description', 'employee', 'reports_to'
-            )
-            
-            # Pending employee approval
-            employee_pending = JobDescriptionAssignment.objects.none()
-            if employee:
+            # ✅ Admin sees all pending
+            if access['can_view_all']:
+                line_manager_pending = JobDescriptionAssignment.objects.filter(
+                    status='PENDING_LINE_MANAGER',
+                    is_active=True
+                ).select_related('job_description', 'employee', 'reports_to')
+                
                 employee_pending = JobDescriptionAssignment.objects.filter(
                     status='PENDING_EMPLOYEE',
-                    employee__user=user,
                     is_active=True
-                ).select_related(
-                    'job_description', 'employee', 'reports_to'
-                )
+                ).select_related('job_description', 'employee', 'reports_to')
+            else:
+                # Pending line manager approval (for direct reports)
+                line_manager_pending = JobDescriptionAssignment.objects.filter(
+                    status='PENDING_LINE_MANAGER',
+                    reports_to=employee,
+                    is_active=True
+                ).select_related('job_description', 'employee', 'reports_to')
+                
+                # Pending employee approval (only own)
+                employee_pending = JobDescriptionAssignment.objects.none()
+                if employee:
+                    employee_pending = JobDescriptionAssignment.objects.filter(
+                        status='PENDING_EMPLOYEE',
+                        employee=employee,
+                        is_active=True
+                    ).select_related('job_description', 'employee', 'reports_to')
             
             lm_serializer = JobDescriptionAssignmentListSerializer(line_manager_pending, many=True)
             emp_serializer = JobDescriptionAssignmentListSerializer(employee_pending, many=True)
@@ -714,7 +782,12 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                     'user_id': user.id,
                     'username': user.username,
                     'employee_id': employee.employee_id if employee else None,
-                    'employee_name': employee.full_name if employee else None
+                    'employee_name': employee.full_name if employee else None,
+                    'access_level': (
+                        'Admin' if access['can_view_all']
+                        else 'Manager' if access['is_manager']
+                        else 'Employee'
+                    )
                 }
             })
             
@@ -723,8 +796,7 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
             return Response(
                 {'error': f'Failed to get pending approvals: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )    
-    
+            )
 
     # ==================== PREVIEW AND UTILITY ACTIONS ====================
     
