@@ -130,6 +130,9 @@ class SoftDeleteModel(models.Model):
     
     def soft_delete(self, user=None):
         """Soft delete the object"""
+        if isinstance(self, Employee) and not self.end_date:
+           self.end_date = timezone.now().date()
+           
         self.is_deleted = True
         self.deleted_at = timezone.now()
         self.deleted_by = user
@@ -2078,14 +2081,20 @@ class Employee(SoftDeleteModel):
         """
         FIXED: Hard delete employee completely and create comprehensive archive - NO VACANCY CREATION
         """
+        if not self.end_date:
+            self.end_date = timezone.now().date()
+            self.save(update_fields=['end_date'])
+        
         # Store employee info before any database operations
         employee_info = {
             'id': self.id,
             'employee_id': self.employee_id,
             'full_name': self.full_name,
             'original_employee_pk': self.pk,
+            'end_date': self.end_date,  # ✅ Include in archive
             'direct_reports_count': self.direct_reports.filter(is_deleted=False).count()
         }
+        
         
         try:
             # Create archive record FIRST, outside of transaction

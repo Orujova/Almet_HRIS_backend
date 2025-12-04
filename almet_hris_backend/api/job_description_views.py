@@ -182,17 +182,35 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
         # ✅ Apply access control
         return filter_job_description_queryset(self.request.user, base_queryset)
     
+    def retrieve(self, request, *args, **kwargs):
+        """✅ Override retrieve to check access"""
+        instance = self.get_object()
+        
+        # Check if user has access
+        has_access, reason = can_user_view_job_description(request.user, instance)
+        
+        if not has_access:
+            return Response(
+                {
+                    'error': 'Access Denied',
+                    'message': reason,
+                    'detail': 'You do not have permission to view this job description'
+                },
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        serializer = self.get_serializer(instance)
+        return Response(serializer.data)
+    
     @action(detail=False, methods=['get'])
     def my_access_info(self, request):
         """Get current user's job description access info"""
-        from .job_description_permissions import get_job_description_access
-        
         access = get_job_description_access(request.user)
         
         return Response({
             'can_view_all': access['can_view_all'],
             'is_manager': access['is_manager'],
-            'is_admin': access['can_view_all'],  # Admin has full access
+            'is_admin': access['can_view_all'],
             'access_level': (
                 'Admin - Full Access' if access['can_view_all']
                 else 'Manager - Team Access' if access['is_manager']
@@ -202,40 +220,26 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                 'All' if access['can_view_all']
                 else len(access['accessible_employee_ids']) if access['accessible_employee_ids']
                 else 0
-            )
+            ),
+            'employee_id': access['employee'].id if access['employee'] else None,
+            'employee_name': access['employee'].full_name if access['employee'] else None
         })
+    
     @action(detail=True, methods=['get'])
     def check_access(self, request, pk=None):
         """Check if user can access this job description"""
         job_description = self.get_object()
-        access = get_job_description_access(request.user)
+        has_access, reason = can_user_view_job_description(request.user, job_description)
         
-        # Admin can access everything
-        if access['can_view_all']:
+        if has_access:
             return Response({
                 'has_access': True,
-                'reason': 'Admin - Full Access'
-            })
-        
-        # Check if any assignment belongs to accessible employees
-        accessible_assignments = job_description.assignments.filter(
-            employee_id__in=access['accessible_employee_ids'],
-            is_active=True
-        )
-        
-        if accessible_assignments.exists():
-            assignment = accessible_assignments.first()
-            return Response({
-                'has_access': True,
-                'reason': (
-                    'Your job description' if assignment.employee_id == access['employee'].id
-                    else f'Direct report: {assignment.employee.full_name}'
-                )
+                'reason': reason
             })
         
         return Response({
             'has_access': False,
-            'reason': 'No access to this job description'
+            'reason': reason
         }, status=status.HTTP_403_FORBIDDEN)
     def get_serializer_class(self):
         action = getattr(self, 'action', None)

@@ -1431,6 +1431,8 @@ class VacantPositionViewSet(viewsets.ModelViewSet):
                 'error': 'Failed to convert vacancy to employee',
                 'message': str(e)
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
 class EmployeeViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     pagination_class = ModernPagination  # Use modern pagination
@@ -1545,17 +1547,52 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         """✅ UPDATED: Add access info to response with full filtering and pagination"""
         access = get_headcount_access(request.user)
         
-        # Regular employee - no access
-        if not access['is_manager'] and not access['can_view_all']:
-            return Response({
-                'error': 'Access Denied',
-                'message': 'You do not have permission to view headcount data.',
-                'detail': 'Only managers and administrators can access the headcount table.',
-                'can_view_all': False,
-                'is_manager': False,
-                
-            }, status=status.HTTP_403_FORBIDDEN)
+        # ✅ NEW: Check if user is viewing their own profile
+        current_user_employee = None
+        try:
+            current_user_employee = Employee.objects.get(user=request.user)
+        except Employee.DoesNotExist:
+            pass
         
+        # Regular employee - REDIRECT to own profile if exists
+        if not access['is_manager'] and not access['can_view_all']:
+            if current_user_employee:
+                # User has employee profile - return only their data
+                logger.info(f"✅ Regular user {request.user.username} accessing own profile in list view")
+                
+                serializer = self.get_serializer(current_user_employee)
+                
+                return Response({
+                    'count': 1,
+                    'pagination_used': False,
+                    'results': [serializer.data],
+                    'access_info': {
+                        'can_view_all': False,
+                        'is_manager': False,
+                        'viewing_own_profile': True,
+                        'accessible_count': 1
+                    },
+                    'summary': {
+                        'total_records': 1,
+                        'employee_records': 1,
+                        'vacancy_records': 0,
+                        'includes_vacancies': False,
+                        'unified_view': False,
+                        'own_profile_only': True
+                    }
+                })
+            else:
+                # User has no employee profile and no access
+                return Response({
+                    'error': 'Access Denied',
+                    'message': 'You do not have permission to view headcount data.',
+                    'detail': 'Only managers and administrators can access the headcount table.',
+                    'can_view_all': False,
+                    'is_manager': False,
+                    'has_employee_profile': False,
+                    'suggestion': 'Contact HR to create your employee profile.'
+                }, status=status.HTTP_403_FORBIDDEN)
+            
         try:
             include_vacancies = request.query_params.get('include_vacancies', 'true').lower() == 'true'
             
@@ -5955,7 +5992,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         except Exception as e:
             return Response({'error': f'Bulk contract update failed: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
-    # views.py - EmployeeViewSet içində
+ 
 
     @action(detail=False, methods=['get'])
     def statistics(self, request):

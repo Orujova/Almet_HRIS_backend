@@ -789,7 +789,6 @@ class VacancyToEmployeeConversionSerializer(serializers.Serializer):
     
     def create(self, validated_data):
         """Convert vacancy to employee"""
-        # Get vacancy from context instead of validated_data
         vacancy = self.context['vacancy']
         
         tag_ids = validated_data.pop('tag_ids', [])
@@ -798,18 +797,32 @@ class VacancyToEmployeeConversionSerializer(serializers.Serializer):
         document_type = validated_data.pop('document_type', 'OTHER')
         document_name = validated_data.pop('document_name', '')
         
+        # ✅ CRITICAL FIX: Extract first_name and last_name
+        first_name = validated_data.get('first_name')
+        last_name = validated_data.get('last_name')
+        email = validated_data.get('email')
+        
         with transaction.atomic():
-            # Create user
+            # ✅ FIXED: Create user WITHOUT set_unusable_password
+            # This way, user can login with Microsoft later
             user = User.objects.create_user(
-                username=validated_data['email'],
-                email=validated_data['email'],
-                first_name=validated_data['first_name'],
-                last_name=validated_data['last_name']
+                username=email,
+                email=email,
+                first_name=first_name,  # ✅ CRITICAL
+                last_name=last_name     # ✅ CRITICAL
             )
+            user.set_unusable_password()  # Still no password auth
+            user.save()
             
-            # Create employee with vacancy data
+            # ✅ CRITICAL: Pass first_name, last_name directly to Employee
             employee = Employee.objects.create(
                 user=user,
+                
+                # ✅ CRITICAL: Set employee's own first_name/last_name fields
+                first_name=first_name,
+                last_name=last_name,
+                email=email,
+                
                 # Personal information
                 date_of_birth=validated_data.get('date_of_birth'),
                 gender=validated_data.get('gender'),
@@ -878,12 +891,14 @@ class VacancyToEmployeeConversionSerializer(serializers.Serializer):
                 metadata={
                     'converted_from_vacancy': True,
                     'vacancy_id': vacancy.id,
-                    'vacancy_position_id': vacancy.position_id
+                    'vacancy_position_id': vacancy.position_id,
+                    'has_user_account': True,
+                    'first_name': first_name,  # ✅ Log for debugging
+                    'last_name': last_name
                 }
             )
             
             return employee
-
 class EmployeeDocumentSerializer(serializers.ModelSerializer):
     uploaded_by_name = serializers.CharField(source='uploaded_by.username', read_only=True)
     file_size_display = serializers.CharField(source='get_file_size_display', read_only=True)
@@ -2361,7 +2376,7 @@ class EmployeeDetailSerializer(serializers.ModelSerializer):
                 'team_members': 0,
                 'has_pending': False
             }
-# api/serializers.py - EmployeeJobDescriptionSerializer
+
 
 class EmployeeJobDescriptionSerializer(serializers.Serializer):
     """NEW: Serializer for job description assignments"""
@@ -3021,8 +3036,6 @@ class SingleLineManagerAssignmentSerializer(serializers.Serializer):
             except Employee.DoesNotExist:
                 raise serializers.ValidationError("Line manager not found.")
         return value
-
-
 
 class BulkEmployeeTagUpdateSerializer(serializers.Serializer):
     """

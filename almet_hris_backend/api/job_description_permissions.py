@@ -1,4 +1,4 @@
-# api/job_description_permissions.py - YENİ FİL
+# api/job_description_permissions.py
 from functools import wraps
 from rest_framework.response import Response
 from rest_framework import status
@@ -63,7 +63,7 @@ def get_job_description_access(user):
     is_manager = direct_reports.exists()
     
     if is_manager:
-        # Manager can see: self + direct reports' job descriptions
+        # Manager can see: self + direct reports
         accessible_ids = [employee.id]
         accessible_ids.extend(list(direct_reports.values_list('id', flat=True)))
         
@@ -74,20 +74,20 @@ def get_job_description_access(user):
             'accessible_employee_ids': accessible_ids
         }
     else:
-        # Regular employee - only their own job description
+        # ✅ Regular employee - CAN VIEW their own job description
         return {
             'can_view_all': False,
             'is_manager': False,
             'employee': employee,
-            'accessible_employee_ids': [employee.id]
+            'accessible_employee_ids': [employee.id]  # Only self
         }
 
 def filter_job_description_queryset(user, queryset):
     """
     ✅ Filter job description queryset based on user access
-    Manager sees: their own + direct reports' JDs
-    Admin sees: all JDs
-    Employee sees: only their own JD
+    - Admin: sees all
+    - Manager: sees own + direct reports
+    - Employee: sees only their own
     """
     access = get_job_description_access(user)
     
@@ -95,12 +95,41 @@ def filter_job_description_queryset(user, queryset):
     if access['can_view_all']:
         return queryset
     
-    # Manager or Employee - filter by assignments
+    # Manager or Employee - filter by accessible employee IDs
     if access['accessible_employee_ids']:
         return queryset.filter(
             assignments__employee_id__in=access['accessible_employee_ids'],
             assignments__is_active=True
         ).distinct()
     
-    # No access
+    # No access (shouldn't happen, but safety check)
     return queryset.none()
+
+def can_user_view_job_description(user, job_description):
+    """
+    ✅ Check if user can view a specific job description
+    """
+    access = get_job_description_access(user)
+    
+    # Admin can view all
+    if access['can_view_all']:
+        return True, "Admin - Full Access"
+    
+    # Check if job description has assignments for accessible employees
+    if access['accessible_employee_ids']:
+        accessible_assignments = job_description.assignments.filter(
+            employee_id__in=access['accessible_employee_ids'],
+            is_active=True
+        )
+        
+        if accessible_assignments.exists():
+            assignment = accessible_assignments.first()
+            
+            # Check if it's the user's own job description
+            if access['employee'] and assignment.employee_id == access['employee'].id:
+                return True, "Your job description"
+            else:
+                return True, f"Direct report: {assignment.employee.full_name}"
+        
+    return False, "No access to this job description"
+
