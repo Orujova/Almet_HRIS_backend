@@ -1925,21 +1925,23 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 return paginated_response
     
     def _get_unified_employee_vacancy_list(self, request, should_paginate):
-        """COMPLETELY FIXED: Get unified list of employees and vacant positions WITH PROPER VACANT STATUS DETECTION"""
+        """COMPLETELY FIXED: Get unified list with proper vacancy access control"""
         
-        # ✅ Parse status filter
+        # ✅ GET ACCESS INFO FIRST
+        access = get_headcount_access(request.user)
+        
+        # Parse status filter
         status_param = request.query_params.get('status', '')
         status_values = [s.strip() for s in status_param.split(',') if s.strip()]
         
         logger.info(f"[STATUS] Raw param: '{status_param}'")
         logger.info(f"[STATUS] Parsed values: {status_values}")
         
-        # ✅ CRITICAL: Check if status is VACANT by ID or name
+        # Check if status is VACANT
         has_vacant = False
         has_employee_status = False
         employee_status_ids = []
         
-        # Get VACANT status from database
         try:
             vacant_statuses = EmployeeStatus.objects.filter(
                 Q(name__iexact='VACANT') | Q(name__iexact='VACANCY')
@@ -1948,33 +1950,27 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             vacant_status_names = list(vacant_statuses.values_list('name', flat=True))
             
             logger.info(f"[STATUS] VACANT status IDs in DB: {vacant_status_ids}")
-            logger.info(f"[STATUS] VACANT status names in DB: {vacant_status_names}")
         except Exception as e:
             logger.error(f"[STATUS] Error getting VACANT statuses: {e}")
             vacant_status_ids = []
             vacant_status_names = []
         
-        # Check each status value
         for status_val in status_values:
             is_vacant_status = False
             
-            # Check by name
             if status_val.upper() in ['VACANT', 'VACANCY']:
                 is_vacant_status = True
                 logger.info(f"[STATUS] '{status_val}' detected as VACANT by name")
             
-            # Check by ID
             try:
                 status_id = int(status_val)
                 if status_id in vacant_status_ids:
                     is_vacant_status = True
                     logger.info(f"[STATUS] ID {status_id} detected as VACANT by ID")
                 else:
-                    # This is an employee status ID
                     employee_status_ids.append(status_id)
                     logger.info(f"[STATUS] ID {status_id} detected as employee status")
             except (ValueError, TypeError):
-                # Not an integer, check by name in database
                 try:
                     status_obj = EmployeeStatus.objects.get(name__iexact=status_val)
                     if status_obj.id in vacant_status_ids:
@@ -1993,44 +1989,37 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         
         logger.info(f"[STATUS] Has VACANT: {has_vacant}")
         logger.info(f"[STATUS] Has employee status: {has_employee_status}")
-        logger.info(f"[STATUS] Employee status IDs: {employee_status_ids}")
         
-        # ✅ Decide what to include
+        # Decide what to include
         if not status_values:
-            # No filter → show all
             include_employees = True
             include_vacancies = True
             logger.info("[MODE] SHOW ALL")
         elif has_vacant and not has_employee_status:
-            # Only VACANT → show only vacancies
             include_employees = False
             include_vacancies = True
             logger.info("[MODE] ONLY VACANCIES")
         elif has_employee_status and not has_vacant:
-            # Only employee statuses → show only employees
             include_employees = True
             include_vacancies = False
             logger.info("[MODE] ONLY EMPLOYEES")
         else:
-            # Both → show both
             include_employees = True
             include_vacancies = True
             logger.info("[MODE] BOTH")
         
-        # ====== GET EMPLOYEES ======
+        # ====== GET EMPLOYEES WITH ACCESS CONTROL ======
         if include_employees:
-            employee_queryset = self.get_queryset()
+            employee_queryset = self.get_queryset()  # Already filtered by access
             logger.info(f"[EMP] Initial count: {employee_queryset.count()}")
             
-            # Apply status filter if needed
             if employee_status_ids:
                 employee_queryset = employee_queryset.filter(status__id__in=employee_status_ids)
-                logger.info(f"[EMP] After status filter ({employee_status_ids}): {employee_queryset.count()}")
+                logger.info(f"[EMP] After status filter: {employee_queryset.count()}")
             
-            # ✅ CRITICAL: Apply OTHER filters (NOT status) using ComprehensiveEmployeeFilter
             filter_params = request.query_params.copy()
             if 'status' in filter_params:
-                del filter_params['status']  # Remove status from other filters
+                del filter_params['status']
             
             employee_filter = ComprehensiveEmployeeFilter(employee_queryset, filter_params)
             filtered_employees = employee_filter.filter()
@@ -2039,7 +2028,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             filtered_employees = Employee.objects.none()
             logger.info("[EMP] Excluded (0)")
         
-        # ====== GET VACANCIES ======
+        # ====== GET VACANCIES WITH ACCESS CONTROL ======
         if include_vacancies:
             vacancy_queryset = VacantPosition.objects.filter(
                 is_filled=False,
@@ -2049,18 +2038,32 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 'business_function', 'department', 'unit', 'job_function',
                 'position_group', 'vacancy_status', 'reporting_to'
             )
+            
             logger.info(f"[VAC] Initial count: {vacancy_queryset.count()}")
             
-            # ✅ CRITICAL: Apply organizational filters to vacancies
+            # ✅ CRITICAL: Apply access control to vacancies
+            if not access['can_view_all']:
+                if access['is_manager'] and access['accessible_business_functions']:
+                    # Manager can only see vacancies in their business functions
+                    vacancy_queryset = vacancy_queryset.filter(
+                        business_function_id__in=access['accessible_business_functions']
+                    )
+                    logger.info(f"[VAC] Manager access: filtered to BFs {access['accessible_business_functions']}")
+                    logger.info(f"[VAC] After manager filter: {vacancy_queryset.count()}")
+                else:
+                    # Regular employee - NO ACCESS to vacancies
+                    vacancy_queryset = VacantPosition.objects.none()
+                    logger.info("[VAC] Regular employee - no access")
+            
+            # Apply organizational filters
             filter_params = request.query_params.copy()
             if 'status' in filter_params:
                 del filter_params['status']
             
-            # Build vacancy filter using same filter params
             vacancy_filter_q = self._get_vacancy_filter_from_employee_params(filter_params)
             if vacancy_filter_q:
                 vacancy_queryset = vacancy_queryset.filter(vacancy_filter_q)
-                logger.info(f"[VAC] After filters: {vacancy_queryset.count()}")
+                logger.info(f"[VAC] After organizational filters: {vacancy_queryset.count()}")
             
             filtered_vacancies = vacancy_queryset
             logger.info(f"[VAC] Final count: {filtered_vacancies.count()}")
@@ -2089,17 +2092,16 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         
         logger.info(f"[UNIFIED] TOTAL: {len(unified_data)}")
         
-        # ✅ CRITICAL: Apply sorting to unified data
+        # Apply sorting
         sorting_params = self._get_sorting_params_from_request(request)
         if sorting_params:
             unified_data = self._sort_unified_data(unified_data, sorting_params)
             logger.info(f"🔀 Unified sorting applied: {sorting_params}")
         else:
-            # Default sorting by name
             unified_data.sort(key=lambda x: x.get('name', ''))
             logger.info("🔀 Default sorting by name applied")
         
-        # ✅ Return response with proper summary
+        # Return response
         if should_paginate:
             return self._paginate_unified_data(unified_data, request)
         else:
@@ -2116,16 +2118,15 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                     'status_filter': status_values,
                     'has_vacant_filter': has_vacant,
                     'has_employee_status_filter': has_employee_status,
-                    'vacant_status_ids_in_db': vacant_status_ids if has_vacant else [],
                     'mode': 'only_vacancies' if (not include_employees and include_vacancies) else
                             'only_employees' if (include_employees and not include_vacancies) else
                             'both' if (include_employees and include_vacancies) else 'none',
-                    'filters_applied': {
-                        'status': status_values if status_values else None,
-                        'business_function': filter_params.get('business_function'),
-                        'department': filter_params.get('department'),
-                        'has_filters': bool(filter_params)
-                    }
+                },
+                'access_info': {
+                    'can_view_all': access['can_view_all'],
+                    'is_manager': access['is_manager'],
+                    'accessible_business_functions': access['accessible_business_functions'] if not access['can_view_all'] else None,
+                    'vacancy_access_applied': not access['can_view_all']
                 }
             })
     def _get_vacancy_filter_from_employee_params(self, params):
