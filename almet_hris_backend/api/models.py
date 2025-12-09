@@ -1079,7 +1079,8 @@ class Employee(SoftDeleteModel):
         elif self.user and (self.user.first_name or self.user.last_name):
             # Priority 2: Use user's first_name/last_name as fallback
             self.full_name = f"{self.user.first_name} {self.user.last_name}".strip()
-        
+        if not self.pk and not self.status_id:  # pk None = yeni object
+            self.auto_assign_status()
         # Sync email: if user exists and employee email is empty, use user email
         if self.user and self.user.email and not self.email:
             self.email = self.user.email
@@ -1217,8 +1218,10 @@ class Employee(SoftDeleteModel):
         return self.email or (self.user.email if self.user else None)
     
     def auto_assign_status(self):
-        """✅ UPDATED: New employee üçün status - PROBATION for all except PERMANENT"""
+        """✅ FIXED: Yeni employee üçün status - start_date və probation days əsasında"""
         try:
+            current_date = date.today()
+            
             # ✅ PERMANENT contract → directly ACTIVE
             if self.contract_duration == 'PERMANENT':
                 active_status = EmployeeStatus.objects.filter(
@@ -1228,37 +1231,98 @@ class Employee(SoftDeleteModel):
                 
                 if active_status:
                     self.status = active_status
-                    logger.info(f"New employee {self.employee_id}: PERMANENT contract → ACTIVE status")
+                    logger.info(f"New employee {self.employee_id}: PERMANENT contract -> ACTIVE status")
                     return
             
-            # ✅ ALL OTHER contracts → PROBATION
-            probation_status = EmployeeStatus.objects.filter(
-                status_type='PROBATION',
-                is_active=True
-            ).first()
-            
-            if probation_status:
-                self.status = probation_status
-                logger.info(f"New employee {self.employee_id}: {self.contract_duration} contract → PROBATION status")
-            else:
-                # Fallback to default or first active
-                logger.warning("PROBATION status not found! Using fallback...")
-                default_status = EmployeeStatus.objects.filter(
-                    is_default_for_new_employees=True,
+            # ✅ Check if start_date is in the past (back-dated employee)
+            if not self.start_date:
+                # No start date, use PROBATION as default
+                probation_status = EmployeeStatus.objects.filter(
+                    status_type='PROBATION',
                     is_active=True
                 ).first()
                 
-                if not default_status:
-                    default_status = EmployeeStatus.objects.filter(is_active=True).first()
+                if probation_status:
+                    self.status = probation_status
+                return
+            
+            # ✅ Calculate days since start
+            days_since_start = (current_date - self.start_date).days
+            
+            logger.info(f"New employee {self.employee_id}: started {days_since_start} days ago")
+            
+            # ✅ Get contract config
+            try:
+                contract_config = ContractTypeConfig.objects.get(
+                    contract_type=self.contract_duration,
+                    is_active=True
+                )
+            except ContractTypeConfig.DoesNotExist:
+                # Fallback to PROBATION
+                probation_status = EmployeeStatus.objects.filter(
+                    status_type='PROBATION',
+                    is_active=True
+                ).first()
                 
-                self.status = default_status
+                if probation_status:
+                    self.status = probation_status
+                logger.warning(f"No contract config for {self.contract_duration}")
+                return
+            
+            probation_days = contract_config.probation_days
+            
+            # ✅ Check if probation period is over
+            if days_since_start >= probation_days:
+                # Probation completed → ACTIVE
+                active_status = EmployeeStatus.objects.filter(
+                    status_type='ACTIVE',
+                    is_active=True
+                ).first()
                 
+                if active_status:
+                    self.status = active_status
+                    logger.info(
+                        f"New employee {self.employee_id}: Probation already completed "
+                        f"({days_since_start} days since start, probation was {probation_days} days) -> ACTIVE"
+                    )
+                else:
+                    # Fallback
+                    probation_status = EmployeeStatus.objects.filter(
+                        status_type='PROBATION',
+                        is_active=True
+                    ).first()
+                    self.status = probation_status
+            else:
+                # Still in probation
+                probation_status = EmployeeStatus.objects.filter(
+                    status_type='PROBATION',
+                    is_active=True
+                ).first()
+                
+                if probation_status:
+                    self.status = probation_status
+                    remaining_days = probation_days - days_since_start
+                    logger.info(
+                        f"New employee {self.employee_id}: In probation period "
+                        f"({remaining_days} days remaining of {probation_days}) -> PROBATION"
+                    )
+                else:
+                    # Fallback to ACTIVE if PROBATION not found
+                    active_status = EmployeeStatus.objects.filter(
+                        status_type='ACTIVE',
+                        is_active=True
+                    ).first()
+                    self.status = active_status
+                    logger.warning("PROBATION status not found - using ACTIVE as fallback")
+                    
         except Exception as e:
             logger.error(f"Error auto-assigning status: {e}")
+            # Fallback to first available active status
             if not self.status:
-                fallback_status = EmployeeStatus.objects.first()
+                fallback_status = EmployeeStatus.objects.filter(is_active=True).first()
                 if fallback_status:
                     self.status = fallback_status
+        
     def get_required_status_based_on_contract(self):
         """✅ UPDATED: Contract-based status (ONBOARDING yoxdur)"""
         try:

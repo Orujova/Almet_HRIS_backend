@@ -1112,8 +1112,8 @@ class EmployeeCoreAssessmentCreateSerializer(serializers.ModelSerializer):
         position_assessment = data.get('position_assessment')
         
         if employee and position_assessment:
-            # Check if employee's job title matches position assessment
-            if employee.job_title != position_assessment.job_title:
+            # ✅ CASE-INSENSITIVE yoxlama
+            if employee.job_title.upper() != position_assessment.job_title.upper():
                 raise serializers.ValidationError(
                     f"Employee job title '{employee.job_title}' doesn't match "
                     f"position assessment '{position_assessment.job_title}'"

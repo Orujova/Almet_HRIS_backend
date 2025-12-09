@@ -120,7 +120,7 @@ class EmployeeStatusManager:
                     logger.error("ACTIVE status not found in system!")
                     return employee.status, "ACTIVE status not found"
                 
-                logger.info(f"Employee {employee.employee_id}: Probation completed → ACTIVE")
+                logger.info(f"Employee {employee.employee_id}: Probation completed -> ACTIVE")
                 return active_status, f"Probation period completed ({days_since_start} days since start, probation was {probation_days} days)"
                 
         except Exception as e:

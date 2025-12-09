@@ -51,6 +51,13 @@ from .competency_assessment_serializers import (
     EmployeeLeadershipAssessmentSerializer, EmployeeLeadershipAssessmentCreateSerializer,
 )
 
+# api/views.py (və ya uyğun view file)
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from .assessment_permissions import get_assessment_access
+
+
 class PositionLeadershipAssessmentViewSet(viewsets.ModelViewSet):
     """Position Leadership Competency Assessment Templates for senior positions"""
     queryset = PositionLeadershipAssessment.objects.all()
@@ -871,7 +878,7 @@ class PositionCoreAssessmentViewSet(viewsets.ModelViewSet):
             # Find matching position assessment
             assessment = PositionCoreAssessment.objects.filter(
                 position_group=employee.position_group,
-                job_title=employee.job_title,
+                job_title__iexact=employee.job_title,
                 is_active=True
             ).first()
             
@@ -1083,7 +1090,36 @@ class EmployeeCoreAssessmentViewSet(viewsets.ModelViewSet):
             raise PermissionDenied(f"Cannot delete assessment: {reason}")
         
         instance.delete()
-    
+    @action(detail=False, methods=['get'], url_path='get_user_assessment_permissions')
+    def get_user_assessment_permissions(self, request):
+        """
+        Get current user's assessment permissions and role
+        Returns user's role (admin/manager/employee) and accessible employee IDs
+        """
+        try:
+            access = get_assessment_access(request.user)
+            
+            return Response({
+                'is_admin': access['can_view_all'],
+                'is_manager': access['is_manager'],
+                'is_employee': not access['is_manager'] and not access['can_view_all'],
+                'can_view_all': access['can_view_all'],
+                'employee_id': access['employee'].id if access['employee'] else None,
+                'employee_name': access['employee'].full_name if access['employee'] else None,
+                'accessible_employee_ids': access['accessible_employee_ids'],
+                'accessible_employee_count': len(access['accessible_employee_ids']) if access['accessible_employee_ids'] else 'All'
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            return Response({
+                'error': str(e),
+                'is_admin': False,
+                'is_manager': False,
+                'is_employee': True,
+                'can_view_all': False,
+                'employee_id': None,
+                'accessible_employee_ids': []
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     @action(detail=True, methods=['post'])
     def submit(self, request, pk=None):
         """✅ Submit with permission check"""

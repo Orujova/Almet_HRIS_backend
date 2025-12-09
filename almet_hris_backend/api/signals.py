@@ -10,21 +10,21 @@ logger = logging.getLogger(__name__)
 @receiver(post_save, sender=Employee)
 def auto_update_employee_status(sender, instance, created, **kwargs):
     """
-    ✅ Avtomatik status yenilənməsi
-    Hər dəfə employee save olanda status yoxlanılır və avtomatik düzəldilir
+    ✅ Avtomatik status yenilənməsi - FIXED
     """
     
-    # Skip if this is during creation (new employee)
-    if created:
-        logger.info(f"✅ New employee created: {instance.employee_id} - skipping auto status update")
+    # Skip if explicitly disabled (for bulk operations)
+    if getattr(instance, '_skip_auto_status_update', False):
         return
     
     # Skip if deleted
     if instance.is_deleted:
         return
     
-    # Skip if explicitly told not to auto-update (bulk operations)
-    if getattr(instance, '_skip_auto_status_update', False):
+    # ✅ FIX: Only skip for BRAND NEW employees (created=True)
+    # For existing employees, always check status
+    if created:
+        logger.info(f"✅ New employee created: {instance.employee_id} - initial status set")
         return
     
     try:
@@ -35,12 +35,15 @@ def auto_update_employee_status(sender, instance, created, **kwargs):
         if required_status and required_status != instance.status:
             logger.info(
                 f"🔄 Auto-updating status for {instance.employee_id}: "
-                f"{instance.status.name if instance.status else 'None'} → {required_status.name}"
+                f"{instance.status.name if instance.status else 'None'} -> {required_status.name}"
             )
             logger.info(f"   Reason: {reason}")
             
-            # ✅ CRITICAL: Update without triggering signal again
+            # ✅ CRITICAL: Update using queryset to avoid triggering signal again
             Employee.objects.filter(pk=instance.pk).update(status=required_status)
+            
+            # Refresh instance
+            instance.refresh_from_db()
             
             # Log activity
             from .models import EmployeeActivity
@@ -53,7 +56,6 @@ def auto_update_employee_status(sender, instance, created, **kwargs):
                     'automatic': True,
                     'trigger': 'post_save_signal',
                     'reason': reason,
-                    'old_status': instance.status.name if instance.status else None,
                     'new_status': required_status.name
                 }
             )
@@ -66,5 +68,3 @@ def auto_update_employee_status(sender, instance, created, **kwargs):
         logger.error(f"❌ Error in auto_update_employee_status for {instance.employee_id}: {e}")
         import traceback
         logger.error(f"Traceback: {traceback.format_exc()}")
-
-
