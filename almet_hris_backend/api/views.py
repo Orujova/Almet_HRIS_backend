@@ -1230,13 +1230,14 @@ class JobFunctionViewSet(viewsets.ModelViewSet):
     ordering = ['name']
 
 class PositionGroupViewSet(viewsets.ModelViewSet):
-    queryset = PositionGroup.objects.all()
+    queryset = PositionGroup.objects.all().order_by('hierarchy_level')  # Bu yol
     serializer_class = PositionGroupSerializer
     permission_classes = [IsAuthenticated]
-    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]  # OrderingFilter əlavə et
     filterset_fields = ['is_active']
     search_fields = ['name']
-    ordering = ['hierarchy_level']
+    ordering_fields = ['hierarchy_level', 'name']  # İstifadəçi hansı fieldlara görə sort edə bilər
+    ordering = ['hierarchy_level']  # Default ordering
     
     @action(detail=True, methods=['get'])
     def grading_levels(self, request, pk=None):

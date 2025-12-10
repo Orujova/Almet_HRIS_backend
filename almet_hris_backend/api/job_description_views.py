@@ -206,7 +206,7 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
     def my_access_info(self, request):
         """Get current user's job description access info"""
         access = get_job_description_access(request.user)
-        
+        logger.info(f"Material  uploaded for training {access}")
         return Response({
             'can_view_all': access['can_view_all'],
             'is_manager': access['is_manager'],
@@ -222,25 +222,11 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                 else 0
             ),
             'employee_id': access['employee'].id if access['employee'] else None,
+            
             'employee_name': access['employee'].full_name if access['employee'] else None
         })
     
-    @action(detail=True, methods=['get'])
-    def check_access(self, request, pk=None):
-        """Check if user can access this job description"""
-        job_description = self.get_object()
-        has_access, reason = can_user_view_job_description(request.user, job_description)
-        
-        if has_access:
-            return Response({
-                'has_access': True,
-                'reason': reason
-            })
-        
-        return Response({
-            'has_access': False,
-            'reason': reason
-        }, status=status.HTTP_403_FORBIDDEN)
+    
     def get_serializer_class(self):
         action = getattr(self, 'action', None)
         

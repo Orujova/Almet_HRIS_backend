@@ -235,7 +235,8 @@ class TrainingAssignmentSerializer(serializers.ModelSerializer):
         return obj.materials_completed.count()
     
     def get_total_materials(self, obj):
-        return obj.training.materials.filter(is_required=True).count()
+        # is_mandatory filter-i SİLDİK
+        return obj.training.materials.filter(is_deleted=False).count()
     
     def get_is_overdue(self, obj):
         return obj.is_overdue()

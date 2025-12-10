@@ -184,11 +184,13 @@ class TrainingAssignment(SoftDeleteModel):
         if self.status == 'COMPLETED':
             return 100.0
         
-        total_required = self.training.materials.filter(is_required=True).count()
+        # Remove is_mandatory filter
+        total_required = self.training.materials.filter(is_deleted=False).count()
         if total_required == 0:
             return 0.0
         
-        completed = self.materials_completed.filter(is_required=True).count()
+        # Remove is_mandatory filter
+        completed = self.materials_completed.filter(is_deleted=False).count()
         progress = (completed / total_required) * 100
         
         self.progress_percentage = round(progress, 2)
@@ -198,8 +200,9 @@ class TrainingAssignment(SoftDeleteModel):
     
     def check_completion(self):
         """Check if training is completed"""
-        total_required = self.training.materials.filter(is_required=True).count()
-        completed = self.materials_completed.filter(is_required=True).count()
+        # Remove is_mandatory filter
+        total_required = self.training.materials.filter(is_deleted=False).count()
+        completed = self.materials_completed.filter(is_deleted=False).count()
         
         if total_required > 0 and completed >= total_required:
             self.status = 'COMPLETED'
@@ -209,7 +212,6 @@ class TrainingAssignment(SoftDeleteModel):
             return True
         
         return False
-    
     def is_overdue(self):
         """Check if assignment is overdue"""
         if self.status not in ['COMPLETED', 'CANCELLED'] and self.due_date:

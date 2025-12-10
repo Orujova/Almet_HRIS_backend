@@ -652,7 +652,7 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
                         id=obj_id,
                         performance=performance
                     ).update(
-                        progress=obj_data.get('progress', 0),
+                      
                         status_id=obj_data.get('status')
                     )
         
@@ -734,7 +734,7 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
                         id=obj_id,
                         performance=performance
                     ).update(
-                        progress=obj_data.get('progress', 0),
+                   
                         status_id=obj_data.get('status')
                     )
         
@@ -1114,7 +1114,7 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
         
         objectives_data = request.data.get('objectives', [])
         
-        logger.info(f"💾 Saving objectives draft: {len(objectives_data)} objectives")
+        
         
         with transaction.atomic():
             updated_ids = []
@@ -1126,7 +1126,7 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
                 description = obj_data.get('description', '')
                 linked_dept_obj_id = obj_data.get('linked_department_objective')
                 weight = obj_data.get('weight', 0)
-                progress = obj_data.get('progress', 0)
+              
                 status_id = obj_data.get('status')
                 end_year_rating_id = obj_data.get('end_year_rating')  # ✅ GET THIS
                 calculated_score = obj_data.get('calculated_score', 0)
@@ -1143,7 +1143,7 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
                         obj.description = description
                         obj.linked_department_objective_id = linked_dept_obj_id
                         obj.weight = weight
-                        obj.progress = progress
+                
                         obj.status_id = status_id
                         obj.display_order = idx
                         obj.calculated_score = calculated_score
@@ -1166,7 +1166,7 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
                         description=description,
                         linked_department_objective_id=linked_dept_obj_id,
                         weight=weight,
-                        progress=progress,
+                    
                         status_id=status_id,
                         end_year_rating_id=end_year_rating_id,  # ✅ SET THIS
                         calculated_score=calculated_score,
@@ -1250,7 +1250,7 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
         objectives_data = request.data.get('objectives', [])
         
         if objectives_data:
-            logger.info(f"💾 Saving {len(objectives_data)} objectives before submit")
+           
             
             with transaction.atomic():
                 updated_ids = []
@@ -1262,7 +1262,7 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
                     description = obj_data.get('description', '')
                     linked_dept_obj_id = obj_data.get('linked_department_objective')
                     weight = obj_data.get('weight', 0)
-                    progress = obj_data.get('progress', 0)
+                
                     status_id = obj_data.get('status')
                     end_year_rating_id = obj_data.get('end_year_rating')  # ✅ CRITICAL
                     calculated_score = obj_data.get('calculated_score', 0)
@@ -1279,7 +1279,7 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
                             obj.description = description
                             obj.linked_department_objective_id = linked_dept_obj_id
                             obj.weight = weight
-                            obj.progress = progress
+                           
                             obj.status_id = status_id
                             obj.display_order = idx
                             obj.calculated_score = calculated_score
@@ -1302,7 +1302,7 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
                             description=description,
                             linked_department_objective_id=linked_dept_obj_id,
                             weight=weight,
-                            progress=progress,
+                          
                             status_id=status_id,
                             end_year_rating_id=end_year_rating_id,  # ✅ CRITICAL
                             calculated_score=calculated_score,
@@ -2045,7 +2045,7 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
         
         # ========== OBJECTIVES SHEET ==========
         ws_obj = wb.create_sheet('Objectives')
-        headers = ['#', 'Title', 'Description', 'Weight %', 'Progress %', 'Status', 'End-Year Rating', 'Score']
+        headers = ['#', 'Title', 'Description', 'Weight %',  'Status', 'End-Year Rating', 'Score']
         for col, header in enumerate(headers, 1):
             cell = ws_obj.cell(row=1, column=col, value=header)
             cell.fill = header_fill
@@ -2058,7 +2058,7 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
             ws_obj.cell(row=idx+1, column=2, value=obj.title)
             ws_obj.cell(row=idx+1, column=3, value=obj.description)
             ws_obj.cell(row=idx+1, column=4, value=obj.weight)
-            ws_obj.cell(row=idx+1, column=5, value=obj.progress)
+      
             ws_obj.cell(row=idx+1, column=6, value=obj.status.label if obj.status else 'N/A')
             ws_obj.cell(row=idx+1, column=7, value=obj.end_year_rating.name if obj.end_year_rating else 'N/A')
             ws_obj.cell(row=idx+1, column=8, value=float(obj.calculated_score))

@@ -50,8 +50,6 @@ class TrainingViewSet(viewsets.ModelViewSet):
             return TrainingListSerializer
         return TrainingDetailSerializer
     
-
-
     @swagger_auto_schema(
         responses={
             201: TrainingDetailSerializer,
@@ -97,7 +95,7 @@ class TrainingViewSet(viewsets.ModelViewSet):
                     data['completion_deadline_days'] = int(completion_deadline_days)
                     print(f"⏰ Completion deadline: {data['completion_deadline_days']} days")
                 except (ValueError, TypeError):
-                    print(f"⚠️  Invalid completion_deadline_days: {completion_deadline_days}")
+                    print(f"⚠️ Invalid completion_deadline_days: {completion_deadline_days}")
             
             # Create training
             training = Training.objects.create(
@@ -119,7 +117,7 @@ class TrainingViewSet(viewsets.ModelViewSet):
                     materials_created = 0
                     for material_info in materials_data:
                         file_index = material_info.get('file_index')
-                        print(f"🔎 Processing material with file_index={file_index}")
+                        print(f"🔍 Processing material with file_index={file_index}")
                         
                         # Get file from request.FILES
                         if file_index is not None:
@@ -127,7 +125,7 @@ class TrainingViewSet(viewsets.ModelViewSet):
                             file_obj = request.FILES.get(file_key)
                             
                             if file_obj:
-                                print(f"📎 Found file: {file_obj.name} ({file_obj.size} bytes)")
+                                print(f"🔍 Found file: {file_obj.name} ({file_obj.size} bytes)")
                                 
                                 # Create material with file
                                 material = TrainingMaterial.objects.create(
@@ -139,9 +137,9 @@ class TrainingViewSet(viewsets.ModelViewSet):
                                 materials_created += 1
                                 print(f"✅ Material created: ID={material.id}, File={material.file.name}")
                             else:
-                                print(f"⚠️  No file found for key: {file_key}")
+                                print(f"⚠️ No file found for key: {file_key}")
                         else:
-                            print(f"⚠️  No file_index in material_info")
+                            print(f"⚠️ No file_index in material_info")
                     
                     print(f"✅ Created {materials_created} material(s)")
                     
@@ -153,7 +151,7 @@ class TrainingViewSet(viewsets.ModelViewSet):
                     import traceback
                     traceback.print_exc()
             else:
-                print("ℹ️  No materials_data provided")
+                print("ℹ️ No materials_data provided")
             
             # Log success
             logger.info(f"Training {training.training_id} created by {request.user.username}")
@@ -226,7 +224,7 @@ class TrainingViewSet(viewsets.ModelViewSet):
                         instance.completion_deadline_days = int(completion_deadline_days)
                         print(f"📝 Updating completion_deadline_days: {instance.completion_deadline_days}")
                     except (ValueError, TypeError):
-                        print(f"⚠️  Invalid completion_deadline_days: {completion_deadline_days}")
+                        print(f"⚠️ Invalid completion_deadline_days: {completion_deadline_days}")
                 else:
                     instance.completion_deadline_days = None
                     print(f"📝 Clearing completion_deadline_days")
@@ -248,14 +246,14 @@ class TrainingViewSet(viewsets.ModelViewSet):
                     materials_created = 0
                     for material_info in materials_data:
                         file_index = material_info.get('file_index')
-                        print(f"🔎 Processing material with file_index={file_index}")
+                        print(f"🔍 Processing material with file_index={file_index}")
                         
                         if file_index is not None:
                             file_key = f'material_{file_index}_file'
                             file_obj = request.FILES.get(file_key)
                             
                             if file_obj:
-                                print(f"📎 Found file: {file_obj.name} ({file_obj.size} bytes)")
+                                print(f"🔍 Found file: {file_obj.name} ({file_obj.size} bytes)")
                                 
                                 material = TrainingMaterial.objects.create(
                                     training=instance,
@@ -266,7 +264,7 @@ class TrainingViewSet(viewsets.ModelViewSet):
                                 materials_created += 1
                                 print(f"✅ Material created: ID={material.id}, File={material.file.name}")
                             else:
-                                print(f"⚠️  No file found for key: {file_key}")
+                                print(f"⚠️ No file found for key: {file_key}")
                     
                     print(f"✅ Created {materials_created} new material(s)")
                     
@@ -277,7 +275,7 @@ class TrainingViewSet(viewsets.ModelViewSet):
                     import traceback
                     traceback.print_exc()
             else:
-                print("ℹ️  No new materials to add")
+                print("ℹ️ No new materials to add")
             
             # Log success
             logger.info(f"Training {instance.training_id} updated by {request.user.username}")
@@ -302,6 +300,7 @@ class TrainingViewSet(viewsets.ModelViewSet):
                 {'error': f'Failed to update training: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+    
     @swagger_auto_schema(
         operation_description="Partial update training",
         responses={
@@ -310,7 +309,6 @@ class TrainingViewSet(viewsets.ModelViewSet):
             404: 'Not Found',
             500: 'Internal Server Error'
         },
-        # 🔥 Swagger-ı disable et
         auto_schema=None
     )
     def partial_update(self, request, *args, **kwargs):
@@ -372,13 +370,11 @@ class TrainingViewSet(viewsets.ModelViewSet):
             )
     
     @swagger_auto_schema(
-   
         responses={
             201: TrainingMaterialSerializer,
             400: 'Bad Request',
             500: 'Internal Server Error'
         },
-        # 🔥 Swagger-ı disable et
         auto_schema=None
     )
     @action(detail=True, methods=['post'], parser_classes=[MultiPartParser, FormParser])
@@ -397,10 +393,7 @@ class TrainingViewSet(viewsets.ModelViewSet):
             # Create material
             material = TrainingMaterial.objects.create(
                 training=training,
-            
                 file=validated_data.get('file'),
-        
-        
                 uploaded_by=request.user
             )
             
@@ -411,7 +404,7 @@ class TrainingViewSet(viewsets.ModelViewSet):
             
             response_serializer = TrainingMaterialSerializer(material, context={'request': request})
             
-            logger.info(f"Material  uploaded for training {training.training_id}")
+            logger.info(f"Material uploaded for training {training.training_id}")
             
             return Response(response_serializer.data, status=status.HTTP_201_CREATED)
             
@@ -503,7 +496,7 @@ class TrainingViewSet(viewsets.ModelViewSet):
                             performed_by=request.user,
                             metadata={
                                 'due_date': str(calculated_due_date) if calculated_due_date else None,
-                                'is_mandatory': is_mandatory
+                              
                             }
                         )
                         
@@ -711,10 +704,9 @@ class TrainingMaterialViewSet(viewsets.ModelViewSet):
     serializer_class = TrainingMaterialSerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ['training']
-
+    filterset_fields = ['training']  #
     ordering_fields = ['created_at']
-
+    
     def get_queryset(self):
         return TrainingMaterial.objects.select_related(
             'training', 'uploaded_by'

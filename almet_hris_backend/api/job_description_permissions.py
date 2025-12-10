@@ -24,23 +24,15 @@ def is_admin_user(user):
         return False
 
 def get_job_description_access(user):
-    """
-    ✅ Get job description access level for user
-    Returns: {
-        'can_view_all': bool,
-        'is_manager': bool,
-        'employee': Employee or None,
-        'accessible_employee_ids': list or None
-    }
-    """
+
     from .models import Employee
-    
+    employee = Employee.objects.get(user=user, is_deleted=False)
     # Admin - Full Access
     if is_admin_user(user):
         return {
             'can_view_all': True,
             'is_manager': True,
-            'employee': None,
+            'employee': employee,
             'accessible_employee_ids': None  # None means ALL
         }
     
@@ -50,7 +42,7 @@ def get_job_description_access(user):
         return {
             'can_view_all': False,
             'is_manager': False,
-            'employee': None,
+            'employee': employee,
             'accessible_employee_ids': []
         }
     
@@ -83,12 +75,7 @@ def get_job_description_access(user):
         }
 
 def filter_job_description_queryset(user, queryset):
-    """
-    ✅ Filter job description queryset based on user access
-    - Admin: sees all
-    - Manager: sees own + direct reports
-    - Employee: sees only their own
-    """
+
     access = get_job_description_access(user)
     
     # Admin - see all

@@ -488,10 +488,7 @@ class EmployeeObjective(models.Model):
         help_text="Weight percentage"
     )
     
-    progress = models.IntegerField(
-        default=0,
-        validators=[MinValueValidator(0), MaxValueValidator(100)]
-    )
+  
     status = models.ForeignKey(ObjectiveStatus, on_delete=models.PROTECT)
     
     end_year_rating = models.ForeignKey(
