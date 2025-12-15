@@ -78,18 +78,7 @@ class SystemEmailService:
             return None
     
     def send_email_as_system(self, from_email, to_email, subject, body_html):
-        """
-        📧 System mailbox-dan email göndər (Application Permission)
-        
-        Args:
-            from_email: Göndərən mailbox (məs: shadmin@almettrading.com)
-            to_email: Alıcının maili
-            subject: Email mövzusu
-            body_html: HTML body
-        
-        Returns:
-            dict: {success: bool, message: str, message_id: str}
-        """
+   
         try:
             # Application token al
             access_token = self.get_application_token()
@@ -161,18 +150,7 @@ class SystemEmailService:
             }
     
     def send_bulk_emails_as_system(self, from_email, recipients, subject, body_html):
-        """
-        📧 Çoxlu email göndər (batch)
-        
-        Args:
-            from_email: Göndərən mailbox
-            recipients: List of email addresses
-            subject: Email subject
-            body_html: HTML body
-        
-        Returns:
-            dict: {success_count: int, failed_count: int, results: list}
-        """
+ 
         results = {
             'success_count': 0,
             'failed_count': 0,

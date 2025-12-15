@@ -37,24 +37,7 @@ class NewsNotificationManager:
         return self._settings
     
     def send_news_notification(self, news, access_token=None, request=None):
-        """
-        📧 Send email notifications for news - APPLICATION PERMISSIONS ilə
-        ✅ User token lazım deyil!
-        
-        Args:
-            news: CompanyNews instance
-            access_token: OPTIONAL - istifadə edilmir (geriyə uyğunluq üçün saxlanılıb)
-            request: Django request object (optional)
-        
-        Returns:
-            dict: {
-                'success': bool,
-                'total_recipients': int,
-                'success_count': int,
-                'failed_count': int,
-                'message': str
-            }
-        """
+       
         try:
             # Check if notifications are enabled
             if not news.notify_members:

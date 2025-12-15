@@ -13,9 +13,9 @@ from .handover_models import (
 )
 from .handover_serializers import (
     HandoverTypeSerializer, HandoverRequestSerializer,
-    HandoverRequestCreateSerializer, HandoverTaskSerializer,
-    HandoverImportantDateSerializer, HandoverActivitySerializer,
-    HandoverAttachmentSerializer
+    HandoverRequestCreateSerializer, HandoverRequestUpdateSerializer,
+    HandoverTaskSerializer, HandoverImportantDateSerializer, 
+    HandoverActivitySerializer, HandoverAttachmentSerializer
 )
 from .models import Employee
 
@@ -34,7 +34,7 @@ class HandoverTypeViewSet(viewsets.ModelViewSet):
 
 
 class HandoverRequestViewSet(viewsets.ModelViewSet):
-    """Handover Request əsas ViewSet"""
+    """Handover Request Main ViewSet"""
     permission_classes = [IsAuthenticated]
     
     def get_employee(self):
@@ -60,13 +60,13 @@ class HandoverRequestViewSet(viewsets.ModelViewSet):
             return None
     
     def get_queryset(self):
-        """User-specific queryset"""
+        """User-specific queryset with proper filtering"""
         employee = self.get_employee()
         
         if not employee:
             return HandoverRequest.objects.none()
         
-        # User özü təhvil verən, təhvil alan və ya line manager olarsa görə bilər
+        # User can see handovers where they are HO, TO, or LM
         return HandoverRequest.objects.filter(
             Q(handing_over_employee=employee) |
             Q(taking_over_employee=employee) |
@@ -79,16 +79,47 @@ class HandoverRequestViewSet(viewsets.ModelViewSet):
         ).distinct().order_by('-created_at')
     
     def get_serializer_class(self):
+        """Return appropriate serializer based on action"""
         if self.action == 'create':
             return HandoverRequestCreateSerializer
+        elif self.action in ['update', 'partial_update']:
+            return HandoverRequestUpdateSerializer
         return HandoverRequestSerializer
     
     def perform_create(self, serializer):
+        """Create with user context"""
         serializer.save(created_by=self.request.user)
+    
+    def create(self, request, *args, **kwargs):
+        """Enhanced create with better error handling"""
+        serializer = self.get_serializer(data=request.data)
+        
+        try:
+            serializer.is_valid(raise_exception=True)
+            self.perform_create(serializer)
+            
+            # Get full handover data for response
+            handover = serializer.instance
+            response_serializer = HandoverRequestSerializer(
+                handover, 
+                context={'request': request}
+            )
+            
+            headers = self.get_success_headers(response_serializer.data)
+            return Response(
+                response_serializer.data,
+                status=status.HTTP_201_CREATED,
+                headers=headers
+            )
+        except Exception as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
     
     @action(detail=False, methods=['get'])
     def my_handovers(self, request):
-        """Mənim təhvil verdiyim və aldığım handoverlər"""
+        """Get handovers where I am HO or TO"""
         employee = self.get_employee()
         
         if not employee:
@@ -107,7 +138,7 @@ class HandoverRequestViewSet(viewsets.ModelViewSet):
     
     @action(detail=False, methods=['get'])
     def pending_approval(self, request):
-        """Təsdiq gözləyən handoverlər"""
+        """Get handovers pending my action"""
         employee = self.get_employee()
         
         if not employee:
@@ -116,41 +147,41 @@ class HandoverRequestViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_404_NOT_FOUND
             )
         
-        # Handing Over olaraq - imzalamağı gözləyir
+        # Pending as Handing Over - need to sign
         ho_pending = Q(
             handing_over_employee=employee,
             status='CREATED',
             ho_signed=False
         )
         
-        # Taking Over olaraq - imzalamağı gözləyir
+        # Pending as Taking Over - need to sign
         to_pending = Q(
             taking_over_employee=employee,
             status='SIGNED_BY_HANDING_OVER',
             to_signed=False
         )
         
-        # Line Manager olaraq - təsdiq gözləyir
+        # Pending as Line Manager - need to approve
         lm_pending = Q(
             line_manager=employee,
             status='SIGNED_BY_TAKING_OVER',
             lm_approved=False
         )
         
-        # Need Clarification - HO cavab verməli
+        # Need Clarification - HO must respond
         clarification_pending = Q(
             handing_over_employee=employee,
             status='NEED_CLARIFICATION'
         )
         
-        # Approved - TO təhvil almalı
+        # Approved - TO must takeover
         takeover_pending = Q(
             taking_over_employee=employee,
             status='APPROVED_BY_LINE_MANAGER',
             taken_over=False
         )
         
-        # Taken Over - HO geri götürməli
+        # Taken Over - HO must takeback
         takeback_pending = Q(
             handing_over_employee=employee,
             status='TAKEN_OVER',
@@ -167,7 +198,7 @@ class HandoverRequestViewSet(viewsets.ModelViewSet):
     
     @action(detail=True, methods=['post'])
     def sign_ho(self, request, pk=None):
-        """Təhvil verən imzalayır"""
+        """Sign as Handing Over employee"""
         handover = self.get_object()
         employee = self.get_employee()
         
@@ -179,13 +210,13 @@ class HandoverRequestViewSet(viewsets.ModelViewSet):
         
         if handover.handing_over_employee != employee:
             return Response(
-                {'error': 'Sizin bu əməliyyatı yerinə yetirməyə icazəniz yoxdur'},
+                {'error': 'You are not authorized to perform this action'},
                 status=status.HTTP_403_FORBIDDEN
             )
         
         if handover.status != 'CREATED':
             return Response(
-                {'error': 'Status uyğun deyil'},
+                {'error': 'Status is not appropriate for this action'},
                 status=status.HTTP_400_BAD_REQUEST
             )
         
@@ -194,7 +225,7 @@ class HandoverRequestViewSet(viewsets.ModelViewSet):
             handover.sign_by_handing_over(request.user)
             serializer = self.get_serializer(handover)
             return Response({
-                'message': 'Handover uğurla imzalandı',
+                'message': 'Handover signed successfully',
                 'data': serializer.data
             })
         except Exception as e:
@@ -205,7 +236,7 @@ class HandoverRequestViewSet(viewsets.ModelViewSet):
     
     @action(detail=True, methods=['post'])
     def sign_to(self, request, pk=None):
-        """Təhvil alan imzalayır"""
+        """Sign as Taking Over employee"""
         handover = self.get_object()
         employee = self.get_employee()
         
@@ -217,13 +248,13 @@ class HandoverRequestViewSet(viewsets.ModelViewSet):
         
         if handover.taking_over_employee != employee:
             return Response(
-                {'error': 'Sizin bu əməliyyatı yerinə yetirməyə icazəniz yoxdur'},
+                {'error': 'You are not authorized to perform this action'},
                 status=status.HTTP_403_FORBIDDEN
             )
         
         if handover.status != 'SIGNED_BY_HANDING_OVER':
             return Response(
-                {'error': 'Status uyğun deyil'},
+                {'error': 'Status is not appropriate for this action'},
                 status=status.HTTP_400_BAD_REQUEST
             )
         
@@ -232,7 +263,7 @@ class HandoverRequestViewSet(viewsets.ModelViewSet):
             handover.sign_by_taking_over(request.user)
             serializer = self.get_serializer(handover)
             return Response({
-                'message': 'Handover təhvil alan tərəfindən imzalandı',
+                'message': 'Handover signed successfully',
                 'data': serializer.data
             })
         except Exception as e:
@@ -243,7 +274,7 @@ class HandoverRequestViewSet(viewsets.ModelViewSet):
     
     @action(detail=True, methods=['post'])
     def approve_lm(self, request, pk=None):
-        """Line Manager təsdiq edir"""
+        """Approve as Line Manager"""
         handover = self.get_object()
         employee = self.get_employee()
         
@@ -255,13 +286,13 @@ class HandoverRequestViewSet(viewsets.ModelViewSet):
         
         if handover.line_manager != employee:
             return Response(
-                {'error': 'Sizin bu əməliyyatı yerinə yetirməyə icazəniz yoxdur'},
+                {'error': 'You are not authorized to perform this action'},
                 status=status.HTTP_403_FORBIDDEN
             )
         
         if handover.status != 'SIGNED_BY_TAKING_OVER':
             return Response(
-                {'error': 'Status uyğun deyil'},
+                {'error': 'Status is not appropriate for this action'},
                 status=status.HTTP_400_BAD_REQUEST
             )
         
@@ -271,7 +302,7 @@ class HandoverRequestViewSet(viewsets.ModelViewSet):
             handover.approve_by_line_manager(request.user, comment)
             serializer = self.get_serializer(handover)
             return Response({
-                'message': 'Handover təsdiqləndi',
+                'message': 'Handover approved successfully',
                 'data': serializer.data
             })
         except Exception as e:
@@ -282,7 +313,7 @@ class HandoverRequestViewSet(viewsets.ModelViewSet):
     
     @action(detail=True, methods=['post'])
     def reject_lm(self, request, pk=None):
-        """Line Manager rədd edir"""
+        """Reject as Line Manager"""
         handover = self.get_object()
         employee = self.get_employee()
         
@@ -294,20 +325,20 @@ class HandoverRequestViewSet(viewsets.ModelViewSet):
         
         if handover.line_manager != employee:
             return Response(
-                {'error': 'Sizin bu əməliyyatı yerinə yetirməyə icazəniz yoxdur'},
+                {'error': 'You are not authorized to perform this action'},
                 status=status.HTTP_403_FORBIDDEN
             )
         
         if handover.status != 'SIGNED_BY_TAKING_OVER':
             return Response(
-                {'error': 'Status uyğun deyil'},
+                {'error': 'Status is not appropriate for this action'},
                 status=status.HTTP_400_BAD_REQUEST
             )
         
         reason = request.data.get('reason', '')
         if not reason:
             return Response(
-                {'error': 'Rədd səbəbi qeyd edilməlidir'},
+                {'error': 'Rejection reason is required'},
                 status=status.HTTP_400_BAD_REQUEST
             )
         
@@ -315,7 +346,7 @@ class HandoverRequestViewSet(viewsets.ModelViewSet):
             handover.reject_by_line_manager(request.user, reason)
             serializer = self.get_serializer(handover)
             return Response({
-                'message': 'Handover rədd edildi',
+                'message': 'Handover rejected',
                 'data': serializer.data
             })
         except Exception as e:
@@ -326,7 +357,7 @@ class HandoverRequestViewSet(viewsets.ModelViewSet):
     
     @action(detail=True, methods=['post'])
     def request_clarification(self, request, pk=None):
-        """Line Manager aydınlaşdırma tələb edir"""
+        """Request clarification as Line Manager"""
         handover = self.get_object()
         employee = self.get_employee()
         
@@ -338,20 +369,20 @@ class HandoverRequestViewSet(viewsets.ModelViewSet):
         
         if handover.line_manager != employee:
             return Response(
-                {'error': 'Sizin bu əməliyyatı yerinə yetirməyə icazəniz yoxdur'},
+                {'error': 'You are not authorized to perform this action'},
                 status=status.HTTP_403_FORBIDDEN
             )
         
         if handover.status != 'SIGNED_BY_TAKING_OVER':
             return Response(
-                {'error': 'Status uyğun deyil'},
+                {'error': 'Status is not appropriate for this action'},
                 status=status.HTTP_400_BAD_REQUEST
             )
         
         clarification_comment = request.data.get('clarification_comment', '')
         if not clarification_comment:
             return Response(
-                {'error': 'Aydınlaşdırma mətni qeyd edilməlidir'},
+                {'error': 'Clarification comment is required'},
                 status=status.HTTP_400_BAD_REQUEST
             )
         
@@ -359,7 +390,7 @@ class HandoverRequestViewSet(viewsets.ModelViewSet):
             handover.request_clarification(request.user, clarification_comment)
             serializer = self.get_serializer(handover)
             return Response({
-                'message': 'Aydınlaşdırma tələb edildi',
+                'message': 'Clarification requested',
                 'data': serializer.data
             })
         except Exception as e:
@@ -370,7 +401,7 @@ class HandoverRequestViewSet(viewsets.ModelViewSet):
     
     @action(detail=True, methods=['post'])
     def resubmit(self, request, pk=None):
-        """Təhvil verən aydınlaşdırmadan sonra yenidən göndərir"""
+        """Resubmit after clarification"""
         handover = self.get_object()
         employee = self.get_employee()
         
@@ -382,20 +413,20 @@ class HandoverRequestViewSet(viewsets.ModelViewSet):
         
         if handover.handing_over_employee != employee:
             return Response(
-                {'error': 'Sizin bu əməliyyatı yerinə yetirməyə icazəniz yoxdur'},
+                {'error': 'You are not authorized to perform this action'},
                 status=status.HTTP_403_FORBIDDEN
             )
         
         if handover.status != 'NEED_CLARIFICATION':
             return Response(
-                {'error': 'Status uyğun deyil'},
+                {'error': 'Status is not appropriate for this action'},
                 status=status.HTTP_400_BAD_REQUEST
             )
         
         response_comment = request.data.get('response_comment', '')
         if not response_comment:
             return Response(
-                {'error': 'Aydınlaşdırmaya cavab qeyd edilməlidir'},
+                {'error': 'Response comment is required'},
                 status=status.HTTP_400_BAD_REQUEST
             )
         
@@ -403,7 +434,7 @@ class HandoverRequestViewSet(viewsets.ModelViewSet):
             handover.resubmit_after_clarification(request.user, response_comment)
             serializer = self.get_serializer(handover)
             return Response({
-                'message': 'Handover yenidən göndərildi',
+                'message': 'Handover resubmitted',
                 'data': serializer.data
             })
         except Exception as e:
@@ -414,7 +445,7 @@ class HandoverRequestViewSet(viewsets.ModelViewSet):
     
     @action(detail=True, methods=['post'])
     def takeover(self, request, pk=None):
-        """Təhvil alan təhvil alır"""
+        """Take over responsibilities"""
         handover = self.get_object()
         employee = self.get_employee()
         
@@ -426,13 +457,13 @@ class HandoverRequestViewSet(viewsets.ModelViewSet):
         
         if handover.taking_over_employee != employee:
             return Response(
-                {'error': 'Sizin bu əməliyyatı yerinə yetirməyə icazəniz yoxdur'},
+                {'error': 'You are not authorized to perform this action'},
                 status=status.HTTP_403_FORBIDDEN
             )
         
         if handover.status != 'APPROVED_BY_LINE_MANAGER':
             return Response(
-                {'error': 'Status uyğun deyil'},
+                {'error': 'Status is not appropriate for this action'},
                 status=status.HTTP_400_BAD_REQUEST
             )
         
@@ -442,7 +473,7 @@ class HandoverRequestViewSet(viewsets.ModelViewSet):
             handover.takeover(request.user, comment)
             serializer = self.get_serializer(handover)
             return Response({
-                'message': 'Handover təhvil alındı',
+                'message': 'Handover taken over',
                 'data': serializer.data
             })
         except Exception as e:
@@ -453,7 +484,7 @@ class HandoverRequestViewSet(viewsets.ModelViewSet):
     
     @action(detail=True, methods=['post'])
     def takeback(self, request, pk=None):
-        """Təhvil verən geri götürür"""
+        """Take back responsibilities"""
         handover = self.get_object()
         employee = self.get_employee()
         
@@ -465,13 +496,13 @@ class HandoverRequestViewSet(viewsets.ModelViewSet):
         
         if handover.handing_over_employee != employee:
             return Response(
-                {'error': 'Sizin bu əməliyyatı yerinə yetirməyə icazəniz yoxdur'},
+                {'error': 'You are not authorized to perform this action'},
                 status=status.HTTP_403_FORBIDDEN
             )
         
         if handover.status != 'TAKEN_OVER':
             return Response(
-                {'error': 'Status uyğun deyil'},
+                {'error': 'Status is not appropriate for this action'},
                 status=status.HTTP_400_BAD_REQUEST
             )
         
@@ -481,7 +512,7 @@ class HandoverRequestViewSet(viewsets.ModelViewSet):
             handover.takeback(request.user, comment)
             serializer = self.get_serializer(handover)
             return Response({
-                'message': 'Handover geri götürüldü',
+                'message': 'Handover taken back',
                 'data': serializer.data
             })
         except Exception as e:
@@ -492,7 +523,7 @@ class HandoverRequestViewSet(viewsets.ModelViewSet):
     
     @action(detail=True, methods=['get'])
     def activity_log(self, request, pk=None):
-        """Handover activity log"""
+        """Get handover activity log"""
         handover = self.get_object()
         activities = handover.activity_log.all()
         serializer = HandoverActivitySerializer(activities, many=True)
@@ -500,7 +531,7 @@ class HandoverRequestViewSet(viewsets.ModelViewSet):
     
     @action(detail=False, methods=['get'])
     def statistics(self, request):
-        """Statistika"""
+        """Get handover statistics"""
         employee = self.get_employee()
         
         if not employee:
@@ -509,14 +540,14 @@ class HandoverRequestViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_404_NOT_FOUND
             )
         
-        # Əsas queryset
+        # Base queryset
         my_handovers = self.get_queryset().filter(
             Q(handing_over_employee=employee) |
             Q(taking_over_employee=employee) |
             Q(line_manager=employee)
         )
         
-        # Pending - təsdiq gözləyən
+        # Pending - awaiting action
         pending = my_handovers.filter(
             Q(handing_over_employee=employee, status='CREATED', ho_signed=False) |
             Q(taking_over_employee=employee, status='SIGNED_BY_HANDING_OVER', to_signed=False) |
@@ -526,12 +557,12 @@ class HandoverRequestViewSet(viewsets.ModelViewSet):
             Q(handing_over_employee=employee, status='TAKEN_OVER', taken_back=False)
         ).count()
         
-        # Active - aktiv handoverlər
+        # Active - not rejected or completed
         active = my_handovers.exclude(
             status__in=['REJECTED', 'TAKEN_BACK']
         ).count()
         
-        # Completed - tamamlanmış
+        # Completed
         completed = my_handovers.filter(
             status='TAKEN_BACK'
         ).count()
@@ -549,26 +580,23 @@ class HandoverTaskViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     
     def get_employee(self):
-        """Get employee instance from request user"""
+        """Get employee instance"""
         user = self.request.user
-        
         try:
             return user.employee
         except AttributeError:
             pass
-        
         try:
             return Employee.objects.get(email=user.email)
         except Employee.DoesNotExist:
             pass
-        
         try:
             return Employee.objects.get(email=user.username)
         except Employee.DoesNotExist:
             return None
     
     def get_queryset(self):
-        """User-in görə biləcəyi tasklar"""
+        """User-visible tasks"""
         employee = self.get_employee()
         
         if not employee:
@@ -582,7 +610,7 @@ class HandoverTaskViewSet(viewsets.ModelViewSet):
     
     @action(detail=True, methods=['post'])
     def update_status(self, request, pk=None):
-        """Task statusunu yenilə"""
+        """Update task status"""
         task = self.get_object()
         employee = self.get_employee()
         
@@ -594,13 +622,13 @@ class HandoverTaskViewSet(viewsets.ModelViewSet):
         
         if task.handover.taking_over_employee != employee:
             return Response(
-                {'error': 'Yalnız təhvil alan task statusunu yeniləyə bilər'},
+                {'error': 'Only taking over employee can update task status'},
                 status=status.HTTP_403_FORBIDDEN
             )
         
         if task.handover.status in ['TAKEN_OVER', 'TAKEN_BACK', 'REJECTED']:
             return Response(
-                {'error': 'Handover artıq tamamlanıb/rədd edilib'},
+                {'error': 'Handover already completed/rejected'},
                 status=status.HTTP_400_BAD_REQUEST
             )
         
@@ -609,7 +637,7 @@ class HandoverTaskViewSet(viewsets.ModelViewSet):
         
         if not new_status:
             return Response(
-                {'error': 'Status qeyd edilməlidir'},
+                {'error': 'Status is required'},
                 status=status.HTTP_400_BAD_REQUEST
             )
         
@@ -617,7 +645,7 @@ class HandoverTaskViewSet(viewsets.ModelViewSet):
             task.update_status(request.user, new_status, comment)
             serializer = self.get_serializer(task)
             return Response({
-                'message': 'Task statusu yeniləndi',
+                'message': 'Task status updated',
                 'data': serializer.data
             })
         except Exception as e:
@@ -633,26 +661,23 @@ class HandoverAttachmentViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     
     def get_employee(self):
-        """Get employee instance from request user"""
+        """Get employee instance"""
         user = self.request.user
-        
         try:
             return user.employee
         except AttributeError:
             pass
-        
         try:
             return Employee.objects.get(email=user.email)
         except Employee.DoesNotExist:
             pass
-        
         try:
             return Employee.objects.get(email=user.username)
         except Employee.DoesNotExist:
             return None
     
     def get_queryset(self):
-        """User-in görə biləcəyi attachmentlər"""
+        """User-visible attachments"""
         employee = self.get_employee()
         
         if not employee:
@@ -665,11 +690,12 @@ class HandoverAttachmentViewSet(viewsets.ModelViewSet):
         ).select_related('handover', 'uploaded_by')
     
     def perform_create(self, serializer):
+        """Create attachment with file info"""
         file = self.request.FILES.get('file')
         if file:
             serializer.save(
                 uploaded_by=self.request.user,
-                original_filename=file.name,
+             
                 file_size=file.size,
                 file_type=file.content_type
             )

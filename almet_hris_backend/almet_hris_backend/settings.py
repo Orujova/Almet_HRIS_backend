@@ -93,11 +93,12 @@ WSGI_APPLICATION = 'almet_hris_backend.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'myalmet_db',          
-        'USER': 'myalmet_user',        
-        'PASSWORD': 'almet2025',
-        'HOST': 'localhost',
-        'PORT': '5432',
+        'NAME': os.getenv('DB_NAME', ''),
+        'USER': os.getenv('DB_USER', ''),
+        'PASSWORD': os.getenv('DB_PASSWORD', ''),
+        'HOST': os.getenv('DB_HOST', ''),
+        'PORT': os.getenv('DB_PORT', ''),
+        'CONN_MAX_AGE': 60,  # Connection pooling
     }
 }
 
@@ -162,9 +163,8 @@ SIMPLE_JWT = {
 }
 
 # Microsoft Azure App Registration settings
-MICROSOFT_CLIENT_ID = "230458ff-ed69-4abb-8496-3888067116f6"
-MICROSOFT_TENANT_ID = 'b3222ef7-242d-4724-a665-97b0a764f2d0'
-
+MICROSOFT_CLIENT_ID = os.getenv('MICROSOFT_CLIENT_ID', '')
+MICROSOFT_TENANT_ID = os.getenv('MICROSOFT_TENANT_ID', '')
 AZURE_CLIENT_SECRET = os.getenv('AZURE_CLIENT_SECRET', '')
 
 # CORS settings - Frontend üçün

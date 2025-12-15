@@ -158,6 +158,8 @@ urlpatterns = [
     path('performance/', include('api.performance_urls')),
     path('policies/', include('api.policy_urls')),
     path('', include('api.celebration_urls')),
+    path('', include('api.celebration_test_urls')),
+    
     
     path('', include(router.urls)),
 ]

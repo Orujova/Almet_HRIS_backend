@@ -15,14 +15,22 @@ app.autodiscover_tasks()
 
 # Configure periodic tasks
 app.conf.beat_schedule = {
-    'update-employee-statuses-every-day': {
+    # ==================== EMPLOYEE STATUS UPDATES ====================
+    'update-employee-statuses-daily': {
         'task': 'api.tasks.update_all_employee_statuses',
-        'schedule': crontab(hour=1, minute=0),  # Run daily at 1 AM
+        'schedule': crontab(hour=1, minute=0),
     },
-    'update-employee-statuses-every-hour': {
+    'update-employee-statuses-hourly': {
         'task': 'api.tasks.update_all_employee_statuses',
-        'schedule': crontab(minute=0),  # Run every hour
+        'schedule': crontab(minute=0),
     },
+    
+    # ==================== CELEBRATION NOTIFICATIONS ====================
+    'send-daily-celebrations': {
+    'task': 'api.tasks.send_daily_celebration_notifications',
+    'schedule': crontab(minute='0'), # # 🧪 TEST: Every 2 minutes
+    # 'schedule': crontab(hour=9, minute=0),
+},
 }
 
 @app.task(bind=True)

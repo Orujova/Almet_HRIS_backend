@@ -4,17 +4,28 @@ from django.contrib.auth.models import User
 from django.utils import timezone
 from django.core.exceptions import ValidationError
 from .models import Employee, SoftDeleteModel
-from datetime import date, timedelta
 import os
 
+
 class HandoverType(SoftDeleteModel):
-    """Handover növləri - Məzuniyyət, Ezamiyyət, İstefa, Digər"""
+    """Handover Types - Vacation, Business Trip, Resignation, Other"""
     name = models.CharField(max_length=100, unique=True)
-    description = models.TextField(blank=True)
+   
     is_active = models.BooleanField(default=True)
     
-    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
-    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='handover_type_updates')
+    created_by = models.ForeignKey(
+        User, 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True
+    )
+    updated_by = models.ForeignKey(
+        User, 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True, 
+        related_name='handover_type_updates'
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -29,7 +40,7 @@ class HandoverType(SoftDeleteModel):
 
 
 class HandoverRequest(SoftDeleteModel):
-    """Əsas Handover Request modeli"""
+    """Main Handover Request Model"""
     
     STATUS_CHOICES = [
         ('CREATED', 'Created'),
@@ -63,12 +74,27 @@ class HandoverRequest(SoftDeleteModel):
     start_date = models.DateField()
     end_date = models.DateField()
     
-    # Contacts and important info
-    contacts = models.TextField(blank=True, help_text="Əlaqəli şəxslər")
-    access_info = models.TextField(blank=True, help_text="Giriş məlumatları")
-    documents_info = models.TextField(blank=True, help_text="Sənədlər və fayllar")
-    open_issues = models.TextField(blank=True, help_text="Açıq məsələlər")
-    notes = models.TextField(blank=True, help_text="Əlavə qeydlər")
+    # ★ 5 ADDITIONAL INFORMATION FIELDS ★
+    contacts = models.TextField(
+        blank=True, 
+        help_text="Related contacts with their roles and contact information"
+    )
+    access_info = models.TextField(
+        blank=True, 
+        help_text="System access information, usernames, password locations"
+    )
+    documents_info = models.TextField(
+        blank=True, 
+        help_text="Document and file locations, shared drives"
+    )
+    open_issues = models.TextField(
+        blank=True, 
+        help_text="Unresolved problems, pending actions, known issues"
+    )
+    notes = models.TextField(
+        blank=True, 
+        help_text="Additional notes, tips, recommendations"
+    )
     
     # Approvers
     line_manager = models.ForeignKey(
@@ -80,7 +106,11 @@ class HandoverRequest(SoftDeleteModel):
     )
     
     # Status
-    status = models.CharField(max_length=30, choices=STATUS_CHOICES, default='CREATED')
+    status = models.CharField(
+        max_length=30, 
+        choices=STATUS_CHOICES, 
+        default='CREATED'
+    )
     
     # Handing Over signatures
     ho_signed = models.BooleanField(default=False)
@@ -135,7 +165,12 @@ class HandoverRequest(SoftDeleteModel):
     taken_back_date = models.DateTimeField(null=True, blank=True)
     
     # System fields
-    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    created_by = models.ForeignKey(
+        User, 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
@@ -150,11 +185,16 @@ class HandoverRequest(SoftDeleteModel):
     
     def clean(self):
         """Validation"""
+        errors = {}
+        
         if self.start_date and self.end_date and self.start_date >= self.end_date:
-            raise ValidationError("End date must be after start date")
+            errors['end_date'] = "End date must be after start date"
         
         if self.handing_over_employee == self.taking_over_employee:
-            raise ValidationError("Təhvil verən və təhvil alan eyni şəxs ola bilməz")
+            errors['taking_over_employee'] = "Handing over and taking over cannot be the same person"
+        
+        if errors:
+            raise ValidationError(errors)
     
     def save(self, *args, **kwargs):
         # Generate request ID
@@ -168,7 +208,7 @@ class HandoverRequest(SoftDeleteModel):
         
         # Auto-assign line manager
         if not self.line_manager and self.handing_over_employee.line_manager:
-            # Əgər requester özü manager-dirsə, LM-i atla
+            # If requester is manager, skip LM
             requester_emp = getattr(self.created_by, 'employee', None) if self.created_by else None
             if not (requester_emp and self.handing_over_employee.line_manager == requester_emp):
                 self.line_manager = self.handing_over_employee.line_manager
@@ -177,7 +217,7 @@ class HandoverRequest(SoftDeleteModel):
         super().save(*args, **kwargs)
     
     def sign_by_handing_over(self, user):
-        """Təhvil verən imzalayır"""
+        """Sign as Handing Over employee"""
         self.ho_signed = True
         self.ho_signed_date = timezone.now()
         self.ho_signed_by = user
@@ -187,14 +227,14 @@ class HandoverRequest(SoftDeleteModel):
         # Log activity
         self.log_activity(
             user=user,
-            action='Təhvil verən tərəfindən imzalandı',
-            comment='Handover imzalandı.'
+            action='Signed by Handing Over employee',
+            comment='Handover signed by handing over employee.'
         )
     
     def sign_by_taking_over(self, user):
-        """Təhvil alan imzalayır"""
+        """Sign as Taking Over employee"""
         if not self.ho_signed:
-            raise ValidationError("Əvvəlcə təhvil verən imzalamalıdır")
+            raise ValidationError("Handing over employee must sign first")
         
         self.to_signed = True
         self.to_signed_date = timezone.now()
@@ -205,14 +245,14 @@ class HandoverRequest(SoftDeleteModel):
         # Log activity
         self.log_activity(
             user=user,
-            action='Təhvil alan tərəfindən imzalandı',
-            comment='Təhvil alan imzalandı.'
+            action='Signed by Taking Over employee',
+            comment='Handover signed by taking over employee.'
         )
     
     def approve_by_line_manager(self, user, comment=''):
-        """Line Manager təsdiq edir"""
+        """Approve as Line Manager"""
         if not self.to_signed:
-            raise ValidationError("Əvvəlcə hər iki tərəf imzalamalıdır")
+            raise ValidationError("Both employees must sign first")
         
         self.lm_approved = True
         self.lm_approved_date = timezone.now()
@@ -224,14 +264,14 @@ class HandoverRequest(SoftDeleteModel):
         # Log activity
         self.log_activity(
             user=user,
-            action='Line Manager tərəfindən təsdiqləndi',
-            comment=comment or 'Təsdiq edildi.'
+            action='Approved by Line Manager',
+            comment=comment or 'Approved by line manager.'
         )
     
     def reject_by_line_manager(self, user, reason):
-        """Line Manager reject edir"""
+        """Reject as Line Manager"""
         if not reason:
-            raise ValidationError("Rədd səbəbi qeyd edilməlidir")
+            raise ValidationError("Rejection reason is required")
         
         self.status = 'REJECTED'
         self.rejected_at = timezone.now()
@@ -242,14 +282,14 @@ class HandoverRequest(SoftDeleteModel):
         # Log activity
         self.log_activity(
             user=user,
-            action='Rədd edildi',
+            action='Rejected by Line Manager',
             comment=reason
         )
     
     def request_clarification(self, user, clarification_comment):
-        """Line Manager aydınlaşdırma tələb edir"""
+        """Request clarification as Line Manager"""
         if not clarification_comment:
-            raise ValidationError("Aydınlaşdırma mətni qeyd edilməlidir")
+            raise ValidationError("Clarification comment is required")
         
         self.status = 'NEED_CLARIFICATION'
         self.lm_clarification_comment = clarification_comment
@@ -258,33 +298,33 @@ class HandoverRequest(SoftDeleteModel):
         # Log activity
         self.log_activity(
             user=user,
-            action='Aydınlaşdırma tələb edildi',
+            action='Clarification Requested',
             comment=clarification_comment
         )
     
     def resubmit_after_clarification(self, user, response_comment):
-        """Təhvil verən aydınlaşdırmadan sonra yenidən göndərir"""
+        """Resubmit after clarification"""
         if self.status != 'NEED_CLARIFICATION':
-            raise ValidationError("Status 'Need Clarification' olmalıdır")
+            raise ValidationError("Status must be 'Need Clarification'")
         
         if not response_comment:
-            raise ValidationError("Aydınlaşdırmaya cavab qeyd edilməlidir")
+            raise ValidationError("Response comment is required")
         
-        self.status = 'SIGNED_BY_TAKING_OVER'  # LM-ə yenidən göndər
+        self.status = 'SIGNED_BY_TAKING_OVER'  # Back to LM for review
         self.lm_clarification_comment = ''  # Clear old clarification
         self.save()
         
         # Log activity
         self.log_activity(
             user=user,
-            action='Aydınlaşdırmadan sonra yenidən göndərildi',
+            action='Resubmitted after clarification',
             comment=response_comment
         )
     
     def takeover(self, user, comment=''):
-        """Təhvil alan təhvil alır (Approved statusundan sonra)"""
+        """Take over responsibilities"""
         if self.status != 'APPROVED_BY_LINE_MANAGER':
-            raise ValidationError("Status 'Approved by Line Manager' olmalıdır")
+            raise ValidationError("Status must be 'Approved by Line Manager'")
         
         self.taken_over = True
         self.taken_over_date = timezone.now()
@@ -294,14 +334,14 @@ class HandoverRequest(SoftDeleteModel):
         # Log activity
         self.log_activity(
             user=user,
-            action='Handover təhvil alındı',
-            comment=comment or 'Təhvil alındı.'
+            action='Responsibilities Taken Over',
+            comment=comment or 'Taken over.'
         )
     
     def takeback(self, user, comment=''):
-        """Təhvil verən geri götürür"""
+        """Take back responsibilities"""
         if self.status != 'TAKEN_OVER':
-            raise ValidationError("Status 'Taken Over' olmalıdır")
+            raise ValidationError("Status must be 'Taken Over'")
         
         self.taken_back = True
         self.taken_back_date = timezone.now()
@@ -311,12 +351,12 @@ class HandoverRequest(SoftDeleteModel):
         # Log activity
         self.log_activity(
             user=user,
-            action='Handover geri götürüldü',
-            comment=comment or 'Geri götürüldü.'
+            action='Responsibilities Taken Back',
+            comment=comment or 'Taken back.'
         )
     
     def log_activity(self, user, action, comment=''):
-        """Activity log-a əlavə et"""
+        """Add to activity log"""
         HandoverActivity.objects.create(
             handover=self,
             actor=user,
@@ -327,19 +367,27 @@ class HandoverRequest(SoftDeleteModel):
 
 
 class HandoverTask(SoftDeleteModel):
-    """Handover task-ları"""
+    """Handover Tasks"""
     
     TASK_STATUS_CHOICES = [
-        ('NOT_STARTED', 'Başlanmayıb'),
-        ('IN_PROGRESS', 'Davam edir'),
-        ('COMPLETED', 'Tamamlanıb'),
-        ('CANCELED', 'Ləğv edilib'),
-        ('POSTPONED', 'Təxirə salınıb'),
+        ('NOT_STARTED', 'Not Started'),
+        ('IN_PROGRESS', 'In Progress'),
+        ('COMPLETED', 'Completed'),
+        ('CANCELED', 'Canceled'),
+        ('POSTPONED', 'Postponed'),
     ]
     
-    handover = models.ForeignKey(HandoverRequest, on_delete=models.CASCADE, related_name='tasks')
+    handover = models.ForeignKey(
+        HandoverRequest, 
+        on_delete=models.CASCADE, 
+        related_name='tasks'
+    )
     description = models.TextField()
-    current_status = models.CharField(max_length=20, choices=TASK_STATUS_CHOICES, default='NOT_STARTED')
+    current_status = models.CharField(
+        max_length=20, 
+        choices=TASK_STATUS_CHOICES, 
+        default='NOT_STARTED'
+    )
     initial_comment = models.TextField(blank=True)
     order = models.PositiveIntegerField(default=0)
     
@@ -350,7 +398,7 @@ class HandoverTask(SoftDeleteModel):
         return f"{self.handover.request_id} - {self.description[:50]}"
     
     def update_status(self, user, new_status, comment=''):
-        """Task statusunu yenilə"""
+        """Update task status"""
         old_status = self.current_status
         self.current_status = new_status
         self.save()
@@ -359,7 +407,7 @@ class HandoverTask(SoftDeleteModel):
         TaskActivity.objects.create(
             task=self,
             actor=user,
-            action='Status Yeniləndi',
+            action='Status Updated',
             old_status=old_status,
             new_status=new_status,
             comment=comment
@@ -374,7 +422,11 @@ class HandoverTask(SoftDeleteModel):
 
 class TaskActivity(models.Model):
     """Task activity log"""
-    task = models.ForeignKey(HandoverTask, on_delete=models.CASCADE, related_name='activity_log')
+    task = models.ForeignKey(
+        HandoverTask, 
+        on_delete=models.CASCADE, 
+        related_name='activity_log'
+    )
     actor = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
     action = models.CharField(max_length=100)
     old_status = models.CharField(max_length=20, blank=True)
@@ -393,8 +445,12 @@ class TaskActivity(models.Model):
 
 
 class HandoverImportantDate(SoftDeleteModel):
-    """Mühüm tarixlər"""
-    handover = models.ForeignKey(HandoverRequest, on_delete=models.CASCADE, related_name='important_dates')
+    """Important dates"""
+    handover = models.ForeignKey(
+        HandoverRequest, 
+        on_delete=models.CASCADE, 
+        related_name='important_dates'
+    )
     date = models.DateField()
     description = models.CharField(max_length=500)
     
@@ -412,7 +468,11 @@ class HandoverImportantDate(SoftDeleteModel):
 
 class HandoverActivity(models.Model):
     """Handover activity log"""
-    handover = models.ForeignKey(HandoverRequest, on_delete=models.CASCADE, related_name='activity_log')
+    handover = models.ForeignKey(
+        HandoverRequest, 
+        on_delete=models.CASCADE, 
+        related_name='activity_log'
+    )
     actor = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
     action = models.CharField(max_length=200)
     comment = models.TextField(blank=True)
@@ -444,7 +504,7 @@ class HandoverAttachment(SoftDeleteModel):
         related_name='attachments'
     )
     file = models.FileField(upload_to=handover_attachment_path)
-    original_filename = models.CharField(max_length=255)
+
     file_size = models.PositiveIntegerField(help_text="File size in bytes")
     file_type = models.CharField(max_length=100, blank=True)
     
@@ -458,7 +518,7 @@ class HandoverAttachment(SoftDeleteModel):
         ordering = ['-uploaded_at']
     
     def __str__(self):
-        return f"{self.handover.request_id} - {self.original_filename}"
+        return f"{self.handover.request_id} "
     
     @property
     def file_size_display(self):

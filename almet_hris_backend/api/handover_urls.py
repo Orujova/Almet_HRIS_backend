@@ -8,20 +8,16 @@ from .handover_views import (
     HandoverAttachmentViewSet
 )
 
+# Create router
 router = DefaultRouter()
 
-# Handover Types
+# Register viewsets
 router.register(r'types', HandoverTypeViewSet, basename='handover-type')
-
-# Handover Requests
 router.register(r'requests', HandoverRequestViewSet, basename='handover-request')
-
-# Handover Tasks
 router.register(r'tasks', HandoverTaskViewSet, basename='handover-task')
-
-# Handover Attachments
 router.register(r'attachments', HandoverAttachmentViewSet, basename='handover-attachment')
 
+# URL patterns
 urlpatterns = [
     path('', include(router.urls)),
 ]
