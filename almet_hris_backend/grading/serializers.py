@@ -98,7 +98,7 @@ class SalaryScenarioListSerializer(serializers.ModelSerializer):
     
     def get_data(self, obj):
         """FIXED: Format data for list display with complete input preservation"""
-        logger.info(f"=== LIST SERIALIZER for {obj.name} ===")
+      
         
         calculated_grades = {}
         if obj.calculated_grades and isinstance(obj.calculated_grades, dict):
@@ -133,8 +133,7 @@ class SalaryScenarioListSerializer(serializers.ModelSerializer):
                                 except (ValueError, TypeError):
                                     pass
         
-        logger.info(f"LIST: Extracted vertical inputs: {position_vertical_inputs}")
-        logger.info(f"LIST: Global horizontal intervals: {global_horizontal_intervals}")
+     
         
         # FIXED: Enhanced grades with input data for comparison
         enhanced_grades = {}
@@ -199,7 +198,7 @@ class SalaryScenarioDetailSerializer(serializers.ModelSerializer):
     
     def get_data(self, obj):
         """Enhanced data with proper input preservation for detail view"""
-        logger.info(f"=== DETAIL SERIALIZER for {obj.name} ===")
+    
         
         # Validate calculated_grades
         calculated_grades = {}
@@ -240,8 +239,7 @@ class SalaryScenarioDetailSerializer(serializers.ModelSerializer):
                                 except (ValueError, TypeError):
                                     pass
         
-        logger.info(f"DETAIL: Extracted vertical inputs: {position_vertical_inputs}")
-        logger.info(f"DETAIL: Global horizontal intervals: {global_horizontal_intervals}")
+      
         
         # Enhanced grades with proper input data preservation
         enhanced_grades = {}
@@ -317,10 +315,7 @@ class SalaryScenarioDetailSerializer(serializers.ModelSerializer):
             ))
         }
         
-        logger.info(f"DETAIL: Final result input data:")
-        logger.info(f"  positionVerticalInputs: {result['positionVerticalInputs']}")
-        logger.info(f"  inputRates preserved: {bool(result['inputRates'])}")
-        logger.info(f"=== DETAIL SERIALIZER END ===")
+        
         
         return result
 

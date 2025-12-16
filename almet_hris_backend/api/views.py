@@ -901,11 +901,7 @@ class DepartmentViewSet(viewsets.ModelViewSet):
                     context={'request': request}
                 ).data
                 
-                logger.info(
-                    f"Bulk department creation completed: "
-                    f"{bulk_result['success_count']} successful, "
-                    f"{bulk_result['error_count']} failed"
-                )
+                
                 
                 return Response({
                     'success': True,
@@ -1023,11 +1019,7 @@ class UnitViewSet(viewsets.ModelViewSet):
                     context={'request': request}
                 ).data
                 
-                logger.info(
-                    f"Bulk unit creation completed: "
-                    f"{bulk_result['success_count']} successful, "
-                    f"{bulk_result['error_count']} failed"
-                )
+               
                 
                 return Response({
                     'success': True,
@@ -1108,13 +1100,13 @@ class JobTitleViewSet(viewsets.ModelViewSet):
     def create(self, request, *args, **kwargs):
         """Create a new job title"""
         try:
-            logger.info(f"Job title creation requested by {request.user.username}")
+            
             
             serializer = self.get_serializer(data=request.data)
             serializer.is_valid(raise_exception=True)
             self.perform_create(serializer)
             
-            logger.info(f"Job title '{serializer.data['name']}' created successfully")
+            
             
             headers = self.get_success_headers(serializer.data)
             return Response({
@@ -1157,7 +1149,7 @@ class JobTitleViewSet(viewsets.ModelViewSet):
             serializer.is_valid(raise_exception=True)
             self.perform_update(serializer)
             
-            logger.info(f"Job title '{old_name}' updated to '{serializer.data['name']}' by {request.user.username}")
+            
             
             return Response({
                 'success': True,
@@ -1204,7 +1196,7 @@ class JobTitleViewSet(viewsets.ModelViewSet):
             job_title_name = instance.name
             instance.soft_delete(user=request.user)
             
-            logger.info(f"Job title '{job_title_name}' deleted by {request.user.username}")
+            
             
             return Response({
                 'success': True,
@@ -1558,8 +1550,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         # Regular employee - REDIRECT to own profile if exists
         if not access['is_manager'] and not access['can_view_all']:
             if current_user_employee:
-                # User has employee profile - return only their data
-                logger.info(f"✅ Regular user {request.user.username} accessing own profile in list view")
+                
                 
                 serializer = self.get_serializer(current_user_employee)
                 
@@ -1618,7 +1609,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             # ✅ NEW: Log active filters for debugging
             if has_filters:
                 active_filters = {k: request.query_params.get(k) for k in filter_params if request.query_params.get(k)}
-                logger.info(f"🔍 Active filters: {active_filters}")
+                
             
             # ✅ Manager can only select their accessible business functions
             if not access['can_view_all'] and access['accessible_business_functions']:
@@ -2089,18 +2080,18 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             for vacancy in filtered_vacancies:
                 vacancy_data = self._convert_vacancy_to_employee_format(vacancy, request)
                 unified_data.append(vacancy_data)
-            logger.info(f"[UNIFIED] Added {filtered_vacancies.count()} vacancies")
+            
         
-        logger.info(f"[UNIFIED] TOTAL: {len(unified_data)}")
+        
         
         # Apply sorting
         sorting_params = self._get_sorting_params_from_request(request)
         if sorting_params:
             unified_data = self._sort_unified_data(unified_data, sorting_params)
-            logger.info(f"🔀 Unified sorting applied: {sorting_params}")
+            
         else:
             unified_data.sort(key=lambda x: x.get('name', ''))
-            logger.info("🔀 Default sorting by name applied")
+            
         
         # Return response
         if should_paginate:
@@ -2134,49 +2125,49 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         """Convert employee filter parameters to vacancy filters where applicable"""
         filters = Q()
         
-        logger.info(f"[VAC FILTER] Building vacancy filters from params: {dict(params)}")
+        
         
         # Business function filter
         business_function_ids = self._get_int_list_param(params, 'business_function')
         if business_function_ids:
             filters &= Q(business_function__id__in=business_function_ids)
-            logger.info(f"[VAC FILTER] Business function filter: {business_function_ids}")
+            
         
         # Department filter
         department_ids = self._get_int_list_param(params, 'department')
         if department_ids:
             filters &= Q(department__id__in=department_ids)
-            logger.info(f"[VAC FILTER] Department filter: {department_ids}")
+           
         
         # Unit filter
         unit_ids = self._get_int_list_param(params, 'unit')
         if unit_ids:
             filters &= Q(unit__id__in=unit_ids)
-            logger.info(f"[VAC FILTER] Unit filter: {unit_ids}")
+            
         
         # Job function filter
         job_function_ids = self._get_int_list_param(params, 'job_function')
         if job_function_ids:
             filters &= Q(job_function__id__in=job_function_ids)
-            logger.info(f"[VAC FILTER] Job function filter: {job_function_ids}")
+            
         
         # Position group filter
         position_group_ids = self._get_int_list_param(params, 'position_group')
         if position_group_ids:
             filters &= Q(position_group__id__in=position_group_ids)
-            logger.info(f"[VAC FILTER] Position group filter: {position_group_ids}")
+            
         
         # Grading level filter
         grading_levels = self._get_string_list_param(params, 'grading_level')
         if grading_levels:
             filters &= Q(grading_level__in=grading_levels)
-            logger.info(f"[VAC FILTER] Grading level filter: {grading_levels}")
+            
         
         # Line manager filter (reporting_to in vacancy)
         line_manager_ids = self._get_int_list_param(params, 'line_manager')
         if line_manager_ids:
             filters &= Q(reporting_to__id__in=line_manager_ids)
-            logger.info(f"[VAC FILTER] Line manager filter: {line_manager_ids}")
+          
         
         # General search
         search = params.get('search')
@@ -2188,26 +2179,26 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 Q(department__name__icontains=search) |
                 Q(notes__icontains=search)
             )
-            logger.info(f"[VAC FILTER] Search filter: {search}")
+           
         
         # Job title search
         job_title_search = params.get('job_title_search')
         if job_title_search:
             filters &= Q(job_title__icontains=job_title_search)
-            logger.info(f"[VAC FILTER] Job title search: {job_title_search}")
+           
         
         # Department search
         department_search = params.get('department_search')
         if department_search:
             filters &= Q(department__name__icontains=department_search)
-            logger.info(f"[VAC FILTER] Department search: {department_search}")
+            
         
         # Org chart visibility
         is_visible_in_org_chart = params.get('is_visible_in_org_chart')
         if is_visible_in_org_chart:
             visible = is_visible_in_org_chart.lower() == 'true'
             filters &= Q(is_visible_in_org_chart=visible)
-            logger.info(f"[VAC FILTER] Org chart visibility: {visible}")
+            
         
         if filters.children:
             logger.info(f"[VAC FILTER] Total filters applied: {len(filters.children)}")
@@ -2414,7 +2405,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                         key=lambda x: get_sort_key(x, field, direction),
                         reverse=(direction == 'desc')
                     )
-                    logger.info(f"🔀 Sorted by {field} ({direction})")
+                   
                 except Exception as e:
                     logger.error(f"Error sorting by {field}: {e}")
                     # Skip this sort field if it fails
@@ -3397,13 +3388,12 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             employee_ids = request.data.get('employee_ids', [])
             include_fields = request.data.get('include_fields', None)
             
-            logger.info(f"🎯 FIXED Export request: format={export_format}, employee_ids={len(employee_ids) if employee_ids else 0}, fields={len(include_fields) if include_fields else 0}")
             
             # Build queryset
             if employee_ids:
                 # Selected employees export
                 queryset = Employee.objects.filter(id__in=employee_ids)
-                logger.info(f"📋 FIXED: Exporting {len(employee_ids)} selected employees")
+                
             else:
                 # Filtered or all employees export
                 queryset = self.get_queryset()
@@ -3411,7 +3401,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 # Apply filtering from query parameters
                 employee_filter = ComprehensiveEmployeeFilter(queryset, request.query_params)
                 queryset = employee_filter.filter()
-                logger.info(f"🔍 FIXED: Exporting {queryset.count()} filtered employees")
+                
             
             # Apply sorting
             sort_params = request.query_params.get('ordering', '').split(',')
@@ -3492,7 +3482,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             if include_fields and isinstance(include_fields, list) and len(include_fields) > 0:
                 # Use specified fields
                 fields_to_include = include_fields
-                logger.info(f"📊 FIXED: Using {len(fields_to_include)} specified fields")
+                
             else:
                 # Use default essential fields
                 fields_to_include = [
@@ -3501,7 +3491,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                     'status_name', 'line_manager_name', 'start_date', 'contract_duration_display',
                     'phone', 'father_name', 'years_of_service'
                 ]
-                logger.info(f"📊 FIXED: Using {len(fields_to_include)} default fields")
+               
             
             # Filter out invalid fields and log which ones are valid
             valid_fields = []
@@ -3521,7 +3511,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 valid_fields = ['employee_id', 'name', 'email', 'job_title', 'department_name']
                 logger.warning("⚠️ FIXED: No valid fields, using fallback basic fields")
             
-            logger.info(f"✅ FIXED: Exporting with {len(valid_fields)} valid fields: {valid_fields}")
+            
             
             # Export based on format
             if export_format == 'csv':
@@ -3621,7 +3611,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         )
         response['Content-Disposition'] = f'attachment; filename="employees_export_{date.today()}.xlsx"'
         
-        logger.info(f"✅ FIXED: Excel export completed with {len(fields)} fields for {queryset.count()} employees")
+       
         return response
     
     def _export_to_csv_fixed(self, queryset, fields, field_mappings):
@@ -3670,7 +3660,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 row_data.append(str(value))
             writer.writerow(row_data)
         
-        logger.info(f"✅ FIXED: CSV export completed with {len(fields)} fields for {queryset.count()} employees")
+        
         return response
     
     def _process_bulk_employee_data_from_excel(self, df, user):
@@ -3684,9 +3674,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         }
         
         try:
-            # Log the actual columns for debugging
-            logger.info(f"Excel columns found: {list(df.columns)}")
-            logger.info(f"Excel shape: {df.shape}")
+           
             
             # Convert all columns to string to avoid Series object issues
             df_str = df.astype(str)
@@ -3723,7 +3711,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             actual_columns = {}
             df_columns = [str(col).strip() for col in df_str.columns]
             
-            logger.info(f"Available columns: {df_columns}")
+            
             
             # Map columns with exact matching
             for field, possible_names in column_mappings.items():
@@ -3785,7 +3773,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             df_clean = df_clean[df_clean[first_name_col].str.strip() != '']
             df_clean = df_clean[df_clean[first_name_col].str.strip() != 'nan']
             
-            logger.info(f"After cleaning: {len(df_clean)} rows to process")
+            
             
             if df_clean.empty:
                 results['errors'].append("No valid data rows found. Please add employee data after removing sample rows.")
@@ -3905,7 +3893,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                                 results['failed'] += 1
                                 continue
                             validated_employee_id = employee_id_from_excel
-                            logger.info(f"Row {index + 2}: Using provided employee_id: {validated_employee_id}")
+                            
                         else:
                             # No employee_id provided - will be auto-generated by Employee.save()
                             logger.info(f"Row {index + 2}: No employee_id provided, will be auto-generated for {first_name} {last_name} in {business_function.name}")
@@ -4102,8 +4090,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                             'id_auto_generated': not bool(validated_employee_id)
                         })
                         
-                        logger.info(f"✅ Created employee: {employee.employee_id} - {employee.full_name}" + 
-                                  (" (auto-generated ID)" if not validated_employee_id else " (provided ID)"))
+                        
                     
                 except Exception as e:
                     # ✅ Bu row fail oldu, amma digərləri davam edər
@@ -4114,7 +4101,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                     logger.error(f"Traceback: {traceback.format_exc()}")
                     continue  # Növbəti row-a keç
             
-            logger.info(f"🎉 Bulk creation completed: {results['successful']} successful, {results['failed']} failed")
+            
             return results
             
         except Exception as e:
@@ -4170,21 +4157,20 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         if access['can_view_all']:
             can_view = True
             access_reason = 'admin'
-            logger.info(f"✅ Admin {request.user.username} viewing job descriptions for employee {employee.employee_id}")
+            
         
         # 2. User viewing their own job descriptions
         elif employee.user and employee.user.id == request.user.id:
             can_view = True
             access_reason = 'own_profile'
-            logger.info(f"✅ User {request.user.username} viewing own job descriptions")
+            
         
         # 3. Manager viewing direct report's job descriptions
         elif access['is_manager'] and access['accessible_employee_ids']:
             if employee.id in access['accessible_employee_ids']:
                 can_view = True
                 access_reason = 'manager'
-                logger.info(f"✅ Manager {request.user.username} viewing direct report {employee.employee_id}'s job descriptions")
-        
+                
         # ❌ Access denied
         if not can_view:
             logger.warning(f"⚠️ User {request.user.username} attempted unauthorized access to employee {employee.employee_id}'s job descriptions")
@@ -4259,21 +4245,20 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         if access['can_view_all']:
             can_view = True
             access_reason = 'admin'
-            logger.info(f"✅ Admin {request.user.username} viewing team job descriptions for manager {manager.employee_id}")
+            
         
         # 2. Manager viewing their own team's job descriptions
         elif manager.user and manager.user.id == request.user.id:
             can_view = True
             access_reason = 'own_team'
-            logger.info(f"✅ Manager {request.user.username} viewing own team's job descriptions")
+            
         
         # 3. Upper manager viewing lower manager's team (manager's manager)
         elif access['is_manager'] and access['accessible_employee_ids']:
             if manager.id in access['accessible_employee_ids']:
                 can_view = True
                 access_reason = 'upper_manager'
-                logger.info(f"✅ Upper manager {request.user.username} viewing lower manager {manager.employee_id}'s team job descriptions")
-        
+                
         # ❌ Access denied
         if not can_view:
             logger.warning(f"⚠️ User {request.user.username} attempted unauthorized access to manager {manager.employee_id}'s team job descriptions")

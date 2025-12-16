@@ -16,8 +16,7 @@ class SalaryCalculationManager:
         try:
             positions = PositionGroup.objects.filter(is_active=True).order_by('hierarchy_level')
             position_list = list(positions.values_list('name', 'hierarchy_level'))
-            logger.info(f"Position groups order (ASC): {position_list}")
-            logger.info(f"Total position groups found: {positions.count()}")
+           
             return positions
         except Exception as e:
             logger.error(f"Error getting position groups: {e}")
@@ -29,7 +28,7 @@ class SalaryCalculationManager:
         from .models import SalaryGrade, SalaryScenario
         from api.models import PositionGroup
         
-        logger.info("Creating current structure from DB...")
+   
         
         # Get position groups from database
         position_groups = SalaryCalculationManager.get_position_groups_from_db()
@@ -41,7 +40,7 @@ class SalaryCalculationManager:
         # Try to get current scenario first for input data
         try:
             current_scenario = SalaryScenario.objects.get(status='CURRENT')
-            logger.info(f"Found current scenario: {current_scenario.name}")
+          
             
             # Build grade order from database position groups
             grade_order = []
@@ -96,8 +95,7 @@ class SalaryCalculationManager:
                         }
                     }
             
-            logger.info(f"Current structure grade order: {grade_order}")
-            logger.info(f"Base value position: {grade_order[-1]} (last = lowest hierarchy)")
+        
             
             # FIXED: Extract global horizontal intervals from scenario
             global_horizontal_intervals = {
@@ -205,9 +203,7 @@ class SalaryCalculationManager:
     @staticmethod
     def calculate_scenario_grades(base_value, input_rates, position_groups=None):
         """Calculate scenario grades with enhanced validation"""
-        logger.info(f"=== GRADE CALCULATION START ===")
-        logger.info(f"Base value: {base_value}")
-        logger.info(f"Input rates structure: {input_rates}")
+   
         
         if position_groups is None:
             position_groups = SalaryCalculationManager.get_position_groups_from_db()
@@ -228,13 +224,13 @@ class SalaryCalculationManager:
             position_name = position.get_name_display()
             position_inputs = input_rates.get(position_name, {})
             
-            logger.info(f"\n--- Processing Position {len(positions_list)-i}: {position_name} (index {i}) ---")
+            
             
             # Determine this position's LD
             if i == len(positions_list) - 1:
                 # This is the base position - use base_value directly
                 position_ld = Decimal(str(base_value))
-                logger.info(f"BASE POSITION: {position_name} LD = {position_ld} (base value)")
+                
             else:
                 # This is NOT the base position - calculate based on vertical rate
                 vertical_input = position_inputs.get('vertical', 0)
@@ -259,10 +255,7 @@ class SalaryCalculationManager:
                 # Calculate this position's LD based on the position below + vertical rate
                 position_ld = Decimal(str(lower_position_ld)) * (Decimal('1') + vertical_rate / Decimal('100'))
                 
-                logger.info(f"VERTICAL CALCULATION: {lower_position_name} → {position_name}")
-                logger.info(f"  Lower position LD: {lower_position_ld}")
-                logger.info(f"  Vertical rate: {vertical_rate}%")
-                logger.info(f"  Calculated LD: {lower_position_ld} × (1 + {vertical_rate}/100) = {position_ld}")
+              
             
             # Get horizontal intervals for this position
             horizontal_intervals = position_inputs.get('horizontal_intervals', {})
@@ -273,9 +266,7 @@ class SalaryCalculationManager:
             )
             calculated_grades[position_name] = grades
             
-            logger.info(f"Final grades for {position_name}: LD={grades['LD']}, LQ={grades['LQ']}, M={grades['M']}, UQ={grades['UQ']}, UD={grades['UD']}")
-        
-        logger.info(f"=== CALCULATION COMPLETE ===")
+            
         return calculated_grades
     
     @staticmethod
@@ -434,7 +425,7 @@ class SalaryCalculationManager:
                 )
                 salary_grades_created += 1
         
-        logger.info(f"Applied scenario {scenario.name}: created {salary_grades_created} salary grades")
+       
         return scenario
     
     @staticmethod
@@ -450,9 +441,7 @@ class SalaryCalculationManager:
         """Validate scenario inputs with proper type checking"""
         errors = []
         
-        logger.info(f"=== VALIDATION START ===")
-        logger.info(f"Base value: {base_value} (type: {type(base_value)})")
-        logger.info(f"Input rates: {input_rates}")
+        
         
         if not base_value or base_value <= 0:
             errors.append("Base value must be greater than 0")
@@ -462,13 +451,12 @@ class SalaryCalculationManager:
             return errors
         
         for grade_name, rates in input_rates.items():
-            logger.info(f"Validating {grade_name}: {rates}")
-            
+          
             if isinstance(rates, dict):
                 # Validate vertical rate
                 if rates.get('vertical') is not None:
                     vertical = rates['vertical']
-                    logger.info(f"Vertical value: {vertical} (type: {type(vertical)})")
+        
                     
                     if vertical == '' or vertical is None:
                         continue

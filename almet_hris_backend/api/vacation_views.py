@@ -4109,7 +4109,7 @@ def bulk_upload_vacation_attachments(request, request_id):
                     'error': str(e)
                 })
         
-        logger.info(f"✅ Bulk upload: {len(uploaded_attachments)} files to {request_id}")
+        
         
         return Response({
             'message': f'{len(uploaded_attachments)} files uploaded successfully',

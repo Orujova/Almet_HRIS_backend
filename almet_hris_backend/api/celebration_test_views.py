@@ -56,7 +56,7 @@ def test_birthday_notification(request):
                 'error': 'Employee has no birth date'
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        logger.info(f"🧪 Testing birthday notification for {employee.first_name} {employee.last_name}")
+    
         
         success = celebration_notification_service.send_birthday_notification(employee)
         
@@ -123,7 +123,7 @@ def test_anniversary_notification(request):
                 'error': 'Employee has no start date'
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        logger.info(f"🧪 Testing {years}-year anniversary notification for {employee.first_name} {employee.last_name}")
+       
         
         success = celebration_notification_service.send_work_anniversary_notification(employee, years)
         
@@ -195,7 +195,7 @@ def test_position_change_notification(request):
                 'error': 'Employee not found'
             }, status=status.HTTP_404_NOT_FOUND)
         
-        logger.info(f"🧪 Testing position change notification for {employee.first_name} {employee.last_name}")
+        
         
         success = celebration_notification_service.send_position_change_notification(
             employee=employee,
@@ -241,7 +241,7 @@ def test_position_change_notification(request):
 def test_daily_celebration_check(request):
     """Manually trigger daily celebration check"""
     try:
-        logger.info("🧪 Manually triggering daily celebration check")
+       
         
         results = celebration_notification_service.check_and_send_daily_celebrations()
         
@@ -290,7 +290,7 @@ def test_welcome_email(request):
                 'error': 'Employee not found'
             }, status=status.HTTP_404_NOT_FOUND)
         
-        logger.info(f"🧪 Testing welcome email for {employee.first_name} {employee.last_name}")
+        
         
         success = celebration_notification_service.send_welcome_email(employee)
         

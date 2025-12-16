@@ -131,7 +131,7 @@ class SalaryScenarioViewSet(viewsets.ModelViewSet):
     def calculate_dynamic(self, request):
         """SIMPLIFIED: Calculate scenario dynamically"""
         try:
-            logger.info("=== CALCULATE DYNAMIC START ===")
+           
             
             # Extract and validate request data
             base_value = request.data.get('baseValue1')
@@ -200,7 +200,7 @@ class SalaryScenarioViewSet(viewsets.ModelViewSet):
     def save_draft(self, request):
         """SIMPLIFIED: Save scenario with clean data handling"""
         try:
-            logger.info("=== SAVE DRAFT START ===")
+      
             
             # Extract data
             name = request.data.get('name')
@@ -437,7 +437,7 @@ class SalaryScenarioViewSet(viewsets.ModelViewSet):
                 'job_title'
             ))
             
-            logger.info(f"📊 Comparing {len(scenarios)} scenarios + current for {len(employees)} employees")
+         
             
             # Build comparison result
             comparison_result = {
@@ -657,7 +657,6 @@ class SalaryScenarioViewSet(viewsets.ModelViewSet):
             for name, value in result['totals']['scenarios'].items()
         }
         
-        logger.info(f"💰 Total Cost - Current: {result['totals']['current']}")
         for name, value in result['totals']['scenarios'].items():
             logger.info(f"💰 Total Cost - {name}: {value}")
         
@@ -839,7 +838,7 @@ class SalaryScenarioViewSet(viewsets.ModelViewSet):
                 'overpaid': overpaid
             }
             
-            logger.info(f"📊 {scenario_name}: {len(underpaid)} underpaid, {len(overpaid)} overpaid")
+          
         
         return result
     

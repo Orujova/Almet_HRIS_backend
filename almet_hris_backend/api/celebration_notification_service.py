@@ -29,10 +29,10 @@ class CelebrationNotificationService:
         
         # 📧 Distribution lists for all staff
         self.all_staff_emails = [
-            'alltradeuk@almettrading.co.uk',    # UK
-            'alltrade@almettrading.com',        # LLC
-            'allholding@almettrading.com',      # Holding
-            # 'n.orujova@almettrading.com',
+            # 'alltradeuk@almettrading.co.uk',    # UK
+            # 'alltrade@almettrading.com',        # LLC
+            # 'allholding@almettrading.com',      # Holding
+            'n.orujova@almettrading.com',
             # 'n.garibova@almettrading.com'
         ]
     

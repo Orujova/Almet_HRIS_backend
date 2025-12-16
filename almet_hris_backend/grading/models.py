@@ -102,7 +102,7 @@ class SalaryScenario(models.Model):
 
     def calculate_averages(self):
         """COMPLETELY FIXED: Calculate vertical and horizontal averages properly"""
-        logger.info(f"=== CALCULATE AVERAGES START for {self.name} ===")
+      
         
         if not self.input_rates or not self.grade_order:
             logger.info("No input_rates or grade_order, setting averages to 0")
@@ -110,8 +110,7 @@ class SalaryScenario(models.Model):
             self.horizontal_avg = 0
             return
         
-        logger.info(f"Input rates: {self.input_rates}")
-        logger.info(f"Grade order: {self.grade_order}")
+       
         
         vertical_sum = 0
         vertical_count = 0
@@ -128,14 +127,14 @@ class SalaryScenario(models.Model):
             grade_data = self.input_rates.get(grade_name, {})
             vertical_value = grade_data.get('vertical')
             
-            logger.info(f"Position {grade_name}: vertical = {vertical_value}")
+            
             
             if vertical_value is not None and vertical_value != '' and vertical_value != 0:
                 try:
                     vertical_float = float(vertical_value)
                     vertical_sum += vertical_float
                     vertical_count += 1
-                    logger.info(f"  ✅ Added vertical: {vertical_float}, sum now: {vertical_sum}")
+                    
                 except (ValueError, TypeError):
                     logger.warning(f"  ❌ Could not convert vertical value: {vertical_value}")
         
@@ -162,13 +161,13 @@ class SalaryScenario(models.Model):
             interval_names = ['LD_to_LQ', 'LQ_to_M', 'M_to_UQ', 'UQ_to_UD']
             for interval_name in interval_names:
                 interval_value = global_intervals.get(interval_name)
-                logger.info(f"  Processing interval {interval_name}: {interval_value}")
+                
                 
                 if interval_value is not None and interval_value != '' and interval_value != 0:
                     try:
                         interval_float = float(interval_value)
                         horizontal_values.append(interval_float)
-                        logger.info(f"    ✅ Added horizontal: {interval_float}")
+                       
                     except (ValueError, TypeError):
                         logger.warning(f"    ❌ Could not convert horizontal value: {interval_value}")
         else:
@@ -178,10 +177,7 @@ class SalaryScenario(models.Model):
         self.vertical_avg = (vertical_sum / vertical_count / 100) if vertical_count > 0 else 0
         self.horizontal_avg = (sum(horizontal_values) / len(horizontal_values) / 100) if horizontal_values else 0
         
-        logger.info(f"🎯 FINAL AVERAGES:")
-        logger.info(f"  Vertical: {vertical_sum} ÷ {vertical_count} ÷ 100 = {self.vertical_avg} ({self.vertical_avg * 100:.1f}%)")
-        logger.info(f"  Horizontal: {sum(horizontal_values)} ÷ {len(horizontal_values)} ÷ 100 = {self.horizontal_avg} ({self.horizontal_avg * 100:.1f}%)")
-        logger.info(f"=== CALCULATE AVERAGES END ===")
+      
     def calculate_metrics(self, current_data=None):
         """SIMPLIFIED: Calculate basic metrics (removed competitiveness/riskLevel)"""
         if not self.calculated_grades:

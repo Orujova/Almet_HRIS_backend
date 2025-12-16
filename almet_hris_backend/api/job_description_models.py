@@ -645,18 +645,7 @@ class JobDescription(models.Model):
         """Get employees matching ALL criteria with detailed logging"""
         from .models import Employee
         
-        logger.info(f"\n{'='*80}")
-        logger.info(f"🔍 EMPLOYEE SEARCH STARTED")
-        logger.info(f"{'='*80}")
-        logger.info(f"Search Criteria:")
-        logger.info(f"  📋 Job Title: '{job_title}'")
-        logger.info(f"  🏢 Business Function ID: {business_function_id}")
-        logger.info(f"  🏬 Department ID: {department_id}")
-        logger.info(f"  🏪 Unit ID: {unit_id}")
-        logger.info(f"  💼 Job Function ID: {job_function_id}")
-        logger.info(f"  📊 Position Group ID: {position_group_id}")
-        logger.info(f"  🎯 Grading Levels: {grading_levels}")
-        logger.info(f"{'='*80}\n")
+        
         
         queryset = Employee.objects.filter(
             is_deleted=False
@@ -675,9 +664,7 @@ class JobDescription(models.Model):
             queryset = queryset.filter(job_title__iexact=job_title_clean)
             after = queryset.count()
             
-            logger.info(f"📋 STEP 1: Job Title Filter")
-            logger.info(f"  Searching for: '{job_title_clean}'")
-            logger.info(f"  Result: {before} → {after} employees")
+            
             
             if after == 0:
                 logger.error(f"  ❌ ZERO employees found with job title '{job_title_clean}'")
@@ -693,8 +680,7 @@ class JobDescription(models.Model):
             before = queryset.count()
             queryset = queryset.filter(business_function_id=business_function_id)
             after = queryset.count()
-            logger.info(f"🏢 STEP 2: Business Function Filter: {before} → {after}")
-            logger.info("")
+            
         
         # 3. DEPARTMENT FILTER
         if department_id:
@@ -707,32 +693,28 @@ class JobDescription(models.Model):
             except:
                 queryset = queryset.filter(department_id=department_id)
             after = queryset.count()
-            logger.info(f"🏬 STEP 3: Department Filter: {before} → {after}")
-            logger.info("")
+            
         
         # 4. UNIT FILTER
         if unit_id:
             before = queryset.count()
             queryset = queryset.filter(unit_id=unit_id)
             after = queryset.count()
-            logger.info(f"🏪 STEP 4: Unit Filter: {before} → {after}")
-            logger.info("")
+            
         
         # 5. JOB FUNCTION FILTER
         if job_function_id:
             before = queryset.count()
             queryset = queryset.filter(job_function_id=job_function_id)
             after = queryset.count()
-            logger.info(f"💼 STEP 5: Job Function Filter: {before} → {after}")
-            logger.info("")
+            
         
         # 6. POSITION GROUP FILTER
         if position_group_id:
             before = queryset.count()
             queryset = queryset.filter(position_group_id=position_group_id)
             after = queryset.count()
-            logger.info(f"📊 STEP 6: Position Group Filter: {before} → {after}")
-            logger.info("")
+            
         
         # 7. GRADING LEVEL FILTER
         if grading_levels:
@@ -741,9 +723,7 @@ class JobDescription(models.Model):
             
             normalized_targets = [normalize_grading_level(gl.strip()) for gl in grading_levels]
             
-            logger.info(f"🎯 STEP 7: Grading Levels Filter")
-            logger.info(f"  Target levels: {grading_levels}")
-            logger.info(f"  Normalized: {normalized_targets}")
+            
             
             all_remaining = list(queryset)
             matching_ids = []
@@ -758,13 +738,12 @@ class JobDescription(models.Model):
             before = queryset.count()
             queryset = queryset.filter(id__in=matching_ids)
             after = queryset.count()
-            logger.info(f"  Result: {before} → {after} employees")
-            logger.info("")
+            
         
         final_count = queryset.count()
         logger.info(f"\n{'='*80}")
         logger.info(f"🎯 FINAL RESULT: {final_count} MATCHING EMPLOYEES FOUND")
-        logger.info(f"{'='*80}\n")
+        
         
         return queryset.order_by('line_manager_id', 'employee_id')
     
