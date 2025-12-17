@@ -77,8 +77,13 @@ class SystemEmailService:
             logger.error(f"❌ Error acquiring application token: {e}")
             return None
     
+    # api/system_email_service.py
+
     def send_email_as_system(self, from_email, to_email, subject, body_html):
-   
+        """
+        ✅ UPDATED: Supports both single email and list of emails
+        All recipients will appear in TO field together
+        """
         try:
             # Application token al
             access_token = self.get_application_token()
@@ -90,6 +95,18 @@ class SystemEmailService:
                     'message_id': None
                 }
             
+            # ✅ Handle both single email and list of emails
+            if isinstance(to_email, str):
+                to_emails = [to_email]
+            else:
+                to_emails = to_email
+            
+            # ✅ Build toRecipients array with ALL emails
+            to_recipients = [
+                {"emailAddress": {"address": email}} 
+                for email in to_emails
+            ]
+            
             # Email message hazırla
             message = {
                 "message": {
@@ -98,13 +115,7 @@ class SystemEmailService:
                         "contentType": "HTML",
                         "content": body_html
                     },
-                    "toRecipients": [
-                        {
-                            "emailAddress": {
-                                "address": to_email
-                            }
-                        }
-                    ]
+                    "toRecipients": to_recipients  # ✅ All emails in one array
                 },
                 "saveToSentItems": "true"
             }
@@ -114,7 +125,7 @@ class SystemEmailService:
                 "Content-Type": "application/json"
             }
             
-            logger.info(f"📧 Sending system email from {from_email} to {to_email}")
+            logger.info(f"📧 Sending system email from {from_email} to {len(to_recipients)} recipients")
             
             # API endpoint: /users/{from_email}/sendMail
             response = requests.post(
@@ -125,10 +136,10 @@ class SystemEmailService:
             )
             
             if response.status_code == 202:
-                logger.info(f"✅ System email sent successfully")
+                logger.info(f"✅ System email sent successfully to {len(to_recipients)} recipients")
                 return {
                     'success': True,
-                    'message': 'Email sent successfully',
+                    'message': f'Email sent to {len(to_recipients)} recipients',
                     'message_id': response.headers.get('request-id', '')
                 }
             else:
@@ -148,7 +159,6 @@ class SystemEmailService:
                 'message': error_msg,
                 'message_id': None
             }
-    
     def send_bulk_emails_as_system(self, from_email, recipients, subject, body_html):
  
         results = {

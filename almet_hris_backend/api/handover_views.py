@@ -8,8 +8,7 @@ from django.db.models import Q
 from django.utils import timezone
 
 from .handover_models import (
-    HandoverType, HandoverRequest, HandoverTask,
-    HandoverImportantDate, HandoverActivity, HandoverAttachment
+    HandoverType, HandoverRequest, HandoverTask, HandoverAttachment
 )
 from .handover_serializers import (
     HandoverTypeSerializer, HandoverRequestSerializer,
