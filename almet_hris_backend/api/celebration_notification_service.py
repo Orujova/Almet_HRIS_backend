@@ -1,19 +1,13 @@
 # api/celebration_notification_service.py
-"""
-Celebration Notification Service
-- Birthday notifications
-- Work anniversary notifications  
-- Position change (promotion/transfer) notifications
-Sends emails using system mailbox (Application Permissions)
-"""
+
 
 import logging
-from datetime import date, timedelta
-from django.utils import timezone
+from datetime import date
+
 from .models import Employee
-from .celebration_models import Celebration, CelebrationWish
+
 from .system_email_service import system_email_service
-from .notification_models import NotificationSettings
+
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +29,7 @@ class CelebrationNotificationService:
           
             # 'n.orujova@almettrading.com',
         
-            # 'n.garibova@almettrading.com'
+          
         ]
     
     def send_birthday_notification(self, employee):
