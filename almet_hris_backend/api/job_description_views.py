@@ -206,7 +206,7 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
     def my_access_info(self, request):
         """Get current user's job description access info"""
         access = get_job_description_access(request.user)
-        logger.info(f"Material  uploaded for training {access}")
+   
         return Response({
             'can_view_all': access['can_view_all'],
             'is_manager': access['is_manager'],

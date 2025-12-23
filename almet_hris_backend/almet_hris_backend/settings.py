@@ -6,10 +6,11 @@ try:
     load_dotenv()
 except ImportError:
     print("Warning: python-dotenv not installed. Using default settings.")
-# Build paths inside the project like this: BASE_DIR / 'subdir'.
+    
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# SECURITY WARNING: keep the secret key used in production secret!
+
 SECRET_KEY = 'django-insecure-3_8*j1!u72&6_0@iv3$cyr4gis_xm5x_1ob2o!$#mxl!u97gg5'
 
 # SECURITY WARNING: don't run with debug turned on in production!
@@ -89,7 +90,8 @@ WSGI_APPLICATION = 'almet_hris_backend.wsgi.application'
 #         'CONN_MAX_AGE': 60,  # Connection pooling
 #     }
 # }
-# Database - Server Configuration
+
+
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
@@ -124,10 +126,10 @@ TIME_ZONE = 'UTC'
 USE_I18N = True
 USE_TZ = True
 
-# Static files (CSS, JavaScript, Images)
+
 STATIC_URL = 'static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
-# Default primary key field type
+
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # REST Framework settings
@@ -288,19 +290,18 @@ MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
 # File Upload Settings
-FILE_UPLOAD_MAX_MEMORY_SIZE = 50 * 1024 * 1024  # 50MB
-DATA_UPLOAD_MAX_MEMORY_SIZE = 50 * 1024 * 1024   # 50MB
+DATA_UPLOAD_MAX_MEMORY_SIZE = 524288000  # 500MB
+FILE_UPLOAD_MAX_MEMORY_SIZE = 524288000  # 500MB
 
 # File Storage Configuration
 DEFAULT_FILE_STORAGE = 'django.core.files.storage.FileSystemStorage'
 
-# CORS settings for file uploads
 CORS_ALLOW_HEADERS = [
     'accept', 'accept-encoding', 'authorization', 'content-type', 
     'dnt', 'origin', 'user-agent', 'x-csrftoken', 'x-requested-with',
     'x-file-name', 'x-file-size', 'x-file-type',
 ]
-#celery
+
 
 CELERY_BROKER_URL = 'redis://localhost:6379/0'  # or use 'memory://' for development
 CELERY_RESULT_BACKEND = 'redis://localhost:6379/0'
