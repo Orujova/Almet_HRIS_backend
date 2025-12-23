@@ -7,23 +7,44 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Deploy to Server
+        shell: bash
         run: |
+          set -euo pipefail
+
           mkdir -p ~/.ssh
           echo "${{ secrets.SERVER_SSH_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
+
           ssh-keyscan -H 161.97.101.41 >> ~/.ssh/known_hosts
-          
+
           ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no root@161.97.101.41 << 'ENDSSH'
+            set -euo pipefail
+
             cd /var/www/myalmet/backend
-            git pull origin main
+
+            # Git "dubious ownership" warning-ları üçün
+            git config --global --add safe.directory /var/www/myalmet/backend
+
+            echo "=== Updating code (force sync with origin/main) ==="
+            git fetch origin main
+            git reset --hard origin/main
+            git clean -fd
+
+            echo "=== Installing requirements ==="
             source venv/bin/activate
+            pip install --upgrade pip
             pip install -r requirements.txt
+
+            echo "=== Migrations & static ==="
             cd almet_hris_backend
             python manage.py migrate --noinput
             python manage.py collectstatic --noinput
-            sudo systemctl restart myalmet
+
+            echo "=== Restarting service ==="
+            systemctl restart myalmet
+
             echo "✅ Backend deployed successfully!"
           ENDSSH
