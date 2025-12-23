@@ -1,0 +1,29 @@
+name: Deploy Backend
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Deploy to Server
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SERVER_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H 161.97.101.41 >> ~/.ssh/known_hosts
+          
+          ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no root@161.97.101.41 << 'ENDSSH'
+            cd /var/www/myalmet/backend
+            git pull origin main
+            source venv/bin/activate
+            pip install -r requirements.txt
+            cd almet_hris_backend
+            python manage.py migrate --noinput
+            python manage.py collectstatic --noinput
+            sudo systemctl restart myalmet
+            echo "✅ Backend deployed successfully!"
+          ENDSSH
