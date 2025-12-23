@@ -7,44 +7,49 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-
+    
     steps:
-      - name: Deploy to Server
-        shell: bash
+      - name: Deploy Backend to Server
+        env:
+          SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          SERVER_IP: 161.97.101.41
+          SERVER_USER: root
         run: |
-          set -euo pipefail
-
           mkdir -p ~/.ssh
-          echo "${{ secrets.SERVER_SSH_KEY }}" > ~/.ssh/id_rsa
+          echo "$SSH_KEY" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
-
-          ssh-keyscan -H 161.97.101.41 >> ~/.ssh/known_hosts
-
-          ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no root@161.97.101.41 << 'ENDSSH'
-            set -euo pipefail
-
+          ssh-keyscan -H $SERVER_IP >> ~/.ssh/known_hosts
+          
+          ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no $SERVER_USER@$SERVER_IP << 'ENDSSH'
+            set -e
+            
+            echo "=== Updating code ==="
             cd /var/www/myalmet/backend
-
-            # Git "dubious ownership" warning-ları üçün
             git config --global --add safe.directory /var/www/myalmet/backend
-
-            echo "=== Updating code (force sync with origin/main) ==="
             git fetch origin main
             git reset --hard origin/main
             git clean -fd
-
+            
             echo "=== Installing requirements ==="
             source venv/bin/activate
             pip install --upgrade pip
             pip install -r requirements.txt
-
-            echo "=== Migrations & static ==="
+            pip install gunicorn
+            
+            echo "=== Migrations & static files ==="
             cd almet_hris_backend
             python manage.py migrate --noinput
             python manage.py collectstatic --noinput
-
+            
+            echo "=== Fixing permissions ==="
+            cd /var/www/myalmet/backend
+            chown -R www-data:www-data .
+            
             echo "=== Restarting service ==="
+            systemctl daemon-reload
             systemctl restart myalmet
-
+            sleep 3
+            systemctl status myalmet --no-pager
+            
             echo "✅ Backend deployed successfully!"
           ENDSSH
