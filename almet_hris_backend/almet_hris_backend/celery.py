@@ -28,7 +28,7 @@ app.conf.beat_schedule = {
     # ==================== CELEBRATION NOTIFICATIONS ====================
     'send-daily-celebrations': {
     'task': 'api.tasks.send_daily_celebration_notifications',
-    'schedule': crontab(minute='0'), # # 🧪 TEST: Every 2 minutes
+    'schedule': crontab(minute='*/2'),# # 🧪 TEST: Every 2 minutes
     # 'schedule': crontab(hour=9, minute=0),
 },
 }
