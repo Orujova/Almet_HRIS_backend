@@ -307,3 +307,256 @@ def welcome_new_employee(sender, instance, created, **kwargs):
         logger.info(f"❌ NOT sending welcome email - conditions not met")
     
     logger.info("=" * 80)
+    
+
+
+from django.db.models.signals import post_save, pre_delete
+from django.dispatch import receiver
+from django.db import transaction
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+@receiver(post_save, sender='api.Employee')
+def auto_assign_job_description_to_employee(sender, instance, created, **kwargs):
+    """
+    ✅ Signal 1: Yeni işçi yaradılanda və ya update edildikdə
+    - Əgər matching job description varsa, avtomatik assign et
+    """
+    
+    # Skip if employee is deleted
+    if instance.is_deleted:
+        return
+    
+    # Lazy import to avoid circular dependency
+    from .job_description_models import JobDescription, JobDescriptionAssignment, normalize_grading_level
+    
+    try:
+        logger.info(f"🔍 Checking job description for: {instance.full_name}")
+        
+        # Find matching job descriptions
+        matching_jds = JobDescription.objects.filter(
+            job_title__iexact=instance.job_title.strip() if instance.job_title else '',
+            business_function=instance.business_function,
+            department=instance.department,
+            job_function=instance.job_function,
+            position_group=instance.position_group,
+            is_active=True
+        )
+        
+        if instance.unit:
+            matching_jds = matching_jds.filter(unit=instance.unit)
+        
+        # Filter by grading level
+        for jd in matching_jds:
+            emp_grade_normalized = normalize_grading_level(instance.grading_level or '')
+            jd_grades_normalized = [normalize_grading_level(gl) for gl in jd.grading_levels]
+            
+            if emp_grade_normalized not in jd_grades_normalized:
+                continue
+            
+            # Check if already assigned
+            existing_assignment = JobDescriptionAssignment.objects.filter(
+                job_description=jd,
+                employee=instance,
+                is_active=True
+            ).exists()
+            
+            if existing_assignment:
+                logger.info(f"✅ Already assigned: {instance.full_name} -> {jd.job_title}")
+                continue
+            
+            # Check if there's a vacant assignment for this job description
+            vacant_assignment = JobDescriptionAssignment.objects.filter(
+                job_description=jd,
+                is_vacancy=True,
+                is_active=True,
+                vacancy_position__job_title__iexact=instance.job_title.strip() if instance.job_title else '',
+                vacancy_position__business_function=instance.business_function,
+                vacancy_position__department=instance.department
+            ).first()
+            
+            if vacant_assignment:
+                # ✅ Vacant assignment-ı employee-ə çevir
+                vacant_assignment.assign_new_employee(instance)
+                logger.info(f"✅ Converted vacant to employee: {instance.full_name} -> {jd.job_title}")
+            else:
+                # ✅ Yeni assignment yarat
+                with transaction.atomic():
+                    assignment = JobDescriptionAssignment.objects.create(
+                        job_description=jd,
+                        employee=instance,
+                        is_vacancy=False,
+                        reports_to=instance.line_manager
+                    )
+                    logger.info(f"✅ Auto-assigned: {instance.full_name} -> {jd.job_title}")
+            
+            # Only assign to first matching JD
+            break
+    
+    except Exception as e:
+        logger.error(f"❌ Error in auto_assign_job_description: {str(e)}", exc_info=True)
+
+
+@receiver(pre_delete, sender='api.Employee')
+def convert_employee_assignment_to_vacant(sender, instance, **kwargs):
+    """
+    ✅ Signal 2: İşçi silinəndə
+    - Əgər VacantPosition yaradılacaqsa, job description assignment-ı saxla
+    """
+    
+    # Lazy import
+    from .job_description_models import JobDescriptionAssignment
+    
+    try:
+        logger.info(f"🔍 Handling deletion for: {instance.full_name}")
+        
+        # Get all active assignments for this employee
+        active_assignments = JobDescriptionAssignment.objects.filter(
+            employee=instance,
+            is_active=True
+        )
+        
+        for assignment in active_assignments:
+            logger.info(f"📝 Marking assignment as vacant for: {instance.full_name} -> {assignment.job_description.job_title}")
+            
+            # Mark as vacant (don't delete)
+            assignment.mark_as_vacant(reason="Employee deleted")
+            
+            logger.info(f"✅ Assignment converted to vacant: {assignment.job_description.job_title}")
+    
+    except Exception as e:
+        logger.error(f"❌ Error in convert_employee_assignment_to_vacant: {str(e)}", exc_info=True)
+
+
+@receiver(post_save, sender='api.VacantPosition')
+def handle_vacant_position_filled(sender, instance, created, **kwargs):
+    """
+    ✅ Signal 3: Vacant position employee-ə çevrildikdə
+    - Job description assignment-ı yeni employee-ə ötür
+    """
+    
+    # Only handle when vacant position is filled
+    if not instance.is_filled or not instance.filled_by_employee:
+        return
+    
+    # Lazy import
+    from .job_description_models import JobDescriptionAssignment
+    
+    try:
+        logger.info(f"🔍 Vacant position filled: {instance.position_id} -> {instance.filled_by_employee.full_name}")
+        
+        # Find vacant assignment for this position
+        vacant_assignment = JobDescriptionAssignment.objects.filter(
+            vacancy_position=instance,
+            is_vacancy=True,
+            is_active=True
+        ).first()
+        
+        if vacant_assignment:
+            # ✅ Convert to employee assignment
+            vacant_assignment.assign_new_employee(instance.filled_by_employee)
+            logger.info(f"✅ Vacant assignment converted: {instance.position_id} -> {instance.filled_by_employee.full_name}")
+        else:
+            # No vacant assignment, trigger auto-assign for new employee
+            logger.info(f"ℹ️ No vacant assignment found, will auto-assign if matching JD exists")
+    
+    except Exception as e:
+        logger.error(f"❌ Error in handle_vacant_position_filled: {str(e)}", exc_info=True)
+
+
+# ============================================
+# HELPER FUNCTION FOR MANAGEMENT COMMAND
+# ============================================
+
+def assign_missing_job_descriptions():
+    """
+    ✅ Management command helper: Mövcud işçilər üçün unassigned job descriptions tapıb assign et
+    
+    Usage:
+    python manage.py shell
+    >>> from api.signals import assign_missing_job_descriptions
+    >>> assign_missing_job_descriptions()
+    """
+    from .models import Employee
+    from .job_description_models import JobDescription, JobDescriptionAssignment, normalize_grading_level
+    
+    logger.info("=" * 80)
+    logger.info("🔍 STARTING: Check all employees for missing job descriptions")
+    logger.info("=" * 80)
+    
+    total_assigned = 0
+    total_checked = 0
+    
+    # Get all active employees
+    employees = Employee.objects.filter(is_deleted=False).select_related(
+        'business_function', 'department', 'unit', 'job_function', 'position_group', 'line_manager'
+    )
+    
+    for employee in employees:
+        total_checked += 1
+        
+        if not employee.job_title:
+            logger.warning(f"⚠️ No job title: {employee.full_name}")
+            continue
+        
+        # Find matching job descriptions
+        matching_jds = JobDescription.objects.filter(
+            job_title__iexact=employee.job_title.strip(),
+            business_function=employee.business_function,
+            department=employee.department,
+            job_function=employee.job_function,
+            position_group=employee.position_group,
+            is_active=True
+        )
+        
+        if employee.unit:
+            matching_jds = matching_jds.filter(unit=employee.unit)
+        
+        for jd in matching_jds:
+            # Check grading level
+            emp_grade_normalized = normalize_grading_level(employee.grading_level or '')
+            jd_grades_normalized = [normalize_grading_level(gl) for gl in jd.grading_levels]
+            
+            if emp_grade_normalized not in jd_grades_normalized:
+                continue
+            
+            # Check if already assigned
+            existing_assignment = JobDescriptionAssignment.objects.filter(
+                job_description=jd,
+                employee=employee,
+                is_active=True
+            ).exists()
+            
+            if existing_assignment:
+                logger.info(f"✅ Already assigned: {employee.full_name} -> {jd.job_title}")
+                continue
+            
+            # Create assignment
+            try:
+                with transaction.atomic():
+                    assignment = JobDescriptionAssignment.objects.create(
+                        job_description=jd,
+                        employee=employee,
+                        is_vacancy=False,
+                        reports_to=employee.line_manager
+                    )
+                    total_assigned += 1
+                    logger.info(f"✅ AUTO-ASSIGNED: {employee.full_name} -> {jd.job_title}")
+            except Exception as e:
+                logger.error(f"❌ Failed to assign {employee.full_name}: {str(e)}")
+            
+            # Only assign to first matching JD
+            break
+    
+    logger.info("=" * 80)
+    logger.info(f"📊 SUMMARY:")
+    logger.info(f"   Total Employees Checked: {total_checked}")
+    logger.info(f"   Total Assignments Created: {total_assigned}")
+    logger.info("=" * 80)
+    
+    return {
+        'total_checked': total_checked,
+        'total_assigned': total_assigned
+    }

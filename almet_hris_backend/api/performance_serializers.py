@@ -324,9 +324,8 @@ class EmployeePerformanceListSerializer(serializers.ModelSerializer):
     # Draft status indicators
     has_objectives_draft = serializers.SerializerMethodField()
     has_competencies_draft = serializers.SerializerMethodField()
-    has_mid_year_draft = serializers.SerializerMethodField()
-    has_end_year_draft = serializers.SerializerMethodField()
-    has_dev_needs_draft = serializers.SerializerMethodField()
+
+  
     objectives_percentage = serializers.DecimalField(
         max_digits=5, 
         decimal_places=2, 
@@ -354,7 +353,7 @@ class EmployeePerformanceListSerializer(serializers.ModelSerializer):
             'overall_weighted_percentage', 'final_rating',
             'competencies_letter_grade',
             'has_objectives_draft', 'has_competencies_draft', 
-            'has_mid_year_draft', 'has_end_year_draft', 'has_dev_needs_draft',
+        
             'created_at', 'updated_at'
         ]
     
@@ -407,6 +406,7 @@ class EmployeePerformanceListSerializer(serializers.ModelSerializer):
         except Exception as e:
             logger.warning(f"Error getting business_function: {e}")
             return 'Unknown'
+    
     def get_employee_department(self, obj):
         """Safe get department"""
         try:
@@ -465,21 +465,7 @@ class EmployeePerformanceListSerializer(serializers.ModelSerializer):
         except:
             return False
     
-    def get_has_mid_year_draft(self, obj):
-        """Safe check mid year draft"""
-        try:
-            return (obj.mid_year_employee_draft_saved is not None or 
-                    obj.mid_year_manager_draft_saved is not None)
-        except:
-            return False
     
-    def get_has_end_year_draft(self, obj):
-        """Safe check end year draft"""
-        try:
-            return (obj.end_year_employee_draft_saved is not None or 
-                    obj.end_year_manager_draft_saved is not None)
-        except:
-            return False
     
     def get_has_dev_needs_draft(self, obj):
         """Safe check dev needs draft"""

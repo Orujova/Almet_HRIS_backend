@@ -4,38 +4,31 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from django.db.models import Q, Count, Avg, Sum
 from django.db import transaction
 from django.utils import timezone
 from django.http import HttpResponse
-from drf_yasg.utils import swagger_auto_schema
-from drf_yasg import openapi
 import logging
 import io
 import openpyxl
-from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.styles import Font, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
-
 from .performance_models import *
 from .performance_serializers import *
 from .models import Employee
-from .competency_models import BehavioralCompetency
-from .competency_assessment_models import PositionBehavioralAssessment, LetterGradeMapping
+
+
 
 from .performance_permissions import (
     has_performance_permission,
     check_performance_permission,
     can_view_performance,
     can_edit_performance,
-    get_accessible_employees_for_performance,
     filter_viewable_performances,
     is_admin_user
 )
 
 logger = logging.getLogger(__name__)
 
-
-# ============ READ-ONLY VIEWSETS ============
 
 class PerformanceYearViewSet(viewsets.ModelViewSet):
     """Performance Year Configuration"""
@@ -134,9 +127,6 @@ class ObjectiveStatusViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
 
-# ============ MAIN PERFORMANCE VIEWSET ============
-
-
 class EmployeePerformanceViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     
@@ -221,7 +211,7 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(instance)
         return Response(serializer.data)
     
-    # In EmployeePerformanceViewSet - performance_views.py
+  
 
     @action(detail=False, methods=['get'])
     def my_permissions(self, request):
@@ -556,50 +546,12 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
     
 
     # ============ MID-YEAR REVIEW SECTION ============
-    
-    @action(detail=True, methods=['post'])
-    def save_mid_year_draft(self, request, pk=None):
-        """Save mid-year review as draft"""
-        performance = self.get_object()
-        user_role = request.data.get('user_role', 'manager')
-        comment = request.data.get('comment', '')
-        
-        if user_role == 'employee':
-            try:
-                employee = Employee.objects.get(user=request.user)
-                if performance.employee != employee and not is_admin_user(request.user):
-                    return Response({
-                        'error': 'You can only save your own mid-year review'
-                    }, status=status.HTTP_403_FORBIDDEN)
-            except Employee.DoesNotExist:
-                return Response({'error': 'Employee profile not found'}, status=status.HTTP_404_NOT_FOUND)
-            
-            performance.mid_year_employee_comment = comment
-            performance.mid_year_employee_draft_saved = timezone.now()
-            log_msg = 'Employee saved mid-year self-review draft'
-        else:
-            self._check_edit_access(performance)
-            performance.mid_year_manager_comment = comment
-            performance.mid_year_manager_draft_saved = timezone.now()
-            log_msg = 'Manager saved mid-year review draft'
-        
-        performance.save()
-        
-        PerformanceActivityLog.objects.create(
-            performance=performance,
-            action='MID_YEAR_DRAFT_SAVED',
-            description=log_msg,
-            performed_by=request.user
-        )
-        
-        return Response({
-            'success': True,
-            'message': 'Mid-year draft saved'
-        })
-    
+
     @action(detail=True, methods=['post'])
     def submit_mid_year_employee(self, request, pk=None):
-        """STEP 1: Employee submits mid-year self-review"""
+        """
+        ✅ FIXED: Allow adding multiple comments during mid-year period
+        """
         performance = self.get_object()
         
         is_own_performance = False
@@ -630,18 +582,18 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
                 'current_period': performance.performance_year.get_current_period()
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        if performance.mid_year_employee_submitted:
-            return Response({
-                'error': 'Mid-year self-review already submitted'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
         comment = request.data.get('comment', '')
         if not comment.strip():
             return Response({
                 'error': 'Comment is required'
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        performance.mid_year_employee_comment = comment
+        # ✅ FIX: Append new comment to existing ones
+        if performance.mid_year_employee_comment:
+            # Add separator and new comment
+            performance.mid_year_employee_comment += f"\n\n--- Added on {timezone.now().strftime('%Y-%m-%d %H:%M')} ---\n{comment}"
+        else:
+            performance.mid_year_employee_comment = comment
         
         objectives_data = request.data.get('objectives', [])
         if objectives_data:
@@ -652,29 +604,32 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
                         id=obj_id,
                         performance=performance
                     ).update(
-                      
                         status_id=obj_data.get('status')
                     )
         
+        # ✅ FIX: Update timestamp but DON'T check if already submitted
         performance.mid_year_employee_submitted = timezone.now()
         performance.save()
         
         PerformanceActivityLog.objects.create(
             performance=performance,
-            action='MID_YEAR_EMPLOYEE_SUBMITTED',
-            description='Employee submitted mid-year self-review',
+            action='MID_YEAR_EMPLOYEE_COMMENT_ADDED',
+            description='Employee added mid-year self-review comment',
             performed_by=request.user
         )
         
         return Response({
             'success': True, 
-            'message': 'Mid-year self-review submitted successfully',
+            'message': 'Comment added successfully',
             'next_step': 'Waiting for manager to complete mid-year assessment'
         })
     
+    
     @action(detail=True, methods=['post'])
     def submit_mid_year_manager(self, request, pk=None):
-        """STEP 2: Manager completes mid-year assessment"""
+        """
+        ✅ FIXED: Allow adding multiple assessments during mid-year period
+        """
         performance = self.get_object()
         
         is_line_manager = False
@@ -712,18 +667,17 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
                 'message': 'Waiting for employee to submit mid-year self-review'
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        if performance.mid_year_completed:
-            return Response({
-                'error': 'Mid-year review already completed'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
         comment = request.data.get('comment', '')
         if not comment.strip():
             return Response({
                 'error': 'Comment is required'
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        performance.mid_year_manager_comment = comment
+        # ✅ FIX: Append new comment to existing ones
+        if performance.mid_year_manager_comment:
+            performance.mid_year_manager_comment += f"\n\n--- Added on {timezone.now().strftime('%Y-%m-%d %H:%M')} ---\n{comment}"
+        else:
+            performance.mid_year_manager_comment = comment
         
         objectives_data = request.data.get('objectives', [])
         if objectives_data:
@@ -734,10 +688,10 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
                         id=obj_id,
                         performance=performance
                     ).update(
-                   
                         status_id=obj_data.get('status')
                     )
         
+        # ✅ FIX: Update timestamp
         performance.mid_year_manager_submitted = timezone.now()
         performance.mid_year_completed = True
         
@@ -748,63 +702,26 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
         
         PerformanceActivityLog.objects.create(
             performance=performance,
-            action='MID_YEAR_COMPLETED',
-            description='Manager completed mid-year review',
+            action='MID_YEAR_MANAGER_COMMENT_ADDED',
+            description='Manager added mid-year assessment comment',
             performed_by=request.user
         )
         
         return Response({
             'success': True, 
-            'message': 'Mid-year review completed successfully',
+            'message': 'Assessment added successfully',
             'next_step': 'Wait for end-year review period'
         })
     
+        # ============ END-YEAR REVIEW SECTION ============
 
-    # ============ END-YEAR REVIEW SECTION ============
-    
-    @action(detail=True, methods=['post'])
-    def save_end_year_draft(self, request, pk=None):
-        """Save end-year review as draft"""
-        performance = self.get_object()
-        user_role = request.data.get('user_role', 'manager')
-        comment = request.data.get('comment', '')
-        
-        if user_role == 'employee':
-            try:
-                employee = Employee.objects.get(user=request.user)
-                if performance.employee != employee and not is_admin_user(request.user):
-                    return Response({
-                        'error': 'You can only save your own end-year review'
-                    }, status=status.HTTP_403_FORBIDDEN)
-            except Employee.DoesNotExist:
-                return Response({'error': 'Employee profile not found'}, status=status.HTTP_404_NOT_FOUND)
-            
-            performance.end_year_employee_comment = comment
-            performance.end_year_employee_draft_saved = timezone.now()
-            log_msg = 'Employee saved end-year review draft'
-        else:
-            self._check_edit_access(performance)
-            performance.end_year_manager_comment = comment
-            performance.end_year_manager_draft_saved = timezone.now()
-            log_msg = 'Manager saved end-year review draft'
-        
-        performance.save()
-        
-        PerformanceActivityLog.objects.create(
-            performance=performance,
-            action='END_YEAR_DRAFT_SAVED',
-            description=log_msg,
-            performed_by=request.user
-        )
-        
-        return Response({
-            'success': True,
-            'message': 'End-year draft saved'
-        })
+ # ============ End-Year REVIEW SECTION ============
     
     @action(detail=True, methods=['post'])
     def submit_end_year_employee(self, request, pk=None):
-        """Employee submits end-year self-review"""
+        """
+        ✅ UPDATED: Allow multiple end-year employee comments
+        """
         performance = self.get_object()
         comment = request.data.get('comment', '')
         
@@ -817,18 +734,109 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
         except Employee.DoesNotExist:
             return Response({'error': 'Employee profile not found'}, status=status.HTTP_404_NOT_FOUND)
         
-        performance.end_year_employee_comment = comment
+        if not performance.performance_year.is_end_year_active():
+            return Response({
+                'error': 'End-year review period is not active',
+                'current_period': performance.performance_year.get_current_period()
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        if not comment.strip():
+            return Response({
+                'error': 'Comment is required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # ✅ Append new comment to existing ones
+        if performance.end_year_employee_comment:
+            performance.end_year_employee_comment += f"\n\n--- Added on {timezone.now().strftime('%Y-%m-%d %H:%M')} ---\n{comment}"
+        else:
+            performance.end_year_employee_comment = comment
+        
         performance.end_year_employee_submitted = timezone.now()
         performance.save()
         
         PerformanceActivityLog.objects.create(
             performance=performance,
-            action='END_YEAR_EMPLOYEE_SUBMITTED',
-            description='Employee submitted end-year self-review',
+            action='END_YEAR_EMPLOYEE_COMMENT_ADDED',
+            description='Employee added end-year self-review comment',
             performed_by=request.user
         )
         
-        return Response({'success': True, 'message': 'End-year self-review submitted'})
+        return Response({
+            'success': True, 
+            'message': 'End-year comment added successfully'
+        })
+    
+    
+    @action(detail=True, methods=['post'])
+    def submit_end_year_manager(self, request, pk=None):
+        """
+        ✅ NEW: Manager adds end-year assessment comment
+        """
+        performance = self.get_object()
+        
+        is_line_manager = False
+        try:
+            manager_employee = Employee.objects.get(user=request.user, is_deleted=False)
+            is_line_manager = (performance.employee.line_manager == manager_employee)
+        except Employee.DoesNotExist:
+            pass
+        
+        if not is_admin_user(request.user):
+            if not is_line_manager:
+                return Response({
+                    'error': 'Only the line manager can submit end-year assessment'
+                }, status=status.HTTP_403_FORBIDDEN)
+            
+            has_permission = check_performance_permission(request.user, 'performance.endyear.submit_manager')[0] or \
+                            check_performance_permission(request.user, 'performance.manage_team')[0] or \
+                            check_performance_permission(request.user, 'performance.manage_all')[0]
+            
+            if not has_permission:
+                return Response({
+                    'error': 'İcazə yoxdur',
+                    'detail': 'End-year assessment submit etmək üçün icazə lazımdır'
+                }, status=status.HTTP_403_FORBIDDEN)
+        
+        if not performance.performance_year.is_end_year_active():
+            return Response({
+                'error': 'End-year review period is not active',
+                'current_period': performance.performance_year.get_current_period()
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        if not performance.end_year_employee_submitted:
+            return Response({
+                'error': 'Employee must submit end-year self-review first',
+                'message': 'Waiting for employee to submit end-year self-review'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        comment = request.data.get('comment', '')
+        if not comment.strip():
+            return Response({
+                'error': 'Comment is required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # ✅ Append new comment to existing ones
+        if performance.end_year_manager_comment:
+            performance.end_year_manager_comment += f"\n\n--- Added on {timezone.now().strftime('%Y-%m-%d %H:%M')} ---\n{comment}"
+        else:
+            performance.end_year_manager_comment = comment
+        
+        performance.end_year_manager_submitted = timezone.now()
+        performance.save()
+        
+        PerformanceActivityLog.objects.create(
+            performance=performance,
+            action='END_YEAR_MANAGER_COMMENT_ADDED',
+            description='Manager added end-year assessment comment',
+            performed_by=request.user
+        )
+        
+        return Response({
+            'success': True, 
+            'message': 'End-year assessment added successfully'
+        })
+    
+    
     
     @action(detail=True, methods=['post'])
     def complete_end_year(self, request, pk=None):
@@ -1051,27 +1059,7 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
             'message': 'Development needs draft saved'
         })
     
-    @action(detail=True, methods=['post'])
-    def submit_development_needs(self, request, pk=None):
-        """Submit development needs"""
-        performance = self.get_object()
-        self._check_edit_access(performance)
-        
-        performance.development_needs_submitted = timezone.now()
-        performance.save()
-        
-        PerformanceActivityLog.objects.create(
-            performance=performance,
-            action='DEVELOPMENT_NEEDS_SUBMITTED',
-            description='Development needs submitted',
-            performed_by=request.user
-        )
-        
-        return Response({
-            'success': True,
-            'message': 'Development needs submitted'
-        })
-    
+
     # ============ UTILITIES ============
     
     @action(detail=True, methods=['post'])
@@ -1098,8 +1086,7 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
         })
     # ==================== OBJECTIVES ENDPOINTS ====================
 
-    # performance_views.py - save_objectives_draft endpoint
-
+   
     @action(detail=True, methods=['post'])
     def save_objectives_draft(self, request, pk=None):
         """
@@ -1205,8 +1192,7 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
             'total_objectives_score': str(performance.total_objectives_score),
             'objectives_percentage': str(performance.objectives_percentage)
         })
-    
-    # performance_views.py - submit_objectives endpoint
+ 
 
     @action(detail=True, methods=['post'])
     def submit_objectives(self, request, pk=None):
@@ -2143,9 +2129,6 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
         
         return response
 
-# ============ DASHBOARD VIEWSET ============
-
-# In performance_views.py - Add to PerformanceDashboardViewSet
 
 class PerformanceDashboardViewSet(viewsets.ViewSet):
     """Performance Dashboard Statistics with Access Control"""
