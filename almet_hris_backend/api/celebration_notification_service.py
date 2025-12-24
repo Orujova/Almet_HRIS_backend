@@ -1,44 +1,68 @@
 # api/celebration_notification_service.py
 
-
 import logging
 from datetime import date
-
 from .models import Employee
-
 from .system_email_service import system_email_service
-
 
 logger = logging.getLogger(__name__)
 
 
 class CelebrationNotificationService:
-    """
-    Celebration notification handler
-    Sends emails from system mailbox to all staff distribution lists
-    """
+
+    
+    # 🚫 Business functions that should NOT receive celebration emails
+    EXCLUDED_BUSINESS_FUNCTIONS = [
+        'ASPM',  # Add other business functions here as needed
+        # 'LLC',
+        # 'UK',
+    ]
     
     def __init__(self):
         self.system_sender = 'hr@almettrading.com'
         
         # 📧 Distribution lists for all staff
         self.all_staff_emails = [
-            'alltradeuk@almettrading.co.uk',    # UK
-            'alltrade@almettrading.com',        # LLC
-            'allholding@almettrading.com',  
-          
-            # 'n.orujova@almettrading.com',
-        
-          
+            # 'alltradeuk@almettrading.co.uk',    # UK
+            # 'alltrade@almettrading.com',        # LLC
+            # 'allholding@almettrading.com',  
+            'n.orujova@almettrading.com',  # Test
         ]
+    
+    def should_send_email(self, employee):
+     
+        # Check if employee has business_function field
+        if not hasattr(employee, 'business_function'):
+            return True  # Default: send email if field doesn't exist
+        
+        business_function = getattr(employee, 'business_function', None)
+        
+        # If no business function set, send email
+        if not business_function:
+            return True
+        
+        # Convert to string and check against excluded list
+        business_function_str = str(business_function).strip().upper()
+        
+        excluded = any(
+            excluded_bf.upper() in business_function_str 
+            for excluded_bf in self.EXCLUDED_BUSINESS_FUNCTIONS
+        )
+        
+        if excluded:
+            logger.info(f"🚫 Email skipped for {employee.first_name} {employee.last_name} - Business function: {business_function}")
+            return False
+        
+        return True
     
     def send_birthday_notification(self, employee):
         """
         🎂 Send birthday celebration email (NO AGE)
-    
+        ⚠️ Skips email for excluded business functions (e.g., ASPM)
+        
         Args:
             employee: Employee instance
-    
+        
         Returns:
             bool: Success status
         """
@@ -46,10 +70,15 @@ class CelebrationNotificationService:
             if not employee.date_of_birth:
                 logger.warning(f"No birth date for {employee.first_name} {employee.last_name}")
                 return False
-    
+            
+            # ✅ CHECK: Should we send email for this employee?
+            if not self.should_send_email(employee):
+                logger.info(f"✅ Birthday celebration recorded but email skipped for {employee.first_name}")
+                return True  # Return True because celebration is still valid
+            
             # Email subject
             subject = f"🎂 Happy Birthday {employee.first_name} {employee.last_name}!"
-    
+            
             # Email body (Outlook-friendly / table-based)
             body_html = f"""
 <!doctype html>
@@ -159,22 +188,22 @@ class CelebrationNotificationService:
 </body>
 </html>
 """
-    
+            
             # ✅ Send to ALL staff in ONE email
             result = system_email_service.send_email_as_system(
                 from_email=self.system_sender,
-                to_email=self.all_staff_emails,  # ✅ Pass the whole list
+                to_email=self.all_staff_emails,
                 subject=subject,
                 body_html=body_html
             )
-    
+            
             if result.get('success'):
                 logger.info(f"✅ Birthday email sent to {len(self.all_staff_emails)} distribution lists")
                 return True
             else:
                 logger.error(f"❌ Failed to send birthday email: {result.get('message')}")
                 return False
-    
+        
         except Exception as e:
             logger.error(f"Error sending birthday notification: {e}")
             return False
@@ -182,14 +211,20 @@ class CelebrationNotificationService:
     def send_work_anniversary_notification(self, employee, years):
         """
         🏆 Send work anniversary celebration email
+        ⚠️ Skips email for excluded business functions (e.g., ASPM)
         """
         try:
             if not employee.start_date:
                 logger.warning(f"No start date for {employee.first_name} {employee.last_name}")
                 return False
-    
+            
+            # ✅ CHECK: Should we send email for this employee?
+            if not self.should_send_email(employee):
+                logger.info(f"✅ Anniversary celebration recorded but email skipped for {employee.first_name}")
+                return True
+            
             subject = f"🏆 {years} Year{'s' if years != 1 else ''} with Almet – {employee.first_name}!"
-    
+            
             body_html = f"""
 <!doctype html>
 <html>
@@ -283,11 +318,10 @@ This is an automated celebration notification from Almet Holding.<br>
 </body>
 </html>
 """
-    
-            # ✅ Send to ALL staff in ONE email
+            
             result = system_email_service.send_email_as_system(
                 from_email=self.system_sender,
-                to_email=self.all_staff_emails,  # ✅ All at once
+                to_email=self.all_staff_emails,
                 subject=subject,
                 body_html=body_html
             )
@@ -298,7 +332,7 @@ This is an automated celebration notification from Almet Holding.<br>
             else:
                 logger.error(f"❌ Failed to send anniversary email: {result.get('message')}")
                 return False
-    
+        
         except Exception as e:
             logger.error(f"Error sending anniversary notification: {e}")
             return False
@@ -306,8 +340,14 @@ This is an automated celebration notification from Almet Holding.<br>
     def send_position_change_notification(self, employee, old_position, new_position, change_type="promotion"):
         """
         📈 Promotion / Role Change email
+        ⚠️ Skips email for excluded business functions (e.g., ASPM)
         """
         try:
+            # ✅ CHECK: Should we send email for this employee?
+            if not self.should_send_email(employee):
+                logger.info(f"✅ Position change recorded but email skipped for {employee.first_name}")
+                return True
+            
             if change_type == "promotion":
                 subject = f"🎉 Congratulations {employee.first_name} on Your Promotion!"
                 accent = "#0B6B4D"
@@ -318,7 +358,7 @@ This is an automated celebration notification from Almet Holding.<br>
                 accent = "#1D4ED8"
                 title = "Role Change Announcement"
                 intro = "We are pleased to announce"
-    
+            
             body_html = f"""
 <!doctype html>
 <html>
@@ -415,11 +455,10 @@ This is an automated celebration notification from Almet Holding.<br>
 </body>
 </html>
 """
-    
-            # ✅ Send to ALL staff in ONE email
+            
             result = system_email_service.send_email_as_system(
                 from_email=self.system_sender,
-                to_email=self.all_staff_emails,  # ✅ All at once
+                to_email=self.all_staff_emails,
                 subject=subject,
                 body_html=body_html
             )
@@ -430,28 +469,28 @@ This is an automated celebration notification from Almet Holding.<br>
             else:
                 logger.error(f"❌ Failed to send position change email: {result.get('message')}")
                 return False
-    
+        
         except Exception as e:
             logger.error(f"Error sending position change notification: {e}")
             return False
     
     def send_welcome_email(self, employee):
         """
-        👋 Send welcome email to new employee (soft card / Outlook-friendly)
-    
-        Args:
-            employee: Employee instance
-    
-        Returns:
-            bool: Success status
+        👋 Send welcome email to new employee
+        ⚠️ Skips email for excluded business functions (e.g., ASPM)
         """
         try:
+            # ✅ CHECK: Should we send email for this employee?
+            if not self.should_send_email(employee):
+                logger.info(f"✅ Welcome recorded but email skipped for {employee.first_name}")
+                return True
+            
             subject = f"🎉 Welcome to Almet Holding, {employee.first_name}!"
-    
+            
             full_name = f"{employee.first_name} {employee.last_name}".strip()
             position = employee.position_group or "Team Member"
             department = employee.department or "N/A"
-    
+            
             body_html = f"""
 <!doctype html>
 <html>
@@ -572,22 +611,21 @@ This is an automated celebration notification from Almet Holding.<br>
 </body>
 </html>
 """
-    
-            # ✅ Send to ALL staff in ONE email
+            
             result = system_email_service.send_email_as_system(
                 from_email=self.system_sender,
-                to_email=self.all_staff_emails,  # ✅ All at once
+                to_email=self.all_staff_emails,
                 subject=subject,
                 body_html=body_html
             )
-    
+            
             if result.get("success"):
                 logger.info(f"✅ Welcome email sent to {len(self.all_staff_emails)} distribution lists")
                 return True
             else:
                 logger.error(f"❌ Failed to send welcome email: {result.get('message')}")
                 return False
-    
+        
         except Exception as e:
             logger.error(f"Error sending welcome notification: {e}")
             return False
@@ -604,6 +642,7 @@ This is an automated celebration notification from Almet Holding.<br>
         results = {
             'birthdays_sent': 0,
             'anniversaries_sent': 0,
+            'skipped': 0,
             'errors': []
         }
         
@@ -615,8 +654,12 @@ This is an automated celebration notification from Almet Holding.<br>
                 if emp.date_of_birth:
                     if emp.date_of_birth.month == today.month and emp.date_of_birth.day == today.day:
                         logger.info(f"🎂 Processing birthday for {emp.first_name} {emp.last_name}")
-                        if self.send_birthday_notification(emp):
-                            results['birthdays_sent'] += 1
+                        
+                        if self.should_send_email(emp):
+                            if self.send_birthday_notification(emp):
+                                results['birthdays_sent'] += 1
+                        else:
+                            results['skipped'] += 1
                 
                 # Check work anniversaries
                 if emp.start_date:
@@ -624,8 +667,12 @@ This is an automated celebration notification from Almet Holding.<br>
                         years = today.year - emp.start_date.year
                         if years > 0:  # At least 1 year
                             logger.info(f"🏆 Processing {years}-year anniversary for {emp.first_name} {emp.last_name}")
-                            if self.send_work_anniversary_notification(emp, years):
-                                results['anniversaries_sent'] += 1
+                            
+                            if self.should_send_email(emp):
+                                if self.send_work_anniversary_notification(emp, years):
+                                    results['anniversaries_sent'] += 1
+                            else:
+                                results['skipped'] += 1
             
             logger.info(f"✅ Daily celebration check complete: {results}")
             return results
