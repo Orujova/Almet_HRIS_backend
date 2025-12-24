@@ -23,11 +23,21 @@ jobs:
           ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no $SERVER_USER@$SERVER_IP << 'ENDSSH'
             set -e
             
-            echo "=== Updating code ==="
+            echo "=== Backing up venv ==="
             cd /var/www/myalmet/backend
+            if [ -d "venv" ]; then
+              mv venv venv_backup
+            fi
+            
+            echo "=== Updating code ==="
             git config --global --add safe.directory /var/www/myalmet/backend
             git fetch origin main
             git reset --hard origin/main
+            
+            echo "=== Restoring venv ==="
+            if [ -d "venv_backup" ]; then
+              mv venv_backup venv
+            fi
             
             echo "=== Creating virtual environment if needed ==="
             if [ ! -d "venv" ]; then
@@ -38,7 +48,7 @@ jobs:
             source venv/bin/activate
             pip install --upgrade pip
             pip install -r requirements.txt
-            pip install gunicorn
+            pip install gunicorn celery redis django-celery-beat django-celery-results
             
             echo "=== Migrations & static files ==="
             cd almet_hris_backend
@@ -49,9 +59,11 @@ jobs:
             cd /var/www/myalmet/backend
             chown -R www-data:www-data .
             
-            echo "=== Restarting service ==="
+            echo "=== Restarting services ==="
             systemctl daemon-reload
             systemctl restart myalmet
+            systemctl restart celery || true
+            systemctl restart celerybeat || true
             sleep 3
             systemctl status myalmet --no-pager
             

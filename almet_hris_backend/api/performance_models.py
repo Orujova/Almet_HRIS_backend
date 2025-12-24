@@ -362,8 +362,7 @@ class EmployeePerformance(models.Model):
         ✅ FIXED: Ensure final_rating is ALWAYS calculated
         """
         from collections import defaultdict
-        
-        logger.info(f"📊 Starting score calculation for performance {self.id}")
+     
         
         eval_target = EvaluationTargetConfig.get_active_config()
         weight_config = PerformanceWeightConfig.objects.filter(
@@ -387,7 +386,7 @@ class EmployeePerformance(models.Model):
             (self.total_objectives_score / eval_target.objective_score_target) * 100, 2
         ) if eval_target.objective_score_target > 0 else 0
         
-        logger.info(f"✅ Objectives: {self.total_objectives_score}/{eval_target.objective_score_target} = {self.objectives_percentage}%")
+
         
         # ========== COMPETENCIES CALCULATION ==========
         competencies = self.competency_ratings.select_related(
@@ -439,7 +438,6 @@ class EmployeePerformance(models.Model):
         self.competencies_percentage = round((total_actual / total_required * 100), 2) if total_required > 0 else 0
         self.competencies_letter_grade = LetterGradeMapping.get_letter_grade(self.competencies_percentage)
         
-        logger.info(f"✅ Competencies: {total_actual}/{total_required} = {self.competencies_percentage}% - {self.competencies_letter_grade}")
         
         # ========== OVERALL WEIGHTED CALCULATION ==========
         self.overall_weighted_percentage = round(
@@ -447,29 +445,28 @@ class EmployeePerformance(models.Model):
             (self.competencies_percentage * weight_config.competencies_weight / 100),
             2
         )
-        
-        logger.info(f"📊 Overall Weighted: {self.overall_weighted_percentage}%")
+    
         
         # ✅ CRITICAL: Determine final rating using EvaluationScale
         rating = EvaluationScale.get_rating_by_percentage(self.overall_weighted_percentage)
         
         if rating:
             self.final_rating = rating.name
-            logger.info(f"✅ Final rating SET: {self.final_rating} (range: {rating.range_min}-{rating.range_max}%)")
+       
         else:
             # ✅ Fallback: Find closest scale
             all_scales = EvaluationScale.objects.filter(is_active=True).order_by('-range_min')
             if all_scales.exists():
                 # Get the lowest scale as fallback
                 self.final_rating = all_scales.last().name
-                logger.warning(f"⚠️ Using fallback rating: {self.final_rating}")
+            
             else:
                 self.final_rating = 'N/A'
                 logger.error(f"❌ No rating scales found!")
         
         self.save()
         
-        logger.info(f"✅ Scores saved - Final Rating: {self.final_rating}, Overall: {self.overall_weighted_percentage}%")
+     
 class EmployeeObjective(models.Model):
     """Employee Objectives - UNCHANGED"""
     performance = models.ForeignKey(EmployeePerformance, on_delete=models.CASCADE, related_name='objectives')

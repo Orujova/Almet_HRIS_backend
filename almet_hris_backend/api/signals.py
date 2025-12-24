@@ -23,10 +23,9 @@ def auto_update_employee_status(sender, instance, created, **kwargs):
     if instance.is_deleted:
         return
     
-    # ✅ FIX: Only skip for BRAND NEW employees (created=True)
-    # For existing employees, always check status
+
     if created:
-        logger.info(f"✅ New employee created: {instance.employee_id} - initial status set")
+ 
         return
     
     try:
@@ -62,7 +61,7 @@ def auto_update_employee_status(sender, instance, created, **kwargs):
                 }
             )
             
-            logger.info(f"   ✅ Status updated successfully")
+           
         else:
             logger.debug(f"   ℹ️  No status update needed for {instance.employee_id}")
             
@@ -92,13 +91,7 @@ def track_position_change(sender, instance, **kwargs):
 
 @receiver(post_save, sender=Employee)
 def send_position_change_notification(sender, instance, created, **kwargs):
-    """
-    📧 Send celebration email when position_group changes
-    
-    Automatically detects:
-    - Promotions (position level increase)
-    - Transfers (position change)
-    """
+
     if created:
         # New employee - no notification needed
         return
@@ -108,12 +101,9 @@ def send_position_change_notification(sender, instance, created, **kwargs):
     new_position = instance.position_group
     
     if old_position and new_position and old_position != new_position:
-        logger.info(f"📝 Position change detected for {instance.first_name} {instance.last_name}")
-        logger.info(f"   Old: {old_position} → New: {new_position}")
+      
         
-        # Determine if promotion or transfer
-        # You can add custom logic here to detect promotions
-        # For now, treat all changes as position changes
+       
         change_type = 'promotion'  # or 'transfer' based on your logic
         
         # Send notification asynchronously using Celery
@@ -125,7 +115,7 @@ def send_position_change_notification(sender, instance, created, **kwargs):
                 new_position=str(new_position),
                 change_type=change_type
             )
-            logger.info(f"✅ Position change notification task queued for {instance.first_name}")
+        
         except Exception as e:
             logger.error(f"❌ Failed to queue position change notification: {e}")
             
@@ -156,39 +146,22 @@ def track_employee_changes_for_welcome(sender, instance, **kwargs):
             instance._old_start_date = old.start_date
             instance._old_is_deleted = old.is_deleted
             
-            logger.debug(f"🔍 PRE_SAVE: Tracking changes for {instance.employee_id}")
-            logger.debug(f"   Old Status: {old.status.name if old.status else 'None'}")
-            logger.debug(f"   New Status: {instance.status.name if instance.status else 'None'}")
-            logger.debug(f"   Old Start Date: {old.start_date}")
-            logger.debug(f"   New Start Date: {instance.start_date}")
-            logger.debug(f"   Old is_deleted: {old.is_deleted}")
-            logger.debug(f"   New is_deleted: {instance.is_deleted}")
+          
         except Employee.DoesNotExist:
             instance._old_status = None
             instance._old_start_date = None
             instance._old_is_deleted = None
-            logger.debug(f"🔍 PRE_SAVE: New employee (no old data)")
+           
     else:
         instance._old_status = None
         instance._old_start_date = None
         instance._old_is_deleted = None
-        logger.debug(f"🔍 PRE_SAVE: Brand new employee")
+      
 
 
 @receiver(post_save, sender=Employee)
 def welcome_new_employee(sender, instance, created, **kwargs):
-    """
-    👋 Send welcome email when:
-    1. New employee created with start_date
-    2. Status changes from Vacant to Active/Working
-    3. Start date is added to existing employee
-    """
-    logger.info("=" * 80)
-    logger.info(f"🔍 POST_SAVE: Welcome email check for {instance.employee_id}")
-    logger.info(f"   Created: {created}")
-    logger.info(f"   Is Deleted: {instance.is_deleted}")
-    logger.info(f"   Current Status: {instance.status.name if instance.status else 'None'}")
-    logger.info(f"   Start Date: {instance.start_date}")
+ 
     
     should_send_welcome = False
     trigger_reason = ""
@@ -197,8 +170,7 @@ def welcome_new_employee(sender, instance, created, **kwargs):
     if created and not instance.is_deleted and instance.start_date:
         should_send_welcome = True
         trigger_reason = "New employee created with start_date"
-        logger.info(f"✅ TRIGGER: {trigger_reason}")
-        logger.info(f"   >>> should_send_welcome set to TRUE")
+     
     
     # Case 2: Existing employee changes
     elif not created and not instance.is_deleted:
@@ -206,9 +178,7 @@ def welcome_new_employee(sender, instance, created, **kwargs):
         old_start_date = getattr(instance, '_old_start_date', None)
         old_is_deleted = getattr(instance, '_old_is_deleted', None)
         
-        logger.info(f"   Old Status: {old_status.name if old_status else 'None'}")
-        logger.info(f"   Old Start Date: {old_start_date}")
-        logger.info(f"   Old is_deleted: {old_is_deleted}")
+    
         
         # Status: Vacant → Not Vacant (and has start_date)
         status_changed_from_vacant = (
@@ -239,53 +209,33 @@ def welcome_new_employee(sender, instance, created, **kwargs):
         if status_changed_from_vacant:
             should_send_welcome = True
             trigger_reason = f"Status changed from Vacant to {instance.status.name}"
-            logger.info(f"✅ TRIGGER: {trigger_reason}")
+           
             
         elif start_date_added:
             should_send_welcome = True
             trigger_reason = "Start date added to existing employee"
-            logger.info(f"✅ TRIGGER: {trigger_reason}")
+      
             
         elif reactivated:
             should_send_welcome = True
             trigger_reason = "Employee reactivated from deleted state"
-            logger.info(f"✅ TRIGGER: {trigger_reason}")
+       
         else:
             logger.info(f"❌ NO TRIGGER: Conditions not met")
     else:
         logger.info(f"❌ NO TRIGGER: Either deleted or brand new without start_date")
     
-    # Send email if conditions met
-    logger.info(f"🔍 Final check - should_send_welcome: {should_send_welcome}")
+  
     
     if should_send_welcome:
-        logger.info(f"📧 STARTING welcome email process for {instance.first_name} {instance.last_name}")
-        logger.info(f"   Reason: {trigger_reason}")
-        logger.info(f"   Employee ID: {instance.id}")
-        logger.info(f"   Employee Name: {instance.first_name} {instance.last_name}")
-        logger.info(f"   Position: {instance.position_group}")
-        logger.info(f"   Department: {instance.department}")
-        logger.info(f"   Start Date: {instance.start_date}")
+       
         
         # ✅ FIRST TRY: Direct synchronous send (most reliable)
         try:
-            logger.info(f"   🔄 Attempting DIRECT synchronous send...")
-            logger.info(f"   Importing celebration_notification_service...")
+         
             
             from .celebration_notification_service import celebration_notification_service
-            
-            logger.info(f"   ✅ Service imported successfully")
-            logger.info(f"   Calling send_welcome_email()...")
-            
-            success = celebration_notification_service.send_welcome_email(instance)
-            
-            logger.info(f"   📬 send_welcome_email() returned: {success}")
-            
-            if success:
-                logger.info(f"✅ ✅ ✅ Welcome email sent SUCCESSFULLY to distribution list!")
-            else:
-                logger.error(f"❌ ❌ ❌ Welcome email send returned False - check service logs above")
-                
+
         except Exception as e:
             logger.error(f"❌ Failed to send welcome email directly: {e}")
             import traceback
@@ -293,11 +243,11 @@ def welcome_new_employee(sender, instance, created, **kwargs):
             
             # ✅ SECOND TRY: Celery (if available)
             try:
-                logger.info(f"   🔄 Attempting Celery queue as backup...")
+               
                 from .tasks import send_welcome_email_task
                 
                 send_welcome_email_task.delay(employee_id=instance.id)
-                logger.info(f"✅ Welcome email task queued to Celery")
+                
                 
             except Exception as celery_error:
                 logger.error(f"❌ Celery also failed: {celery_error}")
@@ -320,10 +270,7 @@ logger = logging.getLogger(__name__)
 
 @receiver(post_save, sender='api.Employee')
 def auto_assign_job_description_to_employee(sender, instance, created, **kwargs):
-    """
-    ✅ Signal 1: Yeni işçi yaradılanda və ya update edildikdə
-    - Əgər matching job description varsa, avtomatik assign et
-    """
+  
     
     # Skip if employee is deleted
     if instance.is_deleted:
@@ -333,7 +280,7 @@ def auto_assign_job_description_to_employee(sender, instance, created, **kwargs)
     from .job_description_models import JobDescription, JobDescriptionAssignment, normalize_grading_level
     
     try:
-        logger.info(f"🔍 Checking job description for: {instance.full_name}")
+       
         
         # Find matching job descriptions
         matching_jds = JobDescription.objects.filter(
@@ -364,7 +311,7 @@ def auto_assign_job_description_to_employee(sender, instance, created, **kwargs)
             ).exists()
             
             if existing_assignment:
-                logger.info(f"✅ Already assigned: {instance.full_name} -> {jd.job_title}")
+    
                 continue
             
             # Check if there's a vacant assignment for this job description
@@ -380,7 +327,7 @@ def auto_assign_job_description_to_employee(sender, instance, created, **kwargs)
             if vacant_assignment:
                 # ✅ Vacant assignment-ı employee-ə çevir
                 vacant_assignment.assign_new_employee(instance)
-                logger.info(f"✅ Converted vacant to employee: {instance.full_name} -> {jd.job_title}")
+              
             else:
                 # ✅ Yeni assignment yarat
                 with transaction.atomic():
@@ -401,16 +348,13 @@ def auto_assign_job_description_to_employee(sender, instance, created, **kwargs)
 
 @receiver(pre_delete, sender='api.Employee')
 def convert_employee_assignment_to_vacant(sender, instance, **kwargs):
-    """
-    ✅ Signal 2: İşçi silinəndə
-    - Əgər VacantPosition yaradılacaqsa, job description assignment-ı saxla
-    """
+  
     
     # Lazy import
     from .job_description_models import JobDescriptionAssignment
     
     try:
-        logger.info(f"🔍 Handling deletion for: {instance.full_name}")
+      
         
         # Get all active assignments for this employee
         active_assignments = JobDescriptionAssignment.objects.filter(
@@ -419,12 +363,11 @@ def convert_employee_assignment_to_vacant(sender, instance, **kwargs):
         )
         
         for assignment in active_assignments:
-            logger.info(f"📝 Marking assignment as vacant for: {instance.full_name} -> {assignment.job_description.job_title}")
+          
             
             # Mark as vacant (don't delete)
             assignment.mark_as_vacant(reason="Employee deleted")
-            
-            logger.info(f"✅ Assignment converted to vacant: {assignment.job_description.job_title}")
+
     
     except Exception as e:
         logger.error(f"❌ Error in convert_employee_assignment_to_vacant: {str(e)}", exc_info=True)
@@ -432,10 +375,7 @@ def convert_employee_assignment_to_vacant(sender, instance, **kwargs):
 
 @receiver(post_save, sender='api.VacantPosition')
 def handle_vacant_position_filled(sender, instance, created, **kwargs):
-    """
-    ✅ Signal 3: Vacant position employee-ə çevrildikdə
-    - Job description assignment-ı yeni employee-ə ötür
-    """
+   
     
     # Only handle when vacant position is filled
     if not instance.is_filled or not instance.filled_by_employee:
@@ -445,7 +385,7 @@ def handle_vacant_position_filled(sender, instance, created, **kwargs):
     from .job_description_models import JobDescriptionAssignment
     
     try:
-        logger.info(f"🔍 Vacant position filled: {instance.position_id} -> {instance.filled_by_employee.full_name}")
+        
         
         # Find vacant assignment for this position
         vacant_assignment = JobDescriptionAssignment.objects.filter(
@@ -457,7 +397,7 @@ def handle_vacant_position_filled(sender, instance, created, **kwargs):
         if vacant_assignment:
             # ✅ Convert to employee assignment
             vacant_assignment.assign_new_employee(instance.filled_by_employee)
-            logger.info(f"✅ Vacant assignment converted: {instance.position_id} -> {instance.filled_by_employee.full_name}")
+           
         else:
             # No vacant assignment, trigger auto-assign for new employee
             logger.info(f"ℹ️ No vacant assignment found, will auto-assign if matching JD exists")
@@ -471,20 +411,11 @@ def handle_vacant_position_filled(sender, instance, created, **kwargs):
 # ============================================
 
 def assign_missing_job_descriptions():
-    """
-    ✅ Management command helper: Mövcud işçilər üçün unassigned job descriptions tapıb assign et
     
-    Usage:
-    python manage.py shell
-    >>> from api.signals import assign_missing_job_descriptions
-    >>> assign_missing_job_descriptions()
-    """
     from .models import Employee
     from .job_description_models import JobDescription, JobDescriptionAssignment, normalize_grading_level
     
-    logger.info("=" * 80)
-    logger.info("🔍 STARTING: Check all employees for missing job descriptions")
-    logger.info("=" * 80)
+
     
     total_assigned = 0
     total_checked = 0
@@ -498,7 +429,7 @@ def assign_missing_job_descriptions():
         total_checked += 1
         
         if not employee.job_title:
-            logger.warning(f"⚠️ No job title: {employee.full_name}")
+         
             continue
         
         # Find matching job descriptions
@@ -543,18 +474,13 @@ def assign_missing_job_descriptions():
                         reports_to=employee.line_manager
                     )
                     total_assigned += 1
-                    logger.info(f"✅ AUTO-ASSIGNED: {employee.full_name} -> {jd.job_title}")
+                   
             except Exception as e:
                 logger.error(f"❌ Failed to assign {employee.full_name}: {str(e)}")
             
             # Only assign to first matching JD
             break
-    
-    logger.info("=" * 80)
-    logger.info(f"📊 SUMMARY:")
-    logger.info(f"   Total Employees Checked: {total_checked}")
-    logger.info(f"   Total Assignments Created: {total_assigned}")
-    logger.info("=" * 80)
+  
     
     return {
         'total_checked': total_checked,

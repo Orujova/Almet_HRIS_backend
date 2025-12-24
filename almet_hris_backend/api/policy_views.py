@@ -144,7 +144,7 @@ class CompanyPolicyViewSet(viewsets.ModelViewSet):
             serializer.is_valid(raise_exception=True)
             self.perform_update(serializer)
             
-            logger.info(f"Policy updated successfully: {serializer.instance.title}")
+
             
             return Response(serializer.data)
         except Exception as e:
@@ -230,8 +230,7 @@ class CompanyPolicyViewSet(viewsets.ModelViewSet):
         policy.increment_view_count()
         
      
-        
-        logger.info(f"Policy viewed: {policy.title} by {request.user.username}")
+
         
         return Response({
             'message': 'Policy view tracked successfully',
@@ -265,8 +264,6 @@ class CompanyPolicyViewSet(viewsets.ModelViewSet):
         policy.increment_download_count()
         
    
-        logger.info(f"Policy downloaded: {policy.title} by {request.user.username}")
-        
         return Response({
             'message': 'Policy download tracked successfully',
             'download_count': policy.download_count,
@@ -337,7 +334,7 @@ class CompanyPolicyViewSet(viewsets.ModelViewSet):
             notes=request.data.get('notes', '')
         )
         
-        logger.info(f"Policy acknowledged: {policy.title} by {employee.full_name}")
+    
         
         serializer = PolicyAcknowledgmentSerializer(acknowledgment)
         return Response(serializer.data, status=status.HTTP_201_CREATED)

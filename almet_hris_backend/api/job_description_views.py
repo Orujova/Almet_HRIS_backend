@@ -483,7 +483,7 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
             assignment.status = 'PENDING_LINE_MANAGER'
             assignment.save()
             
-            logger.info(f"Assignment {assignment_id} submitted for approval")
+
             
             return Response({
                 'success': True,
@@ -570,7 +570,7 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                 
                 assignment.save()
             
-            logger.info(f"Assignment {assignment_id} approved by {request.user.username}")
+       
             
             return Response({
                 'success': True,
@@ -619,7 +619,7 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                 
                 assignment.save()
             
-            logger.info(f"Assignment {assignment_id} approved by employee {request.user.username}")
+       
             
             return Response({
                 'success': True,
@@ -983,7 +983,7 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
                 }
             }
             
-            logger.info(f"Preview completed: strategy={strategy}, total={total_count}, employees={employees_count}, vacancies={vacancies_count}")
+          
             
             return Response(response_data)
             
@@ -1411,7 +1411,7 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
             return response
             
         except Exception as e:
-            logger.error(f"PDF generation error: {str(e)}", exc_info=True)
+
             return HttpResponse(f"PDF Generation Error: {str(e)}", status=500)
 
 # ==================== RESOURCE VIEWSETS ====================

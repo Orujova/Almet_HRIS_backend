@@ -252,14 +252,14 @@ class CompanyPolicy(models.Model):
         self.view_count += 1
      
         self.save(update_fields=['view_count'])
-        logger.info(f"Policy {self.id} viewed. Total views: {self.view_count}")
+ 
     
     def increment_download_count(self):
         """Increment download counter"""
         self.download_count += 1
     
         self.save(update_fields=['download_count'])
-        logger.info(f"Policy {self.id} downloaded. Total downloads: {self.download_count}")
+        
     
     def get_business_function(self):
         """Get the business function this policy belongs to"""

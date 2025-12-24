@@ -317,9 +317,7 @@ class EmployeePerformanceListSerializer(serializers.ModelSerializer):
     
     # CRITICAL FIX: Add current_period
     current_period = serializers.SerializerMethodField()
-    
-    objectives_count = serializers.SerializerMethodField()
-    competencies_count = serializers.SerializerMethodField()
+
     
     # Draft status indicators
     has_objectives_draft = serializers.SerializerMethodField()
@@ -345,7 +343,7 @@ class EmployeePerformanceListSerializer(serializers.ModelSerializer):
             'employee_position_group', 'employee_department','employee_company',
             'year', 'current_period','objectives_percentage', 'competencies_percentage',
             'approval_status',
-            'objectives_count', 'competencies_count',
+         
             'objectives_employee_submitted', 'objectives_employee_approved', 
             'objectives_manager_approved',
             'mid_year_completed', 'end_year_completed',
@@ -435,21 +433,7 @@ class EmployeePerformanceListSerializer(serializers.ModelSerializer):
             logger.warning(f"Error getting current_period: {e}")
             return None
     
-    def get_objectives_count(self, obj):
-        """Safe get objectives count"""
-        try:
-            return obj.objectives.filter(is_cancelled=False).count()
-        except Exception as e:
-            logger.warning(f"Error getting objectives_count: {e}")
-            return 0
-    
-    def get_competencies_count(self, obj):
-        """Safe get competencies count"""
-        try:
-            return obj.competency_ratings.count()
-        except Exception as e:
-            logger.warning(f"Error getting competencies_count: {e}")
-            return 0
+  
     
     def get_has_objectives_draft(self, obj):
         """Safe check objectives draft"""
@@ -802,7 +786,7 @@ class PerformanceDashboardSerializer(serializers.Serializer):
     
     timeline = serializers.DictField()
     by_department = serializers.ListField()
-    recent_activities = serializers.ListField()
+    # recent_activities = serializers.ListField()
     
     # Additional stats
     pending_employee_approval = serializers.IntegerField()
@@ -1008,7 +992,7 @@ class PerformanceInitializeSerializer(serializers.Serializer):
                     f'Performance initialized with {created_count} leadership competencies'
                 )
                 
-                print(f"✅ [Backend] {log_message}")
+               
                 
             else:
                 # ============ BEHAVIORAL COMPETENCIES ============
@@ -1060,7 +1044,7 @@ class PerformanceInitializeSerializer(serializers.Serializer):
                     f'Performance initialized with {created_count} behavioral competencies'
                 )
                 
-                print(f"✅ [Backend] {log_message}")
+      
             
             if employee_assessment:
                 log_message += f' (loaded existing ratings from assessment {employee_assessment.id})'

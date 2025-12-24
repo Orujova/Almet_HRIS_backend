@@ -153,8 +153,7 @@ class TrainingViewSet(viewsets.ModelViewSet):
             else:
                 print("ℹ️ No materials_data provided")
             
-            # Log success
-            logger.info(f"Training {training.training_id} created by {request.user.username}")
+            
             
             # Return created training with all data
             serializer = TrainingDetailSerializer(training, context={'request': request})
@@ -277,14 +276,11 @@ class TrainingViewSet(viewsets.ModelViewSet):
             else:
                 print("ℹ️ No new materials to add")
             
-            # Log success
-            logger.info(f"Training {instance.training_id} updated by {request.user.username}")
+           
             
             # Return updated training
             serializer = TrainingDetailSerializer(instance, context={'request': request})
-            print("=" * 70)
-            print("✅ SUCCESS - Training updated successfully")
-            print("=" * 70)
+          
             
             return Response(serializer.data)
             

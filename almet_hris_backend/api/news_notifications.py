@@ -27,7 +27,7 @@ class NewsNotificationManager:
             try:
                 self._settings = NotificationSettings.get_active()
             except Exception as e:
-                logger.warning(f"Could not load notification settings: {e}")
+           
                 from types import SimpleNamespace
                 self._settings = SimpleNamespace(
                     enable_email_notifications=True,
@@ -41,7 +41,6 @@ class NewsNotificationManager:
         try:
             # Check if notifications are enabled
             if not news.notify_members:
-                logger.info(f"News {news.id}: Notifications not enabled")
                 return {
                     'success': False,
                     'message': 'Notifications not enabled for this news',
@@ -52,7 +51,7 @@ class NewsNotificationManager:
             
             # Check if already sent
             if news.notification_sent:
-                logger.info(f"News {news.id}: Notifications already sent")
+       
                 return {
                     'success': False,
                     'message': 'Notifications already sent',
@@ -96,8 +95,7 @@ class NewsNotificationManager:
             
             # Get sender email
             sender_email = self.settings.company_news_sender_email
-            
-            logger.info(f" Sending news notifications from {sender_email} to {len(recipient_emails)} recipients")
+
             
             # ✅ Send using SYSTEM EMAIL SERVICE (Application Permissions)
             bulk_result = self.system_service.send_bulk_emails_as_system(
@@ -133,7 +131,7 @@ class NewsNotificationManager:
             
          
             
-            logger.info(f"News notifications sent: {success_count} success, {failed_count} failed")
+  
             
             return {
                 'success': True,

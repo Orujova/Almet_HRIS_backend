@@ -22,19 +22,19 @@ class EmployeeStatusManager:
             
             # ✅ CHECK 1: Has start date?
             if not employee.start_date:
-                logger.warning(f"Employee {employee.employee_id} has no start_date")
+              
                 return employee.status, "No start date defined"
             
             # ✅ CHECK 2: Not started yet?
             if employee.start_date > current_date:
                 days_until_start = (employee.start_date - current_date).days
-                logger.info(f"Employee {employee.employee_id} hasn't started yet (starts in {days_until_start} days)")
+               
                 return employee.status, f"Employee hasn't started yet (starts in {days_until_start} days)"
             
             # ✅ CHECK 3: Calculate days since start
             days_since_start = (current_date - employee.start_date).days
             
-            logger.info(f"Employee {employee.employee_id}: started {days_since_start} days ago (start_date: {employee.start_date})")
+        
             
             # ✅ CHECK 4: Contract ended?
             if employee.contract_end_date and employee.contract_end_date <= current_date:
@@ -44,7 +44,7 @@ class EmployeeStatusManager:
                 ).first()
                 
                 if inactive_status:
-                    logger.info(f"Employee {employee.employee_id}: contract ended on {employee.contract_end_date}")
+                   
                     return inactive_status, f"Contract ended on {employee.contract_end_date}"
             
             # ✅ CHECK 5: Get contract config
@@ -54,7 +54,7 @@ class EmployeeStatusManager:
                     is_active=True
                 )
             except ContractTypeConfig.DoesNotExist:
-                logger.warning(f"Employee {employee.employee_id}: No contract config for {employee.contract_duration}")
+             
                 
                 # DEFAULT: If no config, use ACTIVE after 90 days
                 if days_since_start > 90:
@@ -68,7 +68,7 @@ class EmployeeStatusManager:
             
             # ✅ CHECK 6: Auto transitions enabled?
             if not contract_config.enable_auto_transitions:
-                logger.info(f"Employee {employee.employee_id}: Auto transitions disabled")
+      
                 return employee.status, "Auto transitions disabled for this contract type"
             
             # ✅ CHECK 7: PERMANENT contracts → directly ACTIVE (NO probation)
@@ -79,16 +79,16 @@ class EmployeeStatusManager:
                 ).first()
                 
                 if active_status:
-                    logger.info(f"Employee {employee.employee_id}: PERMANENT contract → ACTIVE (no probation)")
+           
                     return active_status, "Permanent contract - directly active (no probation period)"
                 else:
-                    logger.error("ACTIVE status not found in system!")
+                   
                     return employee.status, "ACTIVE status not found"
             
             # ✅ CHECK 8: For ALL other contracts → Check probation period
             probation_days = contract_config.probation_days
             
-            logger.info(f"Employee {employee.employee_id}: Contract {employee.contract_duration} has {probation_days} probation days")
+          
             
             # ✅ CRITICAL: Still in probation?
             if days_since_start < probation_days:
@@ -98,7 +98,7 @@ class EmployeeStatusManager:
                 ).first()
                 
                 if not probation_status:
-                    logger.warning("PROBATION status not found - using ACTIVE")
+                  
                     active_status = EmployeeStatus.objects.filter(
                         status_type='ACTIVE',
                         is_active=True
@@ -106,7 +106,7 @@ class EmployeeStatusManager:
                     return active_status, "PROBATION status not found - using ACTIVE"
                 
                 remaining_days = probation_days - days_since_start
-                logger.info(f"Employee {employee.employee_id}: In probation - {remaining_days} days remaining")
+         
                 return probation_status, f"In probation period ({remaining_days} days remaining of {probation_days})"
             
             # ✅ CHECK 9: Probation completed → ACTIVE
@@ -117,10 +117,10 @@ class EmployeeStatusManager:
                 ).first()
                 
                 if not active_status:
-                    logger.error("ACTIVE status not found in system!")
+          
                     return employee.status, "ACTIVE status not found"
                 
-                logger.info(f"Employee {employee.employee_id}: Probation completed -> ACTIVE")
+                
                 return active_status, f"Probation period completed ({days_since_start} days since start, probation was {probation_days} days)"
                 
         except Exception as e:

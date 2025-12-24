@@ -290,7 +290,7 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
             if performance.approval_status == 'NEED_CLARIFICATION':
                 # Manager can edit when clarification requested
                 if performance.employee.line_manager == employee:
-                    logger.info(f"✅ Allowing edit - Clarification requested")
+                    
                     return True
                 
                 # Employee can edit their own performance if clarification needed
@@ -1144,7 +1144,7 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
                         obj.save()
                         updated_ids.append(obj.id)
                         
-                        logger.info(f"✅ Updated objective {obj.id}: rating={obj.end_year_rating_id}, score={obj.calculated_score}")
+                     
                 else:
                     # ✅ CREATE new objective
                     new_obj = EmployeeObjective.objects.create(
@@ -1160,8 +1160,7 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
                         display_order=idx
                     )
                     updated_ids.append(new_obj.id)
-                    logger.info(f"➕ Created objective {new_obj.id}: rating={new_obj.end_year_rating_id}")
-            
+                  
             # Delete objectives not in the list
             deleted_count = performance.objectives.exclude(id__in=updated_ids).count()
             performance.objectives.exclude(id__in=updated_ids).delete()
@@ -1183,7 +1182,7 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
                 performed_by=request.user
             )
             
-            logger.info(f"✅ Draft saved - Total: {performance.total_objectives_score}, Percentage: {performance.objectives_percentage}%")
+           
         
         return Response({
             'success': True,
@@ -1279,7 +1278,7 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
                             obj.save()
                             updated_ids.append(obj.id)
                             
-                            logger.info(f"✅ Updated objective {obj.id}: {title[:30]}, rating={obj.end_year_rating_id}")
+                          
                     else:
                         # ✅ CREATE new
                         new_obj = EmployeeObjective.objects.create(
@@ -1295,7 +1294,7 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
                             display_order=idx
                         )
                         updated_ids.append(new_obj.id)
-                        logger.info(f"➕ Created objective {new_obj.id}: rating={new_obj.end_year_rating_id}")
+               
                 
                 # Delete objectives not in the list
                 deleted_count = performance.objectives.exclude(id__in=updated_ids).count()
@@ -1391,7 +1390,7 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
             ).order_by('-assessment_date').first()
             
             if not assessment:
-                logger.info(f"ℹ️ No behavioral assessment found for {employee.full_name}")
+            
                 return {
                     'synced': False, 
                     'reason': 'no_assessment',
@@ -1419,10 +1418,10 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
                     performance_scale = EvaluationScale.objects.get(id=actual_level_scale_id)
                     actual_level_value = int(performance_scale.value)  # Get the integer value (1-10)
                 except EvaluationScale.DoesNotExist:
-                    logger.warning(f"⚠️ PerformanceEvaluationScale ID {actual_level_scale_id} not found, skipping")
+                  
                     continue
                 except (ValueError, TypeError):
-                    logger.warning(f"⚠️ Invalid scale value for ID {actual_level_scale_id}, skipping")
+                   
                     continue
                 
                 # Update or create rating in behavioral assessment
@@ -1450,8 +1449,7 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
             
             if was_completed:
                 log_message += " (assessment was COMPLETED - updated anyway)"
-            
-            logger.info(f"✅ {log_message} - Assessment ID: {assessment.id}")
+           
             
             return {
                 'synced': True,
@@ -1464,7 +1462,7 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
             }
             
         except Exception as e:
-            logger.error(f"❌ Error syncing to behavioral assessment: {e}")
+          
             import traceback
             traceback.print_exc()
             
@@ -1491,7 +1489,7 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
             ).order_by('-assessment_date').first()
             
             if not assessment:
-                logger.info(f"ℹ️ No leadership assessment found for {employee.full_name}")
+               
                 return {
                     'synced': False, 
                     'reason': 'no_assessment',
@@ -1519,10 +1517,10 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
                     performance_scale = EvaluationScale.objects.get(id=actual_level_scale_id)
                     actual_level_value = int(performance_scale.value)
                 except EvaluationScale.DoesNotExist:
-                    logger.warning(f"⚠️ PerformanceEvaluationScale ID {actual_level_scale_id} not found, skipping")
+                
                     continue
                 except (ValueError, TypeError):
-                    logger.warning(f"⚠️ Invalid scale value for ID {actual_level_scale_id}, skipping")
+
                     continue
                 
                 # Update or create rating in leadership assessment
@@ -1551,7 +1549,7 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
             if was_completed:
                 log_message += " (assessment was COMPLETED - updated anyway)"
             
-            logger.info(f"✅ {log_message} - Assessment ID: {assessment.id}")
+           
             
             return {
                 'synced': True,
@@ -1564,7 +1562,7 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
             }
             
         except Exception as e:
-            logger.error(f"❌ Error syncing to leadership assessment: {e}")
+      
             import traceback
             traceback.print_exc()
             
@@ -1590,7 +1588,7 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
         
         competencies_data = request.data.get('competencies', [])
         
-        logger.info(f"💾 Saving competencies draft: {len(competencies_data)} competencies")
+      
         
         with transaction.atomic():
             updated_count = 0
@@ -1661,7 +1659,7 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
                 }
             )
             
-            logger.info(f"✅ Draft saved - Type: {'LEADERSHIP' if is_leadership else 'BEHAVIORAL'}, Synced: {sync_result['synced']}")
+          
         
         return Response({
             'success': True,
@@ -1783,7 +1781,7 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
                 }
             )
             
-            logger.info(f"✅ Competencies submitted - Type: {'LEADERSHIP' if is_leadership else 'BEHAVIORAL'}, Synced: {sync_result['synced']}")
+           
         
         return Response({
             'success': True,
@@ -1810,7 +1808,7 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
         
         logger = logging.getLogger(__name__)
         
-        logger.info(f"📊 Calculating scores for performance {self.id}")
+       
         
         eval_target = EvaluationTargetConfig.get_active_config()
         weight_config = PerformanceWeightConfig.objects.filter(
@@ -1834,7 +1832,7 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
             (self.total_objectives_score / eval_target.objective_score_target) * 100, 2
         ) if eval_target.objective_score_target > 0 else 0
         
-        logger.info(f"✅ Objectives: {self.total_objectives_score}/{eval_target.objective_score_target} = {self.objectives_percentage}%")
+    
         
         # ========== COMPETENCIES ==========
         from .competency_assessment_models import LetterGradeMapping
@@ -1883,7 +1881,7 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
         self.competencies_percentage = round((total_actual / total_required * 100), 2) if total_required > 0 else 0
         self.competencies_letter_grade = LetterGradeMapping.get_letter_grade(self.competencies_percentage)
         
-        logger.info(f"✅ Competencies: {total_actual}/{total_required} = {self.competencies_percentage}% - {self.competencies_letter_grade}")
+     
         
         # ========== OVERALL ==========
         self.overall_weighted_percentage = round(
@@ -1895,7 +1893,7 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
         rating = EvaluationScale.get_rating_by_percentage(self.overall_weighted_percentage)
         self.final_rating = rating.name if rating else 'N/A'
         
-        logger.info(f"✅ Overall: {self.overall_weighted_percentage}% - {self.final_rating}")
+      
         
         self.save()
     @action(detail=True, methods=['get'])
@@ -2233,7 +2231,7 @@ class PerformanceDashboardViewSet(viewsets.ViewSet):
             performance_id__in=performance_ids
         ).select_related('performance__employee').order_by('-created_at')[:10]
         
-        recent_activities = PerformanceActivityLogSerializer(recent_logs, many=True).data
+        # recent_activities = PerformanceActivityLogSerializer(recent_logs, many=True).data
         
         # Competency grade distribution
         competency_grade_distribution = self._get_grade_distribution(performances)
@@ -2269,7 +2267,7 @@ class PerformanceDashboardViewSet(viewsets.ViewSet):
                 }
             },
             'by_department': by_department,
-            'recent_activities': recent_activities,
+            # 'recent_activities': recent_activities,
             'competency_grade_distribution': competency_grade_distribution
         })
     

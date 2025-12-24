@@ -79,7 +79,7 @@ class TimeOffBalance(models.Model):
             self.last_reset_date = today
             self.save()
             
-            logger.info(f"Monthly reset: {self.employee.full_name} - New balance: {self.current_balance_hours}h")
+           
             return True
         return False
     
@@ -275,7 +275,7 @@ class TimeOffRequest(models.Model):
         # HR-lara bildiriş göndər
         self.notify_hr()
         
-        logger.info(f"Time off approved: {self.employee.full_name} - {self.duration_hours}h on {self.date}")
+     
     
     def reject(self, rejection_reason, rejected_by_user):
         """Line manager tərəfindən reject"""
@@ -288,7 +288,7 @@ class TimeOffRequest(models.Model):
         self.approved_at = timezone.now()
         self.save()
         
-        logger.info(f"Time off rejected: {self.employee.full_name} - {self.duration_hours}h on {self.date}")
+
     
     def cancel(self):
         """Employee tərəfindən cancel"""
@@ -301,7 +301,7 @@ class TimeOffRequest(models.Model):
         self.status = 'CANCELLED'
         self.save()
         
-        logger.info(f"Time off cancelled: {self.employee.full_name} - {self.duration_hours}h on {self.date}")
+      
     
     def notify_hr(self):
         """HR-lara bildiriş göndər"""
@@ -310,7 +310,7 @@ class TimeOffRequest(models.Model):
         self.hr_notified_at = timezone.now()
         self.save()
         
-        logger.info(f"HR notified for time off: {self.employee.full_name} - {self.date}")
+     
     
  
     

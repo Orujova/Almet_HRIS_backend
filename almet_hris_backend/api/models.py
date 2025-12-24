@@ -645,11 +645,10 @@ class VacantPosition(SoftDeleteModel):
             )
             self.vacancy_status = vacant_status
         
-        # CRITICAL: Ensure original_employee_pk is preserved during ALL operations
-        # This is the main fix - force preserve the original value
+ 
         if original_pk_to_preserve is not None:
             self.original_employee_pk = original_pk_to_preserve
-            logger.debug(f"VacantPosition save: Preserving original_employee_pk = {original_pk_to_preserve}")
+    
         
         # Call parent save with explicit field preservation
         if original_pk_to_preserve is not None:
@@ -658,8 +657,7 @@ class VacantPosition(SoftDeleteModel):
             
             # Then explicitly update the PK field if it was lost
             if self.original_employee_pk != original_pk_to_preserve:
-                logger.warning(f"VacantPosition: original_employee_pk was lost during save! Forcing restore: {original_pk_to_preserve}")
-                # Use raw SQL update to force the value
+               
                 from django.db import connection
                 with connection.cursor() as cursor:
                     cursor.execute(
@@ -668,14 +666,12 @@ class VacantPosition(SoftDeleteModel):
                     )
                 # Refresh from database
                 self.refresh_from_db()
-                logger.info(f"Force-updated original_employee_pk to {self.original_employee_pk}")
+               
         else:
             # Normal save when no PK to preserve
             super().save(*args, **kwargs)
         
-        # FINAL VERIFICATION: Log the final state
-        logger.debug(f"VacantPosition save complete: ID={self.id}, position_id={self.position_id}, original_employee_pk={self.original_employee_pk}")
-        
+       
         # CRITICAL: Double-check that the value is actually in the database
         if original_pk_to_preserve is not None:
             self.refresh_from_db()
@@ -1231,7 +1227,7 @@ class Employee(SoftDeleteModel):
                 
                 if active_status:
                     self.status = active_status
-                    logger.info(f"New employee {self.employee_id}: PERMANENT contract -> ACTIVE status")
+                 
                     return
             
             # ✅ Check if start_date is in the past (back-dated employee)
@@ -1249,7 +1245,7 @@ class Employee(SoftDeleteModel):
             # ✅ Calculate days since start
             days_since_start = (current_date - self.start_date).days
             
-            logger.info(f"New employee {self.employee_id}: started {days_since_start} days ago")
+     
             
             # ✅ Get contract config
             try:
@@ -1281,10 +1277,7 @@ class Employee(SoftDeleteModel):
                 
                 if active_status:
                     self.status = active_status
-                    logger.info(
-                        f"New employee {self.employee_id}: Probation already completed "
-                        f"({days_since_start} days since start, probation was {probation_days} days) -> ACTIVE"
-                    )
+                  
                 else:
                     # Fallback
                     probation_status = EmployeeStatus.objects.filter(
@@ -1302,10 +1295,7 @@ class Employee(SoftDeleteModel):
                 if probation_status:
                     self.status = probation_status
                     remaining_days = probation_days - days_since_start
-                    logger.info(
-                        f"New employee {self.employee_id}: In probation period "
-                        f"({remaining_days} days remaining of {probation_days}) -> PROBATION"
-                    )
+                    
                 else:
                     # Fallback to ACTIVE if PROBATION not found
                     active_status = EmployeeStatus.objects.filter(
@@ -1313,11 +1303,10 @@ class Employee(SoftDeleteModel):
                         is_active=True
                     ).first()
                     self.status = active_status
-                    logger.warning("PROBATION status not found - using ACTIVE as fallback")
+
                     
         except Exception as e:
-            logger.error(f"Error auto-assigning status: {e}")
-            # Fallback to first available active status
+         
             if not self.status:
                 fallback_status = EmployeeStatus.objects.filter(is_active=True).first()
                 if fallback_status:
@@ -1734,7 +1723,7 @@ class Employee(SoftDeleteModel):
                 }
             }
         except Exception as e:
-            logger.error(f"Error serializing employee data for archive: {e}")
+
             return {
                 'error': f'Could not serialize complete data: {str(e)}',
                 'basic_info': {
@@ -1947,7 +1936,7 @@ class Employee(SoftDeleteModel):
             original_employee_pk = self.pk
             deletion_date = timezone.now().date()
             
-            logger.info(f"Starting soft delete for employee {self.employee_id} (PK: {original_employee_pk})")
+   
             
             # ✅ YENİ: End date əlavə et
             if not self.end_date:
@@ -2051,7 +2040,7 @@ class Employee(SoftDeleteModel):
                 }
             )
             
-            logger.info(f"Employee {self.employee_id} soft deleted successfully with end_date={deletion_date}")
+           
             return vacancy, archive
     
     def _remove_name_from_processes(self):
@@ -2352,7 +2341,7 @@ class Employee(SoftDeleteModel):
                 )
                 
                 if remaining_vacancies.exists():
-                    logger.error(f"RESTORE ERROR: {remaining_vacancies.count()} vacancies still exist after deletion!")
+             
                     for rv in remaining_vacancies:
                         logger.error(f"Remaining vacancy: ID={rv.id}, position_id={rv.position_id}")
                 else:
@@ -2364,7 +2353,7 @@ class Employee(SoftDeleteModel):
                     employee_still_exists=True
                 ).order_by('-deleted_at')
                 
-                logger.info(f"RESTORE DEBUG: Found {soft_delete_archives.count()} archives to delete")
+        
                 
                 archive_info = []
                 for archive in soft_delete_archives:
@@ -2375,12 +2364,11 @@ class Employee(SoftDeleteModel):
                     }
                     archive_info.append(archive_data)
                     
-                    logger.info(f"RESTORE DEBUG: Deleting archive {archive.get_archive_reference()}")
+             
                     archive.delete()
-                    logger.info(f"RESTORE DEBUG: Successfully deleted archive")
+                  
                 
-                # Employee-ni restore et
-                logger.info(f"RESTORE DEBUG: Restoring employee {employee_id}")
+              
                 self.restore()
                 
                 # Activity log et
@@ -2402,7 +2390,7 @@ class Employee(SoftDeleteModel):
                     }
                 )
                 
-                logger.info(f"Employee {employee_id} - {self.full_name} restored successfully. {deleted_vacancy_count} vacancies and {len(archive_info)} archives deleted.")
+               
                 
                 return True, f"Employee restored successfully. {deleted_vacancy_count} vacancies DELETED. {len(archive_info)} archives deleted."
                 
@@ -2919,7 +2907,7 @@ class ContractStatusManager:
             if EmployeeStatusManager.update_employee_status(employee, force_update):
                 updated_count += 1
         
-        logger.info(f"Bulk status update completed: {updated_count} employees updated")
+    
         return updated_count
     
     @staticmethod

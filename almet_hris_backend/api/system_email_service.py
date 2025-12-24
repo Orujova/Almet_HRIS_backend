@@ -55,7 +55,7 @@ class SystemEmailService:
                 authority=self.authority
             )
             
-            logger.info("🔄 Acquiring application token...")
+      
             
             result = app.acquire_token_for_client(scopes=self.scope)
             
@@ -66,7 +66,7 @@ class SystemEmailService:
                 # Cache-lə (5 dəqiqə əvvəl expire edirik ki, problem olmasın)
                 cache.set(self.cache_key, token, timeout=expires_in - 300)
                 
-                logger.info("✅ Application token acquired successfully")
+           
                 return token
             else:
                 error = result.get("error_description", result.get("error", "Unknown error"))
@@ -125,7 +125,7 @@ class SystemEmailService:
                 "Content-Type": "application/json"
             }
             
-            logger.info(f"📧 Sending system email from {from_email} to {len(to_recipients)} recipients")
+        
             
             # API endpoint: /users/{from_email}/sendMail
             response = requests.post(
@@ -136,7 +136,7 @@ class SystemEmailService:
             )
             
             if response.status_code == 202:
-                logger.info(f"✅ System email sent successfully to {len(to_recipients)} recipients")
+            
                 return {
                     'success': True,
                     'message': f'Email sent to {len(to_recipients)} recipients',

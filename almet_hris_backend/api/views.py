@@ -1857,7 +1857,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         employee_filter = ComprehensiveEmployeeFilter(queryset, request.query_params)
         queryset = employee_filter.filter()
         
-        logger.info(f"📊 After filtering: {queryset.count()} employees")
+     
         
         # ✅ 3. APPLY SORTING TO FILTERED QUERYSET
         sorting_data = request.query_params.get('sorting')
@@ -1883,10 +1883,10 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         else:
             employee_sorter = AdvancedEmployeeSorter(queryset, sorting_params)
             queryset = employee_sorter.sort()
-            logger.info(f"🔀 Sorting applied: {sorting_params}")
+         
         
         total_count = queryset.count()
-        logger.info(f"✅ Final queryset: {total_count} employees")
+
         
         if not should_paginate:
             serializer = self.get_serializer(queryset, many=True)
@@ -1926,8 +1926,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         status_param = request.query_params.get('status', '')
         status_values = [s.strip() for s in status_param.split(',') if s.strip()]
         
-        logger.info(f"[STATUS] Raw param: '{status_param}'")
-        logger.info(f"[STATUS] Parsed values: {status_values}")
+  
         
         # Check if status is VACANT
         has_vacant = False
@@ -1939,13 +1938,11 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 Q(name__iexact='VACANT') | Q(name__iexact='VACANCY')
             )
             vacant_status_ids = list(vacant_statuses.values_list('id', flat=True))
-            vacant_status_names = list(vacant_statuses.values_list('name', flat=True))
-            
-            logger.info(f"[STATUS] VACANT status IDs in DB: {vacant_status_ids}")
+    
         except Exception as e:
             logger.error(f"[STATUS] Error getting VACANT statuses: {e}")
             vacant_status_ids = []
-            vacant_status_names = []
+   
         
         for status_val in status_values:
             is_vacant_status = False
@@ -1967,7 +1964,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                     status_obj = EmployeeStatus.objects.get(name__iexact=status_val)
                     if status_obj.id in vacant_status_ids:
                         is_vacant_status = True
-                        logger.info(f"[STATUS] '{status_val}' detected as VACANT by DB lookup")
+              
                     else:
                         employee_status_ids.append(status_obj.id)
                         logger.info(f"[STATUS] '{status_val}' detected as employee status by DB lookup")
@@ -1979,31 +1976,30 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             else:
                 has_employee_status = True
         
-        logger.info(f"[STATUS] Has VACANT: {has_vacant}")
-        logger.info(f"[STATUS] Has employee status: {has_employee_status}")
+    
         
         # Decide what to include
         if not status_values:
             include_employees = True
             include_vacancies = True
-            logger.info("[MODE] SHOW ALL")
+        
         elif has_vacant and not has_employee_status:
             include_employees = False
             include_vacancies = True
-            logger.info("[MODE] ONLY VACANCIES")
+       
         elif has_employee_status and not has_vacant:
             include_employees = True
             include_vacancies = False
-            logger.info("[MODE] ONLY EMPLOYEES")
+
         else:
             include_employees = True
             include_vacancies = True
-            logger.info("[MODE] BOTH")
+         
         
         # ====== GET EMPLOYEES WITH ACCESS CONTROL ======
         if include_employees:
             employee_queryset = self.get_queryset()  # Already filtered by access
-            logger.info(f"[EMP] Initial count: {employee_queryset.count()}")
+       
             
             if employee_status_ids:
                 employee_queryset = employee_queryset.filter(status__id__in=employee_status_ids)
@@ -2015,10 +2011,10 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             
             employee_filter = ComprehensiveEmployeeFilter(employee_queryset, filter_params)
             filtered_employees = employee_filter.filter()
-            logger.info(f"[EMP] After all filters: {filtered_employees.count()}")
+      
         else:
             filtered_employees = Employee.objects.none()
-            logger.info("[EMP] Excluded (0)")
+       
         
         # ====== GET VACANCIES WITH ACCESS CONTROL ======
         if include_vacancies:
@@ -2031,7 +2027,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 'position_group', 'vacancy_status', 'reporting_to'
             )
             
-            logger.info(f"[VAC] Initial count: {vacancy_queryset.count()}")
+     
             
             # ✅ CRITICAL: Apply access control to vacancies
             if not access['can_view_all']:
@@ -2040,12 +2036,11 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                     vacancy_queryset = vacancy_queryset.filter(
                         business_function_id__in=access['accessible_business_functions']
                     )
-                    logger.info(f"[VAC] Manager access: filtered to BFs {access['accessible_business_functions']}")
-                    logger.info(f"[VAC] After manager filter: {vacancy_queryset.count()}")
+                    
                 else:
                     # Regular employee - NO ACCESS to vacancies
                     vacancy_queryset = VacantPosition.objects.none()
-                    logger.info("[VAC] Regular employee - no access")
+                    
             
             # Apply organizational filters
             filter_params = request.query_params.copy()
@@ -2055,13 +2050,13 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             vacancy_filter_q = self._get_vacancy_filter_from_employee_params(filter_params)
             if vacancy_filter_q:
                 vacancy_queryset = vacancy_queryset.filter(vacancy_filter_q)
-                logger.info(f"[VAC] After organizational filters: {vacancy_queryset.count()}")
+   
             
             filtered_vacancies = vacancy_queryset
-            logger.info(f"[VAC] Final count: {filtered_vacancies.count()}")
+          
         else:
             filtered_vacancies = VacantPosition.objects.none()
-            logger.info("[VAC] Excluded (0)")
+           
         
         # ====== BUILD UNIFIED DATA ======
         unified_data = []
@@ -2073,7 +2068,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 emp_data['is_vacancy'] = False
                 emp_data['record_type'] = 'employee'
                 unified_data.append(emp_data)
-            logger.info(f"[UNIFIED] Added {len(employee_serializer.data)} employees")
+            
         
         # Add vacancies
         if filtered_vacancies.exists():
@@ -2624,7 +2619,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             partial = kwargs.pop('partial', False)
             instance = self.get_object()
             
-            logger.info(f"Employee update request for {instance.employee_id}")
+
             
             # ✅ FIX: Use serializer's update method - it handles everything
             serializer = self.get_serializer(instance, data=request.data, partial=True)
@@ -2633,14 +2628,13 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             # Save via serializer (calls serializer's update method)
             self.perform_update(serializer)
             
-            logger.info(f"Employee {instance.employee_id} updated successfully")
+    
             
             # Return updated data
             return Response(serializer.data)
             
         except Exception as e:
-            logger.error(f"Employee update failed: {str(e)}")
-            logger.error(f"Traceback: {traceback.format_exc()}")
+        
             return Response(
                 {'error': f'Employee update failed: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -5806,10 +5800,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                                 status_changed_count += 1
                                 result_data['status_changed'] = True
                                 
-                                logger.info(
-                                    f"Employee {employee.employee_id}: "
-                                    f"Tag removed, Status changed {result_data['old_status']} → {result_data['new_status']}"
-                                )
+                               
                     else:
                         didnt_have_count += 1
                         result_data['status'] = 'didnt_have'
@@ -6369,8 +6360,7 @@ class BulkEmployeeUploadViewSet(viewsets.ViewSet):
                     except:
                         df = pd.read_excel(file, sheet_name=0)
                 
-                logger.info(f"Excel file read successfully. Shape: {df.shape}")
-                logger.info(f"Columns: {list(df.columns)}")
+             
                 
             except Exception as e:
                 logger.error(f"Failed to read Excel file: {str(e)}")
@@ -6390,7 +6380,7 @@ class BulkEmployeeUploadViewSet(viewsets.ViewSet):
                     status=status.HTTP_400_BAD_REQUEST
                 )
             
-            logger.info(f"Processing Excel file '{file.name}' with {len(df)} rows")
+          
             
             # Process the data - call EmployeeViewSet method
             employee_viewset = EmployeeViewSet()
@@ -6405,7 +6395,7 @@ class BulkEmployeeUploadViewSet(viewsets.ViewSet):
             
             result = employee_viewset._process_bulk_employee_data_from_excel(df, request.user)
             
-            logger.info(f"Bulk upload completed. Success: {result['successful']}, Failed: {result['failed']}")
+         
             
             return Response({
                 'message': f'File processed successfully. {result["successful"]} employees created, {result["failed"]} failed.',
@@ -6418,8 +6408,7 @@ class BulkEmployeeUploadViewSet(viewsets.ViewSet):
             })
             
         except Exception as e:
-            logger.error(f"Bulk employee creation failed for file: {str(e)}")
-            logger.error(f"Traceback: {traceback.format_exc()}")
+   
             return Response(
                 {'error': f'Failed to process request: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -6438,7 +6427,7 @@ class BulkEmployeeUploadViewSet(viewsets.ViewSet):
     def download_template(self, request):
         """Download Excel template for bulk employee creation"""
         try:
-            logger.info(f"Template download request from user: {request.user}")
+         
             
             # Call EmployeeViewSet template method
             employee_viewset = EmployeeViewSet()
@@ -6452,12 +6441,11 @@ class BulkEmployeeUploadViewSet(viewsets.ViewSet):
                 )
             
             response = employee_viewset._generate_bulk_template()
-            logger.info("Template generated successfully")
+       
             return response
             
         except Exception as e:
-            logger.error(f"Template generation failed: {str(e)}")
-            logger.error(f"Traceback: {traceback.format_exc()}")
+
             return Response(
                 {'error': f'Failed to generate template: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -6707,12 +6695,7 @@ class OrgChartFilter:
         return queryset
 
 class OrgChartViewSet(viewsets.ViewSet):  
-    """
-    ✅ UPDATED: Tree-based organizational chart ViewSet
-    - NO list() endpoint
-    - NO retrieve() endpoint  
-    - ONLY tree endpoints
-    """
+   
     permission_classes = [IsAuthenticated]
     
     @swagger_auto_schema(
@@ -6836,7 +6819,7 @@ class OrgChartViewSet(viewsets.ViewSet):
                 except (ValueError, TypeError):
                     pass
             
-            logger.info(f"📊 Org Chart Tree: Found {vacancies.count()} vacancies matching filters")
+      
             
             # Convert vacancies to org chart format
             vacancy_data = []
@@ -6891,7 +6874,7 @@ class OrgChartViewSet(viewsets.ViewSet):
             total_employees = employees.count()
             total_vacancies = len(vacancy_data)
             
-            logger.info(f"📊 Org Chart Response: {total_employees} employees + {total_vacancies} vacancies = {len(all_org_data)} total")
+           
             
             return Response({
                 'org_chart': all_org_data,
@@ -7179,7 +7162,7 @@ class ProfileImageViewSet(viewsets.ViewSet):
     def upload(self, request):
         """Upload or update employee profile image"""
         try:
-            logger.info(f"Profile image upload request from user: {request.user}")
+      
             
             # Validate request data
             if 'employee_id' not in request.data:
@@ -7194,8 +7177,7 @@ class ProfileImageViewSet(viewsets.ViewSet):
                     status=status.HTTP_400_BAD_REQUEST
                 )
             
-            logger.info(f"Employee ID: {request.data['employee_id']}")
-            logger.info(f"Image file: {request.FILES['profile_image'].name}")
+    
             
             serializer = ProfileImageUploadSerializer(data=request.data, context={'request': request})
             if not serializer.is_valid():
@@ -7207,10 +7189,7 @@ class ProfileImageViewSet(viewsets.ViewSet):
             # Refresh employee from database to get the saved image
             employee.refresh_from_db()
             
-            # DEBUG: Let's check what we have
-            logger.info(f"Employee after save: {employee.employee_id}")
-            logger.info(f"Profile image field: {employee.profile_image}")
-            logger.info(f"Profile image name: {employee.profile_image.name if employee.profile_image else 'None'}")
+
             
             # Build profile image URL with better error handling
             profile_image_url = None
@@ -7219,19 +7198,19 @@ class ProfileImageViewSet(viewsets.ViewSet):
                     # Check if the file exists and has a URL
                     if hasattr(employee.profile_image, 'url') and employee.profile_image.name:
                         profile_image_url = request.build_absolute_uri(employee.profile_image.url)
-                        logger.info(f"Built profile image URL: {profile_image_url}")
+                       
                     else:
                         logger.warning(f"Profile image exists but no URL available: {employee.profile_image}")
                 except Exception as e:
-                    logger.error(f"Error building profile image URL: {e}")
+                  
                     # Try to construct URL manually
                     if employee.profile_image.name:
                         profile_image_url = request.build_absolute_uri(f"/media/{employee.profile_image.name}")
-                        logger.info(f"Manually constructed URL: {profile_image_url}")
+                     
             else:
                 logger.warning("No profile image found after save")
             
-            logger.info(f"Profile image uploaded successfully for employee {employee.employee_id}")
+     
             
             return Response({
                 'success': True,

@@ -641,9 +641,7 @@ class TimeOffRequestViewSet(viewsets.ModelViewSet):
         has_hr_perm, _ = check_timeoff_permission(request.user, 'timeoff.request.approve_as_hr')
         is_admin = is_admin_user(request.user)
         
-        # Debug log
-        logger.info(f"Pending approvals request by: {employee.employee_id} - {employee.full_name}")
-        logger.info(f"Is Admin: {is_admin}, Has HR Perm: {has_hr_perm}")
+       
         
         if is_admin or has_hr_perm:
             # Admin/HR can see ALL pending requests
@@ -656,7 +654,7 @@ class TimeOffRequestViewSet(viewsets.ModelViewSet):
                 'line_manager'
             ).order_by('-created_at')
             
-            logger.info(f"Admin/HR view: Found {requests.count()} total pending requests")
+        
         else:
             # Line manager can only see their team's pending requests
             requests = TimeOffRequest.objects.filter(
@@ -669,7 +667,7 @@ class TimeOffRequestViewSet(viewsets.ModelViewSet):
                 'line_manager'
             ).order_by('-created_at')
             
-            logger.info(f"Line manager view: Found {requests.count()} pending requests for their team")
+           
         
         serializer = self.get_serializer(requests, many=True)
         
@@ -738,7 +736,7 @@ class TimeOffRequestViewSet(viewsets.ModelViewSet):
                 sent_by=request.user
             )
             
-            logger.info(f"Line manager notification sent for request {request_obj.id}")
+         
             
         except Exception as e:
             logger.error(f"Failed to send line manager notification: {e}")
@@ -805,7 +803,7 @@ class TimeOffRequestViewSet(viewsets.ModelViewSet):
             request_obj.hr_notified_at = timezone.now()
             request_obj.save()
             
-            logger.info(f"HR notification sent for request {request_obj.id}")
+      
             
         except Exception as e:
             logger.error(f"Failed to send HR notification: {e}")
@@ -875,7 +873,7 @@ class TimeOffRequestViewSet(viewsets.ModelViewSet):
                 sent_by=request.user
             )
             
-            logger.info(f"Employee notification ({notification_type}) sent for request {request_obj.id}")
+           
             
         except Exception as e:
             logger.error(f"Failed to send employee notification: {e}")

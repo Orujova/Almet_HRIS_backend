@@ -41,19 +41,7 @@ def get_user_tokens(user):
 
 
 def extract_graph_token_from_request(request):
-    """
-    Extract Microsoft Graph token from request
-    Can be in:
-    1. Custom header: X-Graph-Token
-    2. Request data: graph_token
-    3. Database: UserGraphToken for request.user
-    
-    Args:
-        request: Django request object
-    
-    Returns:
-        str or None: Graph access token
-    """
+  
     # 1. Check custom header
     graph_token = request.META.get('HTTP_X_GRAPH_TOKEN')
     if graph_token:

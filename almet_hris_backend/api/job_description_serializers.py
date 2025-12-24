@@ -717,7 +717,7 @@ class JobDescriptionCreateUpdateSerializer(serializers.ModelSerializer):
                     reports_to=employee.line_manager
                 )
                 assignments_created.append(assignment)
-                logger.info(f"Created assignment for: {employee.full_name}")
+              
             
             for vacancy in vacancies_to_assign:
                 assignment = JobDescriptionAssignment.objects.create(
@@ -728,11 +728,11 @@ class JobDescriptionCreateUpdateSerializer(serializers.ModelSerializer):
                     reports_to=vacancy.reporting_to
                 )
                 assignments_created.append(assignment)
-                logger.info(f"Created vacancy assignment: {vacancy.position_id}")
+          
             
             job_description._assignments_created = assignments_created
             
-            logger.info(f"Job description created with {len(assignments_created)} assignments")
+         
             
             return job_description
     

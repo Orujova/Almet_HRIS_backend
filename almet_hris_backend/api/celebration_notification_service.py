@@ -73,7 +73,7 @@ class CelebrationNotificationService:
             
             # ✅ CHECK: Should we send email for this employee?
             if not self.should_send_email(employee):
-                logger.info(f"✅ Birthday celebration recorded but email skipped for {employee.first_name}")
+      
                 return True  # Return True because celebration is still valid
             
             # Email subject
@@ -198,7 +198,7 @@ class CelebrationNotificationService:
             )
             
             if result.get('success'):
-                logger.info(f"✅ Birthday email sent to {len(self.all_staff_emails)} distribution lists")
+    
                 return True
             else:
                 logger.error(f"❌ Failed to send birthday email: {result.get('message')}")

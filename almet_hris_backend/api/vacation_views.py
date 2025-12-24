@@ -65,8 +65,7 @@ def get_graph_access_token(user):
             logger.info(f"✅ Valid Graph token found for user {user.username}")
             return token
         else:
-            logger.warning(f"⚠️ No valid Graph token found for user {user.username}")
-            logger.warning("   Email notifications will be skipped")
+      
             return None
     except Exception as e:
         logger.error(f"❌ Error getting Graph token: {e}")
@@ -4005,8 +4004,7 @@ def delete_vacation_attachment(request, attachment_id):
         # Soft delete
         attachment.is_deleted = True
         attachment.save()
-        
-        logger.info(f"🗑️ File deleted: {attachment.original_filename} by {request.user.username}")
+   
         
         return Response({
             'message': 'File deleted successfully',

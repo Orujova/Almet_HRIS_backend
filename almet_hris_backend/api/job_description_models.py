@@ -655,7 +655,7 @@ class JobDescription(models.Model):
         )
         
         initial_count = queryset.count()
-        logger.info(f"📊 STEP 0: Starting with {initial_count} total active employees\n")
+      
         
         # 1. JOB TITLE FILTER
         if job_title:
@@ -667,13 +667,13 @@ class JobDescription(models.Model):
             
             
             if after == 0:
-                logger.error(f"  ❌ ZERO employees found with job title '{job_title_clean}'")
+               
                 all_titles = list(Employee.objects.filter(
                     is_deleted=False
                 ).values_list('job_title', flat=True).distinct()[:30])
                 logger.error(f"  Available job titles: {all_titles}")
                 return Employee.objects.none()
-            logger.info("")
+          
         
         # 2. BUSINESS FUNCTION FILTER
         if business_function_id:
@@ -741,8 +741,7 @@ class JobDescription(models.Model):
             
         
         final_count = queryset.count()
-        logger.info(f"\n{'='*80}")
-        logger.info(f"🎯 FINAL RESULT: {final_count} MATCHING EMPLOYEES FOUND")
+       
         
         
         return queryset.order_by('line_manager_id', 'employee_id')
