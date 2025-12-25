@@ -236,7 +236,7 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
                 'name': employee.full_name,
                 'employee_id': employee.employee_id,
                 'email': email,  # ✅ Always return email
-                # ✅ Add line_manager info for filtering
+                 'line_manager_hc': employee.line_manager.employee_id if employee.line_manager else None,
                 'line_manager_id': employee.line_manager.id if employee.line_manager else None,
                 'department': employee.department.name if employee.department else None
             }

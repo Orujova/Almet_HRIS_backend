@@ -9,8 +9,6 @@ python manage.py assign_missing_job_descriptions --dry-run  # Test without savin
 
 from django.core.management.base import BaseCommand
 from django.db import transaction
-from api.models import Employee
-from api.job_description_models import JobDescription, JobDescriptionAssignment, normalize_grading_level
 import logging
 
 logger = logging.getLogger(__name__)
@@ -33,6 +31,10 @@ class Command(BaseCommand):
         )
     
     def handle(self, *args, **options):
+        # ✅ Lazy imports to avoid model loading issues
+        from api.models import Employee
+        from api.job_description_models import JobDescription, JobDescriptionAssignment, normalize_grading_level
+        
         dry_run = options.get('dry_run', False)
         employee_id = options.get('employee_id')
         
@@ -165,4 +167,44 @@ class Command(BaseCommand):
         if dry_run:
             self.stdout.write(self.style.WARNING("\n⚠️ This was a DRY RUN - No changes were saved"))
             self.stdout.write(self.style.WARNING("Run without --dry-run to save changes"))
+        self.stdout.write("=" * 80)# api/management/commands/assign_missing_job_descriptions.py
+"""
+Django management command to assign missing job descriptions to existing employees
+
+Usage:
+python manage.py assign_missing_job_descriptions
+python manage.py assign_missing_job_descriptions --dry-run  # Test without saving
+"""
+
+from django.core.management.base import BaseCommand
+from api.signals import assign_missing_job_descriptions  # ✅ Import from signals
+
+
+class Command(BaseCommand):
+    help = 'Assign missing job descriptions to existing employees'
+    
+    def add_arguments(self, parser):
+        parser.add_argument(
+            '--dry-run',
+            action='store_true',
+            help='Test run without saving changes (not implemented yet)',
+        )
+    
+    def handle(self, *args, **options):
+        dry_run = options.get('dry_run', False)
+        
+        self.stdout.write("=" * 80)
+        if dry_run:
+            self.stdout.write(self.style.WARNING("⚠️ Note: Dry-run mode not fully implemented"))
+        self.stdout.write(self.style.SUCCESS("🚀 Starting auto-assignment..."))
+        self.stdout.write("=" * 80)
+        
+        # Call the helper function
+        result = assign_missing_job_descriptions()
+        
+        # Summary
+        self.stdout.write("\n" + "=" * 80)
+        self.stdout.write(self.style.SUCCESS("📊 SUMMARY:"))
+        self.stdout.write(f"   Total Employees Checked: {result['total_checked']}")
+        self.stdout.write(f"   Total Assignments Created: {result['total_assigned']}")
         self.stdout.write("=" * 80)
