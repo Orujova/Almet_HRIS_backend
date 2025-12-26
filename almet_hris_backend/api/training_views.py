@@ -8,7 +8,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 from django.db import transaction
 from django.utils import timezone
 from datetime import timedelta
-from drf_yasg.utils import swagger_auto_schema, no_body
+from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 
 from .training_models import (
@@ -19,7 +19,6 @@ from .training_serializers import (
     TrainingListSerializer,
     TrainingDetailSerializer, TrainingMaterialSerializer,
     TrainingAssignmentSerializer, BulkTrainingAssignmentSerializer,
-    TrainingAssignByTrainingSerializer, TrainingAssignToEmployeeSerializer,
     TrainingMaterialUploadSerializer
 )
 from .models import Employee
@@ -61,14 +60,7 @@ class TrainingViewSet(viewsets.ModelViewSet):
     def create(self, request, *args, **kwargs):
         """Create training with materials"""
         try:
-            print("=" * 70)
-            print("🔥 TRAINING CREATE REQUEST")
-            print(f"Content-Type: {request.content_type}")
-            print(f"POST data keys: {list(request.data.keys())}")
-            print(f"FILES keys: {list(request.FILES.keys())}")
-            print("=" * 70)
-            
-            # Validate required fields
+
             title = request.data.get('title')
             description = request.data.get('description')
             
@@ -85,15 +77,13 @@ class TrainingViewSet(viewsets.ModelViewSet):
                 'is_active': str(request.data.get('is_active', 'true')).lower() == 'true',
                 'requires_completion': str(request.data.get('requires_completion', 'false')).lower() == 'true',
             }
-            
-            print(f"📋 Basic training data: {data}")
-            
+
             # Add optional completion deadline
             completion_deadline_days = request.data.get('completion_deadline_days')
             if completion_deadline_days:
                 try:
                     data['completion_deadline_days'] = int(completion_deadline_days)
-                    print(f"⏰ Completion deadline: {data['completion_deadline_days']} days")
+           
                 except (ValueError, TypeError):
                     print(f"⚠️ Invalid completion_deadline_days: {completion_deadline_days}")
             
@@ -102,22 +92,21 @@ class TrainingViewSet(viewsets.ModelViewSet):
                 created_by=request.user,
                 **data
             )
-            print(f"✅ Training created: {training.training_id} (ID: {training.id})")
+        
             
             # Process materials
             materials_data_str = request.data.get('materials_data')
             if materials_data_str:
-                print(f"📦 Processing materials_data: {materials_data_str}")
+      
                 
                 try:
                     import json
                     materials_data = json.loads(materials_data_str)
-                    print(f"📦 Parsed {len(materials_data)} material(s)")
-                    
+      
                     materials_created = 0
                     for material_info in materials_data:
                         file_index = material_info.get('file_index')
-                        print(f"🔍 Processing material with file_index={file_index}")
+              
                         
                         # Get file from request.FILES
                         if file_index is not None:
@@ -125,7 +114,7 @@ class TrainingViewSet(viewsets.ModelViewSet):
                             file_obj = request.FILES.get(file_key)
                             
                             if file_obj:
-                                print(f"🔍 Found file: {file_obj.name} ({file_obj.size} bytes)")
+   
                                 
                                 # Create material with file
                                 material = TrainingMaterial.objects.create(
@@ -135,13 +124,13 @@ class TrainingViewSet(viewsets.ModelViewSet):
                                     file_size=file_obj.size
                                 )
                                 materials_created += 1
-                                print(f"✅ Material created: ID={material.id}, File={material.file.name}")
+                               
                             else:
                                 print(f"⚠️ No file found for key: {file_key}")
                         else:
                             print(f"⚠️ No file_index in material_info")
                     
-                    print(f"✅ Created {materials_created} material(s)")
+                   
                     
                 except json.JSONDecodeError as e:
                     print(f"❌ JSON decode error: {str(e)}")
@@ -157,15 +146,11 @@ class TrainingViewSet(viewsets.ModelViewSet):
             
             # Return created training with all data
             serializer = TrainingDetailSerializer(training, context={'request': request})
-            print("=" * 70)
-            print("✅ SUCCESS - Training created successfully")
-            print("=" * 70)
-            
+        
             return Response(serializer.data, status=status.HTTP_201_CREATED)
             
         except Exception as e:
-            print("=" * 70)
-            print(f"❌ FATAL ERROR: {str(e)}")
+         
             import traceback
             traceback.print_exc()
             print("=" * 70)
@@ -177,43 +162,73 @@ class TrainingViewSet(viewsets.ModelViewSet):
             )
 
     @swagger_auto_schema(
-        responses={
-            200: TrainingDetailSerializer,
-            400: 'Bad Request',
-            404: 'Not Found',
-            500: 'Internal Server Error'
-        },
-        auto_schema=None
-    )
+    responses={
+        200: TrainingDetailSerializer,
+        400: 'Bad Request',
+        404: 'Not Found',
+        500: 'Internal Server Error'
+    },
+    auto_schema=None
+)
     def update(self, request, *args, **kwargs):
         """Update training with materials"""
         try:
             partial = kwargs.pop('partial', False)
             instance = self.get_object()
             
-            print("=" * 70)
-            print(f"🔥 TRAINING UPDATE REQUEST for {instance.training_id}")
-            print(f"Content-Type: {request.content_type}")
-            print(f"POST data keys: {list(request.data.keys())}")
-            print(f"FILES keys: {list(request.FILES.keys())}")
-            print("=" * 70)
+  
+            delete_material_ids_str = request.data.get('delete_material_ids')
+            if delete_material_ids_str:
+
+                try:
+                    import json
+                    delete_material_ids = json.loads(delete_material_ids_str) if isinstance(delete_material_ids_str, str) else delete_material_ids_str
+                    
+                    if delete_material_ids and isinstance(delete_material_ids, list):
+                        # Get materials to delete
+                        materials_to_delete = TrainingMaterial.objects.filter(
+                            id__in=delete_material_ids,
+                            training=instance,
+                            is_deleted=False
+                        )
+                        
+                        
+                        # Soft delete materials
+                        for material in materials_to_delete:
+                            material.is_deleted = True
+                            material.save()
+                           
+                    else:
+                        print("⚠️ delete_material_ids is empty or invalid")
+                        
+                except json.JSONDecodeError as e:
             
+                    return Response(
+                        {'error': f'Invalid delete_material_ids format: {str(e)}'},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                except Exception as e:
+                    print(f"❌ Error deleting materials: {str(e)}")
+                    import traceback
+                    traceback.print_exc()
+            else:
+                print("ℹ️ No materials to delete")
+       
             # Update basic fields
             if 'title' in request.data:
                 instance.title = str(request.data.get('title')).strip()
-                print(f"📝 Updating title: {instance.title}")
                 
             if 'description' in request.data:
                 instance.description = str(request.data.get('description')).strip()
-                print(f"📝 Updating description")
+             
                 
             if 'is_active' in request.data:
                 instance.is_active = str(request.data.get('is_active', 'true')).lower() == 'true'
-                print(f"📝 Updating is_active: {instance.is_active}")
+              
                 
             if 'requires_completion' in request.data:
                 instance.requires_completion = str(request.data.get('requires_completion', 'false')).lower() == 'true'
-                print(f"📝 Updating requires_completion: {instance.requires_completion}")
+
             
             # Update completion deadline
             if 'completion_deadline_days' in request.data:
@@ -221,38 +236,35 @@ class TrainingViewSet(viewsets.ModelViewSet):
                 if completion_deadline_days:
                     try:
                         instance.completion_deadline_days = int(completion_deadline_days)
-                        print(f"📝 Updating completion_deadline_days: {instance.completion_deadline_days}")
+                
                     except (ValueError, TypeError):
                         print(f"⚠️ Invalid completion_deadline_days: {completion_deadline_days}")
                 else:
                     instance.completion_deadline_days = None
-                    print(f"📝 Clearing completion_deadline_days")
+                
             
             # Save training
             instance.save()
-            print(f"✅ Training {instance.training_id} updated")
-            
-            # Process new materials if provided
+    
+            # 📦 ADD NEW MATERIALS (if provided)
             materials_data_str = request.data.get('materials_data')
             if materials_data_str:
-                print(f"📦 Processing materials_data: {materials_data_str}")
                 
                 try:
                     import json
                     materials_data = json.loads(materials_data_str)
-                    print(f"📦 Parsed {len(materials_data)} material(s)")
+                 
                     
                     materials_created = 0
                     for material_info in materials_data:
                         file_index = material_info.get('file_index')
-                        print(f"🔍 Processing material with file_index={file_index}")
                         
                         if file_index is not None:
                             file_key = f'material_{file_index}_file'
                             file_obj = request.FILES.get(file_key)
                             
                             if file_obj:
-                                print(f"🔍 Found file: {file_obj.name} ({file_obj.size} bytes)")
+                              
                                 
                                 material = TrainingMaterial.objects.create(
                                     training=instance,
@@ -261,11 +273,11 @@ class TrainingViewSet(viewsets.ModelViewSet):
                                     file_size=file_obj.size
                                 )
                                 materials_created += 1
-                                print(f"✅ Material created: ID={material.id}, File={material.file.name}")
+                                
                             else:
                                 print(f"⚠️ No file found for key: {file_key}")
                     
-                    print(f"✅ Created {materials_created} new material(s)")
+          
                     
                 except json.JSONDecodeError as e:
                     print(f"❌ JSON decode error: {str(e)}")
@@ -276,27 +288,23 @@ class TrainingViewSet(viewsets.ModelViewSet):
             else:
                 print("ℹ️ No new materials to add")
             
-           
-            
             # Return updated training
             serializer = TrainingDetailSerializer(instance, context={'request': request})
-          
-            
+         
             return Response(serializer.data)
             
         except Exception as e:
-            print("=" * 70)
+          
             print(f"❌ FATAL ERROR: {str(e)}")
             import traceback
             traceback.print_exc()
-            print("=" * 70)
+      
             
             logger.error(f"Training update failed: {str(e)}")
             return Response(
                 {'error': f'Failed to update training: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-    
     @swagger_auto_schema(
         operation_description="Partial update training",
         responses={
