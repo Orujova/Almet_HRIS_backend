@@ -223,6 +223,8 @@ class CelebrationViewSet(viewsets.ModelViewSet):
         
         return Response(CelebrationWishSerializer(wish).data, status=status.HTTP_201_CREATED)
     
+    # celebration_views.py - remove_image metodunu dəyişdir
+
     @action(detail=True, methods=['delete'])
     def remove_image(self, request, pk=None):
         """
@@ -237,10 +239,16 @@ class CelebrationViewSet(viewsets.ModelViewSet):
         try:
             image = CelebrationImage.objects.get(id=image_id, celebration=celebration)
             image.delete()
-            return Response({'message': 'Image deleted successfully'}, status=status.HTTP_200_OK)
+            
+            # ✅ Yenilənmiş celebration data-nı qaytarırıq
+            serializer = self.get_serializer(celebration)
+            return Response({
+                'message': 'Image deleted successfully',
+                'celebration': serializer.data
+            }, status=status.HTTP_200_OK)
+            
         except CelebrationImage.DoesNotExist:
             return Response({'error': 'Image not found'}, status=status.HTTP_404_NOT_FOUND)
-    
     @action(detail=False, methods=['get'])
     def statistics(self, request):
         """

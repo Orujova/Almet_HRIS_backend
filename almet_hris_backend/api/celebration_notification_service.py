@@ -23,10 +23,10 @@ class CelebrationNotificationService:
         
         # 📧 Distribution lists for all staff
         self.all_staff_emails = [
-            # 'alltradeuk@almettrading.co.uk',    # UK
-            # 'alltrade@almettrading.com',        # LLC
-            # 'allholding@almettrading.com',  
-            'n.orujova@almettrading.com',  # Test
+            'alltradeuk@almettrading.co.uk',    # UK
+            'alltrade@almettrading.com',        # LLC
+            'allholding@almettrading.com',  
+            # 'n.orujova@almettrading.com',  # Test
         ]
     
     def should_send_email(self, employee):
