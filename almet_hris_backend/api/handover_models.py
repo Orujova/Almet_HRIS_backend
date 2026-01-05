@@ -1,16 +1,18 @@
-# api/handover_models.py
+# api/handover_models.py - CORRECTED VERSION WITHOUT OLD METHODS
 from django.db import models
 from django.contrib.auth.models import User
 from django.utils import timezone
 from django.core.exceptions import ValidationError
 from .models import Employee, SoftDeleteModel
 import os
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class HandoverType(SoftDeleteModel):
     """Handover Types - Vacation, Business Trip, Resignation, Other"""
     name = models.CharField(max_length=100, unique=True)
-   
     is_active = models.BooleanField(default=True)
     
     created_by = models.ForeignKey(
@@ -196,6 +198,8 @@ class HandoverRequest(SoftDeleteModel):
         if errors:
             raise ValidationError(errors)
     
+    # api/handover_models.py - COMPLETE save() method
+
     def save(self, *args, **kwargs):
         # Generate request ID
         if not self.request_id:
@@ -206,16 +210,76 @@ class HandoverRequest(SoftDeleteModel):
             num = int(last.request_id[6:]) + 1 if last else 1
             self.request_id = f'HO{year}{num:04d}'
         
-        # Auto-assign line manager
-        if not self.line_manager and self.handing_over_employee.line_manager:
-            # If requester is manager, skip LM
-            requester_emp = getattr(self.created_by, 'employee', None) if self.created_by else None
-            if not (requester_emp and self.handing_over_employee.line_manager == requester_emp):
-                self.line_manager = self.handing_over_employee.line_manager
+        is_new = self.pk is None
+        requester_employee = None
+        
+        # Get requester's employee profile
+        if self.created_by:
+            try:
+                requester_employee = Employee.objects.get(user=self.created_by, is_deleted=False)
+            except Employee.DoesNotExist:
+                pass
+        
+        # ⭐ AUTO-ASSIGN LINE MANAGER
+        if not self.line_manager and requester_employee:
+            # SCENARIO 1: User creates handover for themselves (as HO)
+            if self.handing_over_employee == requester_employee:
+                if self.handing_over_employee.line_manager:
+                    self.line_manager = self.handing_over_employee.line_manager
+            
+            # SCENARIO 2: Manager creates handover for their employee
+            elif self.handing_over_employee.line_manager == requester_employee:
+                self.line_manager = requester_employee
+            
+            # SCENARIO 3: Someone else (e.g., HR/Admin) creates handover
+            else:
+                if self.handing_over_employee.line_manager:
+                    self.line_manager = self.handing_over_employee.line_manager
         
         self.clean()
+        
+        # ⭐ AUTO-SIGN HO if creator is HO (NEW LOGIC)
+        if is_new and requester_employee:
+            # If requester is creating handover for themselves (HO)
+            if self.handing_over_employee == requester_employee and not self.ho_signed:
+                self.ho_signed = True
+                self.ho_signed_date = timezone.now()
+                self.ho_signed_by = self.created_by
+                self.status = 'SIGNED_BY_HANDING_OVER'
+                
+                logger.info(f"✅ Auto-signed by HO (creator): {requester_employee.full_name}")
+                
+                # Log activity for auto-sign
+                # We'll do this after super().save()
+        
         super().save(*args, **kwargs)
-    
+        
+        # ⭐ Log auto-sign activity if it happened
+        if is_new and requester_employee and self.handing_over_employee == requester_employee:
+            if self.ho_signed:
+                HandoverActivity.objects.create(
+                    handover=self,
+                    actor=self.created_by,
+                    action='Auto-signed by Handing Over employee (creator)',
+                    comment='Handover automatically signed as creator is HO.',
+                    status=self.status
+                )
+        
+        # ⭐ Send appropriate email notification
+        if is_new:
+            try:
+                from .handover_email_service import handover_email_service
+                
+                # If already signed by HO (auto-signed), notify TO
+                if self.ho_signed:
+                    logger.info(f"📧 Sending email to TO: {self.taking_over_employee.email}")
+                    handover_email_service.notify_to_signature_needed(self)
+                else:
+                    # Otherwise, notify HO to sign
+                    logger.info(f"📧 Sending email to HO: {self.handing_over_employee.email}")
+                    handover_email_service.notify_handover_created(self)
+            except Exception as e:
+                logger.error(f"Failed to send creation email: {e}")
     def sign_by_handing_over(self, user):
         """Sign as Handing Over employee"""
         self.ho_signed = True
@@ -230,6 +294,13 @@ class HandoverRequest(SoftDeleteModel):
             action='Signed by Handing Over employee',
             comment='Handover signed by handing over employee.'
         )
+        
+        # ⭐ Send notification to Taking Over employee
+        try:
+            from .handover_email_service import handover_email_service
+            handover_email_service.notify_to_signature_needed(self)
+        except Exception as e:
+            logger.error(f"Failed to send TO signature email: {e}")
     
     def sign_by_taking_over(self, user):
         """Sign as Taking Over employee"""
@@ -248,6 +319,14 @@ class HandoverRequest(SoftDeleteModel):
             action='Signed by Taking Over employee',
             comment='Handover signed by taking over employee.'
         )
+        
+        # ⭐ Send notification to Line Manager
+        if self.line_manager:
+            try:
+                from .handover_email_service import handover_email_service
+                handover_email_service.notify_lm_approval_needed(self)
+            except Exception as e:
+                logger.error(f"Failed to send LM approval email: {e}")
     
     def approve_by_line_manager(self, user, comment=''):
         """Approve as Line Manager"""
@@ -267,6 +346,14 @@ class HandoverRequest(SoftDeleteModel):
             action='Approved by Line Manager',
             comment=comment or 'Approved by line manager.'
         )
+        
+        # ⭐ Notify both employees and TO about takeover readiness
+        try:
+            from .handover_email_service import handover_email_service
+            handover_email_service.notify_approved(self)
+            handover_email_service.notify_takeover_ready(self)
+        except Exception as e:
+            logger.error(f"Failed to send approval emails: {e}")
     
     def reject_by_line_manager(self, user, reason):
         """Reject as Line Manager"""
@@ -285,6 +372,13 @@ class HandoverRequest(SoftDeleteModel):
             action='Rejected by Line Manager',
             comment=reason
         )
+        
+        # ⭐ Notify both employees
+        try:
+            from .handover_email_service import handover_email_service
+            handover_email_service.notify_rejected(self)
+        except Exception as e:
+            logger.error(f"Failed to send rejection email: {e}")
     
     def request_clarification(self, user, clarification_comment):
         """Request clarification as Line Manager"""
@@ -301,6 +395,13 @@ class HandoverRequest(SoftDeleteModel):
             action='Clarification Requested',
             comment=clarification_comment
         )
+        
+        # ⭐ Notify HO employee
+        try:
+            from .handover_email_service import handover_email_service
+            handover_email_service.notify_clarification_requested(self)
+        except Exception as e:
+            logger.error(f"Failed to send clarification email: {e}")
     
     def resubmit_after_clarification(self, user, response_comment):
         """Resubmit after clarification"""
@@ -310,8 +411,8 @@ class HandoverRequest(SoftDeleteModel):
         if not response_comment:
             raise ValidationError("Response comment is required")
         
-        self.status = 'SIGNED_BY_TAKING_OVER'  # Back to LM for review
-        self.lm_clarification_comment = ''  # Clear old clarification
+        self.status = 'SIGNED_BY_TAKING_OVER'
+        self.lm_clarification_comment = ''
         self.save()
         
         # Log activity
@@ -320,6 +421,13 @@ class HandoverRequest(SoftDeleteModel):
             action='Resubmitted after clarification',
             comment=response_comment
         )
+        
+        # ⭐ Notify LM
+        try:
+            from .handover_email_service import handover_email_service
+            handover_email_service.notify_resubmitted(self)
+        except Exception as e:
+            logger.error(f"Failed to send resubmission email: {e}")
     
     def takeover(self, user, comment=''):
         """Take over responsibilities"""
@@ -337,6 +445,13 @@ class HandoverRequest(SoftDeleteModel):
             action='Responsibilities Taken Over',
             comment=comment or 'Taken over.'
         )
+        
+        # ⭐ Notify HO employee
+        try:
+            from .handover_email_service import handover_email_service
+            handover_email_service.notify_taken_over(self)
+        except Exception as e:
+            logger.error(f"Failed to send takeover email: {e}")
     
     def takeback(self, user, comment=''):
         """Take back responsibilities"""
@@ -354,6 +469,13 @@ class HandoverRequest(SoftDeleteModel):
             action='Responsibilities Taken Back',
             comment=comment or 'Taken back.'
         )
+        
+        # ⭐ Notify all parties - handover completed
+        try:
+            from .handover_email_service import handover_email_service
+            handover_email_service.notify_completed(self)
+        except Exception as e:
+            logger.error(f"Failed to send completion email: {e}")
     
     def log_activity(self, user, action, comment=''):
         """Add to activity log"""
@@ -504,7 +626,6 @@ class HandoverAttachment(SoftDeleteModel):
         related_name='attachments'
     )
     file = models.FileField(upload_to=handover_attachment_path)
-
     file_size = models.PositiveIntegerField(help_text="File size in bytes")
     file_type = models.CharField(max_length=100, blank=True)
     
@@ -518,7 +639,7 @@ class HandoverAttachment(SoftDeleteModel):
         ordering = ['-uploaded_at']
     
     def __str__(self):
-        return f"{self.handover.request_id} "
+        return f"{self.handover.request_id}"
     
     @property
     def file_size_display(self):

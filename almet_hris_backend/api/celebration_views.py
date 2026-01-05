@@ -53,7 +53,7 @@ class CelebrationViewSet(viewsets.ModelViewSet):
         """
         today = date.today()
         
-        # Get auto celebrations (birthdays and work anniversaries)
+        # Get auto celebrations
         auto_celebrations = self.get_auto_celebrations(today)
         
         # Get manual celebrations
@@ -61,18 +61,21 @@ class CelebrationViewSet(viewsets.ModelViewSet):
         manual_data = []
         
         for celebration in manual_celebrations:
-            # Count wishes for this celebration
             wishes_count = CelebrationWish.objects.filter(celebration=celebration).count()
             
-            images_data = CelebrationImageSerializer(celebration.images.all(), many=True, context={'request': request}).data
-            images = [request.build_absolute_uri(img['image']) for img in images_data] if images_data else ['/placeholder.png']
+            # ✅ Image data düzgün format
+            images_data = CelebrationImageSerializer(
+                celebration.images.all(), 
+                many=True, 
+                context={'request': request}
+            ).data
             
             manual_data.append({
                 'id': str(celebration.id),
                 'type': celebration.type,
                 'title': celebration.title,
                 'date': celebration.date.isoformat(),
-                'images': images,
+                'images': images_data,  # ✅ Artıq {id, image_url} formatında
                 'message': celebration.message,
                 'wishes': wishes_count,
                 'is_auto': False
@@ -81,7 +84,7 @@ class CelebrationViewSet(viewsets.ModelViewSet):
         # Combine both
         all_celebrations = auto_celebrations + manual_data
         
-        # Sort by date (newest first)
+        # Sort by date
         all_celebrations.sort(key=lambda x: x['date'], reverse=True)
         
         return Response(all_celebrations)
@@ -223,8 +226,6 @@ class CelebrationViewSet(viewsets.ModelViewSet):
         
         return Response(CelebrationWishSerializer(wish).data, status=status.HTTP_201_CREATED)
     
-    # celebration_views.py - remove_image metodunu dəyişdir
-
     @action(detail=True, methods=['delete'])
     def remove_image(self, request, pk=None):
         """
@@ -239,16 +240,10 @@ class CelebrationViewSet(viewsets.ModelViewSet):
         try:
             image = CelebrationImage.objects.get(id=image_id, celebration=celebration)
             image.delete()
-            
-            # ✅ Yenilənmiş celebration data-nı qaytarırıq
-            serializer = self.get_serializer(celebration)
-            return Response({
-                'message': 'Image deleted successfully',
-                'celebration': serializer.data
-            }, status=status.HTTP_200_OK)
-            
+            return Response({'message': 'Image deleted successfully'}, status=status.HTTP_200_OK)
         except CelebrationImage.DoesNotExist:
             return Response({'error': 'Image not found'}, status=status.HTTP_404_NOT_FOUND)
+    
     @action(detail=False, methods=['get'])
     def statistics(self, request):
         """

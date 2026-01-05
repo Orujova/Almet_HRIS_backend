@@ -125,6 +125,10 @@ class HandoverRequestViewSet(viewsets.ModelViewSet):
             self.perform_create(serializer)
             
             handover = serializer.instance
+            
+            # ✅ Email notification is automatically sent in HandoverRequest.save()
+            # when is_new = True, so we don't need to call anything here
+            
             response_serializer = HandoverRequestSerializer(
                 handover, 
                 context={'request': request}

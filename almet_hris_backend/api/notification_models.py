@@ -60,7 +60,15 @@ class NotificationSettings(models.Model):
         default='myalmet@almettrading.com',
         help_text="Email address for sending company news (must be valid Outlook/Exchange mailbox)"
     )
-    
+    handover_subject_prefix = models.CharField(
+        max_length=50, 
+        default='[HANDOVER]',
+        help_text="Subject prefix for handover emails"
+    )
+    handover_sender_email = models.EmailField(
+        default='myalmet@almettrading.com',
+        help_text="Email address for sending handover notifications"
+    )
     # System fields
     is_active = models.BooleanField(
         default=True,
@@ -105,6 +113,8 @@ class NotificationSettings(models.Model):
                 'vacation_subject_prefix': '[VACATION]',
                 'company_news_subject_prefix': '[COMPANY NEWS]',  # ✅ NEW
                 'company_news_sender_email': 'myalmet@almettrading.com',  # ✅ NEW
+                'handover_subject_prefix': '[HANDOVER]',  # ⭐ NEW
+                'handover_sender_email': 'myalmet@almettrading.com',  # ⭐ NEW
             }
         )
         return settings

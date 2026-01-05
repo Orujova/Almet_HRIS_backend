@@ -43,11 +43,6 @@ def get_graph_token_from_request(request):
     return None
 
 
-
-
-# ==================== OUTLOOK INTEGRATION WITH SENT/RECEIVED ====================
-
-
 @swagger_auto_schema(
     method='get',
     operation_description="Get emails from Outlook with sent/received separation",
@@ -129,12 +124,13 @@ def get_outlook_emails(request):
         
         # Determine subject filter based on module
         subject_filters = []
-        
+        if module == 'handover':  
+            subject_filters = [getattr(settings, 'handover_subject_prefix', '[HANDOVER]')]
         if module == 'business_trip':
             subject_filters = [settings.business_trip_subject_prefix]
         elif module == 'vacation':
             subject_filters = [settings.vacation_subject_prefix]
-        elif module == 'timeoff':  # ✅ NEW
+        elif module == 'timeoff': 
             subject_filters = [getattr(settings, 'timeoff_subject_prefix', '[TIME OFF]')]
         elif module == 'company_news':
             subject_filters = [settings.company_news_subject_prefix]
@@ -142,7 +138,7 @@ def get_outlook_emails(request):
             subject_filters = [
                 settings.business_trip_subject_prefix,
                 settings.vacation_subject_prefix,
-                getattr(settings, 'timeoff_subject_prefix', '[TIME OFF]'),  # ✅ NEW
+                getattr(settings, 'timeoff_subject_prefix', '[TIME OFF]'),  
                 settings.company_news_subject_prefix
             ]
         

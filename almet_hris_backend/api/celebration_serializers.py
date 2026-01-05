@@ -5,10 +5,18 @@ from datetime import date, timedelta
 
 
 class CelebrationImageSerializer(serializers.ModelSerializer):
+    image_url = serializers.SerializerMethodField()
+    
     class Meta:
         model = CelebrationImage
-        fields = ['id', 'image', 'uploaded_at']
+        fields = ['id', 'image', 'image_url', 'uploaded_at']
         read_only_fields = ['uploaded_at']
+    
+    def get_image_url(self, obj):
+        request = self.context.get('request')
+        if request and obj.image:
+            return request.build_absolute_uri(obj.image.url)
+        return None
 
 
 class CelebrationWishSerializer(serializers.ModelSerializer):

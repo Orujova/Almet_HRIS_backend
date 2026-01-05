@@ -15,6 +15,8 @@ class NotificationSettingsSerializer(serializers.ModelSerializer):
             'business_trip_subject_prefix',
             'vacation_subject_prefix',
             'timeoff_subject_prefix',  # ✅ NEW
+                        'handover_subject_prefix',  # ⭐ NEW
+            'handover_sender_email',    # ⭐ NEW
             'company_news_subject_prefix',
             'company_news_sender_email',
             'is_active', 'created_at', 'updated_at'
