@@ -1,278 +1,153 @@
 # api/timeoff_permissions.py
 """
-Time Off System - Role-Based Permissions
+Time Off System - ROLE-BASED Permissions (NO RBAC Decorators)
+- Admin: Full access to everything
+- Line Manager: Own + team requests
+- Employee: Only own requests
 """
 
-from functools import wraps
-from rest_framework.response import Response
-from rest_framework import status
-from .role_models import Permission, EmployeeRole, Role
-from .business_trip_permissions import is_admin_user
+from django.db.models import Q
 import logging
 
 logger = logging.getLogger(__name__)
 
 
-def has_timeoff_permission(permission_codename):
-    """
-    Decorator to check time off permissions
-    Admin role bütün permission-lara sahib
-    """
-    def decorator(view_func):
-        @wraps(view_func)
-        def wrapper(self_or_request, *args, **kwargs):
-            # ✅ FIX: Handle both function-based views and ViewSet methods
-            if hasattr(self_or_request, 'user'):
-                # Function-based view - request is first argument
-                request = self_or_request
-                user = request.user
-            else:
-                # ViewSet method - self is first argument, request is in args or from self.request
-                viewset_self = self_or_request
-                if args and hasattr(args[0], 'user'):
-                    request = args[0]
-                    user = request.user
-                elif hasattr(viewset_self, 'request'):
-                    request = viewset_self.request
-                    user = request.user
-                else:
-                    from rest_framework.response import Response
-                    from rest_framework import status as rest_status
-                    return Response({
-                        'error': 'Could not determine request object'
-                    }, status=rest_status.HTTP_500_INTERNAL_SERVER_ERROR)
-            
-            # Admin role yoxla
-            if is_admin_user(user):
-                return view_func(self_or_request, *args, **kwargs)
-            
-            # Employee tap
-            try:
-                from .models import Employee
-                employee = Employee.objects.get(user=user, is_deleted=False)
-            except Employee.DoesNotExist:
-                return Response({
-                    'error': 'Employee profili tapılmadı',
-                    'detail': 'Time Off sisteminə daxil olmaq üçün employee profili lazımdır'
-                }, status=status.HTTP_403_FORBIDDEN)
-            
-            # Employee-in rollarını tap
-            employee_roles = EmployeeRole.objects.filter(
-                employee=employee,
-                is_active=True
-            ).select_related('role')
-            
-            if not employee_roles.exists():
-                return Response({
-                    'error': 'Aktiv rol tapılmadı',
-                    'detail': 'Bu əmələiyyat üçün sizə rol təyin edilməlidir'
-                }, status=status.HTTP_403_FORBIDDEN)
-            
-            # Permission yoxla
-            has_permission = False
-            for emp_role in employee_roles:
-                role = emp_role.role
-                if role.role_permissions.filter(
-                    permission__codename=permission_codename,
-                    permission__is_active=True
-                ).exists():
-                    has_permission = True
-                    break
-            
-            if not has_permission:
-                return Response({
-                    'error': 'İcazə yoxdur',
-                    'detail': f'Bu əmələiyyat üçün "{permission_codename}" icazəsi lazımdır',
-                    'your_roles': [er.role.name for er in employee_roles]
-                }, status=status.HTTP_403_FORBIDDEN)
-            
-            return view_func(self_or_request, *args, **kwargs)
-        
-        return wrapper
-    return decorator
-
-
-def has_any_timeoff_permission(permission_codenames):
-    """
-    Check if user has ANY of the specified permissions
-    Admin role automatically passes
-    """
-    def decorator(view_func):
-        @wraps(view_func)
-        def wrapper(self_or_request, *args, **kwargs):
-            # ✅ FIX: Handle both function-based views and ViewSet methods
-            if hasattr(self_or_request, 'user'):
-                # Function-based view
-                request = self_or_request
-                user = request.user
-            else:
-                # ViewSet method
-                viewset_self = self_or_request
-                if args and hasattr(args[0], 'user'):
-                    request = args[0]
-                    user = request.user
-                elif hasattr(viewset_self, 'request'):
-                    request = viewset_self.request
-                    user = request.user
-                else:
-                    from rest_framework.response import Response
-                    from rest_framework import status as rest_status
-                    return Response({
-                        'error': 'Could not determine request object'
-                    }, status=rest_status.HTTP_500_INTERNAL_SERVER_ERROR)
-            
-            # Admin role yoxla
-            if is_admin_user(user):
-                return view_func(self_or_request, *args, **kwargs)
-            
-            try:
-                from .models import Employee
-                employee = Employee.objects.get(user=user, is_deleted=False)
-            except Employee.DoesNotExist:
-                return Response({
-                    'error': 'Employee profili tapılmadı'
-                }, status=status.HTTP_403_FORBIDDEN)
-            
-            employee_roles = EmployeeRole.objects.filter(
-                employee=employee,
-                is_active=True
-            ).select_related('role')
-            
-            if not employee_roles.exists():
-                return Response({
-                    'error': 'Aktiv rol tapılmadı'
-                }, status=status.HTTP_403_FORBIDDEN)
-            
-            has_permission = False
-            for emp_role in employee_roles:
-                role = emp_role.role
-                if role.role_permissions.filter(
-                    permission__codename__in=permission_codenames,
-                    permission__is_active=True
-                ).exists():
-                    has_permission = True
-                    break
-            
-            if not has_permission:
-                return Response({
-                    'error': 'İcazə yoxdur',
-                    'detail': f'Bu əmələiyyat üçün aşağıdakı icazələrdən biri lazımdır',
-                    'required_permissions': permission_codenames,
-                    'your_roles': [er.role.name for er in employee_roles]
-                }, status=status.HTTP_403_FORBIDDEN)
-            
-            return view_func(self_or_request, *args, **kwargs)
-        
-        return wrapper
-    return decorator
-
-
-def check_timeoff_permission(user, permission_codename):
-    """
-    Utility function to check permission without decorator
-    Returns: (has_permission: bool, employee: Employee or None)
-    """
-    # Admin role yoxla
-    if is_admin_user(user):
-        return True, None
-    
+def is_admin_user(user):
+    """Check if user has Admin role"""
     try:
         from .models import Employee
+        from .role_models import EmployeeRole
+        
         employee = Employee.objects.get(user=user, is_deleted=False)
-    except Employee.DoesNotExist:
-        return False, None
-    
-    employee_roles = EmployeeRole.objects.filter(
-        employee=employee,
-        is_active=True
-    ).select_related('role')
-    
-    for emp_role in employee_roles:
-        role = emp_role.role
-        if role.role_permissions.filter(
-            permission__codename=permission_codename,
-            permission__is_active=True
-        ).exists():
-            return True, employee
-    
-    return False, employee
-
-
-def get_user_timeoff_permissions(user):
-    """
-    Get all time off permissions for user
-    Returns: list of permission codenames
-    """
-    if is_admin_user(user):
-        # Admin has all time off permissions
-        return list(Permission.objects.filter(
-            category='Time Off',
+        
+        has_admin_role = EmployeeRole.objects.filter(
+            employee=employee,
+            role__name__icontains='Admin',
+            role__is_active=True,
             is_active=True
-        ).values_list('codename', flat=True))
+        ).exists()
+        
+        return has_admin_role
+    except:
+        return False
+
+
+def get_timeoff_request_access(user):
+    """
+    Get user's time off request access level BASED ON ROLE ONLY
+    
+    Returns:
+        - can_view_all: Admin - see all requests
+        - is_manager: Has direct reports
+        - employee: Employee object
+        - accessible_employee_ids: List of employee IDs user can view
+        - access_level: Human-readable access level
+    """
+    from .models import Employee
+    
+    # 1. Check if Admin
+    if is_admin_user(user):
+        return {
+            'can_view_all': True,
+            'is_manager': True,
+            'employee': None,
+            'accessible_employee_ids': None,  # None means ALL
+            'access_level': 'Admin - Full Access'
+        }
     
     try:
-        from .models import Employee
         employee = Employee.objects.get(user=user, is_deleted=False)
     except Employee.DoesNotExist:
-        return []
+        return {
+            'can_view_all': False,
+            'is_manager': False,
+            'employee': None,
+            'accessible_employee_ids': [],
+            'access_level': 'No Access'
+        }
     
-    employee_roles = EmployeeRole.objects.filter(
-        employee=employee,
-        is_active=True
-    ).select_related('role')
+    # 2. Check if Line Manager (has direct reports)
+    direct_reports = Employee.objects.filter(
+        line_manager=employee,
+        is_deleted=False
+    )
     
-    permission_codenames = set()
-    for emp_role in employee_roles:
-        role_perms = emp_role.role.role_permissions.filter(
-            permission__is_active=True,
-            permission__category='Time Off'
-        ).values_list('permission__codename', flat=True)
-        permission_codenames.update(role_perms)
+    is_manager = direct_reports.exists()
     
-    return list(permission_codenames)
+    if is_manager:
+        # Manager can see: self + direct reports
+        accessible_ids = [employee.id]
+        accessible_ids.extend(list(direct_reports.values_list('id', flat=True)))
+        
+        return {
+            'can_view_all': False,
+            'is_manager': True,
+            'employee': employee,
+            'accessible_employee_ids': accessible_ids,
+            'access_level': 'Line Manager - Team Access'
+        }
+    else:
+        # 3. Regular employee - only self
+        return {
+            'can_view_all': False,
+            'is_manager': False,
+            'employee': employee,
+            'accessible_employee_ids': [employee.id],
+            'access_level': 'Employee - Own Requests Only'
+        }
 
 
-def can_approve_timeoff(user, request_obj):
+def filter_timeoff_requests_by_access(user, queryset):
     """
-    Check if user can approve a specific time off request
+    Filter time off requests based on ROLE-BASED access
+    """
+    access = get_timeoff_request_access(user)
+    
+    # Admin - see all
+    if access['can_view_all']:
+        return queryset
+    
+    # Manager or Employee - filter by accessible employee IDs
+    if access['accessible_employee_ids']:
+        return queryset.filter(
+            employee_id__in=access['accessible_employee_ids']
+        )
+    
+    # No access
+    return queryset.none()
+
+
+def can_approve_timeoff_role_based(user, request_obj):
+    """
+    Check if user can approve - ROLE-BASED ONLY
     Returns: (can_approve: bool, reason: str)
     """
-    # Admin həmişə approve edə bilər
+    # 1. Admin həmişə approve edə bilər
     if is_admin_user(user):
-        return True, "Admin permission"
+        return True, "Admin role"
     
-    # Employee-i tap
+    # 2. Employee-i tap
     try:
         from .models import Employee
         employee = Employee.objects.get(user=user, is_deleted=False)
     except Employee.DoesNotExist:
         return False, "No employee profile"
     
-    # 1. Line Manager yoxla
+    # 3. Line Manager yoxla
     if request_obj.line_manager == employee:
-        # Line manager permission yoxla
-        has_perm, _ = check_timeoff_permission(user, 'timeoff.request.approve_as_manager')
-        if has_perm:
-            return True, "Line Manager with permission"
-        else:
-            return False, "Line Manager but no approve permission"
-    
-    # 2. HR permission yoxla
-    has_hr_perm, _ = check_timeoff_permission(user, 'timeoff.request.approve_as_hr')
-    if has_hr_perm:
-        return True, "HR permission"
+        return True, "Line Manager"
     
     return False, "Not authorized"
 
 
-def can_view_timeoff_request(user, request_obj):
+def can_view_timeoff_request_role_based(user, request_obj):
     """
-    Check if user can view a specific time off request
+    Check if user can view a specific request - ROLE-BASED ONLY
     Returns: (can_view: bool, reason: str)
     """
-    # Admin həmişə görə bilər
+    # 1. Admin həmişə görə bilər
     if is_admin_user(user):
-        return True, "Admin permission"
+        return True, "Admin role"
     
     try:
         from .models import Employee
@@ -280,21 +155,32 @@ def can_view_timeoff_request(user, request_obj):
     except Employee.DoesNotExist:
         return False, "No employee profile"
     
-    # 1. Öz request-i
+    # 2. Öz request-i
     if request_obj.employee == employee:
-        has_perm, _ = check_timeoff_permission(user, 'timeoff.request.view_own')
-        if has_perm:
-            return True, "Own request"
+        return True, "Own request"
     
-    # 2. Line Manager
+    # 3. Line Manager - komanda üzvünün request-i
     if request_obj.line_manager == employee:
-        has_perm, _ = check_timeoff_permission(user, 'timeoff.request.view_team')
-        if has_perm:
-            return True, "Team request (Line Manager)"
-    
-    # 3. View all permission
-    has_all_perm, _ = check_timeoff_permission(user, 'timeoff.request.view_all')
-    if has_all_perm:
-        return True, "View all permission"
+        return True, "Team request (Line Manager)"
     
     return False, "Not authorized"
+
+
+def filter_timeoff_balances_by_access(user, queryset):
+    """
+    Filter time off balances based on ROLE-BASED access
+    """
+    access = get_timeoff_request_access(user)
+    
+    # Admin - see all
+    if access['can_view_all']:
+        return queryset
+    
+    # Manager or Employee - filter by accessible employee IDs
+    if access['accessible_employee_ids']:
+        return queryset.filter(
+            employee_id__in=access['accessible_employee_ids']
+        )
+    
+    # No access
+    return queryset.none()

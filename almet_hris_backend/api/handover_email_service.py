@@ -196,22 +196,92 @@ class HandoverEmailService:
         ))
     
     def _get_fallback_email_html(self, context):
-        """Fallback email HTML if template rendering fails"""
         handover = context['handover']
         recipient_name = context['recipient_name']
-        
+        action_required = context.get('action_required', None)
+    
         return f"""
         <!DOCTYPE html>
         <html>
         <head>
             <meta charset="UTF-8">
             <style>
-                body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
-                .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
-                .header {{ background: #1e3a8a; color: white; padding: 20px; text-align: center; }}
-                .content {{ background: #f8fafc; padding: 30px; border: 1px solid #e2e8f0; }}
-                .button {{ display: inline-block; padding: 12px 30px; background: #1e3a8a; color: white; text-decoration: none; border-radius: 6px; }}
-                .footer {{ text-align: center; padding: 20px; color: #64748b; font-size: 12px; }}
+                body {{
+                    margin: 0;
+                    padding: 0;
+                    background-color: #f1f5f9;
+                    font-family: Arial, Helvetica, sans-serif;
+                    color: #0f172a;
+                }}
+                .container {{
+                    max-width: 600px;
+                    margin: 40px auto;
+                    background: #ffffff;
+                    border-radius: 10px;
+                    overflow: hidden;
+                    box-shadow: 0 10px 25px rgba(0,0,0,0.08);
+                }}
+                .header {{
+                    background: #1e3a8a;
+                    color: #ffffff;
+                    padding: 24px;
+                    text-align: center;
+                }}
+                .header h1 {{
+                    margin: 0;
+                    font-size: 22px;
+                }}
+                .content {{
+                    padding: 30px;
+                }}
+                .content p {{
+                    font-size: 14px;
+                    line-height: 1.6;
+                    margin: 0 0 16px;
+                }}
+                .info-box {{
+                    background: #f8fafc;
+                    border: 1px solid #e2e8f0;
+                    border-radius: 8px;
+                    padding: 16px;
+                    margin: 20px 0;
+                }}
+                .info-row {{
+                    font-size: 14px;
+                    margin-bottom: 8px;
+                }}
+                .info-row strong {{
+                    display: inline-block;
+                    width: 140px;
+                    color: #334155;
+                }}
+                .action {{
+                    background: #eff6ff;
+                    border-left: 4px solid #2563eb;
+                    padding: 14px;
+                    margin: 20px 0;
+                    font-size: 14px;
+                }}
+                .button-wrapper {{
+                    text-align: center;
+                    margin: 30px 0;
+                }}
+                .button {{
+                    background: #2563eb;
+                    color: #ffffff !important;
+                    padding: 14px 34px;
+                    text-decoration: none;
+                    font-size: 14px;
+                    border-radius: 8px;
+                    display: inline-block;
+                }}
+                .footer {{
+                    background: #f8fafc;
+                    text-align: center;
+                    padding: 20px;
+                    font-size: 12px;
+                    color: #64748b;
+                }}
             </style>
         </head>
         <body>
@@ -219,27 +289,54 @@ class HandoverEmailService:
                 <div class="header">
                     <h1>Handover Notification</h1>
                 </div>
+    
                 <div class="content">
-                    <p>Dear {recipient_name},</p>
-                    <p>This is a notification regarding handover request <strong>{handover.request_id}</strong>.</p>
-                    <p><strong>Handing Over:</strong> {handover.handing_over_employee.full_name}</p>
-                    <p><strong>Taking Over:</strong> {handover.taking_over_employee.full_name}</p>
-                    <p><strong>Status:</strong> {handover.get_status_display()}</p>
-                    <div style="text-align: center; margin: 30px 0;">
-                        <a href="{context['handover_url']}" class="button">View Handover</a>
+                    <p>Dear <strong>{recipient_name}</strong>,</p>
+    
+                    <p>You have a new update regarding the following handover request:</p>
+    
+                    <div class="info-box">
+                        <div class="info-row">
+                            <strong>Request ID:</strong> {handover.request_id}
+                        </div>
+                        <div class="info-row">
+                            <strong>Handing Over:</strong> {handover.handing_over_employee.full_name}
+                        </div>
+                        <div class="info-row">
+                            <strong>Taking Over:</strong> {handover.taking_over_employee.full_name}
+                        </div>
+                        <div class="info-row">
+                            <strong>Status:</strong> {handover.get_status_display()}
+                        </div>
                     </div>
+    
+                    {f'''
+                    <div class="action">
+                        <strong>Action required:</strong><br/>
+                        {action_required}
+                    </div>
+                    ''' if action_required else ''}
+    
+                    <div class="button-wrapper">
+                        <a href="{context['handover_url']}" class="button">
+                            View Handover
+                        </a>
+                    </div>
+    
+                    <p>If you have any questions, please contact HR or your line manager.</p>
                 </div>
+    
                 <div class="footer">
                     <p>This is an automated message from MyAlmet Handover System</p>
-                    <p>© 2026 Almet Holding. All rights reserved.</p>
+                    <p>© 2026 Almet Holding</p>
                 </div>
             </div>
         </body>
         </html>
         """
     
-    # Helper methods for specific notifications
-    
+        # Helper methods for specific notifications
+        
     def notify_handover_created(self, handover):
         """Notify HO employee that handover was created"""
         if handover.handing_over_employee.email:

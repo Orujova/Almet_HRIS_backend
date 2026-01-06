@@ -1,15 +1,19 @@
 # api/timeoff_views.py
 """
-Time Off System Views - COMPLETE WITH FULL RBAC PERMISSIONS
+Time Off System Views - ROLE-BASED ACCESS CONTROL
+NO PERMISSION DECORATORS - Only role checks
 """
 
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from django.db.models import Sum, Q, Count
+from django.db.models import Sum 
 from django.utils import timezone
-
+from rest_framework.parsers import MultiPartParser
+import pandas as pd
+from django.http import HttpResponse
+from io import BytesIO
 import logging
 
 from .timeoff_models import (
@@ -25,56 +29,43 @@ from .models import Employee
 from .notification_service import notification_service
 from .token_helpers import extract_graph_token_from_request
 from .timeoff_permissions import (
-    has_timeoff_permission, has_any_timeoff_permission,
-    check_timeoff_permission, can_approve_timeoff, can_view_timeoff_request,get_user_timeoff_permissions
+    get_timeoff_request_access,
+    filter_timeoff_requests_by_access,
+    filter_timeoff_balances_by_access,
+    can_approve_timeoff_role_based,
+    can_view_timeoff_request_role_based,
+    is_admin_user
 )
 
 logger = logging.getLogger(__name__)
-
+# api/timeoff_views.py
 
 class TimeOffBalanceViewSet(viewsets.ReadOnlyModelViewSet):
     """
-    Time Off Balance ViewSet - WITH FULL RBAC
-    Read-only - balances are automatically managed
+    Time Off Balance ViewSet - ROLE-BASED ACCESS
     """
     queryset = TimeOffBalance.objects.all()
     serializer_class = TimeOffBalanceSerializer
     permission_classes = [IsAuthenticated]
-    
+    parser_classes = [MultiPartParser]
     def get_queryset(self):
-        """Filter by user and permissions"""
+        """Filter by user and role-based access"""
         queryset = super().get_queryset()
-        user = self.request.user
         
-        # Check if user can view all balances
-        has_view_all, employee = check_timeoff_permission(user, 'timeoff.balance.view_all')
+        # Apply role-based filtering
+        queryset = filter_timeoff_balances_by_access(self.request.user, queryset)
         
-        if has_view_all:
-            # Can view all balances
-            return queryset
-        
-        # Can only view own balance
-        has_view_own, employee = check_timeoff_permission(user, 'timeoff.balance.view_own')
-        
-        if has_view_own and employee:
-            return queryset.filter(employee=employee)
-        
-        # No permission
-        return queryset.none()
+        return queryset
     
     def list(self, request, *args, **kwargs):
-        """List balances - requires permission"""
-        has_perm, _ = check_timeoff_permission(
-            request.user, 
-            'timeoff.balance.view_all'
-        )
+        """List balances - role-based access"""
+        access = get_timeoff_request_access(request.user)
         
-        if not has_perm:
+        if not access['can_view_all'] and not access['is_manager'] and not access['employee']:
             return Response(
                 {
-                    'error': 'Permission required',
-                    'required_permission': 'timeoff.balance.view_all',
-                    'detail': 'You can only view your own balance via /my_balance/'
+                    'error': 'No access',
+                    'detail': 'You need appropriate permissions to view balances'
                 },
                 status=status.HTTP_403_FORBIDDEN
             )
@@ -82,12 +73,8 @@ class TimeOffBalanceViewSet(viewsets.ReadOnlyModelViewSet):
         return super().list(request, *args, **kwargs)
     
     @action(detail=False, methods=['get'])
-    @has_timeoff_permission('timeoff.balance.view_own')
     def my_balance(self, request):
-        """
-        Get own balance
-        Required: timeoff.balance.view_own
-        """
+        """Get own balance"""
         if not hasattr(request.user, 'employee_profile'):
             return Response(
                 {'error': 'No employee profile found'},
@@ -100,13 +87,86 @@ class TimeOffBalanceViewSet(viewsets.ReadOnlyModelViewSet):
         
         return Response(serializer.data)
     
+    @action(detail=False, methods=['get'])
+    def team_balances(self, request):
+        """
+        ✅ NEW: Get team balances
+        - Admin: All employees' balances
+        - Line Manager: Own + direct reports' balances
+        - Employee: Only own balance
+        """
+        access = get_timeoff_request_access(request.user)
+        
+        # Get balances based on access
+        if access['can_view_all']:
+            # Admin - all balances
+            balances = TimeOffBalance.objects.all().select_related(
+                'employee', 
+                'employee__user',
+                'employee__department',
+                'employee__line_manager'
+            ).order_by('employee__full_name')
+            
+            view_type = 'admin'
+        elif access['is_manager'] and access['accessible_employee_ids']:
+            # Manager - team balances
+            balances = TimeOffBalance.objects.filter(
+                employee_id__in=access['accessible_employee_ids']
+            ).select_related(
+                'employee',
+                'employee__user',
+                'employee__department',
+                'employee__line_manager'
+            ).order_by('employee__full_name')
+            
+            view_type = 'manager'
+        elif access['employee']:
+            # Employee - only own
+            balances = TimeOffBalance.objects.filter(
+                employee=access['employee']
+            ).select_related(
+                'employee',
+                'employee__user',
+                'employee__department',
+                'employee__line_manager'
+            )
+            
+            view_type = 'employee'
+        else:
+            return Response(
+                {'error': 'No access to view balances'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        serializer = self.get_serializer(balances, many=True)
+        
+        # Calculate statistics
+        total_balance = sum(float(b.current_balance_hours) for b in balances)
+        total_used = sum(float(b.used_hours_this_month) for b in balances)
+        avg_balance = total_balance / max(balances.count(), 1)
+        
+        return Response({
+            'count': balances.count(),
+            'balances': serializer.data,
+            'view_type': view_type,
+            'access_level': access['access_level'],
+            'statistics': {
+                'total_balance_hours': round(total_balance, 2),
+                'total_used_hours': round(total_used, 2),
+                'average_balance_hours': round(avg_balance, 2),
+                'employee_count': balances.count()
+            }
+        })
+    
     @action(detail=False, methods=['post'])
-    @has_timeoff_permission('timeoff.balance.reset')
     def reset_monthly_balances(self, request):
-        """
-        Reset monthly balances for all employees
-        Required: timeoff.balance.reset (Admin/HR only)
-        """
+        """Reset monthly balances - Admin only"""
+        if not is_admin_user(request.user):
+            return Response(
+                {'error': 'Admin access required'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
         reset_count = 0
         failed_count = 0
         results = []
@@ -139,16 +199,21 @@ class TimeOffBalanceViewSet(viewsets.ReadOnlyModelViewSet):
         })
     
     @action(detail=True, methods=['post'])
-    @has_timeoff_permission('timeoff.balance.update')
     def update_balance(self, request, pk=None):
         """
-        Update employee balance manually
-        Required: timeoff.balance.update (HR/Admin only)
+        ✅ Update employee balance manually - Admin only
+        Can be called from frontend
         """
+        if not is_admin_user(request.user):
+            return Response(
+                {'error': 'Admin access required'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
         balance = self.get_object()
         
         new_balance = request.data.get('new_balance')
-        reason = request.data.get('reason', 'Manual adjustment')
+        reason = request.data.get('reason', 'Manual adjustment by admin')
         
         if new_balance is None:
             return Response(
@@ -159,7 +224,16 @@ class TimeOffBalanceViewSet(viewsets.ReadOnlyModelViewSet):
         try:
             from decimal import Decimal
             old_balance = balance.current_balance_hours
-            balance.current_balance_hours = Decimal(str(new_balance))
+            new_balance_decimal = Decimal(str(new_balance))
+            
+            # Validate
+            if new_balance_decimal < 0:
+                return Response(
+                    {'error': 'Balance cannot be negative'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            balance.current_balance_hours = new_balance_decimal
             balance.save()
             
             # Log activity
@@ -170,30 +244,223 @@ class TimeOffBalanceViewSet(viewsets.ReadOnlyModelViewSet):
                 performed_by=request.user,
                 metadata={
                     'employee_id': balance.employee.employee_id,
+                    'employee_name': balance.employee.full_name,
                     'old_balance': float(old_balance),
                     'new_balance': float(new_balance),
                     'reason': reason
                 }
             )
             
+            logger.info(f"✅ Balance updated for {balance.employee.full_name}: {old_balance}h → {new_balance}h")
+            
             return Response({
                 'success': True,
                 'message': 'Balance updated successfully',
                 'old_balance': float(old_balance),
-                'new_balance': float(new_balance)
+                'new_balance': float(new_balance),
+                'employee_name': balance.employee.full_name,
+                'employee_id': balance.employee.employee_id
             })
             
         except Exception as e:
+            logger.error(f"❌ Balance update failed: {e}")
             return Response(
                 {'error': str(e)},
                 status=status.HTTP_400_BAD_REQUEST
             )
     
-   
+    @action(detail=False, methods=['post'])
+    def bulk_upload_balances(self, request):
+        """
+        ✅ NEW: Bulk upload balances from Excel file - Admin only
+        Expected columns: employee_id, new_balance, reason (optional)
+        """
+        if not is_admin_user(request.user):
+            return Response(
+                {'error': 'Admin access required'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        if 'file' not in request.FILES:
+            return Response(
+                {'error': 'No file provided'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        file = request.FILES['file']
+        
+        # Validate file extension
+        if not file.name.endswith(('.xlsx', '.xls', '.csv')):
+            return Response(
+                {'error': 'Invalid file format. Please upload Excel (.xlsx, .xls) or CSV file'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            # Read file
+            if file.name.endswith('.csv'):
+                df = pd.read_csv(file)
+            else:
+                df = pd.read_excel(file)
+            
+            # Validate columns
+            required_columns = ['employee_id', 'new_balance']
+            missing_columns = [col for col in required_columns if col not in df.columns]
+            
+            if missing_columns:
+                return Response(
+                    {
+                        'error': f'Missing required columns: {", ".join(missing_columns)}',
+                        'required_columns': required_columns,
+                        'found_columns': list(df.columns)
+                    },
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Process rows
+            success_count = 0
+            failed_count = 0
+            results = []
+            
+            for index, row in df.iterrows():
+                try:
+                    employee_id = str(row['employee_id']).strip()
+                    new_balance = float(row['new_balance'])
+                    reason = str(row.get('reason', 'Bulk upload by admin')).strip()
+                    
+                    # Validate balance
+                    if new_balance < 0:
+                        raise ValueError('Balance cannot be negative')
+                    
+                    # Find employee
+                    employee = Employee.objects.get(
+                        employee_id=employee_id,
+                        is_deleted=False
+                    )
+                    
+                    # Get or create balance
+                    balance = TimeOffBalance.get_or_create_for_employee(employee)
+                    old_balance = balance.current_balance_hours
+                    
+                    # Update balance
+                    from decimal import Decimal
+                    balance.current_balance_hours = Decimal(str(new_balance))
+                    balance.save()
+                    
+                    # Log activity
+                    TimeOffActivity.objects.create(
+                        request=None,
+                        activity_type='BALANCE_UPDATED',
+                        description=f"Bulk upload: Balance updated from {old_balance}h to {new_balance}h. Reason: {reason}",
+                        performed_by=request.user,
+                        metadata={
+                            'employee_id': employee.employee_id,
+                            'employee_name': employee.full_name,
+                            'old_balance': float(old_balance),
+                            'new_balance': new_balance,
+                            'reason': reason,
+                            'upload_type': 'bulk'
+                        }
+                    )
+                    
+                    success_count += 1
+                    results.append({
+                        'row': index + 2,  # Excel row number (1-indexed + header)
+                        'employee_id': employee_id,
+                        'employee_name': employee.full_name,
+                        'old_balance': float(old_balance),
+                        'new_balance': new_balance,
+                        'status': 'success'
+                    })
+                    
+                except Employee.DoesNotExist:
+                    failed_count += 1
+                    results.append({
+                        'row': index + 2,
+                        'employee_id': employee_id,
+                        'status': 'failed',
+                        'error': 'Employee not found'
+                    })
+                    
+                except Exception as e:
+                    failed_count += 1
+                    results.append({
+                        'row': index + 2,
+                        'employee_id': employee_id if 'employee_id' in locals() else 'N/A',
+                        'status': 'failed',
+                        'error': str(e)
+                    })
+            
+            logger.info(f"✅ Bulk upload completed: {success_count} success, {failed_count} failed")
+            
+            return Response({
+                'success': True,
+                'message': f'Bulk upload completed: {success_count} succeeded, {failed_count} failed',
+                'total_rows': len(df),
+                'success_count': success_count,
+                'failed_count': failed_count,
+                'results': results
+            })
+            
+        except Exception as e:
+            logger.error(f"❌ Bulk upload failed: {e}")
+            return Response(
+                {'error': f'Failed to process file: {str(e)}'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+    
+    @action(detail=False, methods=['get'])
+    def download_template(self, request):
+        """
+        ✅ NEW: Download Excel template for bulk upload - Admin only
+        """
+        if not is_admin_user(request.user):
+            return Response(
+                {'error': 'Admin access required'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Create sample DataFrame
+        data = {
+            'employee_id': ['EMP001', 'EMP002', 'EMP003'],
+            'new_balance': [4.0, 3.5, 2.0],
+            'reason': ['Monthly reset', 'Adjustment', 'Manual update']
+        }
+        df = pd.DataFrame(data)
+        
+        # Create Excel file in memory
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False, sheet_name='Balances')
+            
+            # Format worksheet
+            worksheet = writer.sheets['Balances']
+            for column in worksheet.columns:
+                max_length = 0
+                column_letter = column[0].column_letter
+                for cell in column:
+                    try:
+                        if len(str(cell.value)) > max_length:
+                            max_length = len(cell.value)
+                    except:
+                        pass
+                adjusted_width = (max_length + 2)
+                worksheet.column_dimensions[column_letter].width = adjusted_width
+        
+        output.seek(0)
+        
+        response = HttpResponse(
+            output.read(),
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+        response['Content-Disposition'] = 'attachment; filename=timeoff_balances_template.xlsx'
+        
+        return response
+
 
 class TimeOffRequestViewSet(viewsets.ModelViewSet):
     """
-    Time Off Request ViewSet - WITH FULL RBAC
+    Time Off Request ViewSet - ROLE-BASED ACCESS
     Complete CRUD + Approve/Reject/Cancel actions
     """
     queryset = TimeOffRequest.objects.all()
@@ -209,7 +476,7 @@ class TimeOffRequestViewSet(viewsets.ModelViewSet):
         return TimeOffRequestSerializer
     
     def get_queryset(self):
-        """Filter requests based on permissions"""
+        """Filter requests based on role-based access"""
         queryset = super().get_queryset().select_related(
             'employee', 'employee__user', 'line_manager', 
             'approved_by', 'created_by'
@@ -233,86 +500,21 @@ class TimeOffRequestViewSet(viewsets.ModelViewSet):
         if date_to:
             queryset = queryset.filter(date__lte=date_to)
         
-        # Permission-based filtering
-        has_view_all, employee = check_timeoff_permission(user, 'timeoff.request.view_all')
-        
-        if has_view_all:
-            # Can view all requests
-            return queryset.order_by('-created_at')
-        
-        # Check team permission
-        has_view_team, employee = check_timeoff_permission(user, 'timeoff.request.view_team')
-        
-        if has_view_team and employee:
-            # Can view team requests (as line manager)
-            if self.request.query_params.get('for_approval') == 'true':
-                # Only pending approvals
-                queryset = queryset.filter(
-                    line_manager=employee,
-                    status='PENDING'
-                )
-            else:
-                # All team requests
-                queryset = queryset.filter(line_manager=employee)
-        else:
-            # Can only view own requests
-            has_view_own, employee = check_timeoff_permission(user, 'timeoff.request.view_own')
-            
-            if has_view_own and employee:
-                queryset = queryset.filter(employee=employee)
-            else:
-                # No permission
-                return queryset.none()
+        # Apply role-based filtering
+        queryset = filter_timeoff_requests_by_access(user, queryset)
         
         return queryset.order_by('-created_at')
     
     def list(self, request, *args, **kwargs):
-        """
-        List requests
-        Required: timeoff.request.view_own OR timeoff.request.view_team OR timeoff.request.view_all
-        """
-        # Check if user has any view permission
-        has_any_perm, _ = check_timeoff_permission(
-            request.user,
-            'timeoff.request.view_own'
-        )
-        
-        if not has_any_perm:
-            has_any_perm, _ = check_timeoff_permission(
-                request.user,
-                'timeoff.request.view_team'
-            )
-        
-        if not has_any_perm:
-            has_any_perm, _ = check_timeoff_permission(
-                request.user,
-                'timeoff.request.view_all'
-            )
-        
-        if not has_any_perm:
-            return Response(
-                {
-                    'error': 'No view permission',
-                    'required_permissions': [
-                        'timeoff.request.view_own',
-                        'timeoff.request.view_team',
-                        'timeoff.request.view_all'
-                    ]
-                },
-                status=status.HTTP_403_FORBIDDEN
-            )
-        
+        """List requests - role-based access"""
         return super().list(request, *args, **kwargs)
     
     def retrieve(self, request, *args, **kwargs):
-        """
-        Get single request
-        Required: Appropriate view permission based on request ownership
-        """
+        """Get single request - role-based check"""
         instance = self.get_object()
         
         # Check if user can view this specific request
-        can_view, reason = can_view_timeoff_request(request.user, instance)
+        can_view, reason = can_view_timeoff_request_role_based(request.user, instance)
         
         if not can_view:
             return Response(
@@ -323,13 +525,8 @@ class TimeOffRequestViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(instance)
         return Response(serializer.data)
     
-    @has_timeoff_permission('timeoff.request.create_own')
     def create(self, request, *args, **kwargs):
-        """
-        Create time off request
-        Required: timeoff.request.create_own
-        """
-        # Get employee from request user
+        """Create time off request"""
         if not hasattr(request.user, 'employee_profile'):
             return Response(
                 {'error': 'No employee profile found'},
@@ -358,15 +555,10 @@ class TimeOffRequestViewSet(viewsets.ModelViewSet):
             status=status.HTTP_201_CREATED
         )
     
-    @has_timeoff_permission('timeoff.request.update_own')
     def update(self, request, *args, **kwargs):
-        """
-        Update time off request
-        Required: timeoff.request.update_own (only if PENDING)
-        """
+        """Update time off request - only own, only if PENDING"""
         instance = self.get_object()
         
-        # Can only update own requests
         if not hasattr(request.user, 'employee_profile'):
             return Response(
                 {'error': 'No employee profile found'},
@@ -379,7 +571,6 @@ class TimeOffRequestViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_403_FORBIDDEN
             )
         
-        # Can only update pending requests
         if instance.status != 'PENDING':
             return Response(
                 {'error': f'Cannot update request with status: {instance.status}'},
@@ -388,15 +579,10 @@ class TimeOffRequestViewSet(viewsets.ModelViewSet):
         
         return super().update(request, *args, **kwargs)
     
-    @has_timeoff_permission('timeoff.request.delete_own')
     def destroy(self, request, *args, **kwargs):
-        """
-        Delete time off request
-        Required: timeoff.request.delete_own (only if PENDING)
-        """
+        """Delete time off request - only own, only if PENDING"""
         instance = self.get_object()
         
-        # Can only delete own requests
         if not hasattr(request.user, 'employee_profile'):
             return Response(
                 {'error': 'No employee profile found'},
@@ -409,7 +595,6 @@ class TimeOffRequestViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_403_FORBIDDEN
             )
         
-        # Can only delete pending requests
         if instance.status != 'PENDING':
             return Response(
                 {'error': f'Cannot delete request with status: {instance.status}'},
@@ -419,16 +604,12 @@ class TimeOffRequestViewSet(viewsets.ModelViewSet):
         return super().destroy(request, *args, **kwargs)
     
     @action(detail=True, methods=['post'])
-    @has_any_timeoff_permission(['timeoff.request.approve_as_manager', 'timeoff.request.approve_as_hr'])
     def approve(self, request, pk=None):
-        """
-        Approve time off request
-        Required: timeoff.request.approve_as_manager OR timeoff.request.approve_as_hr
-        """
+        """Approve time off request - Admin OR Line Manager"""
         request_obj = self.get_object()
         
-        # Permission və authorization yoxla
-        can_approve, reason = can_approve_timeoff(request.user, request_obj)
+        # Role-based authorization
+        can_approve, reason = can_approve_timeoff_role_based(request.user, request_obj)
         
         if not can_approve:
             return Response(
@@ -478,16 +659,12 @@ class TimeOffRequestViewSet(viewsets.ModelViewSet):
             )
     
     @action(detail=True, methods=['post'])
-    @has_any_timeoff_permission(['timeoff.request.reject_as_manager'])
     def reject(self, request, pk=None):
-        """
-        Reject time off request
-        Required: timeoff.request.reject_as_manager
-        """
+        """Reject time off request - Admin OR Line Manager"""
         request_obj = self.get_object()
         
-        # Permission və authorization yoxla
-        can_approve, reason = can_approve_timeoff(request.user, request_obj)
+        # Role-based authorization
+        can_approve, reason = can_approve_timeoff_role_based(request.user, request_obj)
         
         if not can_approve:
             return Response(
@@ -540,22 +717,16 @@ class TimeOffRequestViewSet(viewsets.ModelViewSet):
             )
     
     @action(detail=True, methods=['post'])
-    @has_timeoff_permission('timeoff.request.cancel_own')
     def cancel(self, request, pk=None):
-        """
-        Cancel time off request
-        Required: timeoff.request.cancel_own (only own requests)
-        """
+        """Cancel time off request - only own requests"""
         request_obj = self.get_object()
         
-        # Check if user can cancel this request
         if not hasattr(request.user, 'employee_profile'):
             return Response(
                 {'error': 'No employee profile found'},
                 status=status.HTTP_403_FORBIDDEN
             )
         
-        # Only own requests can be cancelled
         if request_obj.employee != request.user.employee_profile:
             return Response(
                 {'error': 'Can only cancel your own requests'},
@@ -598,12 +769,8 @@ class TimeOffRequestViewSet(viewsets.ModelViewSet):
             )
     
     @action(detail=False, methods=['get'])
-    @has_timeoff_permission('timeoff.request.view_own')
     def my_requests(self, request):
-        """
-        Get own time off requests
-        Required: timeoff.request.view_own
-        """
+        """Get own time off requests"""
         if not hasattr(request.user, 'employee_profile'):
             return Response(
                 {'error': 'No employee profile found'},
@@ -620,74 +787,37 @@ class TimeOffRequestViewSet(viewsets.ModelViewSet):
         })
     
     @action(detail=False, methods=['get'])
-    @has_any_timeoff_permission(['timeoff.request.view_team', 'timeoff.request.approve_as_manager', 'timeoff.request.approve_as_hr'])
     def pending_approvals(self, request):
         """
-        Get pending approvals
-        - HR/Admin: All pending requests
+        Get pending approvals - role-based
+        - Admin: All pending requests
         - Line Manager: Only their team's pending requests
-        Required: timeoff.request.view_team OR timeoff.request.approve_as_manager OR timeoff.request.approve_as_hr
         """
-        if not hasattr(request.user, 'employee_profile'):
-            return Response(
-                {'error': 'No employee profile found'},
-                status=status.HTTP_404_NOT_FOUND
-            )
+        access = get_timeoff_request_access(request.user)
         
-        employee = request.user.employee_profile
+        # Get pending requests
+        requests = TimeOffRequest.objects.filter(
+            status='PENDING'
+        ).select_related(
+            'employee', 
+            'employee__user',
+            'employee__department',
+            'line_manager'
+        )
         
-        # Check if user has HR approval permission or is admin
-        from .business_trip_permissions import is_admin_user
-        has_hr_perm, _ = check_timeoff_permission(request.user, 'timeoff.request.approve_as_hr')
-        is_admin = is_admin_user(request.user)
+        # Apply role-based filtering
+        requests = filter_timeoff_requests_by_access(request.user, requests)
         
-       
-        
-        if is_admin or has_hr_perm:
-            # Admin/HR can see ALL pending requests
-            requests = TimeOffRequest.objects.filter(
-                status='PENDING'
-            ).select_related(
-                'employee', 
-                'employee__user',
-                'employee__department',
-                'line_manager'
-            ).order_by('-created_at')
-            
-        
-        else:
-            # Line manager can only see their team's pending requests
-            requests = TimeOffRequest.objects.filter(
-                line_manager=employee,
-                status='PENDING'
-            ).select_related(
-                'employee', 
-                'employee__user',
-                'employee__department',
-                'line_manager'
-            ).order_by('-created_at')
-            
-           
-        
-        serializer = self.get_serializer(requests, many=True)
+        serializer = self.get_serializer(requests.order_by('-created_at'), many=True)
         
         return Response({
             'count': requests.count(),
             'requests': serializer.data,
-            'view_type': 'admin_or_hr' if (is_admin or has_hr_perm) else 'line_manager',
-            'debug_info': {
-                'user_id': employee.employee_id,
-                'user_name': employee.full_name,
-                'is_admin': is_admin,
-                'has_hr_permission': has_hr_perm,
-                'is_line_manager_for': Employee.objects.filter(
-                    line_manager=employee,
-                    is_deleted=False
-                ).count()
-            }
-        })    
-        
-  
+            'access_level': access['access_level'],
+            'can_view_all': access['can_view_all'],
+            'is_manager': access['is_manager']
+        })
+    
     # ==================== NOTIFICATION HELPERS ====================
     
     def _send_line_manager_notification(self, request_obj, request):
@@ -736,8 +866,6 @@ class TimeOffRequestViewSet(viewsets.ModelViewSet):
                 sent_by=request.user
             )
             
-         
-            
         except Exception as e:
             logger.error(f"Failed to send line manager notification: {e}")
     
@@ -777,12 +905,6 @@ class TimeOffRequestViewSet(viewsets.ModelViewSet):
                     <p style="margin: 0;"><strong>Approved by:</strong> {request_obj.line_manager.full_name if request_obj.line_manager else 'N/A'}</p>
                     <p style="margin: 5px 0 0 0;"><strong>Approved at:</strong> {request_obj.approved_at.strftime('%B %d, %Y %H:%M') if request_obj.approved_at else 'N/A'}</p>
                 </div>
-                
-                <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #E5E7EB;">
-                    <p style="color: #6B7280; font-size: 12px;">
-                        This is an automated notification from HR Management System.
-                    </p>
-                </div>
             </div>
             """
             
@@ -803,8 +925,6 @@ class TimeOffRequestViewSet(viewsets.ModelViewSet):
             request_obj.hr_notified_at = timezone.now()
             request_obj.save()
             
-      
-            
         except Exception as e:
             logger.error(f"Failed to send HR notification: {e}")
     
@@ -821,12 +941,12 @@ class TimeOffRequestViewSet(viewsets.ModelViewSet):
                 return
             
             if notification_type == 'approved':
-                subject = f"[TIME OFF] Your request for {request_obj.date}"
+                subject = f"[TIME OFF] Your request for {request_obj.date} - APPROVED"
                 color = "#10B981"
                 status_text = "APPROVED ✓"
                 message = "Your time off request has been approved by your line manager."
             else:  # rejected
-                subject = f"[TIME OFF] Your request for {request_obj.date}"
+                subject = f"[TIME OFF] Your request for {request_obj.date} - REJECTED"
                 color = "#EF4444"
                 status_text = "REJECTED ✗"
                 message = "Your time off request has been rejected by your line manager."
@@ -873,16 +993,13 @@ class TimeOffRequestViewSet(viewsets.ModelViewSet):
                 sent_by=request.user
             )
             
-           
-            
         except Exception as e:
             logger.error(f"Failed to send employee notification: {e}")
 
 
 class TimeOffSettingsViewSet(viewsets.ModelViewSet):
     """
-    Time Off Settings ViewSet - WITH FULL RBAC
-    Only admin/HR can modify
+    Time Off Settings ViewSet - Admin Only
     """
     queryset = TimeOffSettings.objects.all()
     serializer_class = TimeOffSettingsSerializer
@@ -893,69 +1010,57 @@ class TimeOffSettingsViewSet(viewsets.ModelViewSet):
         return TimeOffSettings.objects.all()[:1]
     
     def list(self, request, *args, **kwargs):
-        """
-        List settings
-        Required: timeoff.settings.view
-        """
-        has_perm, _ = check_timeoff_permission(request.user, 'timeoff.settings.view')
-        
-        if not has_perm:
+        """List settings - Admin only"""
+        if not is_admin_user(request.user):
             return Response(
-                {
-                    'error': 'Permission required',
-                    'required_permission': 'timeoff.settings.view'
-                },
+                {'error': 'Admin access required'},
                 status=status.HTTP_403_FORBIDDEN
             )
         
         return super().list(request, *args, **kwargs)
     
     def retrieve(self, request, *args, **kwargs):
-        """
-        Get settings detail
-        Required: timeoff.settings.view
-        """
-        has_perm, _ = check_timeoff_permission(request.user, 'timeoff.settings.view')
-        
-        if not has_perm:
+        """Get settings detail - Admin only"""
+        if not is_admin_user(request.user):
             return Response(
-                {
-                    'error': 'Permission required',
-                    'required_permission': 'timeoff.settings.view'
-                },
+                {'error': 'Admin access required'},
                 status=status.HTTP_403_FORBIDDEN
             )
         
         return super().retrieve(request, *args, **kwargs)
     
     @action(detail=False, methods=['get'])
-    @has_timeoff_permission('timeoff.settings.view')
     def current(self, request):
-        """
-        Get current settings
-        Required: timeoff.settings.view
-        """
+        """Get current settings - Admin only"""
+        if not is_admin_user(request.user):
+            return Response(
+                {'error': 'Admin access required'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
         settings = TimeOffSettings.get_settings()
         serializer = self.get_serializer(settings)
         return Response(serializer.data)
     
-    @has_timeoff_permission('timeoff.settings.update')
     def update(self, request, *args, **kwargs):
-        """
-        Update settings
-        Required: timeoff.settings.update
-        """
+        """Update settings - Admin only"""
+        if not is_admin_user(request.user):
+            return Response(
+                {'error': 'Admin access required'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
         return super().update(request, *args, **kwargs)
     
-  
-    
     @action(detail=True, methods=['post'])
-    @has_timeoff_permission('timeoff.settings.manage_hr_emails')
     def update_hr_emails(self, request, pk=None):
-        """
-        Update HR notification emails
-        Required: timeoff.settings.manage_hr_emails
-        """
+        """Update HR notification emails - Admin only"""
+        if not is_admin_user(request.user):
+            return Response(
+                {'error': 'Admin access required'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
         settings = self.get_object()
         
         hr_emails = request.data.get('hr_notification_emails')
@@ -977,7 +1082,7 @@ class TimeOffSettingsViewSet(viewsets.ModelViewSet):
 
 class TimeOffActivityViewSet(viewsets.ReadOnlyModelViewSet):
     """
-    Time Off Activity ViewSet - WITH FULL RBAC
+    Time Off Activity ViewSet - ROLE-BASED ACCESS
     Read-only - activities are auto-created
     """
     queryset = TimeOffActivity.objects.all()
@@ -985,69 +1090,33 @@ class TimeOffActivityViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = [IsAuthenticated]
     
     def get_queryset(self):
-        """Filter activities based on permissions"""
+        """Filter activities based on role-based access"""
         queryset = super().get_queryset().select_related(
             'request', 'request__employee', 'performed_by'
         )
         
-        user = self.request.user
+        access = get_timeoff_request_access(self.request.user)
         
-        # Check if user can view all activities
-        has_view_all, employee = check_timeoff_permission(user, 'timeoff.activity.view_all')
-        
-        if has_view_all:
-            # Can view all activities
+        # Admin - see all activities
+        if access['can_view_all']:
             return queryset.order_by('-created_at')
         
-        # Can only view own activities
-        has_view_own, employee = check_timeoff_permission(user, 'timeoff.activity.view_own')
-        
-        if has_view_own and employee:
-            # Filter activities related to own requests
+        # Manager or Employee - filter by accessible requests
+        if access['accessible_employee_ids']:
             return queryset.filter(
-                request__employee=employee
+                request__employee_id__in=access['accessible_employee_ids']
             ).order_by('-created_at')
         
-        # No permission
+        # No access
         return queryset.none()
     
     def list(self, request, *args, **kwargs):
-        """
-        List activities
-        Required: timeoff.activity.view_own OR timeoff.activity.view_all
-        """
-        has_any_perm, _ = check_timeoff_permission(
-            request.user,
-            'timeoff.activity.view_own'
-        )
-        
-        if not has_any_perm:
-            has_any_perm, _ = check_timeoff_permission(
-                request.user,
-                'timeoff.activity.view_all'
-            )
-        
-        if not has_any_perm:
-            return Response(
-                {
-                    'error': 'No view permission',
-                    'required_permissions': [
-                        'timeoff.activity.view_own',
-                        'timeoff.activity.view_all'
-                    ]
-                },
-                status=status.HTTP_403_FORBIDDEN
-            )
-        
+        """List activities - role-based access"""
         return super().list(request, *args, **kwargs)
     
     @action(detail=False, methods=['get'])
-    @has_timeoff_permission('timeoff.activity.view_own')
     def my_activities(self, request):
-        """
-        Get own activities
-        Required: timeoff.activity.view_own
-        """
+        """Get own activities"""
         if not hasattr(request.user, 'employee_profile'):
             return Response(
                 {'error': 'No employee profile found'},
@@ -1066,12 +1135,14 @@ class TimeOffActivityViewSet(viewsets.ReadOnlyModelViewSet):
         })
     
     @action(detail=False, methods=['get'])
-    @has_timeoff_permission('timeoff.activity.view_all')
     def by_request(self, request):
-        """
-        Get activities for specific request
-        Required: timeoff.activity.view_all
-        """
+        """Get activities for specific request - Admin only"""
+        if not is_admin_user(request.user):
+            return Response(
+                {'error': 'Admin access required'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
         request_id = request.query_params.get('request_id')
         
         if not request_id:
@@ -1096,162 +1167,88 @@ class TimeOffActivityViewSet(viewsets.ReadOnlyModelViewSet):
 
 class TimeOffDashboardViewSet(viewsets.ViewSet):
     """
-    Time Off Dashboard ViewSet - WITH FULL RBAC
-    Provides dashboard data and statistics
+    Time Off Dashboard ViewSet - ROLE-BASED ACCESS
     """
     permission_classes = [IsAuthenticated]
+    
     @action(detail=False, methods=['get'])
-    def my_permissions(self, request):
+    def my_access_info(self, request):
         """
-        Get my time off permissions
-        No permission required - everyone can check their own permissions
+        Get my time off request access info - ROLE-BASED
+        No permission required - everyone can check their own access
         """
-        from .role_models import EmployeeRole
+        access = get_timeoff_request_access(request.user)
         
-        user = request.user
+        # Count accessible requests
+        if access['can_view_all']:
+            accessible_count = TimeOffRequest.objects.count()
+            accessible_count_str = "All"
+        else:
+            accessible_count = TimeOffRequest.objects.filter(
+                employee_id__in=access['accessible_employee_ids']
+            ).count() if access['accessible_employee_ids'] else 0
+            accessible_count_str = str(accessible_count)
         
-        # Check if admin
-        from .business_trip_permissions import is_admin_user
-        is_admin = is_admin_user(user)
-        
-        # Get all permissions
-        permissions = get_user_timeoff_permissions(user)
-        
-        # Get user roles
-        try:
-            emp = Employee.objects.get(user=user, is_deleted=False)
-            roles = list(EmployeeRole.objects.filter(
-                employee=emp,
-                is_active=True
-            ).select_related('role').values_list('role__name', flat=True))
-        except Employee.DoesNotExist:
-            roles = []
-            emp = None
-        
-        # Get employee info
+        # Employee info
+        employee = access['employee']
         employee_info = None
-        if emp:
+        if employee:
             employee_info = {
-                'id': emp.id,
-                'employee_id': emp.employee_id,
-                'full_name': emp.full_name,
-                'email': emp.email,
-                'department': emp.department.name if emp.department else None,
-                'line_manager': emp.line_manager.full_name if emp.line_manager else None
+                'id': employee.id,
+                'employee_id': employee.employee_id,
+                'full_name': employee.full_name,
+                'email': employee.email,
+                'department': employee.department.name if employee.department else None
             }
         
-        # Categorize permissions
-        permission_categories = {
-            'balance': [],
-            'request': [],
-            'settings': [],
-            'activity': [],
-            'dashboard': []
-        }
-        
-        for perm in permissions:
-            if 'balance' in perm:
-                permission_categories['balance'].append(perm)
-            elif 'request' in perm:
-                permission_categories['request'].append(perm)
-            elif 'settings' in perm:
-                permission_categories['settings'].append(perm)
-            elif 'activity' in perm:
-                permission_categories['activity'].append(perm)
-            elif 'dashboard' in perm:
-                permission_categories['dashboard'].append(perm)
-        
-        # ✅ COMPLETE CAPABILITIES - ALL POSSIBLE PERMISSIONS
-        capabilities = {
-            # Balance Permissions
-            'can_view_own_balance': 'timeoff.balance.view_own' in permissions or is_admin,
-            'can_view_all_balances': 'timeoff.balance.view_all' in permissions or is_admin,
-            'can_update_balance': 'timeoff.balance.update' in permissions or is_admin,
-            'can_reset_balances': 'timeoff.balance.reset' in permissions or is_admin,
-            
-            # Request Permissions - Create
-            'can_create_request': 'timeoff.request.create_own' in permissions or is_admin,
-            'can_create_for_employee': 'timeoff.request.create_for_employee' in permissions or is_admin,
-            
-            # Request Permissions - View
-            'can_view_own_requests': 'timeoff.request.view_own' in permissions or is_admin,
-            'can_view_team_requests': 'timeoff.request.view_team' in permissions or is_admin,
-            'can_view_all_requests': 'timeoff.request.view_all' in permissions or is_admin,
-            
-            # Request Permissions - Update/Delete
-            'can_update_own_request': 'timeoff.request.update_own' in permissions or is_admin,
-            'can_delete_own_request': 'timeoff.request.delete_own' in permissions or is_admin,
-            'can_cancel_own_request': 'timeoff.request.cancel_own' in permissions or is_admin,
-            
-            # Request Permissions - Approve/Reject
-            'can_approve_as_manager': 'timeoff.request.approve_as_manager' in permissions or is_admin,
-            'can_approve_as_hr': 'timeoff.request.approve_as_hr' in permissions or is_admin,
-            'can_reject_as_manager': 'timeoff.request.reject_as_manager' in permissions or is_admin,
-            
-            # Settings Permissions
-            'can_view_settings': 'timeoff.settings.view' in permissions or is_admin,
-            'can_update_settings': 'timeoff.settings.update' in permissions or is_admin,
-            'can_manage_hr_emails': 'timeoff.settings.manage_hr_emails' in permissions or is_admin,
-            
-            # Activity Permissions
-            'can_view_own_activities': 'timeoff.activity.view_own' in permissions or is_admin,
-            'can_view_all_activities': 'timeoff.activity.view_all' in permissions or is_admin,
-            
-            # Dashboard Permissions
-            'can_view_own_dashboard': 'timeoff.dashboard.view_own' in permissions or is_admin,
-            'can_view_team_dashboard': 'timeoff.dashboard.view_team' in permissions or is_admin,
-            'can_view_full_dashboard': 'timeoff.dashboard.view' in permissions or is_admin,
-            'can_view_statistics': 'timeoff.dashboard.view_statistics' in permissions or is_admin,
-        }
-        
         return Response({
-            'is_admin': is_admin,
-            'employee_info': employee_info,
-            'roles': roles,
-            'roles_count': len(roles),
-            'permissions': permissions,
-            'permissions_count': len(permissions),
-            'permission_categories': permission_categories,
-            'capabilities': capabilities
+            'can_view_all': access['can_view_all'],
+            'is_manager': access['is_manager'],
+            'is_admin': is_admin_user(request.user),
+            'access_level': access['access_level'],
+            'accessible_count': accessible_count_str,
+            'employee_info': employee_info
         })
-        
+    
     @action(detail=False, methods=['get'])
-    @has_any_timeoff_permission(['timeoff.dashboard.view', 'timeoff.dashboard.view_own'])
     def overview(self, request):
         """
-        Get dashboard overview
-        Required: timeoff.dashboard.view OR timeoff.dashboard.view_own
+        Get dashboard overview - role-based
         """
-        user = request.user
+        access = get_timeoff_request_access(request.user)
         
-        # Check permissions
-        has_view_all, employee = check_timeoff_permission(user, 'timeoff.dashboard.view')
-        
-        if has_view_all:
-            # Full dashboard for HR/Admin
+        if access['can_view_all']:
+            # Full dashboard for Admin
             return self._get_full_dashboard(request)
         else:
-            # Personal dashboard for employee
-            return self._get_personal_dashboard(request)
+            # Personal dashboard for Employee/Manager
+            return self._get_personal_dashboard(request, access)
     
-    def _get_personal_dashboard(self, request):
-        """Personal dashboard for employee"""
-        if not hasattr(request.user, 'employee_profile'):
+    def _get_personal_dashboard(self, request, access):
+        """Personal dashboard for employee/manager"""
+        if not access['employee']:
             return Response(
                 {'error': 'No employee profile found'},
                 status=status.HTTP_404_NOT_FOUND
             )
         
-        employee = request.user.employee_profile
+        employee = access['employee']
         
         # Get balance
         balance = TimeOffBalance.get_or_create_for_employee(employee)
         
-        # Get requests
-        my_requests = TimeOffRequest.objects.filter(employee=employee)
+        # Get requests (filtered by access)
+        if access['accessible_employee_ids']:
+            my_requests = TimeOffRequest.objects.filter(
+                employee_id__in=access['accessible_employee_ids']
+            )
+        else:
+            my_requests = TimeOffRequest.objects.none()
         
         # Statistics
         dashboard_data = {
+            'access_level': access['access_level'],
+            'is_manager': access['is_manager'],
             'balance': {
                 'current_balance': float(balance.current_balance_hours),
                 'monthly_allowance': float(balance.monthly_allowance_hours),
@@ -1270,15 +1267,25 @@ class TimeOffDashboardViewSet(viewsets.ViewSet):
             ).data
         }
         
+        # If manager, add team stats
+        if access['is_manager']:
+            team_requests = my_requests.exclude(employee=employee)
+            dashboard_data['team_stats'] = {
+                'total_team_requests': team_requests.count(),
+                'pending_approvals': team_requests.filter(status='PENDING').count(),
+            }
+        
         return Response(dashboard_data)
     
     def _get_full_dashboard(self, request):
-        """Full dashboard for HR/Admin"""
+        """Full dashboard for Admin"""
         # System-wide statistics
         all_balances = TimeOffBalance.objects.all()
         all_requests = TimeOffRequest.objects.all()
         
         dashboard_data = {
+            'access_level': 'Admin - Full Access',
+            'is_admin': True,
             'system_stats': {
                 'total_employees': all_balances.count(),
                 'total_balance_hours': float(all_balances.aggregate(
@@ -1308,22 +1315,30 @@ class TimeOffDashboardViewSet(viewsets.ViewSet):
         return Response(dashboard_data)
     
     @action(detail=False, methods=['get'])
-    @has_timeoff_permission('timeoff.dashboard.view_team')
     def team_overview(self, request):
         """
         Get team dashboard for line manager
-        Required: timeoff.dashboard.view_team
         """
-        if not hasattr(request.user, 'employee_profile'):
+        access = get_timeoff_request_access(request.user)
+        
+        if not access['is_manager']:
+            return Response(
+                {'error': 'Not a line manager'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        if not access['employee']:
             return Response(
                 {'error': 'No employee profile found'},
                 status=status.HTTP_404_NOT_FOUND
             )
         
-        employee = request.user.employee_profile
+        employee = access['employee']
         
         # Get team requests (where user is line manager)
-        team_requests = TimeOffRequest.objects.filter(line_manager=employee)
+        team_requests = TimeOffRequest.objects.filter(
+            line_manager=employee
+        )
         
         dashboard_data = {
             'team_stats': {
@@ -1343,3 +1358,66 @@ class TimeOffDashboardViewSet(viewsets.ViewSet):
         }
         
         return Response(dashboard_data)
+    
+    @action(detail=False, methods=['get'])
+    def statistics(self, request):
+        """
+        Get statistics - Admin only
+        """
+        if not is_admin_user(request.user):
+            return Response(
+                {'error': 'Admin access required'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Time-based filters
+        from datetime import datetime, timedelta
+        today = timezone.now().date()
+        
+        month_start = today.replace(day=1)
+        last_month = (month_start - timedelta(days=1)).replace(day=1)
+        
+        # Statistics
+        stats = {
+            'current_month': {
+                'total_requests': TimeOffRequest.objects.filter(
+                    date__gte=month_start
+                ).count(),
+                'approved': TimeOffRequest.objects.filter(
+                    date__gte=month_start,
+                    status='APPROVED'
+                ).count(),
+                'pending': TimeOffRequest.objects.filter(
+                    date__gte=month_start,
+                    status='PENDING'
+                ).count(),
+            },
+            'last_month': {
+                'total_requests': TimeOffRequest.objects.filter(
+                    date__gte=last_month,
+                    date__lt=month_start
+                ).count(),
+                'approved': TimeOffRequest.objects.filter(
+                    date__gte=last_month,
+                    date__lt=month_start,
+                    status='APPROVED'
+                ).count(),
+            },
+            'by_department': []
+        }
+        
+        # Department breakdown
+        from django.db.models import Count
+        from .models import Department
+        
+        dept_stats = TimeOffRequest.objects.filter(
+            date__gte=month_start
+        ).values(
+            'employee__department__name'
+        ).annotate(
+            count=Count('id')
+        ).order_by('-count')
+        
+        stats['by_department'] = list(dept_stats)
+        
+        return Response(stats)
