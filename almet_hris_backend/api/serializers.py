@@ -93,11 +93,17 @@ class DepartmentSerializer(serializers.ModelSerializer):
     employee_count = serializers.SerializerMethodField()
     unit_count = serializers.SerializerMethodField()
     
-    # Accept array of IDs for CREATE, single ID for UPDATE
-    business_function_id = serializers.ListField(
+    # ✅ GET üçün - read_only (integer)
+    business_function_id = serializers.IntegerField(
+        source='business_function.id',
+        read_only=True
+    )
+    
+    # ✅ POST/PUT üçün - write_only (list)
+    business_function_ids = serializers.ListField(
         child=serializers.IntegerField(),
         write_only=True,
-        required=False,  # Make optional since we'll handle validation
+        required=False,
         help_text="Business function ID(s) - array for create, single for update"
     )
     
@@ -105,23 +111,25 @@ class DepartmentSerializer(serializers.ModelSerializer):
         model = Department
         fields = [
             'id', 'name',
-            'business_function_id',
-            'business_function_name', 'business_function_code',
-            'is_active', 'employee_count', 'unit_count', 'created_at'
+            'business_function_id',      # GET-də görsənir (integer)
+            'business_function_ids',     # POST/PUT-da işləyir (list)
+            'business_function_name', 
+            'business_function_code',
+            'is_active', 
+            'employee_count', 
+            'unit_count', 
+            'created_at'
         ]
+    
     def to_representation(self, instance):
         """Format text fields to title case"""
         data = super().to_representation(instance)
         
-        # ✅ Title case tətbiq et - ad və soyad
-        text_fields = [
-            'name',  
-            
-        ]
+        # ✅ Title case tətbiq et
+        text_fields = ['name']
         
         for field in text_fields:
             if field in data and data[field]:
-                # Strip whitespace və title case
                 data[field] = str(data[field]).strip().title()
         
         return data
@@ -132,46 +140,34 @@ class DepartmentSerializer(serializers.ModelSerializer):
     def get_unit_count(self, obj):
         return obj.units.filter(is_active=True).count()
     
-    def validate(self, data):
-        """Handle both create and update modes"""
-        bf_id = data.get('business_function_id')
-        
-        # Check if data came from initial_data
-        if not bf_id and 'business_function' in self.initial_data:
-            bf_value = self.initial_data['business_function']
-            bf_id = [bf_value] if not isinstance(bf_value, list) else bf_value
-            data['business_function_id'] = bf_id
-        
-        # Validate business_function_id exists
-        if not bf_id:
-            raise serializers.ValidationError({
-                'business_function_id': 'Business function ID is required'
-            })
+    def validate_business_function_ids(self, value):
+        """Validate business_function_ids"""
+        if not value:
+            raise serializers.ValidationError("business_function_ids is required")
         
         # Ensure it's a list
-        if not isinstance(bf_id, list):
-            bf_id = [bf_id]
-            data['business_function_id'] = bf_id
+        if not isinstance(value, list):
+            value = [value]
         
         # Validate all IDs exist
         existing_count = BusinessFunction.objects.filter(
-            id__in=bf_id, 
+            id__in=value, 
             is_active=True
         ).count()
         
-        if existing_count != len(bf_id):
-            raise serializers.ValidationError({
-                'business_function_id': 'Some business function IDs do not exist or are inactive'
-            })
+        if existing_count != len(value):
+            raise serializers.ValidationError(
+                "Some business function IDs do not exist or are inactive"
+            )
         
-        return data
+        return value
     
     def create(self, validated_data):
         """Handle both single and bulk creation"""
-        business_function_ids = validated_data.pop('business_function_id', None)
+        business_function_ids = validated_data.pop('business_function_ids', None)
         
         if not business_function_ids:
-            raise serializers.ValidationError("business_function_id is required")
+            raise serializers.ValidationError("business_function_ids is required")
         
         # Ensure it's a list
         if not isinstance(business_function_ids, list):
@@ -186,7 +182,7 @@ class DepartmentSerializer(serializers.ModelSerializer):
             except BusinessFunction.DoesNotExist:
                 raise serializers.ValidationError("Business function not found")
         
-        # Bulk creation (2+ IDs) - rest of your existing code
+        # Bulk creation (2+ IDs)
         name = validated_data['name']
         is_active = validated_data.get('is_active', True)
         
@@ -227,27 +223,18 @@ class DepartmentSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"errors": errors})
     
     def update(self, instance, validated_data):
-        """✅ FIXED: Handle update with single business_function_id"""
-        business_function_ids = validated_data.pop('business_function_id', None)
+        """Handle update with single business_function_id"""
+        business_function_ids = validated_data.pop('business_function_ids', None)
         
         if business_function_ids:
-            # For update, expect single ID in array
-            if isinstance(business_function_ids, list):
-                if len(business_function_ids) != 1:
-                    raise serializers.ValidationError({
-                        'business_function_id': 'Only one business function can be assigned during update'
-                    })
-                business_function_id = business_function_ids[0]
-            else:
-                business_function_id = business_function_ids
+            # For update, expect single ID
+            bf_id = business_function_ids[0] if isinstance(business_function_ids, list) else business_function_ids
             
             try:
-                business_function = BusinessFunction.objects.get(id=business_function_id)
-                validated_data['business_function'] = business_function
+                business_function = BusinessFunction.objects.get(id=bf_id, is_active=True)
+                instance.business_function = business_function
             except BusinessFunction.DoesNotExist:
-                raise serializers.ValidationError({
-                    'business_function_id': 'Business function not found'
-                })
+                raise serializers.ValidationError("Business function not found")
         
         # Update other fields
         for attr, value in validated_data.items():
@@ -255,53 +242,59 @@ class DepartmentSerializer(serializers.ModelSerializer):
         
         instance.save()
         return instance
-
 class UnitSerializer(serializers.ModelSerializer):
     department_name = serializers.CharField(source='department.name', read_only=True)
     business_function_name = serializers.CharField(source='department.business_function.name', read_only=True)
     employee_count = serializers.SerializerMethodField()
     
-    # Accept array of IDs
-    department_id = serializers.ListField(
+    # ✅ GET üçün - read_only (integer)
+    department_id = serializers.IntegerField(
+        source='department.id',
+        read_only=True
+    )
+    
+    # ✅ POST/PUT üçün - write_only (list)
+    department_ids = serializers.ListField(
         child=serializers.IntegerField(),
         write_only=True,
-        required=True,  # Make it required
+        required=False,
         help_text="Department ID(s) - can be single integer or array"
     )
     
     class Meta:
         model = Unit
         fields = [
-            'id', 'name',
-            'department_id',  # Only this write field
-            'department_name', 'business_function_name',  # Read-only display fields
-            'is_active', 'employee_count', 'created_at'
+            'id',
+            'name',
+            'department_id',      # GET-də görsənir (integer)
+            'department_ids',     # POST/PUT-da işləyir (list)
+            'department_name',
+            'business_function_name',
+            'is_active',
+            'employee_count',
+            'created_at'
         ]
-        # REMOVED: 'department' from fields - this was causing the issue
+    
     def to_representation(self, instance):
         """Format text fields to title case"""
         data = super().to_representation(instance)
         
-        # ✅ Title case tətbiq et - ad və soyad
-        text_fields = [
-            'name',  
-            
-        ]
-        
+        # ✅ Title case tətbiq et
+        text_fields = ['name']
         for field in text_fields:
             if field in data and data[field]:
-                # Strip whitespace və title case
                 data[field] = str(data[field]).strip().title()
         
         return data
     
     def get_employee_count(self, obj):
+        """Get active employee count"""
         return obj.employees.filter(status__affects_headcount=True).count()
     
-    def validate_department_id(self, value):
-        """Validate and normalize department_id"""
+    def validate_department_ids(self, value):
+        """Validate and normalize department_ids"""
         if not value:
-            raise serializers.ValidationError("department_id is required")
+            raise serializers.ValidationError("department_ids is required")
         
         # Ensure it's a list
         if not isinstance(value, list):
@@ -322,10 +315,10 @@ class UnitSerializer(serializers.ModelSerializer):
     
     def create(self, validated_data):
         """Handle both single and bulk creation"""
-        department_ids = validated_data.pop('department_id', None)
+        department_ids = validated_data.pop('department_ids', None)
         
         if not department_ids:
-            raise serializers.ValidationError("department_id is required")
+            raise serializers.ValidationError("department_ids is required")
         
         # Ensure it's a list
         if not isinstance(department_ids, list):
@@ -343,7 +336,6 @@ class UnitSerializer(serializers.ModelSerializer):
         # Bulk creation (2+ IDs)
         name = validated_data['name']
         is_active = validated_data.get('is_active', True)
-        
         created_units = []
         errors = []
         
@@ -352,10 +344,7 @@ class UnitSerializer(serializers.ModelSerializer):
                 department = Department.objects.get(id=dept_id)
                 
                 # Check if already exists
-                if Unit.objects.filter(
-                    department=department,
-                    name=name
-                ).exists():
+                if Unit.objects.filter(department=department, name=name).exists():
                     errors.append(f"Unit '{name}' already exists for {department.name}")
                     continue
                 
@@ -383,30 +372,25 @@ class UnitSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"errors": errors})
     
     def update(self, instance, validated_data):
-        """FIXED: Handle single ID for update"""
-        department_id = validated_data.pop('department_id', None)
+        """Handle single ID for update"""
+        department_ids = validated_data.pop('department_ids', None)
         
-        if department_id:
+        if department_ids:
             # For update, take first ID from array or use single value
-            if isinstance(department_id, list):
-                dept_id = department_id[0] if department_id else None
-            else:
-                dept_id = department_id
+            dept_id = department_ids[0] if isinstance(department_ids, list) else department_ids
             
-            if dept_id:
-                try:
-                    department = Department.objects.get(id=dept_id, is_active=True)
-                    instance.department = department
-                except Department.DoesNotExist:
-                    raise serializers.ValidationError("Department not found")
+            try:
+                department = Department.objects.get(id=dept_id, is_active=True)
+                instance.department = department
+            except Department.DoesNotExist:
+                raise serializers.ValidationError("Department not found")
         
         # Update other fields
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         
         instance.save()
-        return instance
-    
+        return instance   
 class JobFunctionSerializer(serializers.ModelSerializer):
     employee_count = serializers.SerializerMethodField()
     

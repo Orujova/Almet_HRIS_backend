@@ -78,26 +78,7 @@ class Command(BaseCommand):
             
       
             
-            # ==================== COMPANY NEWS ====================
-            # News Management
-            ('news.news.view', 'View Company News', 'Company News'),
-            ('news.news.view_all', 'View All News (including unpublished)', 'Company News'),
-            ('news.news.create', 'Create Company News', 'Company News'),
-            ('news.news.update', 'Update Company News', 'Company News'),
-            ('news.news.delete', 'Delete Company News', 'Company News'),
-            ('news.news.publish', 'Publish/Unpublish Company News', 'Company News'),
-            ('news.news.pin', 'Pin/Unpin Company News', 'Company News'),
-            ('news.news.view_statistics', 'View News Statistics', 'Company News'),
-
-            # Target Groups
-            ('news.target_group.view', 'View Target Groups', 'Company News'),
-            ('news.target_group.create', 'Create Target Group', 'Company News'),
-            ('news.target_group.update', 'Update Target Group', 'Company News'),
-            ('news.target_group.delete', 'Delete Target Group', 'Company News'),
-            ('news.target_group.add_members', 'Add Members to Target Group', 'Company News'),
-            ('news.target_group.remove_members', 'Remove Members from Target Group', 'Company News'),
-            ('news.target_group.view_statistics', 'View Target Group Statistics', 'Company News'),
-            
+       
            
         ]
         
