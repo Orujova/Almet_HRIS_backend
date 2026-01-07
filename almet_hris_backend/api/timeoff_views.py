@@ -38,16 +38,17 @@ from .timeoff_permissions import (
 )
 
 logger = logging.getLogger(__name__)
-# api/timeoff_views.py
+
 
 class TimeOffBalanceViewSet(viewsets.ReadOnlyModelViewSet):
     """
     Time Off Balance ViewSet - ROLE-BASED ACCESS
+    ✅ FIX: No parser_classes to allow both JSON and multipart
     """
     queryset = TimeOffBalance.objects.all()
     serializer_class = TimeOffBalanceSerializer
     permission_classes = [IsAuthenticated]
-    parser_classes = [MultiPartParser]
+    
     def get_queryset(self):
         """Filter by user and role-based access"""
         queryset = super().get_queryset()
@@ -90,7 +91,7 @@ class TimeOffBalanceViewSet(viewsets.ReadOnlyModelViewSet):
     @action(detail=False, methods=['get'])
     def team_balances(self, request):
         """
-        ✅ NEW: Get team balances
+        Get team balances
         - Admin: All employees' balances
         - Line Manager: Own + direct reports' balances
         - Employee: Only own balance
@@ -158,51 +159,12 @@ class TimeOffBalanceViewSet(viewsets.ReadOnlyModelViewSet):
             }
         })
     
-    @action(detail=False, methods=['post'])
-    def reset_monthly_balances(self, request):
-        """Reset monthly balances - Admin only"""
-        if not is_admin_user(request.user):
-            return Response(
-                {'error': 'Admin access required'},
-                status=status.HTTP_403_FORBIDDEN
-            )
-        
-        reset_count = 0
-        failed_count = 0
-        results = []
-        
-        for balance in TimeOffBalance.objects.all():
-            try:
-                if balance.check_and_reset_monthly():
-                    reset_count += 1
-                    results.append({
-                        'employee_id': balance.employee.employee_id,
-                        'employee_name': balance.employee.full_name,
-                        'new_balance': float(balance.current_balance_hours),
-                        'status': 'reset'
-                    })
-            except Exception as e:
-                failed_count += 1
-                results.append({
-                    'employee_id': balance.employee.employee_id,
-                    'employee_name': balance.employee.full_name,
-                    'status': 'failed',
-                    'error': str(e)
-                })
-        
-        return Response({
-            'success': True,
-            'message': f'{reset_count} balances reset successfully',
-            'reset_count': reset_count,
-            'failed_count': failed_count,
-            'results': results
-        })
-    
     @action(detail=True, methods=['post'])
     def update_balance(self, request, pk=None):
         """
-        ✅ Update employee balance manually - Admin only
-        Can be called from frontend
+        Update employee balance manually - Admin only
+        Also marks balance as initialized
+        ✅ FIX: Accepts JSON (no parser_classes restriction)
         """
         if not is_admin_user(request.user):
             return Response(
@@ -233,7 +195,10 @@ class TimeOffBalanceViewSet(viewsets.ReadOnlyModelViewSet):
                     status=status.HTTP_400_BAD_REQUEST
                 )
             
+            # Update balance
             balance.current_balance_hours = new_balance_decimal
+            balance.is_initialized = True
+            balance.last_reset_date = timezone.now().date()
             balance.save()
             
             # Log activity
@@ -247,11 +212,15 @@ class TimeOffBalanceViewSet(viewsets.ReadOnlyModelViewSet):
                     'employee_name': balance.employee.full_name,
                     'old_balance': float(old_balance),
                     'new_balance': float(new_balance),
-                    'reason': reason
+                    'reason': reason,
+                    'initialized': True
                 }
             )
             
-            logger.info(f"✅ Balance updated for {balance.employee.full_name}: {old_balance}h → {new_balance}h")
+            logger.info(
+                f"✅ Balance updated and initialized for {balance.employee.full_name}: "
+                f"{old_balance}h → {new_balance}h"
+            )
             
             return Response({
                 'success': True,
@@ -269,11 +238,12 @@ class TimeOffBalanceViewSet(viewsets.ReadOnlyModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
     
-    @action(detail=False, methods=['post'])
+    @action(detail=False, methods=['post'], parser_classes=[MultiPartParser])
     def bulk_upload_balances(self, request):
         """
-        ✅ NEW: Bulk upload balances from Excel file - Admin only
-        Expected columns: employee_id, new_balance, reason (optional)
+        Bulk upload balances from Excel file - Admin only
+        Also marks balances as initialized
+        ✅ FIX: Only this endpoint uses MultiPartParser
         """
         if not is_admin_user(request.user):
             return Response(
@@ -345,6 +315,8 @@ class TimeOffBalanceViewSet(viewsets.ReadOnlyModelViewSet):
                     # Update balance
                     from decimal import Decimal
                     balance.current_balance_hours = Decimal(str(new_balance))
+                    balance.is_initialized = True
+                    balance.last_reset_date = timezone.now().date()
                     balance.save()
                     
                     # Log activity
@@ -359,13 +331,14 @@ class TimeOffBalanceViewSet(viewsets.ReadOnlyModelViewSet):
                             'old_balance': float(old_balance),
                             'new_balance': new_balance,
                             'reason': reason,
-                            'upload_type': 'bulk'
+                            'upload_type': 'bulk',
+                            'initialized': True
                         }
                     )
                     
                     success_count += 1
                     results.append({
-                        'row': index + 2,  # Excel row number (1-indexed + header)
+                        'row': index + 2,
                         'employee_id': employee_id,
                         'employee_name': employee.full_name,
                         'old_balance': float(old_balance),
@@ -409,10 +382,66 @@ class TimeOffBalanceViewSet(viewsets.ReadOnlyModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
     
+    @action(detail=False, methods=['post'])
+    def reset_monthly_balances(self, request):
+        """
+        Reset monthly balances - Admin only
+        Only resets initialized balances
+        ✅ FIXED: HƏR AY 4 saat əlavə edir (istifadə etməsə də)
+        """
+        if not is_admin_user(request.user):
+            return Response(
+                {'error': 'Admin access required'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        reset_count = 0
+        skipped_count = 0
+        failed_count = 0
+        results = []
+        
+        for balance in TimeOffBalance.objects.all():
+            try:
+                if not balance.is_initialized:
+                    skipped_count += 1
+                    results.append({
+                        'employee_id': balance.employee.employee_id,
+                        'employee_name': balance.employee.full_name,
+                        'status': 'skipped',
+                        'reason': 'Not initialized'
+                    })
+                    continue
+                
+                if balance.check_and_reset_monthly():
+                    reset_count += 1
+                    results.append({
+                        'employee_id': balance.employee.employee_id,
+                        'employee_name': balance.employee.full_name,
+                        'new_balance': float(balance.current_balance_hours),
+                        'status': 'reset'
+                    })
+            except Exception as e:
+                failed_count += 1
+                results.append({
+                    'employee_id': balance.employee.employee_id,
+                    'employee_name': balance.employee.full_name,
+                    'status': 'failed',
+                    'error': str(e)
+                })
+        
+        return Response({
+            'success': True,
+            'message': f'{reset_count} balances reset, {skipped_count} skipped (not initialized), {failed_count} failed',
+            'reset_count': reset_count,
+            'skipped_count': skipped_count,
+            'failed_count': failed_count,
+            'results': results
+        })
+    
     @action(detail=False, methods=['get'])
     def download_template(self, request):
         """
-        ✅ NEW: Download Excel template for bulk upload - Admin only
+        Download Excel template for bulk upload - Admin only
         """
         if not is_admin_user(request.user):
             return Response(

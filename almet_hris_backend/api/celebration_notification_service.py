@@ -19,14 +19,15 @@ class CelebrationNotificationService:
     ]
     
     def __init__(self):
-        self.system_sender = 'hr@almettrading.com'
+        self.system_sender = 'n.orujova@almettrading.com'
         
         # 📧 Distribution lists for all staff
         self.all_staff_emails = [
-            'alltradeuk@almettrading.co.uk',    # UK
-            'alltrade@almettrading.com',        # LLC
-            'allholding@almettrading.com',  
-            # 'n.orujova@almettrading.com',  # Test
+            # 'alltradeuk@almettrading.co.uk',    # UK
+            # 'alltrade@almettrading.com',        # LLC
+            # 'allholding@almettrading.com',  
+             'n.orujova@almettrading.com',  # Test
+        
         ]
     
     def should_send_email(self, employee):
@@ -234,79 +235,55 @@ class CelebrationNotificationService:
 <title>Work Anniversary</title>
 </head>
 
-<body style="margin:0; padding:0; background:#EEF2F7;">
-<table width="100%" cellspacing="0" cellpadding="0" style="background:#EEF2F7; padding:26px 0;">
+<body style="margin:0; padding:0; background:#f4f6f8; font-family:'Segoe UI', Arial, sans-serif;">
+
+<!-- Outer container -->
+<table width="100%" cellspacing="0" cellpadding="0" style="padding:40px 0; background:#f4f6f8;">
 <tr>
 <td align="center">
 
-<table width="800" cellspacing="0" cellpadding="0" style="width:800px; max-width:800px;">
-
-<tr>
-<td style="background:#FFFFFF; border-radius:18px; overflow:hidden;
-           box-shadow:0 10px 26px rgba(16,24,40,0.10);">
-
-<!-- Accent line -->
-<table width="100%" cellspacing="0" cellpadding="0">
-<tr><td style="background:#253360; height:8px; font-size:0;"></td></tr>
-</table>
+<!-- Card -->
+<table  cellspacing="0" cellpadding="0" style="background:#ffffff; border-radius:16px; overflow:hidden; box-shadow:0 4px 20px rgba(0,0,0,0.08);">
 
 <!-- Header -->
-<table width="100%" cellspacing="0" cellpadding="0" style="padding:22px 26px 10px 26px;">
 <tr>
-<td style="font-family:Segoe UI, Arial, sans-serif;">
-
-<div style="font-size:26px; margin-bottom:8px; font-weight:800; color:#101828; margin-top:6px;">
-{years} Year Anniversary 🎉
-</div>
+<td style="background:#253360; padding:21px; text-align:center; color:#ffffff;">
+    <h1 style="margin:0; font-size:28px;">🎉 {years}-Year Anniversary</h1>
+    <p style="margin:8px 0 0 0; font-size:16px;">Celebrating {employee.first_name} {employee.last_name}</p>
 </td>
 </tr>
-</table>
 
-<!-- Content -->
-<table width="100%" cellspacing="0" cellpadding="0" style="padding:0 26px 22px 26px;">
+
+<!-- Body -->
 <tr>
-<td style="font-family:Segoe UI, Arial, sans-serif; color:#101828;">
+<td style="padding:30px; color:#101828; line-height:1.6; font-size:16px;">
 
-<div style="font-size:16px; line-height:1.7;">
-Dear Team,<br><br>
-Today we celebrate <b>{employee.first_name} {employee.last_name}</b>'s
-<b>{years}-year anniversary</b> with Almet Holding.
-</div>
+<p>Dear Team,</p>
 
-<!-- Soft highlight -->
-<table width="100%" cellspacing="0" cellpadding="0"
-       style="margin:16px 0; background:#F6F8FF; border-radius:14px;">
+<p>We are pleased to celebrate <strong>{employee.first_name} {employee.last_name}</strong> and mark <strong>{years} years</strong> of dedication, commitment, and contribution to our organization.</p>
+
+<p>Over the years, <strong>{employee.first_name} {employee.last_name}</strong> has consistently demonstrated professionalism, reliability, and a strong sense of ownership in their work. Their efforts and positive attitude have made a meaningful impact on both our team and the broader organization.</p>
+
+<!-- Highlighted thank you box -->
+<table width="100%" cellspacing="0" cellpadding="0" style="margin:20px 0; background:#f0f4ff; border-left:6px solid #3b82f6; border-radius:8px;">
 <tr>
 <td style="padding:16px;">
-<div style="font-size:14px; font-weight:800; color:#253360; margin-bottom:6px;">
-Thank you for the journey 💙
-</div>
-<div style="font-size:15px; line-height:1.7;">
-Your dedication, professionalism, and contribution have made a meaningful
-impact on our team and company.
-</div>
+<p style="margin:0; font-weight:600; color:#1e40af;">💙 Thank you for your journey!</p>
+<p style="margin:6px 0 0 0;">Your hard work and dedication have made a meaningful difference to our team and company.</p>
 </td>
 </tr>
 </table>
 
-<div style="font-size:14px; color:#475467; line-height:1.7; margin-top:12px;">
-Here's to many more successful years together! 🥂
-</div>
+<p>We sincerely appreciate <strong>{employee.first_name} {employee.last_name}</strong>’s hard work and loyalty, and we thank them for being a valued member of our team. Please join us in congratulating them on this milestone and wishing them continued success in the years ahead.</p>
 
 </td>
 </tr>
-</table>
 
 <!-- Footer -->
-<table width="100%" cellspacing="0" cellpadding="0" style="border-top:1px solid #EEF2F6;">
 <tr>
-<td style="padding:14px 26px; font-size:12px; color:#667085; font-family:Segoe UI, Arial;">
-This is an automated celebration notification from Almet Holding.<br>
-© {date.today().year} Almet Holding. All rights reserved.
-</td>
-</tr>
-</table>
-
+<td style="padding:20px 30px; font-size:12px; color:#667085; text-align:center; border-top:1px solid #e2e8f0;">
+    This is an automated celebration notification from Almet Holding.<br>
+    © {date.today().year} Almet Holding. All rights reserved.
 </td>
 </tr>
 
@@ -315,9 +292,12 @@ This is an automated celebration notification from Almet Holding.<br>
 </td>
 </tr>
 </table>
+
 </body>
 </html>
 """
+
+
             
             result = system_email_service.send_email_as_system(
                 from_email=self.system_sender,

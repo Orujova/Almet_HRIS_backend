@@ -259,6 +259,8 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
             'accessible_employee_count': accessible_count,
             'employee': employee_info
         })
+    
+    
     @action(detail=False, methods=['post'])
     @has_performance_permission('performance.initialize')
     def initialize(self, request):

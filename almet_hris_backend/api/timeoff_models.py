@@ -39,7 +39,7 @@ class TimeOffBalance(models.Model):
     current_balance_hours = models.DecimalField(
         max_digits=6,
         decimal_places=2,
-        default=4.0,
+        default=0.0,
         help_text="Cari balans (saat)"
     )
     used_hours_this_month = models.DecimalField(
@@ -55,6 +55,12 @@ class TimeOffBalance(models.Model):
         help_text="Son reset tarixi"
     )
     
+    # Track if balance was initialized
+    is_initialized = models.BooleanField(
+        default=False,
+        help_text="Balance initialized by admin?"
+    )
+    
     # Metadata
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -68,19 +74,35 @@ class TimeOffBalance(models.Model):
         return f"{self.employee.full_name} - {self.current_balance_hours}h available"
     
     def check_and_reset_monthly(self):
-        """Aylıq reset yoxla və tətbiq et"""
+        """
+        ✅ FIXED: Aylıq reset yoxla və tətbiq et
+        - Yalnız initialized balances üçün işləyir
+        - HƏR AY yeni monthly_allowance əlavə edir (istifadə etməsə də)
+        - used_hours_this_month 0-a çevrilir
+        """
+        if not self.is_initialized:
+            # Balance hələ initialize edilməyib, reset etmə
+            logger.info(f"⏭️ Skipping reset for {self.employee.full_name} - not initialized")
+            return False
+        
         today = timezone.now().date()
         
         # Əgər yeni ay başlayıbsa
         if today.month != self.last_reset_date.month or today.year != self.last_reset_date.year:
-            # Yeni ay üçün 4 saat əlavə et
+            # Yeni ay üçün monthly_allowance əlavə et (istifadə etməsə də)
+            old_balance = self.current_balance_hours
             self.current_balance_hours += self.monthly_allowance_hours
             self.used_hours_this_month = Decimal('0.0')
             self.last_reset_date = today
             self.save()
             
-           
+            logger.info(
+                f"✅ Monthly reset: {self.employee.full_name} - "
+                f"Added {self.monthly_allowance_hours}h, "
+                f"{old_balance}h → {self.current_balance_hours}h"
+            )
             return True
+        
         return False
     
     def has_sufficient_balance(self, hours_requested):
@@ -90,35 +112,59 @@ class TimeOffBalance(models.Model):
     def deduct_hours(self, hours):
         """Saatları balansdan çıxart"""
         if not self.has_sufficient_balance(hours):
-            raise ValueError(f"Insufficient balance. Available: {self.current_balance_hours}h, Requested: {hours}h")
+            raise ValueError(
+                f"Insufficient balance. Available: {self.current_balance_hours}h, "
+                f"Requested: {hours}h"
+            )
         
         self.current_balance_hours -= Decimal(str(hours))
         self.used_hours_this_month += Decimal(str(hours))
         self.save()
+        
+        logger.info(
+            f"💰 Deducted {hours}h from {self.employee.full_name} - "
+            f"New balance: {self.current_balance_hours}h"
+        )
     
     def refund_hours(self, hours):
         """Saatları geri qaytar (məsələn, reject zamanı)"""
         self.current_balance_hours += Decimal(str(hours))
-        self.used_hours_this_month -= Decimal(str(hours))
+        # Used hours-dan da çıxart
+        self.used_hours_this_month = max(
+            Decimal('0.0'), 
+            self.used_hours_this_month - Decimal(str(hours))
+        )
         self.save()
+        
+        logger.info(
+            f"💵 Refunded {hours}h to {self.employee.full_name} - "
+            f"New balance: {self.current_balance_hours}h"
+        )
     
     @classmethod
     def get_or_create_for_employee(cls, employee):
-        """Employee üçün balance yarat və ya tap"""
+        """
+        Employee üçün balance yarat və ya tap
+        Artıq avtomatik 4 saat vermir
+        """
         balance, created = cls.objects.get_or_create(
             employee=employee,
             defaults={
                 'monthly_allowance_hours': Decimal('4.0'),
-                'current_balance_hours': Decimal('4.0'),
+                'current_balance_hours': Decimal('0.0'),
                 'used_hours_this_month': Decimal('0.0'),
-                'last_reset_date': timezone.now().date()
+                'last_reset_date': timezone.now().date(),
+                'is_initialized': False
             }
         )
         
         if created:
-            logger.info(f"Created time off balance for {employee.full_name}")
+            logger.info(
+                f"📝 Created time off balance for {employee.full_name} "
+                f"with 0h (not initialized)"
+            )
         else:
-            # Aylıq reset yoxla
+            # Monthly reset yoxla (yalnız initialized olanlar üçün)
             balance.check_and_reset_monthly()
         
         return balance
@@ -233,7 +279,10 @@ class TimeOffRequest(models.Model):
         ]
     
     def __str__(self):
-        return f"{self.employee.full_name} - {self.date} ({self.duration_hours}h) - {self.status}"
+        return (
+            f"{self.employee.full_name} - {self.date} "
+            f"({self.duration_hours}h) - {self.status}"
+        )
     
     def save(self, *args, **kwargs):
         # Duration hesabla
@@ -262,7 +311,9 @@ class TimeOffRequest(models.Model):
         balance = TimeOffBalance.get_or_create_for_employee(self.employee)
         
         if not balance.has_sufficient_balance(self.duration_hours):
-            raise ValueError(f"Insufficient balance. Available: {balance.current_balance_hours}h")
+            raise ValueError(
+                f"Insufficient balance. Available: {balance.current_balance_hours}h"
+            )
         
         balance.deduct_hours(self.duration_hours)
         
@@ -274,8 +325,6 @@ class TimeOffRequest(models.Model):
         
         # HR-lara bildiriş göndər
         self.notify_hr()
-        
-     
     
     def reject(self, rejection_reason, rejected_by_user):
         """Line manager tərəfindən reject"""
@@ -287,8 +336,6 @@ class TimeOffRequest(models.Model):
         self.approved_by = rejected_by_user
         self.approved_at = timezone.now()
         self.save()
-        
-
     
     def cancel(self):
         """Employee tərəfindən cancel"""
@@ -300,19 +347,12 @@ class TimeOffRequest(models.Model):
         
         self.status = 'CANCELLED'
         self.save()
-        
-      
     
     def notify_hr(self):
         """HR-lara bildiriş göndər"""
-        # Bu funksiya notification_service.py ilə inteqrasiya olunacaq
         self.hr_notified = True
         self.hr_notified_at = timezone.now()
         self.save()
-        
-     
-    
- 
     
     @classmethod
     def get_pending_for_manager(cls, manager_employee):
@@ -410,7 +450,11 @@ class TimeOffSettings(models.Model):
     
     def get_hr_emails_list(self):
         """HR email-lərini list kimi qaytar"""
-        return [email.strip() for email in self.hr_notification_emails.split(',') if email.strip()]
+        return [
+            email.strip() 
+            for email in self.hr_notification_emails.split(',') 
+            if email.strip()
+        ]
 
 
 class TimeOffActivity(models.Model):
@@ -430,7 +474,9 @@ class TimeOffActivity(models.Model):
     request = models.ForeignKey(
         TimeOffRequest,
         on_delete=models.CASCADE,
-        related_name='activities'
+        related_name='activities',
+        null=True,
+        blank=True
     )
     
     activity_type = models.CharField(
@@ -453,4 +499,6 @@ class TimeOffActivity(models.Model):
         ordering = ['-created_at']
     
     def __str__(self):
-        return f"{self.request.employee.full_name} - {self.activity_type}"
+        if self.request:
+            return f"{self.request.employee.full_name} - {self.activity_type}"
+        return f"System - {self.activity_type}"

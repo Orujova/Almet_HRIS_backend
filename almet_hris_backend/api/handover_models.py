@@ -272,14 +272,36 @@ class HandoverRequest(SoftDeleteModel):
                 
                 # If already signed by HO (auto-signed), notify TO
                 if self.ho_signed:
-                    logger.info(f"📧 Sending email to TO: {self.taking_over_employee.email}")
-                    handover_email_service.notify_to_signature_needed(self)
+                    logger.info(f"📧 AUTO-SIGNED: Sending email to TO")
+                    logger.info(f"   TO Employee: {self.taking_over_employee.full_name}")
+                    logger.info(f"   TO Email: {self.taking_over_employee.email}")
+                    
+                    result = handover_email_service.notify_to_signature_needed(self)
+                    
+                    if result:
+                        logger.info(f"✅ Email sent successfully to TO")
+                    else:
+                        logger.error(f"❌ Failed to send email to TO")
                 else:
                     # Otherwise, notify HO to sign
-                    logger.info(f"📧 Sending email to HO: {self.handing_over_employee.email}")
-                    handover_email_service.notify_handover_created(self)
+                    logger.info(f"📧 NOT AUTO-SIGNED: Sending email to HO")
+                    logger.info(f"   HO Employee: {self.handing_over_employee.full_name}")
+                    logger.info(f"   HO Email: {self.handing_over_employee.email}")
+                    
+                    result = handover_email_service.notify_handover_created(self)
+                    
+                    if result:
+                        logger.info(f"✅ Email sent successfully to HO")
+                    else:
+                        logger.error(f"❌ Failed to send email to HO")
+                        
             except Exception as e:
-                logger.error(f"Failed to send creation email: {e}")
+                logger.error(f"❌ Exception sending creation email: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
+    
+    
+    
     def sign_by_handing_over(self, user):
         """Sign as Handing Over employee"""
         self.ho_signed = True

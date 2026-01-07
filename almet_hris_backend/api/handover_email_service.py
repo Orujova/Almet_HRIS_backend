@@ -51,7 +51,7 @@ class HandoverEmailService:
             'handover': handover,
             'recipient_name': recipient_name,
             'notification_type': notification_type,
-            'handover_url': f'https://myalmet.com/handovers',
+            'handover_url': f'https://www.myalmet.com/requests/handover-takeover/',
             'company_name': 'Almet Holding',
             **(additional_data or {})
         }
@@ -267,7 +267,7 @@ class HandoverEmailService:
                     margin: 30px 0;
                 }}
                 .button {{
-                    background: #2563eb;
+                  
                     color: #ffffff !important;
                     padding: 14px 34px;
                     text-decoration: none;
@@ -323,7 +323,7 @@ class HandoverEmailService:
                         </a>
                     </div>
     
-                    <p>If you have any questions, please contact HR or your line manager.</p>
+                    
                 </div>
     
                 <div class="footer">
@@ -367,17 +367,29 @@ class HandoverEmailService:
     
     def notify_to_signature_needed(self, handover):
         """Notify TO employee signature is needed"""
-        if handover.taking_over_employee.email:
-            return self.send_handover_notification(
-                handover=handover,
-                recipient_email=handover.taking_over_employee.email,
-                recipient_name=handover.taking_over_employee.full_name,
-                notification_type='to_signature_needed',
-                additional_data={
-                    'action_required': 'Your signature is required to proceed'
-                }
-            )
-        return False
+        
+        # Debug log
+        logger.info(f"🔍 notify_to_signature_needed called")
+        logger.info(f"   Handover: {handover.request_id}")
+        logger.info(f"   TO: {handover.taking_over_employee.full_name}")
+        logger.info(f"   TO Email: {handover.taking_over_employee.email}")
+        
+        if not handover.taking_over_employee.email:
+            logger.error(f"❌ TO employee has no email address!")
+            return False
+        
+        result = self.send_handover_notification(
+            handover=handover,
+            recipient_email=handover.taking_over_employee.email,
+            recipient_name=handover.taking_over_employee.full_name,
+            notification_type='to_signature_needed',
+            additional_data={
+                'action_required': 'Your signature is required to proceed'
+            }
+        )
+        
+        logger.info(f"   Email send result: {result}")
+        return result
     
     def notify_lm_approval_needed(self, handover):
         """Notify Line Manager approval is needed"""
