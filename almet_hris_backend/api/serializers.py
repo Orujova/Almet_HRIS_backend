@@ -53,39 +53,6 @@ class BusinessFunctionSerializer(serializers.ModelSerializer):
     def get_employee_count(self, obj):
         return obj.employees.filter(status__affects_headcount=True).count()
 
-class JobTitleSerializer(serializers.ModelSerializer):
-
-    employee_count = serializers.SerializerMethodField()
-    
-    class Meta:
-        model = JobTitle
-        fields = [
-            'id', 'name', 'description',
-            'is_active', 'employee_count', 'created_at', 'updated_at'
-        ]
-    def to_representation(self, instance):
-        """Format text fields to title case"""
-        data = super().to_representation(instance)
-        
-        # ✅ Title case tətbiq et - ad və soyad
-        text_fields = [
-            'name',  
-            
-        ]
-        
-        for field in text_fields:
-            if field in data and data[field]:
-                # Strip whitespace və title case
-                data[field] = str(data[field]).strip().title()
-        
-        return data
-    
-    def get_employee_count(self, obj):
-        return Employee.objects.filter(
-            job_title=obj.name,
-            status__affects_headcount=True,
-            is_deleted=False
-        ).count()
 
 class DepartmentSerializer(serializers.ModelSerializer):
     business_function_name = serializers.CharField(source='business_function.name', read_only=True)
@@ -391,6 +358,42 @@ class UnitSerializer(serializers.ModelSerializer):
         
         instance.save()
         return instance   
+
+
+class JobTitleSerializer(serializers.ModelSerializer):
+
+    employee_count = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = JobTitle
+        fields = [
+            'id', 'name', 'description',
+            'is_active', 'employee_count', 'created_at', 'updated_at'
+        ]
+    def to_representation(self, instance):
+        """Format text fields to title case"""
+        data = super().to_representation(instance)
+        
+        # ✅ Title case tətbiq et - ad və soyad
+        text_fields = [
+            'name',  
+            
+        ]
+        
+        for field in text_fields:
+            if field in data and data[field]:
+                # Strip whitespace və title case
+                data[field] = str(data[field]).strip().title()
+        
+        return data
+    
+    def get_employee_count(self, obj):
+        return Employee.objects.filter(
+            job_title=obj.name,
+            status__affects_headcount=True,
+            is_deleted=False
+        ).count()
+
 class JobFunctionSerializer(serializers.ModelSerializer):
     employee_count = serializers.SerializerMethodField()
     

@@ -50,6 +50,20 @@ from .timeoff_views import (
 )
 
 router = DefaultRouter()
+
+# urls.py-ə əlavə et
+
+from .self_assessment_views import (
+    AssessmentPeriodViewSet, SelfAssessmentViewSet,
+ AssessmentStatsView
+)
+
+# Router-ə əlavə et
+router.register(r'assessment-periods', AssessmentPeriodViewSet, basename='assessment-period')
+router.register(r'self-assessments', SelfAssessmentViewSet, basename='self-assessment')
+
+# urlpatterns-ə əlavə et
+
 router.register(r'timeoff/balances', TimeOffBalanceViewSet, basename='timeoff-balance')
 router.register(r'timeoff/requests', TimeOffRequestViewSet, basename='timeoff-request')
 router.register(r'timeoff/settings', TimeOffSettingsViewSet, basename='timeoff-settings')
@@ -139,7 +153,8 @@ urlpatterns = [
     
     
     path('competency/stats/', CompetencyStatsView.as_view(), name='competency-stats'),
-    
+
+    path('assessment-stats/', AssessmentStatsView.as_view(), name='assessment-stats'),
     
     path('assets/assets/<uuid:pk>/activities/', 
          AssetViewSet.as_view({'get': 'activities'}), 
