@@ -23,10 +23,10 @@ class CelebrationNotificationService:
         
         # 📧 Distribution lists for all staff
         self.all_staff_emails = [
-            'alltradeuk@almettrading.co.uk',    # UK
-            'alltrade@almettrading.com',        # LLC
-            'allholding@almettrading.com',  
-            #  'n.orujova@almettrading.com',  # Test
+            # 'alltradeuk@almettrading.co.uk',    # UK
+            # 'alltrade@almettrading.com',        # LLC
+            # 'allholding@almettrading.com',  
+             'n.orujova@almettrading.com',  # Test
         
         ]
     
@@ -130,7 +130,7 @@ class CelebrationNotificationService:
                     <!-- Greeting -->
                     <div style="font-size:16px; line-height:1.7; margin-top:8px;">
                       Dear Team,<br><br>
-                      Tomorrow we celebrate <b>{employee.first_name} {employee.last_name}</b>'s birthday. 🎈🎂
+                      Today we celebrate <b>{employee.first_name} {employee.last_name}</b>'s birthday. 🎈🎂
                     </div>
 
                     <!-- Soft highlight (NOT boxy) -->
