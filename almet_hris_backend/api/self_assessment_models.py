@@ -10,18 +10,13 @@ from .competency_models import Skill
 
 class AssessmentPeriod(models.Model):
     """6 ayda bir assessment periodu"""
-    STATUS_CHOICES = [
-        ('UPCOMING', 'Upcoming'),
-        ('ACTIVE', 'Active'),
-        ('COMPLETED', 'Completed'),
-        ('CLOSED', 'Closed'),
-    ]
+  
     
     name = models.CharField(max_length=200, help_text="e.g., H1 2025, H2 2025")
     start_date = models.DateField()
     end_date = models.DateField()
     submission_deadline = models.DateField()
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='UPCOMING')
+ 
     
     is_active = models.BooleanField(default=False, help_text="Only one period can be active")
     created_at = models.DateTimeField(auto_now_add=True)

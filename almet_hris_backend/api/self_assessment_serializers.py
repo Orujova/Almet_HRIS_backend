@@ -18,7 +18,7 @@ class AssessmentPeriodSerializer(serializers.ModelSerializer):
         model = AssessmentPeriod
         fields = [
             'id', 'name', 'start_date', 'end_date', 'submission_deadline',
-            'status', 'is_active', 'days_remaining', 'is_overdue',
+            'is_active', 'days_remaining', 'is_overdue',
             'total_assessments', 'submitted_count', 'created_at'
         ]
     
@@ -32,7 +32,7 @@ class AssessmentPeriodSerializer(serializers.ModelSerializer):
 class AssessmentPeriodCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = AssessmentPeriod
-        fields = ['name', 'start_date', 'end_date', 'submission_deadline', 'status', 'is_active']
+        fields = ['name', 'start_date', 'end_date', 'submission_deadline', 'is_active']
 
 
 # Skill Rating Serializers
