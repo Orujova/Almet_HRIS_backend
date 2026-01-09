@@ -1447,11 +1447,6 @@ class Employee(SoftDeleteModel):
     def add_tag(self, tag, user=None, skip_status_change=False):
         """
         ✅ UPDATED: Add tag and optionally auto-set status to INACTIVE
-        
-        Args:
-            tag: EmployeeTag instance to add
-            user: User performing the action
-            skip_status_change: If True, don't auto-change status (for advanced use)
         """
         if not self.tags.filter(id=tag.id).exists():
             self.tags.add(tag)
@@ -1469,7 +1464,7 @@ class Employee(SoftDeleteModel):
                     
                     if inactive_status and self.status != inactive_status:
                         self.status = inactive_status
-                        self.save()
+                        self.save(update_fields=['status'])  # ✅ CRITICAL: Explicitly save status
                         status_changed = True
                         
                         # Log the status change
@@ -1489,11 +1484,13 @@ class Employee(SoftDeleteModel):
                         )
                         
                         logger.info(
-                            f"Employee {self.employee_id} status changed to INACTIVE "
+                            f"✅ Employee {self.employee_id} status changed to INACTIVE "
                             f"when tag '{tag.name}' was added"
                         )
+                    else:
+                        logger.warning(f"⚠️ INACTIVE status not found or employee already INACTIVE")
                 except Exception as e:
-                    logger.error(f"Error setting INACTIVE status for employee {self.employee_id}: {e}")
+                    logger.error(f"❌ Error setting INACTIVE status for employee {self.employee_id}: {e}")
             
             # Log tag addition
             EmployeeActivity.objects.create(
@@ -1513,7 +1510,6 @@ class Employee(SoftDeleteModel):
             
             return True
         return False
-    
     def remove_tag(self, tag, user=None):
         """
         ✅ UPDATED: Remove tag and auto-set status to ACTIVE

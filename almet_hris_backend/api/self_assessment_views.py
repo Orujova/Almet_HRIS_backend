@@ -1,4 +1,4 @@
-# api/self_assessment_views.py - Core Skills Assessment Views
+# api/self_assessment_views.py - Updated with Permission System
 
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
@@ -20,10 +20,16 @@ from .self_assessment_serializers import (
     AssessmentActivitySerializer, AssessmentStatsSerializer
 )
 from .models import Employee
+from .self_assessment_permissions import (
+    get_self_assessment_access, filter_assessment_queryset,
+    can_user_view_assessment, can_user_edit_assessment,
+    can_user_submit_assessment, can_user_review_assessment,
+    can_user_manage_periods
+)
 
 
 class AssessmentPeriodViewSet(viewsets.ModelViewSet):
-    """Assessment Period Management"""
+    """Assessment Period Management - Admin Only"""
     queryset = AssessmentPeriod.objects.all()
     permission_classes = [IsAuthenticated]
     
@@ -31,6 +37,39 @@ class AssessmentPeriodViewSet(viewsets.ModelViewSet):
         if self.action in ['create', 'update', 'partial_update']:
             return AssessmentPeriodCreateSerializer
         return AssessmentPeriodSerializer
+    
+    def list(self, request, *args, **kwargs):
+        """All users can view periods"""
+        queryset = self.get_queryset()
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
+    
+    def create(self, request, *args, **kwargs):
+        """Only admins can create periods"""
+        if not can_user_manage_periods(request.user):
+            return Response(
+                {'detail': 'Only administrators can manage assessment periods'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        return super().create(request, *args, **kwargs)
+    
+    def update(self, request, *args, **kwargs):
+        """Only admins can update periods"""
+        if not can_user_manage_periods(request.user):
+            return Response(
+                {'detail': 'Only administrators can manage assessment periods'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        return super().update(request, *args, **kwargs)
+    
+    def destroy(self, request, *args, **kwargs):
+        """Only admins can delete periods"""
+        if not can_user_manage_periods(request.user):
+            return Response(
+                {'detail': 'Only administrators can manage assessment periods'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        return super().destroy(request, *args, **kwargs)
     
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
@@ -49,7 +88,13 @@ class AssessmentPeriodViewSet(viewsets.ModelViewSet):
     
     @action(detail=True, methods=['post'])
     def activate(self, request, pk=None):
-        """Activate this period"""
+        """Activate this period - Admin only"""
+        if not can_user_manage_periods(request.user):
+            return Response(
+                {'detail': 'Only administrators can activate periods'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
         period = self.get_object()
         period.is_active = True
         period.status = 'ACTIVE'
@@ -59,7 +104,7 @@ class AssessmentPeriodViewSet(viewsets.ModelViewSet):
 
 
 class SelfAssessmentViewSet(viewsets.ModelViewSet):
-    """Self Assessment CRUD"""
+    """Self Assessment CRUD with Permission Control"""
     permission_classes = [IsAuthenticated]
     
     def get_serializer_class(self):
@@ -71,31 +116,26 @@ class SelfAssessmentViewSet(viewsets.ModelViewSet):
     
     def get_queryset(self):
         user = self.request.user
+        queryset = SelfAssessment.objects.select_related(
+            'employee', 'period'
+        ).prefetch_related('skill_ratings__skill__group').all()
         
-        try:
-            employee = Employee.objects.get(user=user)
-        except Employee.DoesNotExist:
-            return SelfAssessment.objects.none()
+        # Apply permission filtering
+        return filter_assessment_queryset(user, queryset)
+    
+    def retrieve(self, request, *args, **kwargs):
+        """Check view permission"""
+        assessment = self.get_object()
+        can_view, message = can_user_view_assessment(request.user, assessment)
         
-        # Admin görür hamısını
-        if user.is_staff or user.is_superuser:
-            return SelfAssessment.objects.select_related(
-                'employee', 'period'
-            ).prefetch_related('skill_ratings__skill__group').all()
+        if not can_view:
+            return Response(
+                {'detail': 'You do not have permission to view this assessment'},
+                status=status.HTTP_403_FORBIDDEN
+            )
         
-        # Manager görür özünkünü və team-in
-        if employee.direct_reports.exists():
-            team_ids = list(employee.direct_reports.values_list('id', flat=True))
-            team_ids.append(employee.id)
-            
-            queryset = SelfAssessment.objects.filter(employee_id__in=team_ids)
-        else:
-            # Employee yalnız özünkünü görür
-            queryset = SelfAssessment.objects.filter(employee=employee)
-        
-        return queryset.select_related('employee', 'period').prefetch_related(
-            'skill_ratings__skill__group'
-        )
+        serializer = self.get_serializer(assessment)
+        return Response(serializer.data)
     
     def perform_create(self, serializer):
         try:
@@ -134,26 +174,39 @@ class SelfAssessmentViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'])
     def team_assessments(self, request):
         """Get assessments of direct reports (Manager view)"""
-        try:
-            employee = Employee.objects.get(user=request.user)
-        except Employee.DoesNotExist:
-            return Response(
-                {'detail': 'Employee profile not found'}, 
-                status=status.HTTP_404_NOT_FOUND
-            )
+        access = get_self_assessment_access(request.user)
         
-        # Check if user is manager
-        if not employee.direct_reports.exists():
+        if not access['is_manager']:
             return Response(
                 {'detail': 'No direct reports found'}, 
                 status=status.HTTP_404_NOT_FOUND
             )
         
-        team_ids = list(employee.direct_reports.values_list('id', flat=True))
-        
-        assessments = SelfAssessment.objects.filter(
-            employee_id__in=team_ids
-        ).select_related('employee', 'period').order_by('-created_at')
+        # Admin sees all except own
+        if access['can_view_all']:
+            if access['employee']:
+                assessments = SelfAssessment.objects.exclude(
+                    employee=access['employee']
+                ).select_related('employee', 'period').order_by('-created_at')
+            else:
+                assessments = SelfAssessment.objects.all().select_related(
+                    'employee', 'period'
+                ).order_by('-created_at')
+        else:
+            # Manager sees direct reports only
+            if not access['accessible_employee_ids']:
+                return Response([], status=status.HTTP_200_OK)
+            
+            # Exclude own assessment
+            team_ids = [id for id in access['accessible_employee_ids'] 
+                        if id != (access['employee'].id if access['employee'] else None)]
+            
+            if not team_ids:
+                return Response([], status=status.HTTP_200_OK)
+            
+            assessments = SelfAssessment.objects.filter(
+                employee_id__in=team_ids
+            ).select_related('employee', 'period').order_by('-created_at')
         
         serializer = SelfAssessmentListSerializer(assessments, many=True)
         return Response(serializer.data)
@@ -217,16 +270,10 @@ class SelfAssessmentViewSet(viewsets.ModelViewSet):
         assessment = self.get_object()
         
         # Check permission
-        if assessment.employee.user != request.user:
+        if not can_user_submit_assessment(request.user, assessment):
             return Response(
-                {'detail': 'Permission denied'}, 
+                {'detail': 'Cannot submit this assessment'}, 
                 status=status.HTTP_403_FORBIDDEN
-            )
-        
-        if assessment.status != 'DRAFT':
-            return Response(
-                {'detail': 'Assessment already submitted'}, 
-                status=status.HTTP_400_BAD_REQUEST
             )
         
         # Check if has ratings
@@ -247,18 +294,10 @@ class SelfAssessmentViewSet(viewsets.ModelViewSet):
         """Manager reviews assessment"""
         assessment = self.get_object()
         
-        # Check if user is manager
-        try:
-            employee = Employee.objects.get(user=request.user)
-        except Employee.DoesNotExist:
+        # Check permission
+        if not can_user_review_assessment(request.user, assessment):
             return Response(
-                {'detail': 'Employee profile not found'}, 
-                status=status.HTTP_404_NOT_FOUND
-            )
-        
-        if assessment.employee.line_manager != employee and not request.user.is_staff:
-            return Response(
-                {'detail': 'Permission denied'}, 
+                {'detail': 'You do not have permission to review this assessment'}, 
                 status=status.HTTP_403_FORBIDDEN
             )
         
@@ -298,6 +337,15 @@ class SelfAssessmentViewSet(viewsets.ModelViewSet):
     def activities(self, request, pk=None):
         """Get assessment activities"""
         assessment = self.get_object()
+        
+        # Check view permission
+        can_view, _ = can_user_view_assessment(request.user, assessment)
+        if not can_view:
+            return Response(
+                {'detail': 'Permission denied'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
         activities = assessment.activities.all()
         serializer = AssessmentActivitySerializer(activities, many=True)
         return Response(serializer.data)
@@ -308,16 +356,10 @@ class SelfAssessmentViewSet(viewsets.ModelViewSet):
         assessment = self.get_object()
         
         # Check permission
-        if assessment.employee.user != request.user:
+        if not can_user_edit_assessment(request.user, assessment):
             return Response(
-                {'detail': 'Permission denied'}, 
+                {'detail': 'Cannot modify this assessment'}, 
                 status=status.HTTP_403_FORBIDDEN
-            )
-        
-        if assessment.status != 'DRAFT':
-            return Response(
-                {'detail': 'Cannot modify submitted assessment'}, 
-                status=status.HTTP_400_BAD_REQUEST
             )
         
         serializer = SkillRatingCreateUpdateSerializer(data=request.data)
@@ -356,16 +398,10 @@ class SelfAssessmentViewSet(viewsets.ModelViewSet):
         assessment = self.get_object()
         
         # Check permission
-        if assessment.employee.user != request.user:
+        if not can_user_edit_assessment(request.user, assessment):
             return Response(
-                {'detail': 'Permission denied'}, 
+                {'detail': 'Cannot modify this assessment'}, 
                 status=status.HTTP_403_FORBIDDEN
-            )
-        
-        if assessment.status != 'DRAFT':
-            return Response(
-                {'detail': 'Cannot modify submitted assessment'}, 
-                status=status.HTTP_400_BAD_REQUEST
             )
         
         ratings_data = request.data.get('ratings', [])
@@ -396,19 +432,20 @@ class SelfAssessmentViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
 
 
-# Statistics View
 class AssessmentStatsView(APIView):
     """Assessment statistics for current user"""
     permission_classes = [IsAuthenticated]
     
     def get(self, request):
-        try:
-            employee = Employee.objects.get(user=request.user)
-        except Employee.DoesNotExist:
+        access = get_self_assessment_access(request.user)
+        
+        if not access['employee']:
             return Response(
                 {'detail': 'Employee profile not found'}, 
                 status=status.HTTP_404_NOT_FOUND
             )
+        
+        employee = access['employee']
         
         # Get active period
         active_period = AssessmentPeriod.get_active_period()
@@ -426,17 +463,25 @@ class AssessmentStatsView(APIView):
         # My last assessment
         my_last = my_assessments.first()
         
-        # Team data (if manager)
+        # Team data (if manager or admin)
         team_assessments_count = 0
         pending_reviews = 0
         team_average = 0
         
-        if employee.direct_reports.exists():
-            team_ids = list(employee.direct_reports.values_list('id', flat=True))
+        if access['is_manager'] or access['is_admin']:
+            if access['can_view_all']:
+                # Admin sees all except own
+                team_assessments = SelfAssessment.objects.exclude(employee=employee)
+            else:
+                # Manager sees direct reports only
+                if access['accessible_employee_ids']:
+                    team_ids = [id for id in access['accessible_employee_ids'] 
+                               if id != employee.id]
+                    team_assessments = SelfAssessment.objects.filter(employee_id__in=team_ids)
+                else:
+                    team_assessments = SelfAssessment.objects.none()
             
-            team_assessments = SelfAssessment.objects.filter(employee_id__in=team_ids)
             team_assessments_count = team_assessments.count()
-            
             pending_reviews = team_assessments.filter(status='SUBMITTED').count()
             
             # Team average score
@@ -453,8 +498,48 @@ class AssessmentStatsView(APIView):
             'pending_reviews': pending_reviews,
             'my_average_score': round(my_average, 2),
             'team_average_score': round(team_average, 2),
-            'my_last_assessment': my_last
+            'my_last_assessment': my_last,
+            'is_admin': access['is_admin'],
+            'is_manager': access['is_manager']
         }
         
         serializer = AssessmentStatsSerializer(stats)
         return Response(serializer.data)
+
+
+class MyAccessInfoView(APIView):
+    """Get current user's access information"""
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        access = get_self_assessment_access(request.user)
+        
+        if not access['employee']:
+            return Response({
+                'can_view_all': False,
+                'is_manager': False,
+                'is_admin': False,
+                'access_level': 'No Access',
+                'accessible_count': 0
+            })
+        
+        # Determine access level description
+        if access['is_admin']:
+            access_level = 'Admin - Full Access'
+            accessible_count = 'All'
+        elif access['is_manager']:
+            access_level = 'Manager - Team Access'
+            accessible_count = len(access['accessible_employee_ids']) - 1  # Exclude self
+        else:
+            access_level = 'Employee - Personal Access'
+            accessible_count = 1
+        
+        return Response({
+            'can_view_all': access['can_view_all'],
+            'is_manager': access['is_manager'],
+            'is_admin': access['is_admin'],
+            'access_level': access_level,
+            'accessible_count': accessible_count,
+            'employee_id': access['employee'].id,
+            'employee_name': access['employee'].full_name
+        })

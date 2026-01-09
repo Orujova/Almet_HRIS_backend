@@ -54,8 +54,8 @@ router = DefaultRouter()
 # urls.py-ə əlavə et
 
 from .self_assessment_views import (
-    AssessmentPeriodViewSet, SelfAssessmentViewSet,
- AssessmentStatsView
+    AssessmentPeriodViewSet, MyAccessInfoView, SelfAssessmentViewSet,
+ AssessmentStatsView,MyAccessInfoView
 )
 
 # Router-ə əlavə et
@@ -155,7 +155,7 @@ urlpatterns = [
     path('competency/stats/', CompetencyStatsView.as_view(), name='competency-stats'),
 
     path('assessment-stats/', AssessmentStatsView.as_view(), name='assessment-stats'),
-    
+    path('assessment-access-info/', MyAccessInfoView.as_view(), name='assessment-access-info'),
     path('assets/assets/<uuid:pk>/activities/', 
          AssetViewSet.as_view({'get': 'activities'}), 
          name='asset-activities'),
@@ -172,6 +172,7 @@ urlpatterns = [
     path('news/', include('api.news_urls')),
     path('performance/', include('api.performance_urls')),
     path('policies/', include('api.policy_urls')),
+    path('procedures/', include('api.procedure_urls')), 
     path('', include('api.celebration_urls')),
     path('', include('api.celebration_test_urls')),
     
