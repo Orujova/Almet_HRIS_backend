@@ -27,7 +27,6 @@ class NewsNotificationManager:
             try:
                 self._settings = NotificationSettings.get_active()
             except Exception as e:
-           
                 from types import SimpleNamespace
                 self._settings = SimpleNamespace(
                     enable_email_notifications=True,
@@ -37,7 +36,7 @@ class NewsNotificationManager:
         return self._settings
     
     def send_news_notification(self, news, access_token=None, request=None):
-       
+        """Send email notifications for company news using system email service"""
         try:
             # Check if notifications are enabled
             if not news.notify_members:
@@ -51,7 +50,6 @@ class NewsNotificationManager:
             
             # Check if already sent
             if news.notification_sent:
-       
                 return {
                     'success': False,
                     'message': 'Notifications already sent',
@@ -93,9 +91,13 @@ class NewsNotificationManager:
                 image_url=image_url
             )
             
-            # Get sender email
+            # Get sender email - FORCE CORRECT EMAIL
             sender_email = self.settings.company_news_sender_email
-
+            
+            # ✅ FORCE USE CORRECT SENDER EMAIL
+            if not sender_email or sender_email != 'myalmet@almettrading.com':
+                sender_email = 'myalmet@almettrading.com'
+                logger.info(f"Using default sender email: {sender_email}")
             
             # ✅ Send using SYSTEM EMAIL SERVICE (Application Permissions)
             bulk_result = self.system_service.send_bulk_emails_as_system(
@@ -129,10 +131,6 @@ class NewsNotificationManager:
                 news.notification_sent_at = timezone.now()
                 news.save(update_fields=['notification_sent', 'notification_sent_at'])
             
-         
-            
-  
-            
             return {
                 'success': True,
                 'total_recipients': len(recipient_emails),
@@ -162,12 +160,12 @@ class NewsNotificationManager:
         tags_html = ''
         if news.tags:
             tags = news.get_tags_list()
-            tags_html = '<p style="color: #6b7280; font-size: 12px; margin-top: 20px;"><strong>Tags:</strong> ' + ', '.join(tags) + '</p>'
+            tags_html = '<p style="color: #6b7280; font-size: 11px; margin-top: 15px;"><strong>Tags:</strong> ' + ', '.join(tags) + '</p>'
         
-        # Format image
+        # Format image - SMALLER SIZE
         image_html = ''
         if image_url:
-            image_html = f'<img src="{image_url}" style="max-width: 100%; border-radius: 8px; margin: 20px 0;" alt="{news.title}" />'
+            image_html = f'<img src="{image_url}" style="max-width: 100%; max-height: 300px; object-fit: cover; border-radius: 8px; margin: 20px 0;" alt="{news.title}" />'
         
         # Get category name
         category_name = news.category.name if news.category else 'General'
@@ -176,96 +174,88 @@ class NewsNotificationManager:
         <html>
         <head>
             <style>
-                body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; }}
+                body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #1f2937; margin: 0; padding: 0; background-color: #f3f4f6; }}
                 .container {{ max-width: 600px; margin: 0 auto; background-color: #ffffff; }}
                 .header {{ 
                     background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%); 
                     color: white; 
-                    padding: 30px 20px; 
+                    padding: 25px 20px; 
                     text-align: center; 
                 }}
-                .header h1 {{ margin: 0; font-size: 28px; font-weight: bold; }}
-                .header p {{ margin: 5px 0 0 0; font-size: 14px; opacity: 0.9; }}
+                .header h1 {{ margin: 0; font-size: 22px; font-weight: bold; }}
+                .header p {{ margin: 5px 0 0 0; font-size: 12px; opacity: 0.9; }}
                 .category-badge {{ 
                     display: inline-block;
                     background-color: rgba(255, 255, 255, 0.2);
-                    padding: 5px 15px;
+                    padding: 4px 12px;
                     border-radius: 20px;
-                    font-size: 12px;
-                    margin-top: 10px;
+                    font-size: 11px;
+                    margin-top: 8px;
                     text-transform: uppercase;
                     letter-spacing: 1px;
                 }}
-                .content {{ padding: 30px; background-color: #f9fafb; }}
-                .news-title {{ color: #1e3a8a; margin-top: 0; font-size: 28px; line-height: 1.3; }}
+                .content {{ padding: 20px; background-color: #f9fafb; }}
+                .news-title {{ color: #1e3a8a; margin-top: 0; font-size: 20px; line-height: 1.3; font-weight: 600; }}
                 .meta-info {{ 
-                    color: #6b7280; 
-                    font-size: 14px; 
-                    margin-bottom: 20px; 
-                    padding-bottom: 15px; 
+                    color: #4b5563; 
+                    font-size: 12px; 
+                    margin-bottom: 15px; 
+                    padding-bottom: 12px; 
                     border-bottom: 2px solid #e5e7eb; 
                 }}
                 .meta-item {{ display: inline-block; margin-right: 15px; }}
                 .excerpt-box {{ 
                     background-color: white; 
-                    padding: 20px; 
+                    padding: 15px; 
                     border-left: 4px solid #3b82f6; 
                     border-radius: 8px; 
-                    margin: 20px 0; 
+                    margin: 15px 0; 
                 }}
                 .content-box {{ 
                     background-color: white; 
-                    padding: 25px; 
+                    padding: 18px; 
                     border-radius: 8px; 
-                    margin: 20px 0;
+                    margin: 15px 0;
                     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
                 }}
                 .content-text {{ 
-                    font-size: 15px; 
-                    line-height: 1.8; 
-                    color: #4b5563; 
+                    font-size: 13px; 
+                    line-height: 1.7; 
+                    color: #1f2937; 
                     white-space: pre-line; 
                 }}
                 .footer {{ 
                     background-color: #1e3a8a; 
                     color: white;
-                    padding: 20px; 
+                    padding: 18px; 
                     text-align: center; 
-                    font-size: 12px; 
+                    font-size: 11px; 
                 }}
                 .footer p {{ margin: 5px 0; }}
-                .system-badge {{
-                    background-color: #10b981;
-                    color: white;
-                    padding: 5px 10px;
-                    border-radius: 5px;
-                    font-size: 11px;
-                    font-weight: bold;
-                }}
             </style>
         </head>
         <body>
             <div class="container">
                 <div class="header">
-                    <h1> Company News</h1>
+                    <h1>📢 Company News</h1>
                     <p>Almet Trading Official Announcement</p>
                     <div class="category-badge">{category_name}</div>
-                  
                 </div>
                 
                 <div class="content">
                     <h2 class="news-title">{news.title}</h2>
                     
                     <div class="meta-info">
-                        <span class="meta-item"><strong> Published:</strong> {news.published_at.strftime('%B %d, %Y at %H:%M')}</span>
-                        <span class="meta-item"><strong> By:</strong> {author_name}</span>
+                        <span class="meta-item"><strong>📅 Published:</strong> {news.published_at.strftime('%B %d, %Y at %H:%M')}</span>
+                        <span class="meta-item"><strong>✍️ By:</strong> {author_name}</span>
                     </div>
                     
                     <div class="image-box">
-                    {image_html}
+                        {image_html}
                     </div>
+                    
                     <div class="excerpt-box">
-                        <p style="font-size: 17px; font-weight: 500; line-height: 1.6; color: #1f2937; margin: 0;">
+                        <p style="font-size: 14px; font-weight: 500; line-height: 1.6; color: #1f2937; margin: 0;">
                             {news.excerpt}
                         </p>
                     </div>
@@ -278,8 +268,8 @@ class NewsNotificationManager:
                 </div>
                 
                 <div class="footer">
-                    <p>This email was sent automatically from {self.settings.company_news_sender_email}</p>
-                    <p style="margin-top: 15px; opacity: 0.8;">© 2025 Almet Trading. All rights reserved.</p>
+                    <p>✉️ This email was sent automatically from {self.settings.company_news_sender_email}</p>
+                    <p style="margin-top: 10px; opacity: 0.8;">© 2025 Almet Trading. All rights reserved.</p>
                 </div>
             </div>
         </body>

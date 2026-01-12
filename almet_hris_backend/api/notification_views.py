@@ -1,15 +1,15 @@
-# api/notification_views.py - COMPLETE VERSION WITH SENT/RECEIVED SEPARATION
+# api/notification_views.py - COMPLETE VERSION WITH EMAIL DETAIL
 
 import logging
+import requests  # ✅ REQUIRED for email detail endpoint
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from rest_framework import status, viewsets
+from rest_framework import status
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 
 from .notification_models import NotificationSettings, NotificationLog
-
 from .notification_service import notification_service
 from .models import UserGraphToken
 
@@ -53,7 +53,7 @@ def get_graph_token_from_request(request):
             'module',
             openapi.IN_QUERY,
             type=openapi.TYPE_STRING,
-            enum=['business_trip', 'vacation', 'timeoff', 'company_news', 'all'],  # ✅ timeoff əlavə edildi
+            enum=['business_trip', 'vacation', 'timeoff', 'handover', 'company_news', 'all'],
             required=False,
             default='all',
             description='Filter by module'
@@ -102,7 +102,6 @@ def get_outlook_emails(request):
                 'graph_token_status': 'missing'
             }, status=status.HTTP_401_UNAUTHORIZED)
         
-   
         # Get settings
         settings = NotificationSettings.get_active()
         
@@ -124,9 +123,9 @@ def get_outlook_emails(request):
         
         # Determine subject filter based on module
         subject_filters = []
-        if module == 'handover':  
+        if module == 'handover':
             subject_filters = [getattr(settings, 'handover_subject_prefix', '[HANDOVER]')]
-        if module == 'business_trip':
+        elif module == 'business_trip':
             subject_filters = [settings.business_trip_subject_prefix]
         elif module == 'vacation':
             subject_filters = [settings.vacation_subject_prefix]
@@ -138,7 +137,8 @@ def get_outlook_emails(request):
             subject_filters = [
                 settings.business_trip_subject_prefix,
                 settings.vacation_subject_prefix,
-                getattr(settings, 'timeoff_subject_prefix', '[TIME OFF]'),  
+                getattr(settings, 'timeoff_subject_prefix', '[TIME OFF]'),
+                getattr(settings, 'handover_subject_prefix', '[HANDOVER]'),
                 settings.company_news_subject_prefix
             ]
         
@@ -205,8 +205,6 @@ def get_outlook_emails(request):
             'total': len(result['all_emails'])
         }
         
-   
-        
         return Response(result)
         
     except Exception as e:
@@ -225,7 +223,7 @@ def get_outlook_emails(request):
 
 
 def format_email(email, settings, email_type):
-    """Format email with module detection - TIME OFF SUPPORT"""
+    """Format email with module detection - HANDOVER SUPPORT"""
     subject = email.get('subject', '')
     
     # Determine module from subject
@@ -234,8 +232,10 @@ def format_email(email, settings, email_type):
         email_module = 'business_trip'
     elif settings.vacation_subject_prefix in subject:
         email_module = 'vacation'
-    elif getattr(settings, 'timeoff_subject_prefix', '[TIME OFF]') in subject:  # ✅ NEW
+    elif getattr(settings, 'timeoff_subject_prefix', '[TIME OFF]') in subject:
         email_module = 'timeoff'
+    elif getattr(settings, 'handover_subject_prefix', '[HANDOVER]') in subject:
+        email_module = 'handover'
     elif settings.company_news_subject_prefix in subject:
         email_module = 'company_news'
     
@@ -267,6 +267,187 @@ def format_email(email, settings, email_type):
 
 
 @swagger_auto_schema(
+    methods=['get'],
+    operation_description="Get full email details by ID",
+    operation_summary="Get Email Detail",
+    tags=['Notifications'],
+    responses={
+        200: openapi.Response(description='Email details with full body'),
+        404: openapi.Response(description='Email not found')
+    }
+)
+@swagger_auto_schema(
+    methods=['delete'],
+    operation_description="Delete email (move to Deleted Items)",
+    operation_summary="Delete Email",
+    tags=['Notifications'],
+    responses={
+        200: openapi.Response(description='Email deleted successfully'),
+        400: openapi.Response(description='Error deleting email')
+    }
+)
+@api_view(['GET', 'DELETE'])
+@permission_classes([IsAuthenticated])
+def get_email_detail(request, message_id):
+    """Get full email details OR delete email"""
+    
+    if request.method == 'DELETE':
+        return delete_email_handler(request, message_id)
+    
+    # GET method
+    try:
+        # Get Graph token
+        graph_token = get_graph_token_from_request(request)
+        
+        if not graph_token:
+            return Response({
+                'error': 'Microsoft Graph token not available'
+            }, status=status.HTTP_401_UNAUTHORIZED)
+        
+        headers = {
+            "Authorization": f"Bearer {graph_token}",
+            "Content-Type": "application/json"
+        }
+        
+        # Fetch full email details
+        response = requests.get(
+            f"https://graph.microsoft.com/v1.0/me/messages/{message_id}",
+            headers=headers,
+            params={
+                '$select': 'id,subject,from,toRecipients,ccRecipients,receivedDateTime,sentDateTime,isRead,hasAttachments,importance,body,bodyPreview,attachments'
+            },
+            timeout=30
+        )
+        
+        if response.status_code == 200:
+            email_data = response.json()
+            
+            # Get settings for module detection
+            settings = NotificationSettings.get_active()
+            
+            # Determine module from subject
+            subject = email_data.get('subject', '')
+            email_module = 'unknown'
+            
+            if settings.business_trip_subject_prefix in subject:
+                email_module = 'business_trip'
+            elif settings.vacation_subject_prefix in subject:
+                email_module = 'vacation'
+            elif getattr(settings, 'timeoff_subject_prefix', '[TIME OFF]') in subject:
+                email_module = 'timeoff'
+            elif getattr(settings, 'handover_subject_prefix', '[HANDOVER]') in subject:
+                email_module = 'handover'
+            elif settings.company_news_subject_prefix in subject:
+                email_module = 'company_news'
+            
+            # Format response
+            formatted_email = {
+                'id': email_data.get('id'),
+                'subject': email_data.get('subject'),
+                'module': email_module,
+                'from': {
+                    'name': email_data.get('from', {}).get('emailAddress', {}).get('name'),
+                    'email': email_data.get('from', {}).get('emailAddress', {}).get('address')
+                },
+                'to_recipients': [
+                    {
+                        'name': r.get('emailAddress', {}).get('name'),
+                        'email': r.get('emailAddress', {}).get('address')
+                    }
+                    for r in email_data.get('toRecipients', [])
+                ],
+                'cc_recipients': [
+                    {
+                        'name': r.get('emailAddress', {}).get('name'),
+                        'email': r.get('emailAddress', {}).get('address')
+                    }
+                    for r in email_data.get('ccRecipients', [])
+                ],
+                'received_at': email_data.get('receivedDateTime'),
+                'sent_at': email_data.get('sentDateTime'),
+                'is_read': email_data.get('isRead'),
+                'has_attachments': email_data.get('hasAttachments', False),
+                'importance': email_data.get('importance'),
+                'body_html': email_data.get('body', {}).get('content') if email_data.get('body', {}).get('contentType') == 'html' else None,
+                'body_text': email_data.get('body', {}).get('content') if email_data.get('body', {}).get('contentType') == 'text' else None,
+                'preview': email_data.get('bodyPreview', ''),
+                'attachments': [
+                    {
+                        'id': att.get('id'),
+                        'name': att.get('name'),
+                        'size': att.get('size'),
+                        'content_type': att.get('contentType'),
+                        'is_inline': att.get('isInline', False)
+                    }
+                    for att in email_data.get('attachments', [])
+                ] if email_data.get('hasAttachments') else []
+            }
+            
+            return Response(formatted_email)
+        
+        elif response.status_code == 404:
+            return Response({
+                'error': 'Email not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        else:
+            logger.error(f"Failed to get email detail: {response.status_code} - {response.text}")
+            return Response({
+                'error': f'Failed to fetch email: {response.status_code}'
+            }, status=status.HTTP_400_BAD_REQUEST)
+            
+    except Exception as e:
+        logger.error(f"Error in get_email_detail: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return Response({
+            'error': str(e)
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+
+def delete_email_handler(request, message_id):
+    """Delete email (move to Deleted Items folder) - Internal Handler"""
+    try:
+        # Get Graph token
+        graph_token = get_graph_token_from_request(request)
+        
+        if not graph_token:
+            return Response({
+                'error': 'Microsoft Graph token not available'
+            }, status=status.HTTP_401_UNAUTHORIZED)
+        
+        headers = {
+            "Authorization": f"Bearer {graph_token}",
+            "Content-Type": "application/json"
+        }
+        
+        # Delete email (moves to Deleted Items)
+        response = requests.delete(
+            f"https://graph.microsoft.com/v1.0/me/messages/{message_id}",
+            headers=headers,
+            timeout=30
+        )
+        
+        if response.status_code == 204:
+            logger.info(f"✅ Email {message_id} deleted successfully")
+            return Response({
+                'success': True,
+                'message': 'Email deleted successfully'
+            })
+        else:
+            logger.error(f"Failed to delete email: {response.status_code} - {response.text}")
+            return Response({
+                'error': f'Failed to delete email: {response.status_code}'
+            }, status=status.HTTP_400_BAD_REQUEST)
+            
+    except Exception as e:
+        logger.error(f"Error in delete_email: {e}")
+        return Response({
+            'error': str(e)
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+
+@swagger_auto_schema(
     method='post',
     operation_description="Mark all emails as read by module and type",
     operation_summary="Mark All Emails as Read",
@@ -277,7 +458,7 @@ def format_email(email, settings, email_type):
         properties={
             'module': openapi.Schema(
                 type=openapi.TYPE_STRING,
-                enum=['business_trip', 'vacation', 'timeoff', 'company_news', 'all'],  # ✅ timeoff əlavə edildi
+                enum=['business_trip', 'vacation', 'timeoff', 'handover', 'company_news', 'all'],
                 description='Module filter'
             ),
             'email_type': openapi.Schema(
@@ -316,8 +497,10 @@ def mark_all_emails_read(request):
             subject_filters.append(settings.business_trip_subject_prefix)
         if module in ['vacation', 'all']:
             subject_filters.append(settings.vacation_subject_prefix)
-        if module in ['timeoff', 'all']:  # ✅ NEW
+        if module in ['timeoff', 'all']:
             subject_filters.append(getattr(settings, 'timeoff_subject_prefix', '[TIME OFF]'))
+        if module in ['handover', 'all']:
+            subject_filters.append(getattr(settings, 'handover_subject_prefix', '[HANDOVER]'))
         if module in ['company_news', 'all']:
             subject_filters.append(settings.company_news_subject_prefix)
         
@@ -372,6 +555,7 @@ def mark_all_emails_read(request):
         return Response({
             'error': str(e)
         }, status=status.HTTP_400_BAD_REQUEST)
+
 
 @swagger_auto_schema(
     method='post',
