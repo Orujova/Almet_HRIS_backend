@@ -1111,7 +1111,7 @@ def get_hr_representatives(request):
         
         # HR departamentindəki işçilər
         hr_employees = Employee.objects.filter(
-            department__name__icontains='HR',
+            unit__name__icontains='HR',
             is_deleted=False
         )
         
@@ -1122,7 +1122,7 @@ def get_hr_representatives(request):
                 'name': emp.full_name,
                 'email': emp.user.email if emp.user else '',
                 'phone': emp.phone,
-                'department': emp.department.name if emp.department else '',
+                'department': emp.unit.name if emp.unit else '',
                 'is_default': current_default and current_default.id == emp.id
             })
         

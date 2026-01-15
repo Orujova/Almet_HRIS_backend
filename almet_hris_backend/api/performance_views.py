@@ -138,7 +138,7 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
         return EmployeePerformanceDetailSerializer
     
     def get_queryset(self):
-        """✅ Filter queryset based on user access - SIMPLIFIED"""
+        """✅ FIXED: Proper year filtering"""
         queryset = EmployeePerformance.objects.select_related(
             'employee',
             'employee__department',
@@ -156,14 +156,27 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
         # ✅ Apply access filter (Admin/Manager/Employee)
         queryset = filter_performance_queryset(self.request.user, queryset)
         
+        # ✅ CRITICAL FIX: Year filter BEFORE other filters
+        year = self.request.query_params.get('year')
+        
+        if year:
+            # If year provided, use it
+            queryset = queryset.filter(performance_year__year=year)
+        
+        else:
+            # ✅ If no year provided, use ACTIVE year by default
+            active_year = PerformanceYear.objects.filter(is_active=True).first()
+            if active_year:
+                queryset = queryset.filter(performance_year=active_year)
+
+            else:
+          
+                return queryset.none()
+        
         # Additional filters
         employee_id = self.request.query_params.get('employee_id')
         if employee_id:
             queryset = queryset.filter(employee_id=employee_id)
-        
-        year = self.request.query_params.get('year')
-        if year:
-            queryset = queryset.filter(performance_year__year=year)
         
         approval_status = self.request.query_params.get('status')
         if approval_status:
@@ -179,19 +192,45 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
         return queryset.order_by('-performance_year__year', 'employee__employee_id')
     
     def list(self, request, *args, **kwargs):
-        """Override list to add error handling"""
+        """✅ Enhanced list with year info"""
         try:
+            year = request.query_params.get('year')
+            
+            # Get active year if no year specified
+            if not year:
+                active_year = PerformanceYear.objects.filter(is_active=True).first()
+                if active_year:
+                    year = active_year.year
+                else:
+                    return Response({
+                        'error': 'No active performance year configured',
+                        'results': [],
+                        'count': 0
+                    }, status=status.HTTP_400_BAD_REQUEST)
+            
             queryset = self.filter_queryset(self.get_queryset())
             
             page = self.paginate_queryset(queryset)
             if page is not None:
                 serializer = self.get_serializer(page, many=True)
-                return self.get_paginated_response(serializer.data)
+                response = self.get_paginated_response(serializer.data)
+                
+                # ✅ Add year info to response
+                response.data['selected_year'] = int(year)
+                response.data['total_for_year'] = queryset.count()
+                
+                return response
             
             serializer = self.get_serializer(queryset, many=True)
-            return Response(serializer.data)
+            return Response({
+                'results': serializer.data,
+                'count': queryset.count(),
+                'selected_year': int(year),
+                'total_for_year': queryset.count()
+            })
+            
         except Exception as e:
-            logger.error(f"❌ Error in list view: {e}")
+           
             import traceback
             traceback.print_exc()
             return Response({
@@ -199,6 +238,239 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
                 'detail': str(e)
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
+    @action(detail=False, methods=['get'])
+    def available_years(self, request):
+        """
+        ✅ NEW: Get all available performance years
+        
+        Response:
+        {
+            "years": [2026, 2025, 2024],
+            "active_year": 2026,
+            "has_data": {
+                "2026": 5,
+                "2025": 12,
+                "2024": 8
+            }
+        }
+        """
+        access = get_performance_access(request.user)
+        
+        # Get all performance years
+        all_years = PerformanceYear.objects.all().order_by('-year')
+        
+        active_year = PerformanceYear.objects.filter(is_active=True).first()
+        
+        # Count performances per year (filtered by access)
+        has_data = {}
+        
+        for year_obj in all_years:
+            if access['can_view_all']:
+                count = EmployeePerformance.objects.filter(
+                    performance_year=year_obj
+                ).count()
+            elif access['accessible_employee_ids']:
+                count = EmployeePerformance.objects.filter(
+                    performance_year=year_obj,
+                    employee_id__in=access['accessible_employee_ids']
+                ).count()
+            else:
+                count = 0
+            
+            has_data[str(year_obj.year)] = count
+        
+        return Response({
+            'years': [y.year for y in all_years],
+            'active_year': active_year.year if active_year else None,
+            'has_data': has_data,
+            'total_years': all_years.count()
+        })
+    
+    @action(detail=False, methods=['post'])
+    def initialize(self, request):
+        """✅ FIXED: Initialize performance record - with year check"""
+        access = get_performance_access(request.user)
+        
+        if not (access['is_admin'] or access['is_manager']):
+            return Response({
+                'error': 'Only admins and managers can initialize performance records'
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        # ✅ Validate year
+        year_id = request.data.get('performance_year')
+        
+        if not year_id:
+            return Response({
+                'error': 'performance_year is required',
+                'message': 'Please select a performance year'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            perf_year = PerformanceYear.objects.get(id=year_id)
+        except PerformanceYear.DoesNotExist:
+            return Response({
+                'error': 'Invalid performance year',
+                'message': f'Performance year with ID {year_id} not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        # ✅ Check if employee already has performance for this year
+        employee_id = request.data.get('employee')
+        
+        if employee_id:
+            existing = EmployeePerformance.objects.filter(
+                employee_id=employee_id,
+                performance_year=perf_year
+            ).first()
+            
+            if existing:
+                return Response({
+                    'error': 'Performance record already exists',
+                    'message': f'Employee already has a performance record for {perf_year.year}',
+                    'existing_id': str(existing.id),
+                    'approval_status': existing.approval_status
+                }, status=status.HTTP_400_BAD_REQUEST)
+        
+        serializer = PerformanceInitializeSerializer(
+            data=request.data,
+            context={'request': request}
+        )
+        
+        if serializer.is_valid():
+            performance = serializer.save()
+            detail_serializer = EmployeePerformanceDetailSerializer(performance)
+            
+            return Response({
+                'success': True,
+                'message': f'Performance initialized for {perf_year.year}',
+                'data': detail_serializer.data
+            }, status=status.HTTP_201_CREATED)
+        
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    @action(detail=False, methods=['get'])
+    def team_members_with_status(self, request):
+        
+        access = get_performance_access(request.user)
+        
+        # ✅ Get year
+        year = request.query_params.get('year')
+        
+        if not year:
+            active_year = PerformanceYear.objects.filter(is_active=True).first()
+            if not active_year:
+                return Response({
+                    'error': 'No active performance year'
+                }, status=status.HTTP_404_NOT_FOUND)
+            year = active_year.year
+            perf_year = active_year
+        else:
+            try:
+                perf_year = PerformanceYear.objects.get(year=int(year))
+            except PerformanceYear.DoesNotExist:
+                return Response({
+                    'error': f'Performance year {year} not found'
+                }, status=status.HTTP_404_NOT_FOUND)
+        
+        # ✅ Get accessible employees (ALL team members, not just those with performances)
+        if access['can_view_all']:
+            # Admin sees all employees
+            team_members = Employee.objects.filter(is_deleted=False).select_related(
+                'department',
+                'position_group',
+                'line_manager'
+            )
+        elif access['is_manager']:
+            # Manager sees their direct reports + self
+            team_members = Employee.objects.filter(
+                id__in=access['accessible_employee_ids'],
+                is_deleted=False
+            ).select_related(
+                'department',
+                'position_group',
+                'line_manager'
+            )
+        else:
+            # Regular employee sees only self
+            team_members = Employee.objects.filter(
+                id=access['employee'].id,
+                is_deleted=False
+            ).select_related(
+                'department',
+                'position_group',
+                'line_manager'
+            )
+        
+        # ✅ Get all performances for this year
+        performances = EmployeePerformance.objects.filter(
+            performance_year=perf_year,
+            employee__in=team_members
+        ).select_related('employee', 'performance_year')
+        
+        # Create performance lookup dict
+        performance_dict = {
+            perf.employee_id: perf for perf in performances
+        }
+        
+        # ✅ Build response with ALL employees
+        team_data = []
+        with_performance_count = 0
+        
+        for employee in team_members:
+            performance = performance_dict.get(employee.id)
+            has_performance = performance is not None
+            
+            if has_performance:
+                with_performance_count += 1
+            
+            # Can initialize if: Admin OR Manager of this employee
+            can_initialize = False
+            if access['is_admin']:
+                can_initialize = True
+            elif access['is_manager'] and employee.line_manager_id == access['employee'].id:
+                can_initialize = True
+            
+            team_data.append({
+                'employee': {
+                    'id': employee.id,
+                    'employee_id': employee.employee_id,
+                    'full_name': employee.full_name,
+                    'email': employee.email,
+                    'department': employee.department.name if employee.department else None,
+                    'position_group': employee.position_group.get_name_display() if employee.position_group else None,
+                    'grading_level': employee.grading_level,
+                    'line_manager_name': employee.line_manager.full_name if employee.line_manager else None,
+                },
+                'has_performance': has_performance,
+                'performance': {
+                    'id': str(performance.id),
+                    'approval_status': performance.approval_status,
+                    'objectives_employee_approved': performance.objectives_employee_approved,
+                    'objectives_manager_approved': performance.objectives_manager_approved,
+                    'mid_year_completed': performance.mid_year_completed,
+                    'end_year_completed': performance.end_year_completed,
+                    'final_rating': performance.final_rating,
+                    'overall_weighted_percentage': str(performance.overall_weighted_percentage),
+                    'created_at': performance.created_at,
+                    'updated_at': performance.updated_at,
+                } if has_performance else None,
+                'can_initialize': can_initialize
+            })
+        
+        total_count = team_members.count()
+        without_performance_count = total_count - with_performance_count
+        
+        return Response({
+            'year': int(year),
+            'performance_year_id': str(perf_year.id),
+            'current_period': perf_year.get_current_period(),
+            'total_team_members': total_count,
+            'with_performance': with_performance_count,
+            'without_performance': without_performance_count,
+            'can_initialize_all': access['is_admin'] or access['is_manager'],
+            'team_members': team_data
+        })
+    
+    
+ 
     def retrieve(self, request, *args, **kwargs):
         """✅ Check access on retrieve - SIMPLIFIED"""
         instance = self.get_object()
@@ -232,26 +504,6 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
         """
         access_info = format_access_info_for_api(request.user)
         return Response(access_info)
-    
-    @action(detail=False, methods=['post'])
-    def initialize(self, request):
-        """✅ Initialize performance record - Admin or Manager only"""
-        access = get_performance_access(request.user)
-        
-        if not (access['is_admin'] or access['is_manager']):
-            return Response({
-                'error': 'Only admins and managers can initialize performance records'
-            }, status=status.HTTP_403_FORBIDDEN)
-        
-        serializer = PerformanceInitializeSerializer(
-            data=request.data,
-            context={'request': request}
-        )
-        if serializer.is_valid():
-            performance = serializer.save()
-            detail_serializer = EmployeePerformanceDetailSerializer(performance)
-            return Response(detail_serializer.data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
     # ============ HELPER METHODS ============
     
@@ -1330,7 +1582,7 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
             }
             
         except Exception as e:
-            logger.error(f"Error syncing to behavioral assessment: {e}")
+        
             import traceback
             traceback.print_exc()
             
@@ -1406,7 +1658,7 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
             }
             
         except Exception as e:
-            logger.error(f"Error syncing to leadership assessment: {e}")
+          
             import traceback
             traceback.print_exc()
             
@@ -1867,13 +2119,15 @@ class PerformanceDashboardViewSet(viewsets.ViewSet):
     
     @action(detail=False, methods=['get'])
     def statistics(self, request):
-        """✅ Get dashboard statistics - filtered by access"""
+        """✅ FIXED: Get dashboard statistics - with proper year filter"""
         year = request.query_params.get('year')
         
         if not year:
             active_year = PerformanceYear.objects.filter(is_active=True).first()
             if not active_year:
-                return Response({'error': 'No active performance year'}, status=status.HTTP_404_NOT_FOUND)
+                return Response({
+                    'error': 'No active performance year configured'
+                }, status=status.HTTP_404_NOT_FOUND)
             year = active_year.year
         else:
             year = int(year)
@@ -1881,12 +2135,14 @@ class PerformanceDashboardViewSet(viewsets.ViewSet):
         try:
             perf_year = PerformanceYear.objects.get(year=year)
         except PerformanceYear.DoesNotExist:
-            return Response({'error': f'Performance year {year} not found'}, status=status.HTTP_404_NOT_FOUND)
+            return Response({
+                'error': f'Performance year {year} not found'
+            }, status=status.HTTP_404_NOT_FOUND)
         
         # ✅ Get accessible employees based on access
         accessible_employees, can_view_all, is_manager = get_accessible_employees_for_analytics(request.user)
         
-        # Filter performances by accessible employees
+        # Filter performances by accessible employees AND year
         performances = EmployeePerformance.objects.filter(
             performance_year=perf_year,
             employee__in=accessible_employees
@@ -1902,25 +2158,10 @@ class PerformanceDashboardViewSet(viewsets.ViewSet):
         mid_year_completed = performances.filter(mid_year_completed=True).count()
         
         # Count only truly completed performances
-        end_year_completed = 0
-        
-        for perf in performances:
-            if perf.approval_status != 'COMPLETED':
-                continue
-            
-            if not perf.competencies_submitted:
-                continue
-            
-            objectives = perf.objectives.filter(is_cancelled=False)
-            if objectives.exists():
-                all_rated = all(obj.end_year_rating is not None for obj in objectives)
-                if not all_rated:
-                    continue
-            
-            if not perf.final_rating or perf.final_rating == 'N/A':
-                continue
-            
-            end_year_completed += 1
+        end_year_completed = performances.filter(
+            approval_status='COMPLETED',
+            competencies_submitted=True
+        ).exclude(final_rating='N/A').count()
         
         pending_employee_approval = performances.filter(
             approval_status='PENDING_EMPLOYEE_APPROVAL'
@@ -1934,7 +2175,7 @@ class PerformanceDashboardViewSet(viewsets.ViewSet):
             approval_status='NEED_CLARIFICATION'
         ).count()
         
-        # Department stats - only for accessible employees
+        # Department stats
         by_department = []
         accessible_dept_names = performances.values_list(
             'employee__department__name', 
@@ -1953,13 +2194,14 @@ class PerformanceDashboardViewSet(viewsets.ViewSet):
                     objectives_manager_approved=True
                 ).count(),
                 'mid_year_complete': dept_performances.filter(mid_year_completed=True).count(),
-                'end_year_complete': dept_performances.filter(end_year_completed=True).count()
+                'end_year_complete': dept_performances.filter(
+                    approval_status='COMPLETED'
+                ).count()
             })
         
         # Competency grade distribution
         competency_grade_distribution = self._get_grade_distribution(performances)
         
-        # ✅ Return access level info
         return Response({
             'total_employees': total_employees,
             'objectives_completed': objectives_completed,
@@ -2005,7 +2247,6 @@ class PerformanceDashboardViewSet(viewsets.ViewSet):
             'total': completed.count(),
             'grades': dict(distribution)
         }
-
 
 class PerformanceNotificationTemplateViewSet(viewsets.ModelViewSet):
     """Performance Notification Templates"""

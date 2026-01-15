@@ -809,8 +809,7 @@ class PerformanceInitializeSerializer(serializers.Serializer):
         position_group = employee.position_group
         position_name = position_group.name.upper().replace('_', ' ').strip()
         
-        print(f"🔍 [Backend] Checking position: {position_group.name}")
-        print(f"🔍 [Backend] Normalized: {position_name}")
+      
         
         leadership_keywords = [
             'MANAGER',
@@ -830,7 +829,7 @@ class PerformanceInitializeSerializer(serializers.Serializer):
             for keyword in leadership_keywords
         )
         
-        print(f"✅ [Backend] Is Leadership: {is_leadership}")
+    
         
         # ✅ CRITICAL FIX: Initialize employee_assessment to None
         employee_assessment = None
@@ -863,8 +862,7 @@ class PerformanceInitializeSerializer(serializers.Serializer):
                     f"  4. Add all required leadership competencies\n"
                 )
             
-            print(f"✅ [Backend] Found leadership template: ID {position_assessment.id}")
-            print(f"✅ [Backend] Template has {position_assessment.competency_ratings.count()} ratings")
+          
             
             # Get employee leadership assessment if exists
             employee_assessment = EmployeeLeadershipAssessment.objects.filter(
@@ -892,8 +890,7 @@ class PerformanceInitializeSerializer(serializers.Serializer):
                     f"(Grade {employee.grading_level}). Please create position assessment first."
                 )
             
-            print(f"✅ [Backend] Found behavioral template: ID {position_assessment.id}")
-            print(f"✅ [Backend] Template has {position_assessment.competency_ratings.count()} ratings")
+         
             
             # Get employee behavioral assessment if exists
             employee_assessment = EmployeeBehavioralAssessment.objects.filter(
@@ -932,14 +929,14 @@ class PerformanceInitializeSerializer(serializers.Serializer):
                 approval_status='DRAFT'
             )
             
-            print(f"✅ [Backend] Created performance: ID {performance.id}")
+     
             
             # ✅ CRITICAL: Use PerformanceEvaluationScale
             from .performance_models import EvaluationScale
             
             if is_leadership:
                 # ============ LEADERSHIP COMPETENCIES ============
-                print(f"🎯 [Backend] Loading LEADERSHIP competencies...")
+              
                 
                 position_ratings = position_assessment.competency_ratings.select_related(
                     'leadership_item',
@@ -947,7 +944,7 @@ class PerformanceInitializeSerializer(serializers.Serializer):
                     'leadership_item__child_group__main_group'
                 ).all()
                 
-                print(f"📊 [Backend] Position template has {position_ratings.count()} leadership ratings")
+
                 
                 created_count = 0
                 for position_rating in position_ratings:
@@ -995,15 +992,14 @@ class PerformanceInitializeSerializer(serializers.Serializer):
                
                 
             else:
-                # ============ BEHAVIORAL COMPETENCIES ============
-                print(f"🎯 [Backend] Loading BEHAVIORAL competencies...")
+            
                 
                 position_ratings = position_assessment.competency_ratings.select_related(
                     'behavioral_competency',
                     'behavioral_competency__group'
                 ).all()
                 
-                print(f"📊 [Backend] Position template has {position_ratings.count()} behavioral ratings")
+                
                 
                 created_count = 0
                 for position_rating in position_ratings:

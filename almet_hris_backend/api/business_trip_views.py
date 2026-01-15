@@ -250,7 +250,7 @@ def get_hr_representatives(request):
         current_default = settings.default_hr_representative if settings else None
         
         hr_employees = Employee.objects.filter(
-            department__name__icontains='HR',
+            unit__name__icontains='HR',
             is_deleted=False
         )
         
@@ -259,7 +259,7 @@ def get_hr_representatives(request):
             'name': emp.full_name,
             'email': emp.user.email if emp.user else '',
             'phone': emp.phone,
-            'department': emp.department.name if emp.department else '',
+            'department': emp.unit.name if emp.unit else '',
             'is_default': current_default and current_default.id == emp.id
         } for emp in hr_employees]
         
@@ -334,7 +334,7 @@ def get_finance_approvers(request):
         current_default = settings.default_finance_approver if settings else None
         
         finance_employees = Employee.objects.filter(
-            Q(department__name__icontains='Finance') | Q(department__name__icontains='Payroll'),
+            Q(unit__name__icontains='Finance') | Q(department__name__icontains='Payroll'),
             is_deleted=False
         )
         
@@ -343,7 +343,7 @@ def get_finance_approvers(request):
             'name': emp.full_name,
             'email': emp.user.email if emp.user else '',
             'phone': emp.phone,
-            'department': emp.department.name if emp.department else '',
+            'department': emp.unit.name if emp.unit else '',
             'is_default': current_default and current_default.id == emp.id
         } for emp in finance_employees]
         

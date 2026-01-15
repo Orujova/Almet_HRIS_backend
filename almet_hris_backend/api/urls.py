@@ -40,6 +40,14 @@ from .competency_assessment_views import (
 
 from .role_views import RoleViewSet, PermissionViewSet, EmployeeRoleViewSet
 
+from api.resignation_exit_views import (
+    ResignationRequestViewSet,
+    ExitInterviewQuestionViewSet,
+    ExitInterviewViewSet,
+    ContractRenewalRequestViewSet,
+    ProbationReviewQuestionViewSet,
+    ProbationReviewViewSet
+)
 
 from .timeoff_views import (
     TimeOffBalanceViewSet,
@@ -49,17 +57,17 @@ from .timeoff_views import (
     TimeOffDashboardViewSet
 )
 
-router = DefaultRouter()
-
-# urls.py-ə əlavə et
-
 from .self_assessment_views import (
-    AssessmentPeriodViewSet, MyAccessInfoView, SelfAssessmentViewSet,
- AssessmentStatsView,MyAccessInfoView
+    AssessmentPeriodViewSet, SelfAssessmentViewSet,
+ AssessmentStatsView
 )
 
+router = DefaultRouter()
+
+
+
 # Router-ə əlavə et
-router.register(r'assessment-periods', AssessmentPeriodViewSet, basename='assessment-period')
+router.register(r'self-assessments-periods', AssessmentPeriodViewSet, basename='assessment-period')
 router.register(r'self-assessments', SelfAssessmentViewSet, basename='self-assessment')
 
 # urlpatterns-ə əlavə et
@@ -143,6 +151,14 @@ router.register(r'assessments/employee-leadership', EmployeeLeadershipAssessment
 # Assessment Dashboard
 router.register(r'assessments/dashboard', AssessmentDashboardViewSet, basename='assessment-dashboard')
 
+# Register viewsets
+router.register(r'resignations', ResignationRequestViewSet, basename='resignation')
+router.register(r'exit-interview-questions', ExitInterviewQuestionViewSet, basename='exit-interview-question')
+router.register(r'exit-interviews', ExitInterviewViewSet, basename='exit-interview')
+router.register(r'contract-renewals', ContractRenewalRequestViewSet, basename='contract-renewal')
+router.register(r'probation-review-questions', ProbationReviewQuestionViewSet, basename='probation-review-question')
+router.register(r'probation-reviews', ProbationReviewViewSet, basename='probation-review')
+
 
 # ==================== URL PATTERNS ====================
 urlpatterns = [
@@ -154,8 +170,8 @@ urlpatterns = [
     
     path('competency/stats/', CompetencyStatsView.as_view(), name='competency-stats'),
 
-    path('assessment-stats/', AssessmentStatsView.as_view(), name='assessment-stats'),
-    path('assessment-access-info/', MyAccessInfoView.as_view(), name='assessment-access-info'),
+    path('self-assessments-stats/', AssessmentStatsView.as_view(), name='assessment-stats'),
+
     path('assets/assets/<uuid:pk>/activities/', 
          AssetViewSet.as_view({'get': 'activities'}), 
          name='asset-activities'),

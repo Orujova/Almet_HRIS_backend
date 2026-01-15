@@ -1,4 +1,4 @@
-# api/performance_urls.py
+# api/performance_urls.py - UPDATED with new endpoints
 
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter

@@ -30,69 +30,6 @@ def is_admin_user(user):
         return False
 
 
-def check_news_permission(user, permission_codename):
-    """
-    Utility function to check permission without decorator
-    Returns: (has_permission: bool, employee: Employee or None)
-    """
-    # Admin role check
-    if is_admin_user(user):
-        return True, None
-    
-    try:
-        from .models import Employee
-        employee = Employee.objects.get(user=user, is_deleted=False)
-    except Employee.DoesNotExist:
-        return False, None
-    
-    employee_roles = EmployeeRole.objects.filter(
-        employee=employee,
-        is_active=True
-    ).select_related('role')
-    
-    for emp_role in employee_roles:
-        role = emp_role.role
-        if role.role_permissions.filter(
-            permission__codename=permission_codename,
-            permission__is_active=True
-        ).exists():
-            return True, employee
-    
-    return False, employee
-
-
-def get_user_news_permissions(user):
-    """
-    Get all news permissions for user
-    Returns: list of permission codenames
-    """
-    if is_admin_user(user):
-        # Admin has all news permissions
-        return list(Permission.objects.filter(
-            category='Company News',
-            is_active=True
-        ).values_list('codename', flat=True))
-    
-    try:
-        from .models import Employee
-        employee = Employee.objects.get(user=user, is_deleted=False)
-    except Employee.DoesNotExist:
-        return []
-    
-    employee_roles = EmployeeRole.objects.filter(
-        employee=employee,
-        is_active=True
-    ).select_related('role')
-    
-    permission_codenames = set()
-    for emp_role in employee_roles:
-        role_perms = emp_role.role.role_permissions.filter(
-            permission__is_active=True,
-            permission__category='Company News'
-        ).values_list('permission__codename', flat=True)
-        permission_codenames.update(role_perms)
-    
-    return list(permission_codenames)
 
 
 # ==================== DRF PERMISSION CLASSES ====================

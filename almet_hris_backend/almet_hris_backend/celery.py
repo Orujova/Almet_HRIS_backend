@@ -24,14 +24,27 @@ app.conf.beat_schedule = {
         'task': 'api.tasks.update_all_employee_statuses',
         'schedule': crontab(minute=0),
     },
-    
+    'check-expiring-contracts': {
+        'task': 'api.tasks.resignation_exit_tasks.check_expiring_contracts',
+        'schedule': crontab(hour=10, minute=0),  # Daily at 10 AM
+    },
+    'check-probation-reviews': {
+        'task': 'api.tasks.resignation_exit_tasks.check_probation_reviews',
+        'schedule': crontab(hour=10, minute=0),  # Daily at 10:30 AM
+    },
+    'send-resignation-reminders': {
+        'task': 'api.tasks.resignation_exit_tasks.send_resignation_reminders',
+        'schedule': crontab(hour=10, minute=0),  # Daily at 10 AM
+    },
+    'send-exit-interview-reminders': {
+        'task': 'api.tasks.resignation_exit_tasks.send_exit_interview_reminders',
+        'schedule': crontab(hour=10, minute=0),  # Daily at 10:30 AM
+    },
     # ==================== CELEBRATION NOTIFICATIONS ====================
     'send-daily-celebrations': {
     'task': 'api.tasks.send_daily_celebration_notifications',
-    # 'schedule': crontab(minute='*/2'),# # 🧪 TEST: Every 2 minutes
-  
+    # 'schedule': crontab(minute='*/2'),       # 🧪 TEST: Every 2 minutes
     'schedule': crontab(hour=10, minute=0)
-
 },
 }
 

@@ -178,16 +178,17 @@ class NewsNotificationManager:
                 .container {{ max-width: 600px; margin: 0 auto; background-color: #ffffff; }}
                 .header {{ 
                     background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%); 
-                    color: white; 
+                    color: black; 
                     padding: 25px 20px; 
                     text-align: center; 
                 }}
-                .header h1 {{ margin: 0; font-size: 22px; font-weight: bold; }}
+                .header h1 {{ margin: 0; font-size: 22px; font-weight: bold; color: #000000; }}
                 .header p {{ margin: 5px 0 0 0; font-size: 12px; opacity: 0.9; }}
                 .category-badge {{ 
                     display: inline-block;
                     background-color: rgba(255, 255, 255, 0.2);
                     padding: 4px 12px;
+                  
                     border-radius: 20px;
                     font-size: 11px;
                     margin-top: 8px;
@@ -218,6 +219,10 @@ class NewsNotificationManager:
                     margin: 15px 0;
                     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
                 }}
+                .image-box {{
+                    width: 200px;
+                    height: 2000px;
+                }}    
                 .content-text {{ 
                     font-size: 13px; 
                     line-height: 1.7; 
@@ -238,7 +243,7 @@ class NewsNotificationManager:
             <div class="container">
                 <div class="header">
                     <h1>📢 Company News</h1>
-                    <p>Almet Trading Official Announcement</p>
+
                     <div class="category-badge">{category_name}</div>
                 </div>
                 
