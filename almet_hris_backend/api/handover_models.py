@@ -246,11 +246,7 @@ class HandoverRequest(SoftDeleteModel):
                 self.ho_signed_date = timezone.now()
                 self.ho_signed_by = self.created_by
                 self.status = 'SIGNED_BY_HANDING_OVER'
-                
-                logger.info(f"✅ Auto-signed by HO (creator): {requester_employee.full_name}")
-                
-                # Log activity for auto-sign
-                # We'll do this after super().save()
+             
         
         super().save(*args, **kwargs)
         
@@ -272,9 +268,7 @@ class HandoverRequest(SoftDeleteModel):
                 
                 # If already signed by HO (auto-signed), notify TO
                 if self.ho_signed:
-                    logger.info(f"📧 AUTO-SIGNED: Sending email to TO")
-                    logger.info(f"   TO Employee: {self.taking_over_employee.full_name}")
-                    logger.info(f"   TO Email: {self.taking_over_employee.email}")
+              
                     
                     result = handover_email_service.notify_to_signature_needed(self)
                     
@@ -283,10 +277,7 @@ class HandoverRequest(SoftDeleteModel):
                     else:
                         logger.error(f"❌ Failed to send email to TO")
                 else:
-                    # Otherwise, notify HO to sign
-                    logger.info(f"📧 NOT AUTO-SIGNED: Sending email to HO")
-                    logger.info(f"   HO Employee: {self.handing_over_employee.full_name}")
-                    logger.info(f"   HO Email: {self.handing_over_employee.email}")
+                  
                     
                     result = handover_email_service.notify_handover_created(self)
                     

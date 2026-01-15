@@ -482,6 +482,5 @@ class SalaryCalculationManager:
                             except (ValueError, TypeError):
                                 errors.append(f"Horizontal interval {interval_name} for {grade_name} must be a valid number")
         
-        logger.info(f"Validation errors: {errors}")
-        logger.info(f"=== VALIDATION END ===")
+       
         return errors

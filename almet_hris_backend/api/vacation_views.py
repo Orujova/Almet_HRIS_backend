@@ -1,4 +1,4 @@
-# api/vacation_views.py - Reorganized Tags for Clean Documentation
+# api/vacation_views.py - COMPLETE REFACTORED VERSION
 
 from rest_framework.decorators import api_view, permission_classes, parser_classes
 from rest_framework.permissions import IsAuthenticated
@@ -8,7 +8,7 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from django.db import transaction
 from django.db.models import Q, Count, Sum
 from datetime import date, datetime, timedelta
-
+import openpyxl
 from .vacation_models import *
 from .vacation_serializers import *
 from .models import Employee
@@ -17,19 +17,18 @@ from django.http import HttpResponse
 from openpyxl import Workbook
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
-from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Border, Side, Alignment
 from openpyxl.utils import get_column_letter
-from datetime import datetime, date
-import pandas as pd
 from .role_models import EmployeeRole
-from django.http import HttpResponse
-from openpyxl.styles import PatternFill
 from .vacation_permissions import (
-    has_vacation_permission, 
-    has_any_vacation_permission, 
-    check_vacation_permission,
-    get_user_vacation_permissions
+    is_admin_user,
+    get_vacation_access,
+    filter_vacation_queryset,
+    can_user_modify_vacation_request,
+    can_user_modify_schedule,
+    can_user_register_schedule,
+    can_user_approve_request,
+    check_vacation_access
 )
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
@@ -38,11 +37,6 @@ from rest_framework import status
 from django.db.models import Q, Sum, Count
 from .vacation_models import EmployeeVacationBalance
 from .vacation_serializers import EmployeeVacationBalanceSerializer
-from .vacation_permissions import has_vacation_permission, is_admin_user, check_vacation_permission
-from datetime import datetime
-import openpyxl
-from openpyxl.styles import Font, Alignment, PatternFill
-from django.http import HttpResponse
 
 import logging
 from django.shortcuts import get_object_or_404
@@ -52,20 +46,15 @@ warning_fill = PatternFill(start_color="FFEB9C", end_color="FFEB9C", fill_type="
 from rest_framework import status as rest_status
 from .vacation_notifications import notification_manager
 from .models import UserGraphToken
-from .token_helpers import get_user_tokens
 
 def get_graph_access_token(user):
-    """
-    Get Microsoft Graph access token for the authenticated user
-    Used for sending emails via Microsoft Graph API.
-    """
+    """Get Microsoft Graph access token for the authenticated user"""
     try:
         token = UserGraphToken.get_valid_token(user)
         if token:
             logger.info(f"✅ Valid Graph token found for user {user.username}")
             return token
         else:
-      
             return None
     except Exception as e:
         logger.error(f"❌ Error getting Graph token: {e}")
@@ -82,90 +71,32 @@ def get_notification_context(request):
         'user': request.user
     }
 
-@swagger_auto_schema(
-    method='get',
-    operation_description="İstifadəçinin bütün vacation icazələrini əldə et",
-    operation_summary="Get My Permissions",
-    tags=['Vacation'],
-    responses={
-        200: openapi.Response(
-            description='User permissions',
-            examples={
-                'application/json': {
-                    'is_admin': False,
-                    'permissions': [
-                        'vacation.dashboard.view_own',
-                        'vacation.request.create_own'
-                    ],
-                    'roles': ['Employee - Vacation']
-                }
-            }
-        )
-    }
-)
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-def my_vacation_permissions(request):
-    """İstifadəçinin vacation permissions-larını göstər"""
-    from .vacation_permissions import is_admin_user
-    
-    is_admin = is_admin_user(request.user)
-    permissions = get_user_vacation_permissions(request.user)
-    
-    # User roles
-    try:
-        emp = Employee.objects.get(user=request.user, is_deleted=False)
-        roles = list(EmployeeRole.objects.filter(
-            employee=emp,
-            is_active=True
-        ).values_list('role__name', flat=True))
-    except Employee.DoesNotExist:
-        roles = []
-    
-    return Response({
-        'is_admin': is_admin,
-        'permissions_count': len(permissions),
-        'permissions': permissions,
-        'roles_count': len(roles),
-        'roles': roles
-    })
+
 
 # ==================== DASHBOARD ====================
-# vacation_views.py
-
 @swagger_auto_schema(
     method='get',
     operation_description="Dashboard məlumatları - 6 stat card və əsas statistika",
     operation_summary="Dashboard",
     tags=['Vacation'],
-    responses={
-        200: openapi.Response(
-            description='Dashboard data',
-            examples={
-                'application/json': {
-                    'balance': {
-                        'total_balance': 28.0,
-                        'yearly_balance': 28.0,
-                        'used_days': 5.0,
-                        'remaining_balance': 23.0,
-                        'scheduled_days': 3.0,
-                        'should_be_planned': 25.0
-                    }
-                }
-            }
-        )
-    }
+    responses={200: openapi.Response(description='Dashboard data')}
 )
 @api_view(['GET'])
-@has_vacation_permission('vacation.dashboard.view_own')
 @permission_classes([IsAuthenticated])
 def vacation_dashboard(request):
-    """Dashboard - 6 stat card"""
+    """✅ Dashboard - Employee öz balansını görür"""
     try:
-        emp = Employee.objects.get(user=request.user, is_deleted=False)
+        access = get_vacation_access(request.user)
+        
+        if not access['employee']:
+            return Response({
+                'error': 'Employee profili tapılmadı'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        emp = access['employee']
         year = date.today().year
         
-        # ✅ DÜZƏLİŞ: get_or_create SILINDI - yalnız mövcud balansı tap
+        # Get employee's balance
         try:
             balance = EmployeeVacationBalance.objects.get(
                 employee=emp, 
@@ -173,7 +104,6 @@ def vacation_dashboard(request):
                 is_deleted=False
             )
         except EmployeeVacationBalance.DoesNotExist:
-            # ✅ Balance yoxdursa, 0 göstər (avtomatik yaratma)
             return Response({
                 'balance': {
                     'total_balance': 0,
@@ -185,7 +115,6 @@ def vacation_dashboard(request):
                 }
             })
         
-        # Balance varsa, refresh et
         balance.refresh_from_db()
         
         return Response({
@@ -198,118 +127,28 @@ def vacation_dashboard(request):
                 'should_be_planned': float(balance.should_be_planned)
             }
         })
-    except Employee.DoesNotExist:
-        return Response({
-            'error': 'Employee profili tapılmadı'
-        }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
         logger.error(f"Dashboard error: {e}")
         return Response({
-            'balance': {
-                'total_balance': 0, 
-                'yearly_balance': 0, 
-                'used_days': 0, 
-                'remaining_balance': 0, 
-                'scheduled_days': 0, 
-                'should_be_planned': 0
-            }
-        })
+            'error': str(e)
+        }, status=status.HTTP_400_BAD_REQUEST)
+
 
 # ==================== PRODUCTION CALENDAR SETTINGS ====================
-# vacation_views.py
-
-from collections import defaultdict
-from datetime import datetime, timedelta
-
 @swagger_auto_schema(
     method='get',
     operation_description="Calendar view - holidays və vacation events",
     operation_summary="Get Calendar Events",
     tags=['Vacation'],
-    manual_parameters=[
-        openapi.Parameter(
-            'month',
-            openapi.IN_QUERY,
-            description="Ay (1-12)",
-            type=openapi.TYPE_INTEGER,
-            required=False
-        ),
-        openapi.Parameter(
-            'year',
-            openapi.IN_QUERY,
-            description="İl (məsələn: 2025)",
-            type=openapi.TYPE_INTEGER,
-            required=False
-        ),
-        openapi.Parameter(
-            'employee_id',
-            openapi.IN_QUERY,
-            description="Employee ID (filter üçün)",
-            type=openapi.TYPE_INTEGER,
-            required=False
-        ),
-        openapi.Parameter(
-            'department_id',
-            openapi.IN_QUERY,
-            description="Department ID (filter üçün)",
-            type=openapi.TYPE_INTEGER,
-            required=False
-        ),
-        openapi.Parameter(
-            'business_function_id',
-            openapi.IN_QUERY,
-            description="Business Function ID (filter üçün)",
-            type=openapi.TYPE_INTEGER,
-            required=False
-        ),
-    ],
-    responses={
-        200: openapi.Response(
-            description='Calendar events',
-            examples={
-                'application/json': {
-                    'holidays': [
-                        {
-                            'date': '2025-01-01',
-                            'name': 'New Year',
-                            'type': 'holiday'
-                        }
-                    ],
-                    'vacations': [
-                        {
-                            'id': 1,
-                            'type': 'request',
-                            'employee_name': 'John Doe',
-                            'employee_id': 'EMP001',
-                            'vacation_type': 'Annual Leave',
-                            'start_date': '2025-01-10',
-                            'end_date': '2025-01-15',
-                            'status': 'Approved',
-                            'days': 4
-                        }
-                    ],
-                    'summary': {
-                        'total_holidays': 10,
-                        'total_vacations': 25,
-                        'employees_on_vacation': 15
-                    }
-                }
-            }
-        )
-    }
+    responses={200: openapi.Response(description='Calendar events')}
 )
 @api_view(['GET'])
-@has_any_vacation_permission([
-    'vacation.calendar.view_all',
-    'vacation.calendar.view_team',
-    'vacation.calendar.view_own'
-])
 @permission_classes([IsAuthenticated])
 def get_calendar_events(request):
-    """Calendar view - holidays və vacation events"""
-    from .vacation_permissions import is_admin_user
-    
+    """✅ Calendar view - filtered by access level"""
     try:
+        access = get_vacation_access(request.user)
+        
         # Get filters
         month = request.GET.get('month')
         year = request.GET.get('year')
@@ -328,13 +167,12 @@ def get_calendar_events(request):
         
         # Calculate date range
         start_date = date(year, month, 1)
-        # Last day of month
         if month == 12:
             end_date = date(year + 1, 1, 1) - timedelta(days=1)
         else:
             end_date = date(year, month + 1, 1) - timedelta(days=1)
         
-        # ✅ Get holidays from settings
+        # Get holidays
         settings = VacationSetting.get_active()
         holidays = []
         
@@ -349,61 +187,29 @@ def get_calendar_events(request):
                             'type': 'holiday'
                         })
         
-        # ✅ Get vacation requests
+        # ✅ Get vacation requests - filtered by access
         requests_qs = VacationRequest.objects.filter(
             is_deleted=False,
             status__in=['PENDING_LINE_MANAGER', 'PENDING_HR', 'APPROVED']
         ).filter(
             Q(start_date__lte=end_date) & Q(end_date__gte=start_date)
-        ).select_related(
-            'employee', 
-            'employee__department', 
-            'employee__business_function',
-            'vacation_type'
-        )
+        ).select_related('employee', 'employee__department', 'employee__business_function', 'vacation_type')
         
-        # ✅ Get vacation schedules
+        # ✅ Filter by access level
+        requests_qs = filter_vacation_queryset(request.user, requests_qs, 'request')
+        
+        # ✅ Get vacation schedules - filtered by access
         schedules_qs = VacationSchedule.objects.filter(
             is_deleted=False,
             status__in=['SCHEDULED', 'REGISTERED']
         ).filter(
             Q(start_date__lte=end_date) & Q(end_date__gte=start_date)
-        ).select_related(
-            'employee', 
-            'employee__department', 
-            'employee__business_function',
-            'vacation_type'
-        )
+        ).select_related('employee', 'employee__department', 'employee__business_function', 'vacation_type')
         
-        # ✅ Permission-based filtering
-        is_admin = is_admin_user(request.user)
-        has_view_all, _ = check_vacation_permission(request.user, 'vacation.calendar.view_all')
-        has_view_team, _ = check_vacation_permission(request.user, 'vacation.calendar.view_team')
+        # ✅ Filter by access level
+        schedules_qs = filter_vacation_queryset(request.user, schedules_qs, 'schedule')
         
-        if not (is_admin or has_view_all):
-            if has_view_team:
-                # Team member-ləri göstər
-                try:
-                    emp = Employee.objects.get(user=request.user, is_deleted=False)
-                    team_employees = Employee.objects.filter(
-                        line_manager=emp,
-                        is_deleted=False
-                    ).values_list('id', flat=True)
-                    
-                    allowed_employee_ids = list(team_employees) + [emp.id]
-                    
-                    requests_qs = requests_qs.filter(employee_id__in=allowed_employee_ids)
-                    schedules_qs = schedules_qs.filter(employee_id__in=allowed_employee_ids)
-                except Employee.DoesNotExist:
-                    # Yalnız özü
-                    requests_qs = requests_qs.filter(employee__user=request.user)
-                    schedules_qs = schedules_qs.filter(employee__user=request.user)
-            else:
-                # Yalnız özünü göstər
-                requests_qs = requests_qs.filter(employee__user=request.user)
-                schedules_qs = schedules_qs.filter(employee__user=request.user)
-        
-        # ✅ Apply additional filters
+        # Apply additional filters
         if employee_id:
             requests_qs = requests_qs.filter(employee_id=employee_id)
             schedules_qs = schedules_qs.filter(employee_id=employee_id)
@@ -416,7 +222,7 @@ def get_calendar_events(request):
             requests_qs = requests_qs.filter(employee__business_function_id=business_function_id)
             schedules_qs = schedules_qs.filter(employee__business_function_id=business_function_id)
         
-        # ✅ Build vacation events
+        # Build vacation events
         vacations = []
         employee_ids_on_vacation = set()
         
@@ -462,26 +268,20 @@ def get_calendar_events(request):
             })
             employee_ids_on_vacation.add(sch.employee.id)
         
-        # ✅ Summary
+        # Summary
         summary = {
             'total_holidays': len(holidays),
             'total_vacations': len(vacations),
             'employees_on_vacation': len(employee_ids_on_vacation),
             'month': month,
-            'year': year
+            'year': year,
+            'access_level': access['access_level']
         }
         
         return Response({
             'holidays': holidays,
             'vacations': vacations,
-            'summary': summary,
-            'filters_applied': {
-                'month': month,
-                'year': year,
-                'employee_id': employee_id,
-                'department_id': department_id,
-                'business_function_id': business_function_id
-            }
+            'summary': summary
         })
         
     except Exception as e:
@@ -490,54 +290,21 @@ def get_calendar_events(request):
             'error': str(e)
         }, status=status.HTTP_400_BAD_REQUEST)
 
+
+# ==================== SETTINGS - ADMIN ONLY ====================
 @swagger_auto_schema(
     method='put',
-    operation_description="Production Calendar - qeyri-iş günlərini yenilə",
+    operation_description="Production Calendar - qeyri-iş günlərini yenilə (ADMIN ONLY)",
     operation_summary="Update Non-Working Days",
     tags=['Vacation - Settings'],
-    request_body=openapi.Schema(
-        type=openapi.TYPE_OBJECT,
-        required=['non_working_days'],
-        properties={
-            'non_working_days': openapi.Schema(
-                type=openapi.TYPE_ARRAY,
-                items=openapi.Schema(
-                    type=openapi.TYPE_OBJECT,
-                    properties={
-                        'date': openapi.Schema(type=openapi.TYPE_STRING, format='date'),
-                        'name': openapi.Schema(type=openapi.TYPE_STRING, description='Holiday name')
-                    }
-                ),
-                description='Qeyri-iş günləri massivi',
-                example=[
-                    {'date': '2025-01-01', 'name': 'New Year'},
-                    {'date': '2025-01-20', 'name': 'Martyrs Day'},
-                    {'date': '2025-03-08', 'name': 'Women Day'},
-                    {'date': '2025-03-20', 'name': 'Novruz Bayram'}
-                ]
-            ),
-        }
-    ),
-    responses={
-        200: openapi.Response(
-            description='Production calendar yeniləndi',
-            examples={
-                'application/json': {
-                    'message': 'Production calendar uğurla yeniləndi',
-                    'non_working_days': [
-                        {'date': '2025-01-01', 'name': 'New Year'},
-                        {'date': '2025-01-20', 'name': 'Martyrs Day'}
-                    ]
-                }
-            }
-        )
-    }
+    request_body=ProductionCalendarSerializer,
+    responses={200: openapi.Response(description='Production calendar yeniləndi')}
 )
 @api_view(['PUT'])
 @permission_classes([IsAuthenticated])
-@has_vacation_permission('vacation.settings.update_production_calendar')
+@check_vacation_access('all')  # ✅ Admin only
 def update_production_calendar(request):
-    """Production Calendar - qeyri-iş günlərini yenilə"""
+    """✅ Production Calendar - Admin only"""
     try:
         serializer = ProductionCalendarSerializer(data=request.data)
         if not serializer.is_valid():
@@ -545,7 +312,6 @@ def update_production_calendar(request):
         
         non_working_days = serializer.validated_data['non_working_days']
         
-        # Active settings tap və ya yarat
         settings = VacationSetting.get_active()
         if not settings:
             settings = VacationSetting.objects.create(
@@ -553,7 +319,6 @@ def update_production_calendar(request):
                 created_by=request.user
             )
         
-        # Dictionary formatında saxla
         settings.non_working_days = non_working_days
         settings.updated_by = request.user
         settings.save()
@@ -568,54 +333,20 @@ def update_production_calendar(request):
     except Exception as e:
         return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
+
 @swagger_auto_schema(
     method='post',
-    operation_description="Production Calendar - qeyri-iş günlərini təyin et",
+    operation_description="Production Calendar - qeyri-iş günlərini təyin et (ADMIN ONLY)",
     operation_summary="Set Non-Working Days",
     tags=['Vacation - Settings'],
-    request_body=openapi.Schema(
-        type=openapi.TYPE_OBJECT,
-        required=['non_working_days'],
-        properties={
-            'non_working_days': openapi.Schema(
-                type=openapi.TYPE_ARRAY,
-                items=openapi.Schema(
-                    type=openapi.TYPE_OBJECT,
-                    properties={
-                        'date': openapi.Schema(type=openapi.TYPE_STRING, format='date'),
-                        'name': openapi.Schema(type=openapi.TYPE_STRING, description='Holiday name')
-                    }
-                ),
-                description='Qeyri-iş günləri massivi',
-                example=[
-                    {'date': '2025-01-01', 'name': 'New Year'},
-                    {'date': '2025-01-20', 'name': 'Martyrs Day'},
-                    {'date': '2025-03-08', 'name': 'Women Day'},
-                    {'date': '2025-03-20', 'name': 'Novruz Bayram'}
-                ]
-            ),
-        }
-    ),
-    responses={
-        200: openapi.Response(
-            description='Production calendar yeniləndi',
-            examples={
-                'application/json': {
-                    'message': 'Production calendar uğurla yeniləndi',
-                    'non_working_days': [
-                        {'date': '2025-01-01', 'name': 'New Year'},
-                        {'date': '2025-01-20', 'name': 'Martyrs Day'}
-                    ]
-                }
-            }
-        )
-    }
+    request_body=ProductionCalendarSerializer,
+    responses={200: openapi.Response(description='Production calendar yeniləndi')}
 )
 @api_view(['POST'])
-@has_vacation_permission('vacation.settings.update_production_calendar')
 @permission_classes([IsAuthenticated])
+@check_vacation_access('all')  # ✅ Admin only
 def set_production_calendar(request):
-    """Production Calendar - qeyri-iş günlərini təyin et"""
+    """✅ Production Calendar - Admin only"""
     try:
         serializer = ProductionCalendarSerializer(data=request.data)
         if not serializer.is_valid():
@@ -623,7 +354,6 @@ def set_production_calendar(request):
         
         non_working_days = serializer.validated_data['non_working_days']
         
-        # Active settings tap və ya yarat
         settings = VacationSetting.get_active()
         if not settings:
             settings = VacationSetting.objects.create(
@@ -631,7 +361,6 @@ def set_production_calendar(request):
                 created_by=request.user
             )
         
-        # Dictionary formatında saxla
         settings.non_working_days = non_working_days
         settings.updated_by = request.user
         settings.save()
@@ -644,30 +373,18 @@ def set_production_calendar(request):
     except Exception as e:
         return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
+
 @swagger_auto_schema(
     method='get',
     operation_description="Production Calendar məlumatlarını əldə et",
     operation_summary="Get Production Calendar",
     tags=['Vacation - Settings'],
-    responses={
-        200: openapi.Response(
-            description='Production calendar məlumatları',
-            examples={
-                'application/json': {
-                    'non_working_days': [
-                        {'date': '2025-01-01', 'name': 'New Year'},
-                        {'date': '2025-01-20', 'name': 'Martyrs Day'}
-                    ]
-                }
-            }
-        )
-    }
+    responses={200: openapi.Response(description='Production calendar məlumatları')}
 )
 @api_view(['GET'])
-@has_vacation_permission('vacation.settings.view')
 @permission_classes([IsAuthenticated])
 def get_production_calendar(request):
-    """Production Calendar məlumatlarını əldə et"""
+    """✅ Production Calendar - Hamı görə bilər"""
     try:
         settings = VacationSetting.get_active()
         
@@ -678,61 +395,21 @@ def get_production_calendar(request):
     except Exception as e:
         return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
-# ==================== GENERAL VACATION SETTINGS  ====================
+
+# ==================== GENERAL VACATION SETTINGS - ADMIN ONLY ====================
 @swagger_auto_schema(
     method='put',
-    operation_description="Vacation ümumi parametrləri - balans, edit limiti, bildirişlər yenilə",
+    operation_description="Vacation ümumi parametrləri - balans, edit limiti, bildirişlər yenilə (ADMIN ONLY)",
     operation_summary="Update General Vacation Settings",
     tags=['Vacation - Settings'],
-    request_body=openapi.Schema(
-        type=openapi.TYPE_OBJECT,
-        properties={
-            'allow_negative_balance': openapi.Schema(
-                type=openapi.TYPE_BOOLEAN,
-                description='Balans 0 olduqda request yaratmağa icazə ver',
-                example=False
-            ),
-            'max_schedule_edits': openapi.Schema(
-                type=openapi.TYPE_INTEGER,
-                description='Schedule neçə dəfə edit oluna bilər',
-                example=3
-            ),
-            'notification_days_before': openapi.Schema(
-                type=openapi.TYPE_INTEGER,
-                description='Məzuniyyət başlamazdan neçə gün əvvəl bildiriş göndər',
-                example=7
-            ),
-            'notification_frequency': openapi.Schema(
-                type=openapi.TYPE_INTEGER,
-                description='Bildirişi neçə dəfə göndər',
-                example=2
-            ),
-        }
-    ),
-    responses={
-        200: openapi.Response(
-            description='Ümumi parametrlər yeniləndi',
-            examples={
-                'application/json': {
-                    'message': 'Vacation parametrləri uğurla yeniləndi',
-                    'settings': {
-                        'allow_negative_balance': False,
-                        'max_schedule_edits': 3,
-                        'notification_days_before': 7,
-                        'notification_frequency': 2
-                    },
-                    'updated_at': '2025-09-25T10:30:00Z',
-                    'updated_by': 'John Doe'
-                }
-            }
-        )
-    }
+    request_body=GeneralVacationSettingsSerializer,
+    responses={200: openapi.Response(description='Ümumi parametrlər yeniləndi')}
 )
 @api_view(['PUT'])
-@has_vacation_permission('vacation.settings.update_general')
 @permission_classes([IsAuthenticated])
+@check_vacation_access('all')  # ✅ Admin only
 def update_general_vacation_settings(request):
-    """Vacation ümumi parametrlərini yenilə"""
+    """✅ Vacation ümumi parametrləri - Admin only"""
     try:
         serializer = GeneralVacationSettingsSerializer(data=request.data)
         if not serializer.is_valid():
@@ -740,7 +417,6 @@ def update_general_vacation_settings(request):
         
         data = serializer.validated_data
         
-        # Active settings tap və ya yarat
         settings = VacationSetting.get_active()
         if not settings:
             settings = VacationSetting.objects.create(
@@ -748,7 +424,6 @@ def update_general_vacation_settings(request):
                 created_by=request.user
             )
         
-        # Parametrləri yenilə
         if 'allow_negative_balance' in data:
             settings.allow_negative_balance = data['allow_negative_balance']
         
@@ -779,58 +454,20 @@ def update_general_vacation_settings(request):
     except Exception as e:
         return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
+
 @swagger_auto_schema(
     method='post',
-    operation_description="Vacation ümumi parametrləri - balans, edit limiti, bildirişlər",
+    operation_description="Vacation ümumi parametrləri - balans, edit limiti, bildirişlər (ADMIN ONLY)",
     operation_summary="Set General Vacation Settings",
     tags=['Vacation - Settings'],
-    request_body=openapi.Schema(
-        type=openapi.TYPE_OBJECT,
-        properties={
-            'allow_negative_balance': openapi.Schema(
-                type=openapi.TYPE_BOOLEAN,
-                description='Balans 0 olduqda request yaratmağa icazə ver',
-                example=False
-            ),
-            'max_schedule_edits': openapi.Schema(
-                type=openapi.TYPE_INTEGER,
-                description='Schedule neçə dəfə edit oluna bilər',
-                example=3
-            ),
-            'notification_days_before': openapi.Schema(
-                type=openapi.TYPE_INTEGER,
-                description='Məzuniyyət başlamazdan neçə gün əvvəl bildiriş göndər',
-                example=7
-            ),
-            'notification_frequency': openapi.Schema(
-                type=openapi.TYPE_INTEGER,
-                description='Bildirişi neçə dəfə göndər',
-                example=2
-            ),
-        }
-    ),
-    responses={
-        200: openapi.Response(
-            description='Ümumi parametrlər yeniləndi',
-            examples={
-                'application/json': {
-                    'message': 'Vacation parametrləri uğurla yeniləndi',
-                    'settings': {
-                        'allow_negative_balance': False,
-                        'max_schedule_edits': 3,
-                        'notification_days_before': 7,
-                        'notification_frequency': 2
-                    }
-                }
-            }
-        )
-    }
+    request_body=GeneralVacationSettingsSerializer,
+    responses={200: openapi.Response(description='Ümumi parametrlər yeniləndi')}
 )
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
-@has_vacation_permission('vacation.settings.update_general')
+@check_vacation_access('all')  # ✅ Admin only
 def set_general_vacation_settings(request):
-    """Vacation ümumi parametrləri"""
+    """✅ Vacation ümumi parametrləri - Admin only"""
     try:
         serializer = GeneralVacationSettingsSerializer(data=request.data)
         if not serializer.is_valid():
@@ -838,7 +475,6 @@ def set_general_vacation_settings(request):
         
         data = serializer.validated_data
         
-        # Active settings tap və ya yarat
         settings = VacationSetting.get_active()
         if not settings:
             settings = VacationSetting.objects.create(
@@ -846,7 +482,6 @@ def set_general_vacation_settings(request):
                 created_by=request.user
             )
         
-        # Parametrləri yenilə
         if 'allow_negative_balance' in data:
             settings.allow_negative_balance = data['allow_negative_balance']
         
@@ -875,30 +510,18 @@ def set_general_vacation_settings(request):
     except Exception as e:
         return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
+
 @swagger_auto_schema(
     method='get',
     operation_description="Vacation ümumi parametrlərini əldə et",
     operation_summary="Get General Vacation Settings",
     tags=['Vacation - Settings'],
-    responses={
-        200: openapi.Response(
-            description='Ümumi parametrlər',
-            examples={
-                'application/json': {
-                    'allow_negative_balance': False,
-                    'max_schedule_edits': 3,
-                    'notification_days_before': 7,
-                    'notification_frequency': 2
-                }
-            }
-        )
-    }
+    responses={200: openapi.Response(description='Ümumi parametrlər')}
 )
 @api_view(['GET'])
-@has_vacation_permission('vacation.settings.view')
 @permission_classes([IsAuthenticated])
 def get_general_vacation_settings(request):
-    """Vacation ümumi parametrlərini əldə et"""
+    """✅ Vacation ümumi parametrlərini əldə et - Hamı görə bilər"""
     try:
         settings = VacationSetting.get_active()
         
@@ -921,51 +544,20 @@ def get_general_vacation_settings(request):
         return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 
-# ==================== HR REPRESENTATIVE SETTINGS  ====================
+# ==================== HR REPRESENTATIVE SETTINGS - ADMIN ONLY ====================
 @swagger_auto_schema(
     method='put',
-    operation_description="Default HR nümayəndəsini yenilə",
+    operation_description="Default HR nümayəndəsini yenilə (ADMIN ONLY)",
     operation_summary="Update Default HR Representative",
     tags=['Vacation - Settings'],
-    request_body=openapi.Schema(
-        type=openapi.TYPE_OBJECT,
-        required=['default_hr_representative_id'],
-        properties={
-            'default_hr_representative_id': openapi.Schema(
-                type=openapi.TYPE_INTEGER,
-                description='Default HR nümayəndəsi Employee ID',
-                example=5
-            ),
-        }
-    ),
-    responses={
-        200: openapi.Response(
-            description='Default HR yeniləndi',
-            examples={
-                'application/json': {
-                    'message': 'Default HR nümayəndəsi uğurla yeniləndi',
-                    'previous_hr': {
-                        'id': 3,
-                        'name': 'Previous HR Rep',
-                        'department': 'HR'
-                    },
-                    'current_hr': {
-                        'id': 5,
-                        'name': 'Sarah Johnson',
-                        'department': 'HR'
-                    },
-                    'updated_at': '2025-09-25T10:30:00Z',
-                    'updated_by': 'Admin User'
-                }
-            }
-        )
-    }
+    request_body=HRRepresentativeSerializer,
+    responses={200: openapi.Response(description='Default HR yeniləndi')}
 )
 @api_view(['PUT'])
-@has_vacation_permission('vacation.settings.update_hr_representative')
 @permission_classes([IsAuthenticated])
+@check_vacation_access('all')  # ✅ Admin only
 def update_default_hr_representative(request):
-    """Default HR nümayəndəsini yenilə"""
+    """✅ Default HR nümayəndəsini yenilə - Admin only"""
     try:
         serializer = HRRepresentativeSerializer(data=request.data)
         if not serializer.is_valid():
@@ -974,7 +566,6 @@ def update_default_hr_representative(request):
         hr_id = serializer.validated_data['default_hr_representative_id']
         hr_employee = Employee.objects.get(id=hr_id, is_deleted=False)
         
-        # Active settings tap və ya yarat
         settings = VacationSetting.get_active()
         if not settings:
             settings = VacationSetting.objects.create(
@@ -982,7 +573,6 @@ def update_default_hr_representative(request):
                 created_by=request.user
             )
         
-        # Əvvəlki HR-ı saxla
         previous_hr = settings.default_hr_representative
         previous_hr_info = None
         if previous_hr:
@@ -992,7 +582,6 @@ def update_default_hr_representative(request):
                 'department': previous_hr.department.name if previous_hr.department else ''
             }
         
-        # Yeni HR təyin et
         settings.default_hr_representative = hr_employee
         settings.updated_by = request.user
         settings.save()
@@ -1016,43 +605,20 @@ def update_default_hr_representative(request):
     except Exception as e:
         return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
+
 @swagger_auto_schema(
     method='post',
-    operation_description="Default HR nümayəndəsini təyin et",
+    operation_description="Default HR nümayəndəsini təyin et (ADMIN ONLY)",
     operation_summary="Set Default HR Representative",
     tags=['Vacation - Settings'],
-    request_body=openapi.Schema(
-        type=openapi.TYPE_OBJECT,
-        required=['default_hr_representative_id'],
-        properties={
-            'default_hr_representative_id': openapi.Schema(
-                type=openapi.TYPE_INTEGER,
-                description='Default HR nümayəndəsi Employee ID',
-                example=5
-            ),
-        }
-    ),
-    responses={
-        200: openapi.Response(
-            description='Default HR təyin edildi',
-            examples={
-                'application/json': {
-                    'message': 'Default HR nümayəndəsi uğurla təyin edildi',
-                    'hr_representative': {
-                        'id': 5,
-                        'name': 'Sarah Johnson',
-                        'department': 'HR'
-                    }
-                }
-            }
-        )
-    }
+    request_body=HRRepresentativeSerializer,
+    responses={200: openapi.Response(description='Default HR təyin edildi')}
 )
 @api_view(['POST'])
-@has_vacation_permission('vacation.settings.update_hr_representative')
 @permission_classes([IsAuthenticated])
+@check_vacation_access('all')  # ✅ Admin only
 def set_default_hr_representative(request):
-    """Default HR nümayəndəsini təyin et"""
+    """✅ Default HR nümayəndəsini təyin et - Admin only"""
     try:
         serializer = HRRepresentativeSerializer(data=request.data)
         if not serializer.is_valid():
@@ -1061,7 +627,6 @@ def set_default_hr_representative(request):
         hr_id = serializer.validated_data['default_hr_representative_id']
         hr_employee = Employee.objects.get(id=hr_id, is_deleted=False)
         
-        # Active settings tap və ya yarat
         settings = VacationSetting.get_active()
         if not settings:
             settings = VacationSetting.objects.create(
@@ -1089,22 +654,18 @@ def set_default_hr_representative(request):
     except Exception as e:
         return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
+
 @swagger_auto_schema(
     method='get',
     operation_description="Mövcud HR nümayəndələrini əldə et",
     operation_summary="Get HR Representatives",
     tags=['Vacation - Settings'],
-    responses={
-        200: openapi.Response(
-            description='HR nümayəndələri siyahısı'
-        )
-    }
+    responses={200: openapi.Response(description='HR nümayəndələri siyahısı')}
 )
 @api_view(['GET'])
-@has_vacation_permission('vacation.settings.view')
 @permission_classes([IsAuthenticated])
 def get_hr_representatives(request):
-    """HR nümayəndələrini əldə et"""
+    """✅ HR nümayəndələrini əldə et - Hamı görə bilər"""
     try:
         settings = VacationSetting.get_active()
         current_default = settings.default_hr_representative if settings else None
@@ -1139,53 +700,20 @@ def get_hr_representatives(request):
         return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 
-
-
 # ==================== BALANCE MANAGEMENT ====================
 @swagger_auto_schema(
     method='post',
-    operation_description="Excel faylı ilə vacation balanslarını toplu yükle",
+    operation_description="Excel faylı ilə vacation balanslarını toplu yüklə (ADMIN ONLY)",
     operation_summary="Bulk Upload Balances",
     tags=['Vacation - Settings'],
-    consumes=['multipart/form-data'],
-    manual_parameters=[
-        openapi.Parameter(
-            'file',
-            openapi.IN_FORM,
-            description="Excel faylı (.xlsx)",
-            type=openapi.TYPE_FILE,
-            required=True
-        ),
-        openapi.Parameter(
-            'year',
-            openapi.IN_FORM,
-            description="İl (məsələn: 2025)",
-            type=openapi.TYPE_INTEGER,
-            required=True
-        )
-    ],
-    responses={
-        200: openapi.Response(
-            description='Upload successful',
-            examples={
-                'application/json': {
-                    'message': '10 uğurlu, 0 səhv',
-                    'results': {
-                        'successful': 10,
-                        'failed': 0,
-                        'errors': []
-                    }
-                }
-            }
-        )
-    }
+    responses={200: openapi.Response(description='Upload successful')}
 )
 @api_view(['POST'])
 @parser_classes([MultiPartParser, FormParser])
 @permission_classes([IsAuthenticated])
-@has_vacation_permission('vacation.balance.bulk_upload')
+@check_vacation_access('all')  # ✅ Admin only
 def bulk_upload_balances(request):
-    """Excel ilə balance upload et"""
+    """✅ Excel ilə balance upload et - Admin only"""
     if 'file' not in request.FILES:
         return Response({'error': 'File yoxdur'}, status=status.HTTP_400_BAD_REQUEST)
     
@@ -1193,8 +721,6 @@ def bulk_upload_balances(request):
     year = int(request.data.get('year', date.today().year))
     
     try:
-        # Read Excel - header at row 5 (index 4), skip row 6 (descriptions)
-        # Only read up to row 100 to avoid footer text
         df = pd.read_excel(file, header=4, skiprows=[5], nrows=100)
         
         # Strip whitespace and normalize column names
@@ -1215,22 +741,18 @@ def bulk_upload_balances(request):
         
         for idx, row in df.iterrows():
             try:
-                # Get employee_id and check if it's valid
                 emp_id_raw = row.get('employee_id')
                 
-                # Skip if empty, NaN, or not a valid employee ID format
                 if pd.isna(emp_id_raw):
                     results['skipped'] += 1
                     continue
                 
                 emp_id = str(emp_id_raw).strip()
                 
-                # Skip empty strings or very long strings (likely footer text)
                 if not emp_id or len(emp_id) > 20:
                     results['skipped'] += 1
                     continue
                 
-                # Find employee
                 emp = Employee.objects.get(
                     employee_id=emp_id, 
                     is_deleted=False
@@ -1261,7 +783,6 @@ def bulk_upload_balances(request):
                 results['errors'].append(f"Employee ID '{row['employee_id']}': {str(e)}")
                 results['failed'] += 1
         
-        # Return success only if at least one row was processed
         if results['successful'] == 0 and results['failed'] == 0:
             return Response({
                 'error': 'Faylda heç bir məlumat tapılmadı',
@@ -1278,28 +799,22 @@ def bulk_upload_balances(request):
             'error': f'File processing error: {str(e)}',
             'hint': 'Make sure you are using the latest template file'
         }, status=status.HTTP_400_BAD_REQUEST)
-        
+
+
 @swagger_auto_schema(
     method='get',
     operation_description="Excel template endir",
     operation_summary="Download Balance Template",
     tags=['Vacation - Settings'],
-    responses={
-        200: openapi.Response(
-            description='Excel file',
-            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-        )
-    }
+    responses={200: openapi.Response(description='Excel file')}
 )
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
-@has_vacation_permission('vacation.balance.view_all')
 def download_balance_template(request):
-    """Enhanced Excel template with improved design"""
+    """✅ Excel template - Hamı endir bilər"""
     wb = Workbook()
     ws = wb.active
     ws.title = "Balance Template"
-
     ws.sheet_view.showGridLines = False
 
     # Define styles
@@ -1334,24 +849,15 @@ def download_balance_template(request):
 
     start_row = 5
     for col, (header, desc) in enumerate(zip(headers, descriptions), 1):
-        # Header
         cell = ws.cell(row=start_row, column=col, value=header)
         cell.fill = header_fill
         cell.font = header_font
         cell.border = border
         cell.alignment = Alignment(horizontal='center', vertical='center')
-        # Description
         desc_cell = ws.cell(row=start_row + 1, column=col, value=desc)
         desc_cell.font = desc_font
         desc_cell.alignment = Alignment(horizontal='center', wrap_text=True)
         desc_cell.border = border
-
-    # Add instruction in a separate area (far from data area)
-    instruction_row = 15  # Much further down
-    ws.merge_cells(f'A{instruction_row}:C{instruction_row}')
-    ws[f'A{instruction_row}'] = "Instructions: Fill employee data starting from row 7. Do not modify this template structure."
-    ws[f'A{instruction_row}'].font = Font(size=9, italic=True, color="808080")
-    ws[f'A{instruction_row}'].alignment = Alignment(horizontal='left')
 
     # Auto-adjust column widths
     for col in range(1, len(headers) + 1):
@@ -1365,189 +871,207 @@ def download_balance_template(request):
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
-@has_vacation_permission('vacation.balance.view_all')
 def get_all_balances(request):
     """
-    GET /vacation/balances/
-    Get all employee vacation balances with filters
-    Permission: vacation.balance.view_all or admin
+    ✅ Get all employee vacation balances with filters
+    - Employee: Own balance only
+    - Manager: Own + team balances
+    - Admin: All balances
     """
-    user = request.user
-    
-    # Get filters
-    year = request.GET.get('year', datetime.now().year)
-    department_id = request.GET.get('department_id', '')  # ✅ Changed from department name to ID
-    business_function_id = request.GET.get('business_function_id', '')  # ✅ YENİ
-    min_remaining = request.GET.get('min_remaining', '')
-    max_remaining = request.GET.get('max_remaining', '')
-    
-    # Build queryset
-    queryset = EmployeeVacationBalance.objects.filter(
-        is_deleted=False,
-        year=year
-    ).select_related('employee', 'employee__department', 'employee__business_function')
-    
-    # Apply filters
-    if department_id:
-        queryset = queryset.filter(employee__department_id=department_id)
-    
-    # ✅ YENİ: Business Function filter
-    if business_function_id:
-        queryset = queryset.filter(employee__business_function_id=business_function_id)
-    
-    # Calculate filtered balances
-    balances_list = []
-    for balance in queryset:
-        # Apply remaining balance filters
-        if min_remaining and balance.remaining_balance < float(min_remaining):
-            continue
-        if max_remaining and balance.remaining_balance > float(max_remaining):
-            continue
-        balances_list.append(balance)
-    
-    # Serialize
-    serializer = EmployeeVacationBalanceSerializer(balances_list, many=True)
-    balances = serializer.data
-    
-    # Calculate summary
-    total_allocated = sum(float(b.total_balance) for b in balances_list)
-    total_used = sum(float(b.used_days) for b in balances_list)
-    total_scheduled = sum(float(b.scheduled_days) for b in balances_list)
-    total_remaining = sum(float(b.remaining_balance) for b in balances_list)
-    employee_count = len(balances_list)
-    
-    summary = {
-        'total_employees': employee_count,
-        'total_allocated': round(total_allocated, 1),
-        'total_used': round(total_used, 1),
-        'total_scheduled': round(total_scheduled, 1),
-        'total_remaining': round(total_remaining, 1)
-    }
-    
-    return Response({
-        'balances': balances,
-        'summary': summary,
-        'filters_applied': {
-            'year': year,
-            'department_id': department_id,
-            'business_function_id': business_function_id,  # ✅ YENİ
-            'min_remaining': min_remaining,
-            'max_remaining': max_remaining
+    try:
+        access = get_vacation_access(request.user)
+        
+        # Get filters
+        year = request.GET.get('year', datetime.now().year)
+        department_id = request.GET.get('department_id', '')
+        business_function_id = request.GET.get('business_function_id', '')
+        min_remaining = request.GET.get('min_remaining', '')
+        max_remaining = request.GET.get('max_remaining', '')
+        
+        # Build base queryset
+        queryset = EmployeeVacationBalance.objects.filter(
+            is_deleted=False,
+            year=year
+        ).select_related('employee', 'employee__department', 'employee__business_function')
+        
+        # ✅ Filter by access level
+        if access['accessible_employee_ids'] is not None:
+            queryset = queryset.filter(employee_id__in=access['accessible_employee_ids'])
+        
+        # Apply additional filters
+        if department_id:
+            queryset = queryset.filter(employee__department_id=department_id)
+        
+        if business_function_id:
+            queryset = queryset.filter(employee__business_function_id=business_function_id)
+        
+        # Calculate filtered balances
+        balances_list = []
+        for balance in queryset:
+            if min_remaining and balance.remaining_balance < float(min_remaining):
+                continue
+            if max_remaining and balance.remaining_balance > float(max_remaining):
+                continue
+            balances_list.append(balance)
+        
+        # Serialize
+        serializer = EmployeeVacationBalanceSerializer(balances_list, many=True)
+        balances = serializer.data
+        
+        # Calculate summary
+        total_allocated = sum(float(b.total_balance) for b in balances_list)
+        total_used = sum(float(b.used_days) for b in balances_list)
+        total_scheduled = sum(float(b.scheduled_days) for b in balances_list)
+        total_remaining = sum(float(b.remaining_balance) for b in balances_list)
+        employee_count = len(balances_list)
+        
+        summary = {
+            'total_employees': employee_count,
+            'total_allocated': round(total_allocated, 1),
+            'total_used': round(total_used, 1),
+            'total_scheduled': round(total_scheduled, 1),
+            'total_remaining': round(total_remaining, 1)
         }
-    })
+        
+        return Response({
+            'balances': balances,
+            'summary': summary,
+            'access_level': access['access_level'],
+            'filters_applied': {
+                'year': year,
+                'department_id': department_id,
+                'business_function_id': business_function_id,
+                'min_remaining': min_remaining,
+                'max_remaining': max_remaining
+            }
+        })
+    
+    except Exception as e:
+        logger.error(f"Error in get_all_balances: {e}")
+        return Response({
+            'error': str(e)
+        }, status=status.HTTP_400_BAD_REQUEST)
+
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
-@has_vacation_permission('vacation.balance.export')
 def export_all_balances(request):
     """
-    GET /vacation/balances/export/
-    Export all balances to Excel
-    Permission: vacation.balance.export or admin
+    ✅ Export all balances to Excel - filtered by access level
     """
-    user = request.user
-    
-    # Get filters
-    year = request.GET.get('year', datetime.now().year)
-    department_id = request.GET.get('department_id', '')
-    min_remaining = request.GET.get('min_remaining', '')
-    max_remaining = request.GET.get('max_remaining', '')
-    business_function_id = request.GET.get('business_function_id', '')
-    queryset = EmployeeVacationBalance.objects.filter(
-        is_deleted=False,
-        year=year
-    ).select_related('employee', 'employee__department').order_by(
-        'employee__department__name', 'employee__full_name'
-    )
-    
-    if department_id:
-        queryset = queryset.filter(employee__department_id=department_id)
-    
-    # ✅ YENİ: Business Function filter
-    if business_function_id:
-        queryset = queryset.filter(employee__business_function_id=business_function_id)
-    
-    # Apply remaining balance filters
-    balances_list = []
-    for balance in queryset:
-        if min_remaining and balance.remaining_balance < float(min_remaining):
-            continue
-        if max_remaining and balance.remaining_balance > float(max_remaining):
-            continue
-        balances_list.append(balance)
-    
-    # Create workbook
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = f'Vacation Balances {year}'
-    
-    # Header style
-    header_fill = PatternFill(start_color='366092', end_color='366092', fill_type='solid')
-    header_font = Font(bold=True, color='FFFFFF', size=11)
-    header_alignment = Alignment(horizontal='center', vertical='center')
-    
-    # Headers
-    headers = [
-        'Employee Name', 'Employee ID', 'Department', 'Year',
-        'Start Balance', 'Yearly Balance', 'Total Balance',
-        'Used Days', 'Scheduled Days', 'Remaining Balance', 'To Plan'
-    ]
-    
-    for col_num, header in enumerate(headers, 1):
-        cell = ws.cell(row=1, column=col_num, value=header)
-        cell.fill = header_fill
-        cell.font = header_font
-        cell.alignment = header_alignment
-    
-    # Data rows
-    for row_num, balance in enumerate(balances_list, 2):
-        ws.cell(row=row_num, column=1, value=balance.employee.full_name)
-        ws.cell(row=row_num, column=2, value=getattr(balance.employee, 'employee_id', ''))
-        ws.cell(row=row_num, column=3, value=balance.employee.department.name if balance.employee.department else '')
-        ws.cell(row=row_num, column=4, value=balance.year)
-        ws.cell(row=row_num, column=5, value=float(balance.start_balance))
-        ws.cell(row=row_num, column=6, value=float(balance.yearly_balance))
-        ws.cell(row=row_num, column=7, value=float(balance.total_balance))
-        ws.cell(row=row_num, column=8, value=float(balance.used_days))
-        ws.cell(row=row_num, column=9, value=float(balance.scheduled_days))
-        ws.cell(row=row_num, column=10, value=float(balance.remaining_balance))
-        ws.cell(row=row_num, column=11, value=float(balance.should_be_planned))
+    try:
+        access = get_vacation_access(request.user)
         
-        # Center align numeric columns
-        for col in range(4, 12):
-            ws.cell(row=row_num, column=col).alignment = Alignment(horizontal='center')
+        # Get filters
+        year = request.GET.get('year', datetime.now().year)
+        department_id = request.GET.get('department_id', '')
+        business_function_id = request.GET.get('business_function_id', '')
+        min_remaining = request.GET.get('min_remaining', '')
+        max_remaining = request.GET.get('max_remaining', '')
+        
+        # Build queryset
+        queryset = EmployeeVacationBalance.objects.filter(
+            is_deleted=False,
+            year=year
+        ).select_related('employee', 'employee__department').order_by(
+            'employee__department__name', 'employee__full_name'
+        )
+        
+        # ✅ Filter by access level
+        if access['accessible_employee_ids'] is not None:
+            queryset = queryset.filter(employee_id__in=access['accessible_employee_ids'])
+        
+        if department_id:
+            queryset = queryset.filter(employee__department_id=department_id)
+        
+        if business_function_id:
+            queryset = queryset.filter(employee__business_function_id=business_function_id)
+        
+        # Apply remaining balance filters
+        balances_list = []
+        for balance in queryset:
+            if min_remaining and balance.remaining_balance < float(min_remaining):
+                continue
+            if max_remaining and balance.remaining_balance > float(max_remaining):
+                continue
+            balances_list.append(balance)
+        
+        # Create workbook
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = f'Vacation Balances {year}'
+        
+        # Header style
+        header_fill = PatternFill(start_color='366092', end_color='366092', fill_type='solid')
+        header_font = Font(bold=True, color='FFFFFF', size=11)
+        header_alignment = Alignment(horizontal='center', vertical='center')
+        
+        # Headers
+        headers = [
+            'Employee Name', 'Employee ID', 'Department', 'Year',
+            'Start Balance', 'Yearly Balance', 'Total Balance',
+            'Used Days', 'Scheduled Days', 'Remaining Balance', 'To Plan'
+        ]
+        
+        for col_num, header in enumerate(headers, 1):
+            cell = ws.cell(row=1, column=col_num, value=header)
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = header_alignment
+        
+        # Data rows
+        for row_num, balance in enumerate(balances_list, 2):
+            ws.cell(row=row_num, column=1, value=balance.employee.full_name)
+            ws.cell(row=row_num, column=2, value=getattr(balance.employee, 'employee_id', ''))
+            ws.cell(row=row_num, column=3, value=balance.employee.department.name if balance.employee.department else '')
+            ws.cell(row=row_num, column=4, value=balance.year)
+            ws.cell(row=row_num, column=5, value=float(balance.start_balance))
+            ws.cell(row=row_num, column=6, value=float(balance.yearly_balance))
+            ws.cell(row=row_num, column=7, value=float(balance.total_balance))
+            ws.cell(row=row_num, column=8, value=float(balance.used_days))
+            ws.cell(row=row_num, column=9, value=float(balance.scheduled_days))
+            ws.cell(row=row_num, column=10, value=float(balance.remaining_balance))
+            ws.cell(row=row_num, column=11, value=float(balance.should_be_planned))
+            
+            # Center align numeric columns
+            for col in range(4, 12):
+                ws.cell(row=row_num, column=col).alignment = Alignment(horizontal='center')
+        
+        # Auto-adjust column widths
+        for column in ws.columns:
+            max_length = 0
+            column = [cell for cell in column]
+            for cell in column:
+                try:
+                    if len(str(cell.value)) > max_length:
+                        max_length = len(cell.value)
+                except:
+                    pass
+            adjusted_width = (max_length + 2)
+            ws.column_dimensions[column[0].column_letter].width = adjusted_width
+        
+        # Create response
+        response = HttpResponse(
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+        response['Content-Disposition'] = f'attachment; filename=vacation_balances_{access["access_level"].replace(" ", "_")}_{year}.xlsx'
+        wb.save(response)
+        
+        return response
     
-    # Auto-adjust column widths
-    for column in ws.columns:
-        max_length = 0
-        column = [cell for cell in column]
-        for cell in column:
-            try:
-                if len(str(cell.value)) > max_length:
-                    max_length = len(cell.value)
-            except:
-                pass
-        adjusted_width = (max_length + 2)
-        ws.column_dimensions[column[0].column_letter].width = adjusted_width
-    
-    # Create response
-    response = HttpResponse(
-        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-    )
-    response['Content-Disposition'] = f'attachment; filename=vacation_balances_{year}.xlsx'
-    wb.save(response)
-    
-    return response
+    except Exception as e:
+        logger.error(f"Error in export_all_balances: {e}")
+        return Response({
+            'error': str(e)
+        }, status=status.HTTP_400_BAD_REQUEST)
 
 
 @api_view(['PUT'])
 @permission_classes([IsAuthenticated])
-@has_vacation_permission('vacation.balance.update')
+@check_vacation_access('all')  # ✅ Admin only
 def update_employee_balance(request):
     """
-    PUT /vacation/balances/update/
-    Update individual employee balance
-    Permission: vacation.balance.update or admin
+    ✅ Update individual employee balance - ADMIN ONLY
     """
     employee_id = request.data.get('employee_id')
     year = request.data.get('year', datetime.now().year)
@@ -1559,7 +1083,6 @@ def update_employee_balance(request):
         )
     
     try:
-        from .models import Employee
         employee = Employee.objects.get(id=employee_id, is_deleted=False)
     except Employee.DoesNotExist:
         return Response(
@@ -1567,7 +1090,6 @@ def update_employee_balance(request):
             status=status.HTTP_404_NOT_FOUND
         )
     
-    # Get or create balance
     balance, created = EmployeeVacationBalance.objects.get_or_create(
         employee=employee,
         year=year,
@@ -1581,7 +1103,6 @@ def update_employee_balance(request):
     )
     
     if not created:
-        # Update existing balance
         if 'start_balance' in request.data:
             balance.start_balance = request.data['start_balance']
         if 'yearly_balance' in request.data:
@@ -1603,12 +1124,10 @@ def update_employee_balance(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
-@has_vacation_permission('vacation.balance.reset')
+@check_vacation_access('all')  # ✅ Admin only
 def reset_balances(request):
     """
-    POST /vacation/balances/reset/
-    Reset balances for a specific year
-    Permission: vacation.balance.reset or admin
+    ✅ Reset balances for a specific year - ADMIN ONLY
     """
     year = request.data.get('year', datetime.now().year)
     department_id = request.data.get('department_id', None)
@@ -1621,7 +1140,6 @@ def reset_balances(request):
     if department_id:
         queryset = queryset.filter(employee__department_id=department_id)
     
-    # Reset used_days and scheduled_days to 0
     updated_count = queryset.update(
         used_days=0,
         scheduled_days=0,
@@ -1633,39 +1151,38 @@ def reset_balances(request):
         'count': updated_count
     })
 
+
 # ==================== REQUEST IMMEDIATE ====================
 @swagger_auto_schema(
     method='post',
     operation_description="Create vacation request immediately with optional file attachments",
     operation_summary="Create Immediate Request with Files",
     tags=['Vacation'],
-    manual_parameters=[
-        openapi.Parameter('requester_type', openapi.IN_FORM, type=openapi.TYPE_STRING, required=True),
-        openapi.Parameter('employee_id', openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=False),
-        openapi.Parameter('vacation_type_id', openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=True),
-        openapi.Parameter('start_date', openapi.IN_FORM, type=openapi.TYPE_STRING, format='date', required=True),
-        openapi.Parameter('end_date', openapi.IN_FORM, type=openapi.TYPE_STRING, format='date', required=True),
-        openapi.Parameter('comment', openapi.IN_FORM, type=openapi.TYPE_STRING, required=False),
-        openapi.Parameter('hr_representative_id', openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=False),
-        openapi.Parameter('files', openapi.IN_FORM, type=openapi.TYPE_ARRAY, 
-                         items=openapi.Items(type=openapi.TYPE_FILE), required=False,
-                         description='Multiple files (Max 10MB each, PDF/JPG/PNG/DOC/DOCX/XLS/XLSX)'),
-    ],
     responses={201: openapi.Response(description='Request created')}
 )
 @api_view(['POST'])
-@has_vacation_permission('vacation.request.create_own')
 @permission_classes([IsAuthenticated])
 @parser_classes([MultiPartParser, FormParser])
 def create_immediate_request(request):
-    """Create vacation request immediately with file attachments"""
+    """
+    ✅ Create vacation request - Employee/Manager/Admin can create
+    - Employee: For self
+    - Manager: For self + team
+    - Admin: For anyone
+    """
     import json
     
     try:
-        # Parse JSON fields from form data
+        access = get_vacation_access(request.user)
+        
+        if not access['employee']:
+            return Response({
+                'error': 'Employee profile not found for current user'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        # Parse JSON fields
         data = request.data.dict()
         
-        # Parse employee_manual if exists
         if 'employee_manual' in data:
             try:
                 data['employee_manual'] = json.loads(data['employee_manual'])
@@ -1674,42 +1191,44 @@ def create_immediate_request(request):
                     'error': 'Invalid employee_manual format. Must be valid JSON object.'
                 }, status=status.HTTP_400_BAD_REQUEST)
         
-        # Get uploaded files
         uploaded_files = request.FILES.getlist('files')
         
-        # Validate request data
         serializer = VacationRequestCreateSerializer(data=data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         
         validated_data = serializer.validated_data
         
-        # ✅ FIX: Get requester employee first
-        try:
-            requester_emp = Employee.objects.get(user=request.user, is_deleted=False)
-        except Employee.DoesNotExist:
-            return Response({
-                'error': 'Employee profile not found for current user'
-            }, status=status.HTTP_404_NOT_FOUND)
+        requester_emp = access['employee']
         
-        # ✅ FIX: Determine target employee BEFORE using it
+        # ✅ Determine target employee based on access level
         if validated_data['requester_type'] == 'for_me':
             employee = requester_emp
         else:
             if validated_data.get('employee_id'):
                 try:
                     employee = Employee.objects.get(id=validated_data['employee_id'], is_deleted=False)
-                    # Check if requester is line manager
-                    if employee.line_manager != requester_emp:
-                        return Response({
-                            'error': 'This employee is not in your team'
-                        }, status=status.HTTP_403_FORBIDDEN)
+                    
+                    # ✅ Check if requester can create for this employee
+                    if not access['can_view_all']:  # Not admin
+                        if access['accessible_employee_ids'] is None:
+                            pass  # Admin
+                        elif employee.id not in access['accessible_employee_ids']:
+                            return Response({
+                                'error': 'This employee is not in your team'
+                            }, status=status.HTTP_403_FORBIDDEN)
+                    
                 except Employee.DoesNotExist:
                     return Response({
                         'error': 'Employee not found'
                     }, status=status.HTTP_404_NOT_FOUND)
             else:
-                # Manual employee
+                # Manual employee - only manager/admin can create
+                if not (access['is_manager'] or access['is_admin']):
+                    return Response({
+                        'error': 'Only managers and admins can create manual employees'
+                    }, status=status.HTTP_403_FORBIDDEN)
+                
                 manual_data = validated_data.get('employee_manual', {})
                 if not manual_data.get('name'):
                     return Response({
@@ -1723,7 +1242,7 @@ def create_immediate_request(request):
                     created_by=request.user
                 )
         
-        # ✅ NOW employee is defined - check conflicts
+        # Check conflicts
         temp_request = VacationRequest(
             employee=employee,
             start_date=validated_data['start_date'],
@@ -1742,7 +1261,6 @@ def create_immediate_request(request):
         settings = VacationSetting.get_active()
         year = date.today().year
         
-        # Get or create balance
         balance, created = EmployeeVacationBalance.objects.get_or_create(
             employee=employee,
             year=year,
@@ -1753,7 +1271,6 @@ def create_immediate_request(request):
             }
         )
         
-        # Calculate working days
         working_days = 0
         if settings:
             working_days = settings.calculate_working_days(
@@ -1761,7 +1278,6 @@ def create_immediate_request(request):
                 validated_data['end_date']
             )
         
-        # Check negative balance
         if settings and not settings.allow_negative_balance:
             if working_days > balance.remaining_balance:
                 return Response({
@@ -1771,7 +1287,6 @@ def create_immediate_request(request):
                 }, status=status.HTTP_400_BAD_REQUEST)
         
         with transaction.atomic():
-            # Create vacation request
             vac_req = VacationRequest.objects.create(
                 employee=employee,
                 requester=request.user,
@@ -1783,13 +1298,12 @@ def create_immediate_request(request):
                 hr_representative_id=validated_data.get('hr_representative_id')
             )
             
-            # Upload files if provided
+            # Upload files
             uploaded_attachments = []
             file_errors = []
             
             for file in uploaded_files:
                 try:
-                    # Validate file
                     from .business_trip_serializers import TripAttachmentUploadSerializer
                     upload_serializer = TripAttachmentUploadSerializer(data={'file': file})
                     if not upload_serializer.is_valid():
@@ -1799,7 +1313,6 @@ def create_immediate_request(request):
                         })
                         continue
                     
-                    # Create attachment using VacationAttachment model
                     from .vacation_models import VacationAttachment
                     attachment = VacationAttachment.objects.create(
                         vacation_request=vac_req,
@@ -1817,25 +1330,16 @@ def create_immediate_request(request):
                         'error': str(e)
                     })
             
-            # Submit request
             vac_req.submit_request(request.user)
             
-            # ✅ Send notification
+            # Send notification
             graph_token = get_graph_access_token(request.user)
             notification_sent = False
             if graph_token:
                 notification_sent = notification_manager.notify_request_created(vac_req, graph_token)
-                if notification_sent:
-                    logger.info("✅ Notification sent to Line Manager")
-                else:
-                    logger.warning("⚠️ Failed to send notification")
-            else:
-                logger.warning("⚠️ Graph token not available - notification skipped")
             
-            # Refresh balance
             balance.refresh_from_db()
             
-            # Prepare response
             response_data = {
                 'message': 'Vacation request created and submitted successfully.',
                 'notification_sent': notification_sent,
@@ -1865,11 +1369,10 @@ def create_immediate_request(request):
             
             return Response(response_data, status=status.HTTP_201_CREATED)
     
-    except Employee.DoesNotExist:
-        return Response({'error': 'Employee not found'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
         logger.error(f"Error creating vacation request: {e}")
         return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
 
 # ==================== CREATE SCHEDULE ====================
 @swagger_auto_schema(
@@ -1877,86 +1380,29 @@ def create_immediate_request(request):
     operation_description="Vacation Schedule yaratmaq (təsdiq tələb etmir)",
     operation_summary="Create Schedule",
     tags=['Vacation'],
-    request_body=openapi.Schema(
-        type=openapi.TYPE_OBJECT,
-        required=['requester_type', 'vacation_type_id', 'start_date', 'end_date'],
-        properties={
-            'requester_type': openapi.Schema(
-                type=openapi.TYPE_STRING,
-                enum=['for_me', 'for_my_employee'],
-                description='Kimə görə schedule yaradırsan'
-            ),
-            'employee_id': openapi.Schema(
-                type=openapi.TYPE_INTEGER,
-                description='İşçi ID (yalnız for_my_employee üçün)',
-                example=123
-            ),
-            'employee_manual': openapi.Schema(
-                type=openapi.TYPE_OBJECT,
-                description='Manual employee məlumatları',
-                properties={
-                    'name': openapi.Schema(type=openapi.TYPE_STRING, example='John Doe'),
-                    'phone': openapi.Schema(type=openapi.TYPE_STRING, example='+994501234567'),
-                    'department': openapi.Schema(type=openapi.TYPE_STRING, example='IT')
-                }
-            ),
-            'vacation_type_id': openapi.Schema(
-                type=openapi.TYPE_INTEGER,
-                description='Vacation növü ID',
-                example=1
-            ),
-            'start_date': openapi.Schema(
-                type=openapi.TYPE_STRING,
-                format='date',
-                description='Başlama tarixi',
-                example='2025-11-10'
-            ),
-            'end_date': openapi.Schema(
-                type=openapi.TYPE_STRING,
-                format='date',
-                description='Bitmə tarixi',
-                example='2025-11-15'
-            ),
-            'comment': openapi.Schema(
-                type=openapi.TYPE_STRING,
-                description='Şərh',
-                example='Planlı məzuniyyət'
-            ),
-        }
-    ),
-    responses={
-        201: openapi.Response(
-            description='Schedule yaradıldı',
-            examples={
-                'application/json': {
-                    'message': 'Schedule yaradıldı',
-                    'schedule': {
-                        'id': 1,
-                        'employee_name': 'John Doe',
-                        'start_date': '2025-11-10',
-                        'end_date': '2025-11-15',
-                        'number_of_days': 4,
-                        'status': 'SCHEDULED'
-                    },
-                    'conflicts': []
-                }
-            }
-        )
-    }
+    request_body=VacationScheduleCreateSerializer,
+    responses={201: openapi.Response(description='Schedule yaradıldı')}
 )
 @api_view(['POST'])
-@has_vacation_permission('vacation.schedule.create_own')
 @permission_classes([IsAuthenticated])
 def create_schedule(request):
-    """Schedule yarat"""
-    serializer = VacationScheduleCreateSerializer(data=request.data)
-    if not serializer.is_valid():
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
-    data = serializer.validated_data
-    
+    """
+    ✅ Schedule yarat - Employee/Manager/Admin can create
+    """
     try:
-        requester_emp = Employee.objects.get(user=request.user)
+        access = get_vacation_access(request.user)
+        
+        if not access['employee']:
+            return Response({
+                'error': 'Employee profile not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        serializer = VacationScheduleCreateSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        data = serializer.validated_data
+        requester_emp = access['employee']
         year = date.today().year
         
         if data['requester_type'] == 'for_me':
@@ -1964,11 +1410,22 @@ def create_schedule(request):
         else:
             if data.get('employee_id'):
                 employee = Employee.objects.get(id=data['employee_id'])
-                if employee.line_manager != requester_emp:
-                    return Response({
-                        'error': 'Bu işçi sizin tabeliyinizdə deyil'
-                    }, status=status.HTTP_403_FORBIDDEN)
+                
+                # ✅ Check access
+                if not access['can_view_all']:
+                    if access['accessible_employee_ids'] is None:
+                        pass  # Admin
+                    elif employee.id not in access['accessible_employee_ids']:
+                        return Response({
+                            'error': 'Bu işçi sizin tabeliyinizdə deyil'
+                        }, status=status.HTTP_403_FORBIDDEN)
             else:
+                # Manual employee - only manager/admin
+                if not (access['is_manager'] or access['is_admin']):
+                    return Response({
+                        'error': 'Only managers and admins can create manual employees'
+                    }, status=status.HTTP_403_FORBIDDEN)
+                
                 manual_data = data.get('employee_manual', {})
                 if not manual_data.get('name'):
                     return Response({
@@ -1981,6 +1438,7 @@ def create_schedule(request):
                     line_manager=requester_emp,
                     created_by=request.user
                 )
+        
         temp_schedule = VacationSchedule(
             employee=employee,
             start_date=data['start_date'],
@@ -1994,7 +1452,7 @@ def create_schedule(request):
                 'conflicts': conflicts,
                 'message': 'Zəhmət olmasa başqa tarix seçin'
             }, status=status.HTTP_400_BAD_REQUEST)
-        # Balance tap və ya yarat
+        
         balance, created = EmployeeVacationBalance.objects.get_or_create(
             employee=employee,
             year=year,
@@ -2005,7 +1463,6 @@ def create_schedule(request):
             }
         )
         
-        # Calculate working days
         settings = VacationSetting.get_active()
         working_days = 0
         if settings:
@@ -2014,7 +1471,6 @@ def create_schedule(request):
                 data['end_date']
             )
         
-        # Balance yoxla (schedule üçün scheduled_days artır)
         if settings and not settings.allow_negative_balance:
             total_planned = balance.scheduled_days + working_days
             if total_planned > balance.total_balance:
@@ -2024,17 +1480,6 @@ def create_schedule(request):
                     'requested_days': working_days,
                     'current_scheduled': float(balance.scheduled_days)
                 }, status=status.HTTP_400_BAD_REQUEST)
-        
-        # Conflicting schedules tap
-        conflicts = VacationSchedule.objects.filter(
-            employee__in=Employee.objects.filter(
-                Q(department=employee.department) | Q(line_manager=employee.line_manager)
-            ).exclude(id=employee.id) if employee.id else Employee.objects.none(),
-            start_date__lte=data['end_date'],
-            end_date__gte=data['start_date'],
-            status='SCHEDULED',
-            is_deleted=False
-        )
         
         with transaction.atomic():
             schedule = VacationSchedule.objects.create(
@@ -2046,13 +1491,11 @@ def create_schedule(request):
                 created_by=request.user
             )
             
-            # Refresh balance
             balance.refresh_from_db()
             
             return Response({
                 'message': 'Schedule yaradıldı',
                 'schedule': VacationScheduleSerializer(schedule).data,
-                'conflicts': VacationScheduleSerializer(conflicts, many=True).data,
                 'balance': {
                     'total_balance': float(balance.total_balance),
                     'yearly_balance': float(balance.yearly_balance),
@@ -2068,9 +1511,11 @@ def create_schedule(request):
             'error': 'Employee tapılmadı'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
+        logger.error(f"Error creating schedule: {e}")
         return Response({
             'error': str(e)
         }, status=status.HTTP_400_BAD_REQUEST)
+
 
 # ==================== MY SCHEDULE TABS ====================
 @swagger_auto_schema(
@@ -2078,88 +1523,92 @@ def create_schedule(request):
     operation_description="Schedule tabları - upcoming, peers, all",
     operation_summary="My Schedule Tabs",
     tags=['Vacation'],
-    responses={
-        200: openapi.Response(
-            description='Schedule tabs data',
-            examples={
-                'application/json': {
-                    'upcoming': [],
-                    'peers': [],
-                    'all': []
-                }
-            }
-        )
-    }
+    responses={200: openapi.Response(description='Schedule tabs data')}
 )
 @api_view(['GET'])
-@has_vacation_permission('vacation.schedule.view_own')
 @permission_classes([IsAuthenticated])
 def my_schedule_tabs(request):
-    """Schedule tabları - upcoming, peers, all"""
+    """
+    ✅ Schedule tabları - filtered by access
+    - Employee: Own schedules
+    - Manager: Own + team schedules  
+    - Admin: All schedules
+    """
     try:
-        emp = Employee.objects.get(user=request.user)
+        access = get_vacation_access(request.user)
         
-        # Upcoming
-        upcoming = VacationSchedule.objects.filter(
-            employee=emp,
+        if not access['employee']:
+            return Response({
+                'error': 'Employee profili tapılmadı'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        emp = access['employee']
+        
+        # Upcoming schedules
+        upcoming_qs = VacationSchedule.objects.filter(
             start_date__gte=date.today(),
             status='SCHEDULED',
             is_deleted=False
         )
         
-        # Peers
-        peers = Employee.objects.filter(
-            Q(department=emp.department) | Q(line_manager=emp.line_manager),
-            is_deleted=False
-        ).exclude(id=emp.id)
+        # ✅ Filter by access
+        upcoming_qs = filter_vacation_queryset(request.user, upcoming_qs, 'schedule')
         
-        peers_schedules = VacationSchedule.objects.filter(
-            employee__in=peers,
-            start_date__gte=date.today(),
-            status='SCHEDULED',
-            is_deleted=False
-        )
+        # Peers - only for employees (manager/admin see team in 'all')
+        peers_schedules = []
+        if not access['is_manager'] and not access['is_admin']:
+            peers = Employee.objects.filter(
+                Q(department=emp.department) | Q(line_manager=emp.line_manager),
+                is_deleted=False
+            ).exclude(id=emp.id)
+            
+            peers_schedules_qs = VacationSchedule.objects.filter(
+                employee__in=peers,
+                start_date__gte=date.today(),
+                status='SCHEDULED',
+                is_deleted=False
+            )
+            peers_schedules = VacationScheduleSerializer(peers_schedules_qs, many=True).data
         
-        # All
-        all_schedules = VacationSchedule.objects.filter(employee=emp, is_deleted=False)
+        # All schedules - filtered by access
+        all_schedules_qs = VacationSchedule.objects.filter(is_deleted=False)
+        all_schedules_qs = filter_vacation_queryset(request.user, all_schedules_qs, 'schedule')
         
         return Response({
-            'upcoming': VacationScheduleSerializer(upcoming, many=True).data,
-            'peers': VacationScheduleSerializer(peers_schedules, many=True).data,
-            'all': VacationScheduleSerializer(all_schedules, many=True).data
+            'upcoming': VacationScheduleSerializer(upcoming_qs, many=True).data,
+            'peers': peers_schedules,
+            'all': VacationScheduleSerializer(all_schedules_qs, many=True).data,
+            'access_level': access['access_level']
         })
-    except Employee.DoesNotExist:
-        return Response({'error': 'Employee profili tapılmadı'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
+        logger.error(f"Error in my_schedule_tabs: {e}")
         return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 
 # ==================== REGISTER SCHEDULE ====================
 @swagger_auto_schema(
     method='post',
-    operation_description="Register schedule as taken with notification",
+    operation_description="Register schedule as taken with notification (ADMIN ONLY)",
     operation_summary="Register Schedule",
     tags=['Vacation'],
     responses={200: openapi.Response(description='Schedule registered')}
 )
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
-@has_vacation_permission('vacation.schedule.register')
+@check_vacation_access('all')  # ✅ Admin only
 def register_schedule(request, pk):
-    """Register schedule as taken with notification"""
+    """✅ Register schedule as taken - ADMIN ONLY"""
     try:
         schedule = VacationSchedule.objects.get(pk=pk, is_deleted=False)
         
         # Register schedule
         schedule.register_as_taken(request.user)
         
-        # ✅ Send notification
+        # Send notification
         graph_token = get_graph_access_token(request.user)
         notification_sent = False
         if graph_token:
             notification_sent = notification_manager.notify_schedule_registered(schedule, graph_token)
-            if notification_sent:
-                logger.info("✅ Schedule registered notification sent")
         
         # Refresh balance
         balance = EmployeeVacationBalance.objects.get(
@@ -2183,83 +1632,38 @@ def register_schedule(request, pk):
     except VacationSchedule.DoesNotExist:
         return Response({'error': 'Schedule not found'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
+        logger.error(f"Error registering schedule: {e}")
         return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
 # ==================== EDIT SCHEDULE ====================
 @swagger_auto_schema(
     method='put',
-    operation_description="Schedule-i edit et",
+    operation_description="Schedule-i edit et (Employee can edit own, within limits)",
     operation_summary="Edit Schedule",
     tags=['Vacation'],
-    manual_parameters=[
-        openapi.Parameter(
-            'id',
-            openapi.IN_PATH,
-            description="Schedule ID",
-            type=openapi.TYPE_INTEGER,
-            required=True
-        )
-    ],
-    request_body=openapi.Schema(
-        type=openapi.TYPE_OBJECT,
-        properties={
-            'vacation_type_id': openapi.Schema(
-                type=openapi.TYPE_INTEGER,
-                description='Vacation növü ID',
-                example=1
-            ),
-            'start_date': openapi.Schema(
-                type=openapi.TYPE_STRING,
-                format='date',
-                description='Başlama tarixi (YYYY-MM-DD)',
-                example='2025-11-10'
-            ),
-            'end_date': openapi.Schema(
-                type=openapi.TYPE_STRING,
-                format='date',
-                description='Bitmə tarixi (YYYY-MM-DD)',
-                example='2025-11-15'
-            ),
-            'comment': openapi.Schema(
-                type=openapi.TYPE_STRING,
-                description='Şərh (optional)',
-                example='Dəyişiklik edildi'
-            )
-        }
-    ),
-    responses={
-        200: openapi.Response(
-            description='Schedule yeniləndi',
-            examples={
-                'application/json': {
-                    'message': 'Schedule yeniləndi',
-                    'schedule': {
-                        'id': 1,
-                        'vacation_type_name': 'Annual Leave',
-                        'start_date': '2025-11-10',
-                        'end_date': '2025-11-15',
-                        'number_of_days': 4,
-                        'edit_count': 1,
-                        'can_edit': True
-                    }
-                }
-            }
-        ),
-        400: openapi.Response(description='Validation error'),
-        403: openapi.Response(description='Permission denied'),
-        404: openapi.Response(description='Schedule tapılmadı')
-    }
+    request_body=VacationScheduleEditSerializer,
+    responses={200: openapi.Response(description='Schedule yeniləndi')}
 )
 @api_view(['PUT'])
-@has_vacation_permission('vacation.schedule.update_own')
 @permission_classes([IsAuthenticated])
 def edit_schedule(request, pk):
-    """Schedule-i edit et"""
+    """
+    ✅ Schedule-i edit et
+    - Employee: Can edit own schedules (within edit limit)
+    - Manager/Admin: Cannot edit (schedules are self-managed)
+    """
     try:
         schedule = VacationSchedule.objects.get(pk=pk, is_deleted=False)
-        emp = Employee.objects.get(user=request.user)
+        access = get_vacation_access(request.user)
         
-        # Yalnız schedule-in sahibi edit edə bilər
-        if schedule.employee != emp:
+        if not access['employee']:
+            return Response({
+                'error': 'Employee profili tapılmadı'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        # ✅ Only schedule owner can edit
+        if schedule.employee != access['employee']:
             return Response({
                 'error': 'Bu schedule-i edit etmək hüququnuz yoxdur'
             }, status=status.HTTP_403_FORBIDDEN)
@@ -2300,46 +1704,35 @@ def edit_schedule(request, pk):
         
     except VacationSchedule.DoesNotExist:
         return Response({'error': 'Schedule tapılmadı'}, status=status.HTTP_404_NOT_FOUND)
-    except Employee.DoesNotExist:
-        return Response({'error': 'Employee profili tapılmadı'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
+        logger.error(f"Error editing schedule: {e}")
         return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
 
 # ==================== DELETE SCHEDULE ====================
 @swagger_auto_schema(
     method='delete',
-    operation_description="Schedule-i sil",
+    operation_description="Schedule-i sil (ADMIN ONLY)",
     operation_summary="Delete Schedule",
     tags=['Vacation'],
-    manual_parameters=[
-        openapi.Parameter(
-            'id',
-            openapi.IN_PATH,
-            description="Schedule ID",
-            type=openapi.TYPE_INTEGER,
-            required=True
-        )
-    ],
-    responses={
-        200: openapi.Response(description='Schedule silindi')
-    }
+    responses={200: openapi.Response(description='Schedule silindi')}
 )
 @api_view(['DELETE'])
-@has_vacation_permission('vacation.schedule.delete_own')
 @permission_classes([IsAuthenticated])
+@check_vacation_access('all')  # ✅ Admin only
 def delete_schedule(request, pk):
-    """Schedule-i sil"""
+    """
+    ✅ Schedule-i sil - ADMIN ONLY
+    - Cannot delete REGISTERED schedules
+    """
     try:
         schedule = VacationSchedule.objects.get(pk=pk, is_deleted=False)
-        emp = Employee.objects.get(user=request.user)
-        
-        # Yalnız schedule-in sahibi və ya line manager silə bilər
-        if schedule.employee != emp and schedule.employee.line_manager != emp:
-            return Response({'error': 'Bu schedule-i silmək hüququnuz yoxdur'}, status=status.HTTP_403_FORBIDDEN)
         
         # Registered schedule-i silmək olmaz
         if schedule.status == 'REGISTERED':
-            return Response({'error': 'Registered schedule-i silmək olmaz'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({
+                'error': 'Registered schedule-i silmək olmaz'
+            }, status=status.HTTP_400_BAD_REQUEST)
         
         # Soft delete
         schedule.is_deleted = True
@@ -2354,46 +1747,40 @@ def delete_schedule(request, pk):
         
     except VacationSchedule.DoesNotExist:
         return Response({'error': 'Schedule tapılmadı'}, status=status.HTTP_404_NOT_FOUND)
-    except Employee.DoesNotExist:
-        return Response({'error': 'Employee profili tapılmadı'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
+        logger.error(f"Error deleting schedule: {e}")
         return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 
 # ==================== APPROVAL PENDING ====================
 @swagger_auto_schema(
     method='get',
-    operation_description="Approval - Pending requestlər (Admin bütün pending-ləri görür)",
+    operation_description="Approval - Pending requestlər",
     operation_summary="Pending Requests",
     tags=['Vacation'],
-    responses={
-        200: openapi.Response(
-            description='Pending requests',
-            examples={
-                'application/json': {
-                    'line_manager_requests': [],
-                    'hr_requests': [],
-                    'total_pending': 0
-                }
-            }
-        )
-    }
+    responses={200: openapi.Response(description='Pending requests')}
 )
 @api_view(['GET'])
-@has_any_vacation_permission([
-    'vacation.request.approve_as_line_manager',
-    'vacation.request.approve_as_hr'
-])
 @permission_classes([IsAuthenticated])
 def approval_pending_requests(request):
-    """Approval - Pending requestlər"""
-    from .vacation_permissions import is_admin_user
-    
+    """
+    ✅ Approval - Pending requestlər
+    - Manager: Only requests from THEIR team (Line Manager stage)
+    - HR: Requests in HR stage
+    - Admin: Both stages
+    """
     try:
-        emp = Employee.objects.get(user=request.user)
+        access = get_vacation_access(request.user)
         
-        # Admin isə, BÜTÜN pending request-ləri göstər
-        if is_admin_user(request.user):
+        if not access['employee']:
+            return Response({
+                'error': 'Employee profili tapılmadı'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        emp = access['employee']
+        
+        # Admin sees ALL pending
+        if access['is_admin']:
             lm_requests = VacationRequest.objects.filter(
                 status='PENDING_LINE_MANAGER',
                 is_deleted=False
@@ -2404,13 +1791,20 @@ def approval_pending_requests(request):
                 is_deleted=False
             ).order_by('-created_at')
         else:
-            # Normal user - yalnız onun line manager və ya HR olduğu requestlər
+            # ✅ Manager sees only THEIR team's requests (Line Manager stage)
             lm_requests = VacationRequest.objects.filter(
                 line_manager=emp,
                 status='PENDING_LINE_MANAGER',
                 is_deleted=False
             ).order_by('-created_at')
             
+            # ✅ Only if accessible employees (manager/hr)
+            if access['accessible_employee_ids']:
+                lm_requests = lm_requests.filter(
+                    employee_id__in=access['accessible_employee_ids']
+                )
+            
+            # HR representative sees HR stage requests
             hr_requests = VacationRequest.objects.filter(
                 hr_representative=emp,
                 status='PENDING_HR',
@@ -2421,12 +1815,12 @@ def approval_pending_requests(request):
             'line_manager_requests': VacationRequestListSerializer(lm_requests, many=True).data,
             'hr_requests': VacationRequestListSerializer(hr_requests, many=True).data,
             'total_pending': lm_requests.count() + hr_requests.count(),
-            'is_admin': is_admin_user(request.user)  # Frontend üçün
+            'access_level': access['access_level']
         })
-    except Employee.DoesNotExist:
-        return Response({'error': 'Employee profili tapılmadı'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
+        logger.error(f"Error in approval_pending_requests: {e}")
         return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
 
 # ==================== APPROVAL HISTORY ====================
 @swagger_auto_schema(
@@ -2434,25 +1828,12 @@ def approval_pending_requests(request):
     operation_description="Approval History",
     operation_summary="Approval History",
     tags=['Vacation'],
-    responses={
-        200: openapi.Response(
-            description='Approval history',
-            examples={
-                'application/json': {
-                    'history': []
-                }
-            }
-        )
-    }
+    responses={200: openapi.Response(description='Approval history')}
 )
 @api_view(['GET'])
-@has_any_vacation_permission([
-    'vacation.request.approve_as_line_manager',
-    'vacation.request.approve_as_hr'
-])
 @permission_classes([IsAuthenticated])
 def approval_history(request):
-    """Approval History"""
+    """✅ Approval History - User's approval actions"""
     try:
         # Line Manager kimi təsdiq etdiklərim
         lm_approved = VacationRequest.objects.filter(
@@ -2520,7 +1901,10 @@ def approval_history(request):
         
         return Response({'history': history[:20]})
     except Exception as e:
-        return Response({'error': f'History yüklənmədi: {str(e)}'}, status=status.HTTP_400_BAD_REQUEST)
+        logger.error(f"Error in approval_history: {e}")
+        return Response({
+            'error': f'History yüklənmədi: {str(e)}'
+        }, status=status.HTTP_400_BAD_REQUEST)
 
 
 # ==================== APPROVE/REJECT REQUEST ====================
@@ -2532,25 +1916,35 @@ def approval_history(request):
     responses={200: openapi.Response(description='Action completed')}
 )
 @api_view(['POST'])
-@has_any_vacation_permission([
-    'vacation.request.approve_as_line_manager',
-    'vacation.request.approve_as_hr'
-])
 @permission_classes([IsAuthenticated])
 def approve_reject_request(request, pk):
-    """Approve/Reject vacation request with email notifications"""
-    serializer = VacationApprovalSerializer(data=request.data)
-    if not serializer.is_valid():
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
-    data = serializer.validated_data
-    
-    # ✅ Get notification context
-    notification_ctx = get_notification_context(request)
-    graph_token = notification_ctx['graph_token']
-    
+    """
+    ✅ Approve/Reject vacation request
+    - Manager: Can approve/reject requests from THEIR team (Line Manager stage)
+    - HR: Can approve/reject requests in HR stage
+    - Admin: Can approve/reject at both stages
+    """
     try:
         vac_req = VacationRequest.objects.get(pk=pk, is_deleted=False)
+        
+        # ✅ Check if user can approve this request
+        can_approve, reason = can_user_approve_request(request.user, vac_req)
+        
+        if not can_approve:
+            return Response({
+                'error': 'Permission denied',
+                'detail': reason
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        serializer = VacationApprovalSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        data = serializer.validated_data
+        
+        # Get notification context
+        notification_ctx = get_notification_context(request)
+        graph_token = notification_ctx['graph_token']
         notification_sent = False
         
         # LINE MANAGER APPROVAL/REJECTION
@@ -2559,30 +1953,26 @@ def approve_reject_request(request, pk):
                 vac_req.approve_by_line_manager(request.user, data.get('comment', ''))
                 msg = 'Approved by Line Manager'
                 
-                # ✅ Send notification to HR
+                # Send notification to HR
                 if graph_token:
                     try:
                         notification_sent = notification_manager.notify_line_manager_approved(
                             vacation_request=vac_req,
                             access_token=graph_token
                         )
-                        if notification_sent:
-                            logger.info("✅ Notification sent to HR")
                     except Exception as e:
                         logger.error(f"❌ Notification error: {e}")
             else:
                 vac_req.reject_by_line_manager(request.user, data.get('reason', ''))
                 msg = 'Rejected by Line Manager'
                 
-                # ✅ Send rejection notification to Employee
+                # Send rejection notification to Employee
                 if graph_token:
                     try:
                         notification_sent = notification_manager.notify_request_rejected(
                             vacation_request=vac_req,
                             access_token=graph_token
                         )
-                        if notification_sent:
-                            logger.info("✅ Rejection notification sent to Employee")
                     except Exception as e:
                         logger.error(f"❌ Notification error: {e}")
         
@@ -2592,30 +1982,26 @@ def approve_reject_request(request, pk):
                 vac_req.approve_by_hr(request.user, data.get('comment', ''))
                 msg = 'Approved by HR - Request is now APPROVED'
                 
-                # ✅ Send final approval notification to Employee
+                # Send final approval notification to Employee
                 if graph_token:
                     try:
                         notification_sent = notification_manager.notify_hr_approved(
                             vacation_request=vac_req,
                             access_token=graph_token
                         )
-                        if notification_sent:
-                            logger.info("✅ Final approval notification sent to Employee")
                     except Exception as e:
                         logger.error(f"❌ Notification error: {e}")
             else:
                 vac_req.reject_by_hr(request.user, data.get('reason', ''))
                 msg = 'Rejected by HR'
                 
-                # ✅ Send rejection notification to Employee
+                # Send rejection notification to Employee
                 if graph_token:
                     try:
                         notification_sent = notification_manager.notify_request_rejected(
                             vacation_request=vac_req,
                             access_token=graph_token
                         )
-                        if notification_sent:
-                            logger.info("✅ Rejection notification sent to Employee")
                     except Exception as e:
                         logger.error(f"❌ Notification error: {e}")
         else:
@@ -2627,7 +2013,6 @@ def approve_reject_request(request, pk):
             'message': msg,
             'notification_sent': notification_sent,
             'notification_available': notification_ctx['can_send_emails'],
-            'notification_reason': notification_ctx['reason'],
             'request': VacationRequestDetailSerializer(vac_req).data
         })
     
@@ -2637,50 +2022,34 @@ def approve_reject_request(request, pk):
         logger.error(f"Error in approve/reject: {e}")
         return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
+
 # ==================== MY ALL REQUESTS & SCHEDULES ====================
 @swagger_auto_schema(
     method='get',
     operation_description="İstifadəçinin bütün vacation request və schedule-lərini göstər",
     operation_summary="My All Requests & Schedules",
     tags=['Vacation'],
-    responses={
-        200: openapi.Response(
-            description='Bütün records',
-            examples={
-                'application/json': {
-                    'records': [
-                        {
-                            'id': 1,
-                            'type': 'request',
-                            'request_id': 'VR20250001',
-                            'vacation_type': 'Annual Leave',
-                            'start_date': '2025-10-15',
-                            'end_date': '2025-10-20',
-                            'days': 4.0,
-                            'status': 'Approved',
-                            'attachments_count': 2,  # ✅ Added to example
-                            'has_attachments': True,  # ✅ Added to example
-                            'created_at': '2025-09-01T10:00:00Z'
-                        }
-                    ]
-                }
-            }
-        )
-    }
+    responses={200: openapi.Response(description='Bütün records')}
 )
 @api_view(['GET'])
-@has_vacation_permission('vacation.request.view_own')
 @permission_classes([IsAuthenticated])
 def my_all_requests_schedules(request):
-    """My All Requests & Schedules"""
-    from rest_framework import status as http_status
-    
+    """
+    ✅ My All Requests & Schedules - filtered by access
+    - Employee: Own records only
+    - Manager: Own + team records
+    - Admin: All records
+    """
     try:
-        emp = Employee.objects.get(user=request.user, is_deleted=False)
+        access = get_vacation_access(request.user)
         
-        # All requests - ✅ Add prefetch for attachments
-        requests = VacationRequest.objects.filter(
-            employee=emp, 
+        if not access['employee']:
+            return Response({
+                'error': 'Employee profili tapılmadı'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        # All requests - filtered by access
+        requests_qs = VacationRequest.objects.filter(
             is_deleted=False
         ).select_related(
             'vacation_type',
@@ -2689,23 +2058,27 @@ def my_all_requests_schedules(request):
             'line_manager_approved_by',
             'hr_approved_by',
             'rejected_by'
-        ).prefetch_related('attachments').order_by('-created_at')  # ✅ Added prefetch
+        ).prefetch_related('attachments')
         
-        # All schedules
-        schedules = VacationSchedule.objects.filter(
-            employee=emp, 
+        requests_qs = filter_vacation_queryset(request.user, requests_qs, 'request')
+        requests = requests_qs.order_by('-created_at')
+        
+        # All schedules - filtered by access
+        schedules_qs = VacationSchedule.objects.filter(
             is_deleted=False
         ).select_related(
             'vacation_type',
             'created_by',
             'last_edited_by'
-        ).order_by('-start_date')
+        )
+        
+        schedules_qs = filter_vacation_queryset(request.user, schedules_qs, 'schedule')
+        schedules = schedules_qs.order_by('-start_date')
         
         # Combine
         combined = []
         
         for req in requests:
-            # ✅ Count attachments
             attachments_count = req.attachments.filter(is_deleted=False).count()
             
             combined.append({
@@ -2720,8 +2093,8 @@ def my_all_requests_schedules(request):
                 'status': req.get_status_display(),
                 'status_code': req.status,
                 'comment': req.comment,
-                'attachments_count': attachments_count,  # ✅ Added
-                'has_attachments': attachments_count > 0,  # ✅ Added
+                'attachments_count': attachments_count,
+                'has_attachments': attachments_count > 0,
                 'line_manager': req.line_manager.full_name if req.line_manager else '',
                 'hr_representative': req.hr_representative.full_name if req.hr_representative else '',
                 'line_manager_comment': req.line_manager_comment,
@@ -2743,8 +2116,8 @@ def my_all_requests_schedules(request):
                 'status': sch.get_status_display(),
                 'status_code': sch.status,
                 'comment': sch.comment,
-                'attachments_count': 0,  # ✅ Schedules don't have attachments
-                'has_attachments': False,  # ✅ Added
+                'attachments_count': 0,
+                'has_attachments': False,
                 'created_at': sch.created_at.isoformat() if sch.created_at else None,
                 'can_edit': sch.can_edit(),
                 'edit_count': sch.edit_count,
@@ -2759,52 +2132,33 @@ def my_all_requests_schedules(request):
             'records': combined,
             'total_count': len(combined),
             'requests_count': requests.count(),
-            'schedules_count': schedules.count()
+            'schedules_count': schedules.count(),
+            'access_level': access['access_level']
         })
         
-    except Employee.DoesNotExist:
-        return Response({
-            'error': 'Employee profili tapılmadı'
-        }, status=http_status.HTTP_404_NOT_FOUND)
     except Exception as e:
         logger.error(f"Error in my_all_requests_schedules: {e}")
         return Response({
             'error': str(e)
-        }, status=http_status.HTTP_400_BAD_REQUEST)
+        }, status=rest_status.HTTP_400_BAD_REQUEST)
 
+
+# ==================== REQUEST DETAIL ====================
 @swagger_auto_schema(
     method='get',
     operation_description="Get detailed information of a vacation request including attachments and approval history",
     operation_summary="Get Vacation Request Detail",
     tags=['Vacation'],
-    responses={
-        200: openapi.Response(
-            description='Vacation request details',
-            schema=VacationRequestDetailSerializer
-        ),
-        403: 'Permission denied',
-        404: 'Request not found'
-    }
+    responses={200: openapi.Response(description='Vacation request details')}
 )
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_vacation_request_detail(request, pk):
     """
-    Get detailed information of a vacation request
-    
-    Shows:
-    - Basic vacation information
-    - Employee details
-    - Vacation configuration (type)
-    - File attachments
-    - Approval workflow status
-    - Comments from all approvers
-    - Rejection reasons (if applicable)
+    ✅ Get detailed information of a vacation request
+    Access control applied
     """
     try:
-        from .vacation_permissions import is_admin_user
-        
-        # Get the vacation request
         vac_req = VacationRequest.objects.select_related(
             'employee', 
             'employee__department',
@@ -2819,37 +2173,23 @@ def get_vacation_request_detail(request, pk):
             'attachments'
         ).get(pk=pk, is_deleted=False)
         
-        # Check access permission
-        emp = None
-        try:
-            emp = Employee.objects.get(user=request.user, is_deleted=False)
-        except Employee.DoesNotExist:
-            pass
+        access = get_vacation_access(request.user)
         
-        # Determine if user can view this request
+        # ✅ Check if user can view this request
         can_view = False
         
-        # Admin can view all
-        if is_admin_user(request.user):
+        if access['is_admin']:
             can_view = True
-        
-        # Employee can view their own requests
-        elif emp and vac_req.employee == emp:
+        elif access['employee'] and vac_req.employee == access['employee']:
             can_view = True
-        
-        # Requester can view requests they created
         elif vac_req.requester == request.user:
             can_view = True
-        
-        # Approvers can view requests assigned to them
-        elif emp and (
-            vac_req.line_manager == emp or 
-            vac_req.hr_representative == emp
+        elif access['employee'] and (
+            vac_req.line_manager == access['employee'] or 
+            vac_req.hr_representative == access['employee']
         ):
             can_view = True
-        
-        # Check if user has view_all permission
-        elif check_vacation_permission(request.user, 'vacation.request.view_all')[0]:
+        elif access['accessible_employee_ids'] and vac_req.employee_id in access['accessible_employee_ids']:
             can_view = True
         
         if not can_view:
@@ -2864,7 +2204,6 @@ def get_vacation_request_detail(request, pk):
             context={'request': request}
         )
         
-        # Add extra context information
         response_data = serializer.data
         
         # Add approval workflow status
@@ -2903,29 +2242,15 @@ def get_vacation_request_detail(request, pk):
             'email': vac_req.requester.email if vac_req.requester else None
         }
         
-        # Add permission flags for frontend
+        # ✅ Add permission flags
+        can_approve, approve_reason = can_user_approve_request(request.user, vac_req)
+        can_modify, modify_reason = can_user_modify_vacation_request(request.user, vac_req)
+        
         response_data['permissions'] = {
-            'can_approve': (
-                (vac_req.status == 'PENDING_LINE_MANAGER' and emp and vac_req.line_manager == emp) or
-                (vac_req.status == 'PENDING_HR' and emp and vac_req.hr_representative == emp) or
-                is_admin_user(request.user)
-            ),
-            'is_admin': is_admin_user(request.user)
-        }
-        
-        # Add attachments
-        from .vacation_models import VacationAttachment
-        from .vacation_serializers import VacationAttachmentSerializer
-        attachments = vac_req.attachments.filter(is_deleted=False).order_by('-uploaded_at')
-        response_data['attachments'] = VacationAttachmentSerializer(
-            attachments,
-            many=True,
-            context={'request': request}
-        ).data
-        
-        # Add summary statistics
-        response_data['summary'] = {
-            'total_attachments': attachments.count(),
+            'can_approve': can_approve,
+            'can_modify': can_modify,
+            'is_admin': access['is_admin'],
+            'access_level': access['access_level']
         }
         
         return Response(response_data)
@@ -2939,125 +2264,47 @@ def get_vacation_request_detail(request, pk):
         return Response({
             'error': str(e)
         }, status=status.HTTP_400_BAD_REQUEST)
-                
+
+
+# ==================== ALL VACATION RECORDS ====================
 @swagger_auto_schema(
     method='get',
     operation_description="Bütün vacation request və schedule-ları göstər (hamı görə bilər)",
     operation_summary="All Vacation Records",
     tags=['Vacation'],
-    manual_parameters=[
-        openapi.Parameter(
-            'status',
-            openapi.IN_QUERY,
-            description="Status filteri",
-            type=openapi.TYPE_STRING,
-            required=False
-        ),
-        openapi.Parameter(
-            'vacation_type_id',
-            openapi.IN_QUERY,
-            description="Vacation type filteri",
-            type=openapi.TYPE_INTEGER,
-            required=False
-        ),
-        openapi.Parameter(
-            'department_id',
-            openapi.IN_QUERY,
-            description="Department filteri",
-            type=openapi.TYPE_INTEGER,
-            required=False
-        ),
-        # ✅ YENİ: Business Function filter
-        openapi.Parameter(
-            'business_function_id',
-            openapi.IN_QUERY,
-            description="Business Function (Company) filteri",
-            type=openapi.TYPE_INTEGER,
-            required=False
-        ),
-        openapi.Parameter(
-            'start_date',
-            openapi.IN_QUERY,
-            description="Başlama tarixi filteri (YYYY-MM-DD)",
-            type=openapi.TYPE_STRING,
-            required=False
-        ),
-        openapi.Parameter(
-            'end_date',
-            openapi.IN_QUERY,
-            description="Bitmə tarixi filteri (YYYY-MM-DD)",
-            type=openapi.TYPE_STRING,
-            required=False
-        ),
-        openapi.Parameter(
-            'employee_name',
-            openapi.IN_QUERY,
-            description="Employee adı filteri",
-            type=openapi.TYPE_STRING,
-            required=False
-        ),
-        openapi.Parameter(
-            'year',
-            openapi.IN_QUERY,
-            description="İl filteri (məsələn: 2025)",
-            type=openapi.TYPE_INTEGER,
-            required=False
-        )
-    ],
-    responses={
-        200: openapi.Response(
-            description='Bütün vacation records',
-            examples={
-                'application/json': {
-                    'records': [
-                        {
-                            'id': 1,
-                            'type': 'request',
-                            'request_id': 'VR20250001',
-                            'employee_name': 'John Doe',
-                            'employee_id': 'EMP001',
-                            'department': 'IT',
-                            'business_function': 'Almet Trading',
-                            'vacation_type': 'Annual Leave',
-                            'start_date': '2025-10-15',
-                            'end_date': '2025-10-20',
-                            'days': 4.0,
-                            'status': 'Approved',
-                            'created_at': '2025-09-01T10:00:00Z'
-                        }
-                    ],
-                    'total_count': 150,
-                    'requests_count': 75,
-                    'schedules_count': 75
-                }
-            }
-        )
-    }
+    responses={200: openapi.Response(description='Bütün vacation records')}
 )
 @api_view(['GET'])
-@has_vacation_permission('vacation.request.view_all')
 @permission_classes([IsAuthenticated])
 def all_vacation_records(request):
-    """Bütün vacation records-u JSON formatında list qaytarır"""
-    from rest_framework import status as http_status
-    
+    """
+    ✅ Bütün vacation records-u JSON formatında list qaytarır
+    - Employee: Own records only
+    - Manager: Own + team records
+    - Admin: All records
+    """
     try:
+        access = get_vacation_access(request.user)
+        
         # Filter parameters
         status_filter = request.GET.get('status')
         vacation_type_id = request.GET.get('vacation_type_id')
         department_id = request.GET.get('department_id')
-        business_function_id = request.GET.get('business_function_id')  # ✅ YENİ
+        business_function_id = request.GET.get('business_function_id')
         start_date = request.GET.get('start_date')
         end_date = request.GET.get('end_date')
         employee_name = request.GET.get('employee_name')
         year = request.GET.get('year')
         
-        # All requests - ✅ Add prefetch for attachments
+        # All requests
         requests_qs = VacationRequest.objects.filter(is_deleted=False).select_related(
             'employee', 'employee__department', 'employee__business_function', 
             'vacation_type', 'line_manager', 'hr_representative',
             'line_manager_approved_by', 'hr_approved_by', 'rejected_by'
         ).prefetch_related('attachments')
+        
+        # ✅ Filter by access level
+        requests_qs = filter_vacation_queryset(request.user, requests_qs, 'request')
         
         # All schedules  
         schedules_qs = VacationSchedule.objects.filter(is_deleted=False).select_related(
@@ -3065,7 +2312,10 @@ def all_vacation_records(request):
             'vacation_type', 'created_by', 'last_edited_by'
         )
         
-        # Apply filters (same as before)
+        # ✅ Filter by access level
+        schedules_qs = filter_vacation_queryset(request.user, schedules_qs, 'schedule')
+        
+        # Apply filters
         if status_filter:
             requests_qs = requests_qs.filter(status=status_filter)
             schedules_qs = schedules_qs.filter(status=status_filter)
@@ -3078,7 +2328,6 @@ def all_vacation_records(request):
             requests_qs = requests_qs.filter(employee__department_id=department_id)
             schedules_qs = schedules_qs.filter(employee__department_id=department_id)
         
-        # ✅ YENİ: Business Function filter
         if business_function_id:
             requests_qs = requests_qs.filter(employee__business_function_id=business_function_id)
             schedules_qs = schedules_qs.filter(employee__business_function_id=business_function_id)
@@ -3169,11 +2418,12 @@ def all_vacation_records(request):
             'total_count': len(all_records),
             'requests_count': requests.count(),
             'schedules_count': schedules.count(),
+            'access_level': access['access_level'],
             'filters_applied': {
                 'status': status_filter,
                 'vacation_type_id': vacation_type_id,
                 'department_id': department_id,
-                'business_function_id': business_function_id,  # ✅ YENİ
+                'business_function_id': business_function_id,
                 'start_date': start_date,
                 'end_date': end_date,
                 'employee_name': employee_name,
@@ -3185,105 +2435,34 @@ def all_vacation_records(request):
         logger.error(f"Error in all_vacation_records: {e}")
         return Response({
             'error': f'Error retrieving records: {str(e)}'
-        }, status=http_status.HTTP_400_BAD_REQUEST)
+        }, status=rest_status.HTTP_400_BAD_REQUEST)
 
+
+# ==================== EXPORT ALL VACATION RECORDS ====================
 @swagger_auto_schema(
     method='get',
     operation_description="Bütün vacation records-u Excel formatında export et (filterlər dəstəklənir)",
     operation_summary="Export All Vacation Records",
     tags=['Vacation'],
-    manual_parameters=[
-        openapi.Parameter(
-            'status',
-            openapi.IN_QUERY,
-            description="Status filteri",
-            type=openapi.TYPE_STRING,
-            required=False
-        ),
-        openapi.Parameter(
-            'vacation_type_id',
-            openapi.IN_QUERY,
-            description="Vacation type filteri",
-            type=openapi.TYPE_INTEGER,
-            required=False
-        ),
-        openapi.Parameter(
-            'department_id',
-            openapi.IN_QUERY,
-            description="Department filteri",
-            type=openapi.TYPE_INTEGER,
-            required=False
-        ),
-        openapi.Parameter(
-            'start_date',
-            openapi.IN_QUERY,
-            description="Başlama tarixi filteri (YYYY-MM-DD)",
-            type=openapi.TYPE_STRING,
-            required=False
-        ),
-        openapi.Parameter(
-            'end_date',
-            openapi.IN_QUERY,
-            description="Bitmə tarixi filteri (YYYY-MM-DD)",
-            type=openapi.TYPE_STRING,
-            required=False
-        ),
-        openapi.Parameter(
-            'employee_name',
-            openapi.IN_QUERY,
-            description="Employee adı filteri",
-            type=openapi.TYPE_STRING,
-            required=False
-        ),
-        openapi.Parameter(
-            'year',
-            openapi.IN_QUERY,
-            description="İl filteri (məsələn: 2025)",
-            type=openapi.TYPE_INTEGER,
-            required=False
-        ),
-        openapi.Parameter(
-            'format',
-            openapi.IN_QUERY,
-            description="Export formatı: 'combined' (hər şey bir sheet-də) və ya 'separated' (ayrı sheet-lər)",
-            type=openapi.TYPE_STRING,
-            enum=['combined', 'separated'],
-            required=False
-        )
-    ],
-    responses={
-        200: openapi.Response(
-            description='Excel file',
-            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-        )
-    }
+    responses={200: openapi.Response(description='Excel file')}
 )
 @api_view(['GET'])
-@has_any_vacation_permission([
-    'vacation.request.export_all',  # HR və Admin
-    'vacation.request.export_team'   # Line Manager (öz team-i)
-])
 @permission_classes([IsAuthenticated])
 def export_all_vacation_records(request):
-    """Bütün vacation records-u enhanced formatda export et"""
-    from .vacation_permissions import is_admin_user
-    
+    """✅ Bütün vacation records-u enhanced formatda export et - filtered by access"""
     try:
+        access = get_vacation_access(request.user)
+        
         # Filter parameters
         status_filter = request.GET.get('status')
         vacation_type_id = request.GET.get('vacation_type_id')
         department_id = request.GET.get('department_id')
+        business_function_id = request.GET.get('business_function_id')
         start_date = request.GET.get('start_date')
         end_date = request.GET.get('end_date')
         employee_name = request.GET.get('employee_name')
         year = request.GET.get('year')
-        export_format = request.GET.get('format', 'dashboard')
-        include_charts = request.GET.get('include_charts', 'true').lower() == 'true'
-        business_function_id = request.GET.get('business_function_id') 
-        # ✅ Permission-based filtering
-        is_admin = is_admin_user(request.user)
-        has_hr_permission, _ = check_vacation_permission(request.user, 'vacation.request.export_all')
-        has_team_permission, _ = check_vacation_permission(request.user, 'vacation.request.export_team')
+        export_format = request.GET.get('format', 'combined')
         
         # All requests base query
         requests_qs = VacationRequest.objects.filter(is_deleted=False).select_related(
@@ -3298,38 +2477,12 @@ def export_all_vacation_records(request):
             'vacation_type', 'created_by', 'last_edited_by'
         )
         
-        # ✅ PERMISSION FILTERING
-        if is_admin or has_hr_permission:
-            # Admin və HR - bütün data
-            pass
-        elif has_team_permission:
-            # Line Manager - yalnız öz team-i və özü
-            try:
-                emp = Employee.objects.get(user=request.user, is_deleted=False)
-                
-                # Öz team-indəki işçilər
-                team_employees = Employee.objects.filter(
-                    line_manager=emp,
-                    is_deleted=False
-                ).values_list('id', flat=True)
-                
-                # Özü + team
-                allowed_employee_ids = list(team_employees) + [emp.id]
-                
-                requests_qs = requests_qs.filter(employee_id__in=allowed_employee_ids)
-                schedules_qs = schedules_qs.filter(employee_id__in=allowed_employee_ids)
-                
-            except Employee.DoesNotExist:
-                # Employee yoxdursa, yalnız özünü
-                requests_qs = requests_qs.filter(employee__user=request.user)
-                schedules_qs = schedules_qs.filter(employee__user=request.user)
-        else:
-            # Başqa istifadəçilər - yalnız özü (bu hal baş verməməlidir, amma safety)
-            requests_qs = requests_qs.filter(employee__user=request.user)
-            schedules_qs = schedules_qs.filter(employee__user=request.user)
+        # ✅ Filter by access level
+        requests_qs = filter_vacation_queryset(request.user, requests_qs, 'request')
+        schedules_qs = filter_vacation_queryset(request.user, schedules_qs, 'schedule')
         
-        # Apply other filters (existing code)
-        if status_filter:  # ✅ Changed from 'status'
+        # Apply other filters
+        if status_filter:
             requests_qs = requests_qs.filter(status=status_filter)
             schedules_qs = schedules_qs.filter(status=status_filter)
         
@@ -3341,6 +2494,10 @@ def export_all_vacation_records(request):
             requests_qs = requests_qs.filter(employee__department_id=department_id)
             schedules_qs = schedules_qs.filter(employee__department_id=department_id)
         
+        if business_function_id:
+            requests_qs = requests_qs.filter(employee__business_function_id=business_function_id)
+            schedules_qs = schedules_qs.filter(employee__business_function_id=business_function_id)
+        
         if start_date:
             requests_qs = requests_qs.filter(start_date__gte=start_date)
             schedules_qs = schedules_qs.filter(start_date__gte=start_date)
@@ -3348,9 +2505,7 @@ def export_all_vacation_records(request):
         if end_date:
             requests_qs = requests_qs.filter(end_date__lte=end_date)
             schedules_qs = schedules_qs.filter(end_date__lte=end_date)
-        if business_function_id:
-            requests_qs = requests_qs.filter(employee__business_function_id=business_function_id)
-            schedules_qs = schedules_qs.filter(employee__business_function_id=business_function_id)
+        
         if employee_name:
             requests_qs = requests_qs.filter(employee__full_name__icontains=employee_name)
             schedules_qs = schedules_qs.filter(employee__full_name__icontains=employee_name)
@@ -3363,14 +2518,10 @@ def export_all_vacation_records(request):
         requests = requests_qs.order_by('-created_at')
         schedules = schedules_qs.order_by('-created_at')
         
-      
-        
         wb = Workbook()
         
         if export_format == 'separated':
             # Ayrı sheet-lər
-            
-            # Requests sheet
             ws_req = wb.active
             ws_req.title = "Vacation Requests"
             
@@ -3475,14 +2626,14 @@ def export_all_vacation_records(request):
                 elif req.status == 'PENDING_LINE_MANAGER':
                     approval_status.append('LM ⏳')
                 elif req.status == 'REJECTED_LINE_MANAGER':
-                    approval_status.append('LM ❌')
+                    approval_status.append('LM ✗')
                 
                 if req.hr_approved_at:
                     approval_status.append('HR ✓')
                 elif req.status == 'PENDING_HR':
                     approval_status.append('HR ⏳')
                 elif req.status == 'REJECTED_HR':
-                    approval_status.append('HR ❌')
+                    approval_status.append('HR ✗')
                 
                 all_records.append({
                     'type': 'Request',
@@ -3572,19 +2723,8 @@ def export_all_vacation_records(request):
                 ws.column_dimensions[column].width = adjusted_width
         
         # Generate filename
-        filter_parts = []
-        if status_filter:
-            filter_parts.append(f"status_{status_filter}")
-        if department_id:
-            filter_parts.append(f"dept_{department_id}")
-        if year:
-            filter_parts.append(f"year_{year}")
-        
-
-   
-        
-        permission_indicator = 'admin' if is_admin else ('hr' if has_hr_permission else 'team')
-        filename = f'vacation_records_{permission_indicator}_{export_format}_{date.today().strftime("%Y%m%d")}.xlsx'
+        access_indicator = access['access_level'].replace(' ', '_').replace('-', '')
+        filename = f'vacation_records_{access_indicator}_{export_format}_{date.today().strftime("%Y%m%d")}.xlsx'
         
         response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
         response['Content-Disposition'] = f'attachment; filename={filename}'
@@ -3593,33 +2733,40 @@ def export_all_vacation_records(request):
         return response
         
     except Exception as e:
+        logger.error(f"Export error: {e}")
         return Response({'error': f'Export error: {str(e)}'}, status=status.HTTP_400_BAD_REQUEST)
 
-# ==================== EXPORT REQUESTS & SCHEDULES ====================
 
+# ==================== EXPORT MY VACATIONS ====================
 @swagger_auto_schema(
     method='get',
     operation_description="İstifadəçinin bütün vacation məlumatlarını Excel formatında export et",
     operation_summary="Export My Vacations",
     tags=['Vacation'],
-    responses={
-        200: openapi.Response(
-            description='Excel file',
-            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-        )
-    }
+    responses={200: openapi.Response(description='Excel file')}
 )
 @api_view(['GET'])
-@has_vacation_permission('vacation.request.export_own')
 @permission_classes([IsAuthenticated])
 def export_my_vacations(request):
-    """İstifadəçinin vacation məlumatlarını enhanced formatda export et"""
+    """✅ İstifadəçinin vacation məlumatlarını enhanced formatda export et"""
     try:
-        emp = Employee.objects.get(user=request.user)
+        access = get_vacation_access(request.user)
         
-        # All requests and schedules
-        requests = VacationRequest.objects.filter(employee=emp, is_deleted=False).order_by('-created_at')
-        schedules = VacationSchedule.objects.filter(employee=emp, is_deleted=False).order_by('-start_date')
+        if not access['employee']:
+            return Response({
+                'error': 'Employee profili tapılmadı'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        emp = access['employee']
+        
+        # All requests and schedules - filtered by access
+        requests_qs = VacationRequest.objects.filter(is_deleted=False)
+        requests_qs = filter_vacation_queryset(request.user, requests_qs, 'request')
+        requests = requests_qs.order_by('-created_at')
+        
+        schedules_qs = VacationSchedule.objects.filter(is_deleted=False)
+        schedules_qs = filter_vacation_queryset(request.user, schedules_qs, 'schedule')
+        schedules = schedules_qs.order_by('-start_date')
         
         wb = Workbook()
         
@@ -3641,22 +2788,19 @@ def export_my_vacations(request):
         
         ws_summary['A2'] = f'Employee ID: {getattr(emp, "employee_id", "N/A")}'
         ws_summary['A3'] = f'Department: {emp.department.name if emp.department else "N/A"}'
-        ws_summary['A4'] = f'Generated: {datetime.now().strftime("%Y-%m-%d %H:%M")}'
+        ws_summary['A4'] = f'Access Level: {access["access_level"]}'
+        ws_summary['A5'] = f'Generated: {datetime.now().strftime("%Y-%m-%d %H:%M")}'
         
-        # ✅ DÜZƏLTMƏ: Yalnız data olan illəri tap
+        # Get years with data
         years_with_data = set()
         
-        # Requests-dən illəri tap
         for req in requests:
             years_with_data.add(req.start_date.year)
         
-        # Schedules-dən illəri tap
         for sch in schedules:
             years_with_data.add(sch.start_date.year)
         
-        # Balansı olan illəri tap
         balances_with_data = EmployeeVacationBalance.objects.filter(
-            employee=emp,
             is_deleted=False
         ).exclude(
             yearly_balance=0,
@@ -3664,27 +2808,41 @@ def export_my_vacations(request):
             scheduled_days=0
         ).values_list('year', flat=True)
         
+        # ✅ Filter balances by access
+        if access['accessible_employee_ids'] is not None:
+            balances_with_data = EmployeeVacationBalance.objects.filter(
+                employee_id__in=access['accessible_employee_ids'],
+                is_deleted=False
+            ).exclude(
+                yearly_balance=0,
+                used_days=0,
+                scheduled_days=0
+            ).values_list('year', flat=True)
+        
         years_with_data.update(balances_with_data)
         
-        # ✅ Əgər heç bir data yoxdursa, cari ili əlavə et
         if not years_with_data:
             years_with_data.add(date.today().year)
         
-        # Sort years
         sorted_years = sorted(years_with_data, reverse=True)
         
-        ws_summary['A6'] = 'YEARLY STATISTICS'
-        ws_summary['A6'].font = Font(size=14, bold=True, color="2B4C7E")
+        ws_summary['A7'] = 'YEARLY STATISTICS'
+        ws_summary['A7'].font = Font(size=14, bold=True, color="2B4C7E")
         
         year_headers = ['Year', 'Total Balance', 'Used Days', 'Scheduled Days', 'Remaining', 'Requests', 'Schedules']
         for col, header in enumerate(year_headers, 1):
-            cell = ws_summary.cell(row=8, column=col, value=header)
+            cell = ws_summary.cell(row=9, column=col, value=header)
             cell.fill = header_fill
             cell.font = header_font
             cell.alignment = Alignment(horizontal='center')
         
-        for i, year in enumerate(sorted_years, 9):
-            balance = EmployeeVacationBalance.objects.filter(employee=emp, year=year).first()
+        for i, year in enumerate(sorted_years, 10):
+            # Get balance for accessible employees
+            balance_qs = EmployeeVacationBalance.objects.filter(year=year, is_deleted=False)
+            if access['accessible_employee_ids'] is not None:
+                balance_qs = balance_qs.filter(employee_id__in=access['accessible_employee_ids'])
+            
+            balance = balance_qs.first()
             year_requests = requests.filter(start_date__year=year).count()
             year_schedules = schedules.filter(start_date__year=year).count()
             
@@ -3828,95 +2986,90 @@ def export_my_vacations(request):
         
         return response
         
-    except Employee.DoesNotExist:
-        return Response({'error': 'Employee profili tapılmadı'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
+        logger.error(f"Error in export_my_vacations: {e}")
         return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
-# ==================== SETTINGS VIEWSETS ====================
 
+# ==================== SETTINGS VIEWSETS ====================
 class VacationSettingViewSet(viewsets.ModelViewSet):
-    """Vacation Settings CRUD"""
+    """✅ Vacation Settings CRUD - ADMIN ONLY"""
     queryset = VacationSetting.objects.filter(is_deleted=False)
     serializer_class = VacationSettingSerializer
     permission_classes = [IsAuthenticated]
     
-    def get_swagger_tags(self):
-        return ['Vacation - Settings']
+    def get_queryset(self):
+        # ✅ Admin only can manage settings
+        if not is_admin_user(self.request.user):
+            return VacationSetting.objects.none()
+        return super().get_queryset()
     
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
     
     def perform_update(self, serializer):
         serializer.save(updated_by=self.request.user)
+
+
 class VacationTypeViewSet(viewsets.ModelViewSet):
+    """✅ Vacation Types - ADMIN can manage, everyone can view"""
     queryset = VacationType.objects.filter(is_deleted=False)
     serializer_class = VacationTypeSerializer
     permission_classes = [IsAuthenticated]
     
     def list(self, request, *args, **kwargs):
-        has_perm, _ = check_vacation_permission(request.user, 'vacation.type.view')
-        if not has_perm:
-            return Response({
-                'error': 'İcazə yoxdur',
-                'required_permission': 'vacation.type.view'
-            }, status=status.HTTP_403_FORBIDDEN)
+        # Everyone can view vacation types
         return super().list(request, *args, **kwargs)
     
     def create(self, request, *args, **kwargs):
-        has_perm, _ = check_vacation_permission(request.user, 'vacation.type.create')
-        if not has_perm:
+        # ✅ Admin only
+        if not is_admin_user(request.user):
             return Response({
-                'error': 'İcazə yoxdur',
-                'required_permission': 'vacation.type.create'
+                'error': 'Permission denied',
+                'detail': 'Only admin can create vacation types'
             }, status=status.HTTP_403_FORBIDDEN)
         return super().create(request, *args, **kwargs)
     
     def update(self, request, *args, **kwargs):
-        has_perm, _ = check_vacation_permission(request.user, 'vacation.type.update')
-        if not has_perm:
+        # ✅ Admin only
+        if not is_admin_user(request.user):
             return Response({
-                'error': 'İcazə yoxdur',
-                'required_permission': 'vacation.type.update'
+                'error': 'Permission denied',
+                'detail': 'Only admin can update vacation types'
             }, status=status.HTTP_403_FORBIDDEN)
         return super().update(request, *args, **kwargs)
     
     def partial_update(self, request, *args, **kwargs):
-        has_perm, _ = check_vacation_permission(request.user, 'vacation.type.update')
-        if not has_perm:
+        # ✅ Admin only
+        if not is_admin_user(request.user):
             return Response({
-                'error': 'İcazə yoxdur',
-                'required_permission': 'vacation.type.update'
+                'error': 'Permission denied',
+                'detail': 'Only admin can update vacation types'
             }, status=status.HTTP_403_FORBIDDEN)
         return super().partial_update(request, *args, **kwargs)
     
     def destroy(self, request, *args, **kwargs):
-        has_perm, _ = check_vacation_permission(request.user, 'vacation.type.delete')
-        if not has_perm:
+        # ✅ Admin only
+        if not is_admin_user(request.user):
             return Response({
-                'error': 'İcazə yoxdur',
-                'required_permission': 'vacation.type.delete'
+                'error': 'Permission denied',
+                'detail': 'Only admin can delete vacation types'
             }, status=status.HTTP_403_FORBIDDEN)
         return super().destroy(request, *args, **kwargs)
 
-# ==================== FILE UPLOAD ENDPOINTS ====================
 
+# ==================== FILE UPLOAD ENDPOINTS ====================
 @swagger_auto_schema(
     method='get',
     operation_description="Get all attachments for a vacation request",
     operation_summary="List Vacation Request Attachments",
     tags=['Vacation - Files'],
-    responses={
-        200: openapi.Response(
-            description='List of attachments',
-            schema=VacationAttachmentSerializer(many=True)
-        )
-    }
+    responses={200: openapi.Response(description='List of attachments')}
 )
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def list_vacation_request_attachments(request, request_id):
-    """Get all attachments for a vacation request"""
+    """✅ Get all attachments for a vacation request - access controlled"""
     try:
         vacation_request = get_object_or_404(
             VacationRequest, 
@@ -3924,22 +3077,19 @@ def list_vacation_request_attachments(request, request_id):
             is_deleted=False
         )
         
-        # Check access permission
-        from .vacation_permissions import is_admin_user
-        emp = None
-        try:
-            emp = Employee.objects.get(user=request.user, is_deleted=False)
-        except Employee.DoesNotExist:
-            pass
+        access = get_vacation_access(request.user)
         
+        # ✅ Check access permission
         can_view = False
-        if is_admin_user(request.user):
+        if access['is_admin']:
             can_view = True
-        elif emp and vacation_request.employee == emp:
+        elif access['employee'] and vacation_request.employee == access['employee']:
             can_view = True
         elif vacation_request.requester == request.user:
             can_view = True
-        elif emp and (vacation_request.line_manager == emp or vacation_request.hr_representative == emp):
+        elif access['employee'] and (vacation_request.line_manager == access['employee'] or vacation_request.hr_representative == access['employee']):
+            can_view = True
+        elif access['accessible_employee_ids'] and vacation_request.employee_id in access['accessible_employee_ids']:
             can_view = True
         
         if not can_view:
@@ -3964,29 +3114,24 @@ def list_vacation_request_attachments(request, request_id):
             'error': 'Vacation request not found'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
+        logger.error(f"Error listing attachments: {e}")
         return Response({
             'error': str(e)
         }, status=status.HTTP_400_BAD_REQUEST)
 
 
-
 @swagger_auto_schema(
     method='delete',
-    operation_description="Delete a file attachment (Only uploader can delete)",
+    operation_description="Delete a file attachment (Only uploader or admin can delete)",
     operation_summary="Delete Vacation Attachment",
     tags=['Vacation - Files'],
-    responses={
-        200: 'File deleted successfully',
-        403: 'Permission denied',
-        404: 'Attachment not found'
-    }
+    responses={200: 'File deleted successfully'}
 )
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated])
 def delete_vacation_attachment(request, attachment_id):
-    """Delete a file attachment"""
+    """✅ Delete a file attachment - Only uploader or admin"""
     try:
-        from .vacation_permissions import is_admin_user
         from .vacation_models import VacationAttachment
         
         attachment = get_object_or_404(
@@ -3995,7 +3140,7 @@ def delete_vacation_attachment(request, attachment_id):
             is_deleted=False
         )
         
-        # Check permission - only uploader or admin can delete
+        # ✅ Check permission - only uploader or admin can delete
         if attachment.uploaded_by != request.user and not is_admin_user(request.user):
             return Response({
                 'error': 'You can only delete files you uploaded'
@@ -4004,7 +3149,6 @@ def delete_vacation_attachment(request, attachment_id):
         # Soft delete
         attachment.is_deleted = True
         attachment.save()
-   
         
         return Response({
             'message': 'File deleted successfully',
@@ -4023,26 +3167,13 @@ def delete_vacation_attachment(request, attachment_id):
     operation_description="Upload multiple files at once to vacation request",
     operation_summary="Bulk Upload Vacation Attachments",
     tags=['Vacation - Files'],
-    manual_parameters=[
-        openapi.Parameter(
-            'files',
-            openapi.IN_FORM,
-            type=openapi.TYPE_ARRAY,
-            items=openapi.Items(type=openapi.TYPE_FILE),
-            required=True,
-            description='Multiple files to upload'
-        )
-    ],
-    responses={
-        201: 'Files uploaded successfully',
-        400: 'Bad request'
-    }
+    responses={201: 'Files uploaded successfully'}
 )
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @parser_classes([MultiPartParser, FormParser])
 def bulk_upload_vacation_attachments(request, request_id):
-    """Upload multiple files at once"""
+    """✅ Upload multiple files at once - access controlled"""
     try:
         vacation_request = get_object_or_404(
             VacationRequest, 
@@ -4050,17 +3181,15 @@ def bulk_upload_vacation_attachments(request, request_id):
             is_deleted=False
         )
         
-        # Check permission
-        emp = None
-        try:
-            emp = Employee.objects.get(user=request.user, is_deleted=False)
-        except Employee.DoesNotExist:
-            pass
+        access = get_vacation_access(request.user)
         
+        # ✅ Check permission
         can_upload = False
-        if emp and vacation_request.employee == emp:
+        if access['employee'] and vacation_request.employee == access['employee']:
             can_upload = True
         elif vacation_request.requester == request.user:
+            can_upload = True
+        elif is_admin_user(request.user):
             can_upload = True
         
         if not can_upload:
@@ -4079,7 +3208,6 @@ def bulk_upload_vacation_attachments(request, request_id):
         
         for file in files:
             try:
-                # Validate each file
                 from .business_trip_serializers import TripAttachmentUploadSerializer
                 upload_serializer = TripAttachmentUploadSerializer(data={'file': file})
                 if not upload_serializer.is_valid():
@@ -4089,7 +3217,6 @@ def bulk_upload_vacation_attachments(request, request_id):
                     })
                     continue
                 
-                # Create attachment
                 from .vacation_models import VacationAttachment
                 attachment = VacationAttachment.objects.create(
                     vacation_request=vacation_request,
@@ -4106,8 +3233,6 @@ def bulk_upload_vacation_attachments(request, request_id):
                     'filename': file.name,
                     'error': str(e)
                 })
-        
-        
         
         return Response({
             'message': f'{len(uploaded_attachments)} files uploaded successfully',
@@ -4137,17 +3262,12 @@ def bulk_upload_vacation_attachments(request, request_id):
     operation_description="Get attachment details",
     operation_summary="Get Attachment Details",
     tags=['Vacation - Files'],
-    responses={
-        200: openapi.Response(
-            description='Attachment details',
-            schema=VacationAttachmentSerializer
-        )
-    }
+    responses={200: openapi.Response(description='Attachment details')}
 )
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_vacation_attachment_details(request, attachment_id):
-    """Get details of a specific attachment"""
+    """✅ Get details of a specific attachment"""
     try:
         from .vacation_models import VacationAttachment
         
@@ -4171,38 +3291,18 @@ def get_vacation_attachment_details(request, attachment_id):
 
 
 # ==================== SCHEDULE DETAIL ====================
-
 @swagger_auto_schema(
     method='get',
     operation_description="Get detailed information of a vacation schedule",
     operation_summary="Get Vacation Schedule Detail",
     tags=['Vacation'],
-    responses={
-        200: openapi.Response(
-            description='Vacation schedule details',
-            schema=VacationScheduleSerializer
-        ),
-        403: 'Permission denied',
-        404: 'Schedule not found'
-    }
+    responses={200: openapi.Response(description='Vacation schedule details')}
 )
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_vacation_schedule_detail(request, pk):
-    """
-    Get detailed information of a vacation schedule
-    
-    Shows:
-    - Basic schedule information
-    - Employee details
-    - Vacation configuration (type)
-    - Edit history
-    - Current status
-    """
+    """✅ Get detailed information of a vacation schedule - access controlled"""
     try:
-        from .vacation_permissions import is_admin_user
-        
-        # Get the vacation schedule
         schedule = VacationSchedule.objects.select_related(
             'employee', 
             'employee__department',
@@ -4214,34 +3314,20 @@ def get_vacation_schedule_detail(request, pk):
             'last_edited_by'
         ).get(pk=pk, is_deleted=False)
         
-        # Check access permission
-        emp = None
-        try:
-            emp = Employee.objects.get(user=request.user, is_deleted=False)
-        except Employee.DoesNotExist:
-            pass
+        access = get_vacation_access(request.user)
         
-        # Determine if user can view this schedule
+        # ✅ Check access permission
         can_view = False
         
-        # Admin can view all
-        if is_admin_user(request.user):
+        if access['is_admin']:
             can_view = True
-        
-        # Employee can view their own schedules
-        elif emp and schedule.employee == emp:
+        elif access['employee'] and schedule.employee == access['employee']:
             can_view = True
-        
-        # Creator can view schedules they created
         elif schedule.created_by == request.user:
             can_view = True
-        
-        # Line manager can view team schedules
-        elif emp and schedule.employee.line_manager == emp:
+        elif access['employee'] and schedule.employee.line_manager == access['employee']:
             can_view = True
-        
-        # Check if user has view_all permission
-        elif check_vacation_permission(request.user, 'vacation.schedule.view_all')[0]:
+        elif access['accessible_employee_ids'] and schedule.employee_id in access['accessible_employee_ids']:
             can_view = True
         
         if not can_view:
@@ -4256,7 +3342,6 @@ def get_vacation_schedule_detail(request, pk):
             context={'request': request}
         )
         
-        # Add extra context information
         response_data = serializer.data
         
         # Add employee information
@@ -4284,23 +3369,20 @@ def get_vacation_schedule_detail(request, pk):
             'email': schedule.created_by.email if schedule.created_by else None
         }
         
-        # Add permission flags for frontend
+        # ✅ Add permission flags for frontend
+        can_modify, modify_reason = can_user_modify_schedule(request.user, schedule)
+        can_register, register_reason = can_user_register_schedule(request.user)
+        
         response_data['permissions'] = {
             'can_edit': (
                 schedule.status == 'SCHEDULED' and
-                emp and schedule.employee == emp and
+                access['employee'] and schedule.employee == access['employee'] and
                 schedule.can_edit()
             ),
-            'can_delete': (
-                schedule.status == 'SCHEDULED' and
-                (emp and schedule.employee == emp or 
-                 (emp and schedule.employee.line_manager == emp))
-            ),
-            'can_register': (
-                schedule.status == 'SCHEDULED' and
-                check_vacation_permission(request.user, 'vacation.schedule.register')[0]
-            ),
-            'is_admin': is_admin_user(request.user)
+            'can_delete': can_modify,
+            'can_register': can_register,
+            'is_admin': access['is_admin'],
+            'access_level': access['access_level']
         }
         
         return Response(response_data)
@@ -4314,46 +3396,20 @@ def get_vacation_schedule_detail(request, pk):
         return Response({
             'error': str(e)
         }, status=status.HTTP_400_BAD_REQUEST)
+
+
 # ==================== UTILITIES ====================
 @swagger_auto_schema(
     method='post',
     operation_description="İki tarix arasında iş günlərinin sayını hesabla",
     operation_summary="İş Günlərini Hesabla",
     tags=['Vacation'],
-    request_body=openapi.Schema(
-        type=openapi.TYPE_OBJECT,
-        required=['start_date', 'end_date'],
-        properties={
-            'start_date': openapi.Schema(
-                type=openapi.TYPE_STRING,
-                format='date',
-                description='Başlama tarixi',
-                example='2025-10-15'
-            ),
-            'end_date': openapi.Schema(
-                type=openapi.TYPE_STRING,
-                format='date',
-                description='Bitmə tarixi',
-                example='2025-10-20'
-            ),
-        }
-    ),
-    responses={
-        200: openapi.Response(
-            description='Hesablama nəticəsi',
-            examples={
-                'application/json': {
-                    'working_days': 4,
-                    'return_date': '2025-10-21'
-                }
-            }
-        )
-    }
+    responses={200: openapi.Response(description='Hesablama nəticəsi')}
 )
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def calculate_working_days(request):
-    """İş günlərini hesabla"""
+    """✅ İş günlərini hesabla - hamı istifadə edə bilər"""
     start = request.data.get('start_date')
     end = request.data.get('end_date')
     

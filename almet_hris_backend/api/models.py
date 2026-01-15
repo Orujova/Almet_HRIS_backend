@@ -1158,7 +1158,7 @@ class Employee(SoftDeleteModel):
             self.last_name = user.last_name
         
         self.save()
-        logger.info(f"Linked employee {self.employee_id} with user account {user.username}")
+       
     
     def create_user_account_for_microsoft_auth(self, email, first_name, last_name, microsoft_id):
         """
@@ -1387,7 +1387,7 @@ class Employee(SoftDeleteModel):
                     }
                 )
                 
-                logger.info(f"Employee {self.employee_id} status updated automatically: {old_status.name} → {required_status.name}")
+              
                 return True
             
             return False
@@ -1483,10 +1483,7 @@ class Employee(SoftDeleteModel):
                             }
                         )
                         
-                        logger.info(
-                            f"✅ Employee {self.employee_id} status changed to INACTIVE "
-                            f"when tag '{tag.name}' was added"
-                        )
+                      
                     else:
                         logger.warning(f"⚠️ INACTIVE status not found or employee already INACTIVE")
                 except Exception as e:
@@ -1548,10 +1545,7 @@ class Employee(SoftDeleteModel):
                         }
                     )
                     
-                    logger.info(
-                        f"Employee {self.employee_id} status changed to ACTIVE "
-                        f"when tag '{tag.name}' was removed"
-                    )
+                   
             except Exception as e:
                 logger.error(f"Error setting ACTIVE status for employee {self.employee_id}: {e}")
             
@@ -2120,7 +2114,7 @@ class Employee(SoftDeleteModel):
             else:
                 self.notes = f"[ORIGINAL NAME: {original_full_name}]"
             
-            logger.info(f"Name removed from all processes for employee {self.employee_id}")
+            
             return True
             
         except Exception as e:
@@ -2181,14 +2175,14 @@ class Employee(SoftDeleteModel):
                 # Store user for deletion after employee deletion
                 user_to_delete = self.user if self.user else None
                 
-                # Delete the employee record completely - NO VACANCY CREATION
+                
                 super().delete()  # This bypasses soft delete and does hard delete
                 
                 # Delete user account after employee deletion
                 if user_to_delete:
                     user_to_delete.delete()
             
-            logger.info(f"Employee {employee_info['employee_id']} - {employee_info['full_name']} hard deleted and archived (Archive ID: {archive.id if archive else 'N/A'}). NO VACANCY CREATED.")
+           
             
             return archive
             
@@ -2235,7 +2229,7 @@ class Employee(SoftDeleteModel):
             # Create the archive record
             archive = EmployeeArchive.objects.create(**archive_data)
             
-            logger.info(f"Archive record created for employee {self.employee_id}: {archive.get_archive_reference()}")
+            
             return archive
             
         except Exception as e:
@@ -2267,7 +2261,7 @@ class Employee(SoftDeleteModel):
                     data_quality='MINIMAL',
                     archive_version='2.0'
                 )
-                logger.info(f"Created minimal archive record: {minimal_archive.get_archive_reference()}")
+               
                 return minimal_archive
             except Exception as fallback_error:
                 logger.error(f"Even minimal archive creation failed: {fallback_error}")
@@ -2286,14 +2280,14 @@ class Employee(SoftDeleteModel):
                 # DEBUG: Employee PK-ni və məlumatları logla
                 employee_pk = self.pk
                 employee_id = self.employee_id
-                logger.info(f"RESTORE DEBUG: Employee PK={employee_pk}, employee_id={employee_id}")
+            
                 
                 # FIXED: Vacancy-ləri tapıb sil - Bütün mümkün variantları yoxla
                 related_vacancies = VacantPosition.objects.filter(
                     original_employee_pk=employee_pk
                 )
                 
-                logger.info(f"RESTORE DEBUG: Found {related_vacancies.count()} vacancies with original_employee_pk={employee_pk}")
+              
                 
                 # Əlavə olaraq, notes sahəsindəki məlumatla da axtarış
                 notes_based_vacancies = VacantPosition.objects.filter(
@@ -2301,12 +2295,10 @@ class Employee(SoftDeleteModel):
                     is_filled=False
                 )
                 
-                logger.info(f"RESTORE DEBUG: Found {notes_based_vacancies.count()} vacancies based on notes")
                 
-                # HƏLL: Həm PK həm də notes əsasında tapılan vacancy-ləri birləşdir
                 all_vacancies = (related_vacancies | notes_based_vacancies).distinct()
                 
-                logger.info(f"RESTORE DEBUG: Total unique vacancies to delete: {all_vacancies.count()}")
+             
                 
                 # Vacancy məlumatlarını saxla və sil
                 vacancy_info = []
@@ -2322,13 +2314,13 @@ class Employee(SoftDeleteModel):
                     }
                     vacancy_info.append(vacancy_data)
                     
-                    logger.info(f"RESTORE DEBUG: Deleting vacancy ID={vacancy.id}, position_id={vacancy.position_id}")
+               
                     
                     # VACANCY-Nİ SİL
                     vacancy.delete()
                     deleted_vacancy_count += 1
                     
-                    logger.info(f"RESTORE DEBUG: Successfully deleted vacancy {vacancy.position_id}")
+           
                 
                 # Verify vacancy deletion - təsdiq et ki, silinib
                 remaining_vacancies = VacantPosition.objects.filter(

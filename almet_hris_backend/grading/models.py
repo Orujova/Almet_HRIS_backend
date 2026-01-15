@@ -153,7 +153,7 @@ class SalaryScenario(models.Model):
                 )
                 if has_values:
                     global_intervals = intervals
-                    logger.info(f"✅ Found global horizontal intervals in {grade_name}: {global_intervals}")
+                   
                     break
         
         # Collect horizontal values from global intervals

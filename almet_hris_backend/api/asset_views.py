@@ -717,13 +717,13 @@ class AssetViewSet(viewsets.ModelViewSet):
                     )
                 
                 queryset = existing_assets
-                logger.info(f"Exporting {len(asset_ids)} selected assets")
+               
                 
             elif export_type == 'filtered':
                 # Export assets with current filters applied
                 asset_filter = AssetFilter(queryset, request.query_params)
                 queryset = asset_filter.filter()
-                logger.info(f"Exporting {queryset.count()} filtered assets")
+              
                 
             elif export_type == 'all':
                 # Export all assets (no additional filtering)

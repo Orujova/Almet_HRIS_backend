@@ -461,7 +461,7 @@ def assign_missing_job_descriptions():
             ).exists()
             
             if existing_assignment:
-                logger.info(f"✅ Already assigned: {employee.full_name} -> {jd.job_title}")
+
                 continue
             
             # Create assignment

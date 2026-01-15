@@ -72,7 +72,7 @@ class MicrosoftTokenValidator:
                     microsoft_id=microsoft_id
                 )
                 user = microsoft_user.user
-                logger.info(f'✅ Found user by Microsoft ID: {user.username}')
+              
                 
                 # Update user info if changed
                 updated = False
@@ -92,7 +92,7 @@ class MicrosoftTokenValidator:
                     logger.info(f'🔄 Updated user info for {user.username}')
                 
             except MicrosoftUser.DoesNotExist:
-                logger.info('Microsoft user not found, checking employee by email...')
+           
                 
                 # Try to find employee by email
                 try:
@@ -102,11 +102,11 @@ class MicrosoftTokenValidator:
                     ).select_related('user').first()
                     
                     if employee:
-                        logger.info(f'Found employee with email {email}: {employee.employee_id}')
+                      
                         
                         if employee.user:
                             user = employee.user
-                            logger.info(f'Employee has existing user: {user.username}')
+                         
                             
                             # Update user info
                             user.email = email
@@ -140,7 +140,7 @@ class MicrosoftTokenValidator:
                                     microsoft_id=microsoft_id
                                 )
                         
-                        logger.info(f'✅ Linked employee {employee.employee_id} with Microsoft')
+                       
                     else:
                         # No employee found
                         logger.warning(f'❌ No employee record for {email}')
@@ -175,9 +175,7 @@ class MicrosoftTokenValidator:
             access_token = str(refresh.access_token)
             refresh_token = str(refresh)
             
-            logger.info(f'✅ Generated JWT tokens for {user.username}')
-            logger.info(f'   - Access token length: {len(access_token)}')
-            logger.info(f'   - Refresh token length: {len(refresh_token)}')
+            
             
             return user, access_token, refresh_token
             

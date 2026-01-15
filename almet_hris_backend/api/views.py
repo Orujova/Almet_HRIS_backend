@@ -255,7 +255,7 @@ def authenticate_microsoft(request):
 def user_info(request):
     """Get current user info"""
     try:
-        logger.info(f'User info request for user: {request.user.username}')
+       
         serializer = UserSerializer(request.user)
    
         try:
@@ -265,7 +265,7 @@ def user_info(request):
             ).prefetch_related('tags').get(user=request.user)
             
             employee_data = EmployeeDetailSerializer(employee).data
-            logger.info(f'[{request.user.username}] Employee profile found: {employee.employee_id}')
+            
             
         except Employee.DoesNotExist:
             logger.info(f'[{request.user.username}] No employee profile found')
@@ -281,7 +281,7 @@ def user_info(request):
             'employee': employee_data
         }
         
-        logger.info(f'[{request.user.username}] User info response prepared successfully')
+
         return Response(response_data, status=status.HTTP_200_OK)
     
     except Exception as e:
@@ -1769,7 +1769,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                     'tags', 'documents', 'activities'
                 ).get(user=request.user)
                 
-                logger.info(f"✅ Employee profile found for user {request.user.username}: {employee.employee_id}")
+             
                 
             except Employee.DoesNotExist:
                 logger.warning(f"⚠️ No employee profile found for user: {request.user.username}")
@@ -1949,16 +1949,16 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             
             if status_val.upper() in ['VACANT', 'VACANCY']:
                 is_vacant_status = True
-                logger.info(f"[STATUS] '{status_val}' detected as VACANT by name")
+              
             
             try:
                 status_id = int(status_val)
                 if status_id in vacant_status_ids:
                     is_vacant_status = True
-                    logger.info(f"[STATUS] ID {status_id} detected as VACANT by ID")
+                  
                 else:
                     employee_status_ids.append(status_id)
-                    logger.info(f"[STATUS] ID {status_id} detected as employee status")
+                 
             except (ValueError, TypeError):
                 try:
                     status_obj = EmployeeStatus.objects.get(name__iexact=status_val)
@@ -1967,7 +1967,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
               
                     else:
                         employee_status_ids.append(status_obj.id)
-                        logger.info(f"[STATUS] '{status_val}' detected as employee status by DB lookup")
+                        
                 except EmployeeStatus.DoesNotExist:
                     logger.warning(f"[STATUS] '{status_val}' not found in database")
             
@@ -2003,7 +2003,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             
             if employee_status_ids:
                 employee_queryset = employee_queryset.filter(status__id__in=employee_status_ids)
-                logger.info(f"[EMP] After status filter: {employee_queryset.count()}")
+          
             
             filter_params = request.query_params.copy()
             if 'status' in filter_params:
@@ -3720,9 +3720,9 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 
                 if found_column:
                     actual_columns[field] = found_column
-                    logger.info(f"Mapped {field} -> {found_column}")
+               
             
-            logger.info(f"Final column mapping: {actual_columns}")
+            
             
             # ✅ UPDATED: Check required fields - employee_id ARTIQ REQUIRED DEYIL!
             required_fields = ['first_name', 'last_name', 'email', 
@@ -3862,7 +3862,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                         start_date_str = safe_get('start_date')
                         contract_duration = safe_get('contract_duration', 'PERMANENT')
                         
-                        logger.info(f"Processing row {index}: {employee_id_from_excel or 'AUTO'}, {first_name}, {last_name}")
+                       
                         
                         # ✅ UPDATED: Validate required fields - employee_id ARTIQ YOXLANMIR
                         if not all([first_name, last_name, email, business_function_name, 
@@ -4493,10 +4493,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                                 status_changed_count += 1
                                 result_data['status_changed'] = True
                                 
-                                logger.info(
-                                    f"Employee {employee.employee_id}: "
-                                    f"Tag added, Status changed {result_data['old_status']} → {result_data['new_status']}"
-                                )
+                                
                     else:
                         already_had_count += 1
                         result_data['status'] = 'already_had'
@@ -5203,7 +5200,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                             archive_info.append(archive_data)
                             archive.delete()  # DELETE the archive since employee is restored
                             archives_deleted.append(archive_data)
-                            logger.info(f"Deleted archive {archive_data['reference']} for restored employee {employee.employee_id}")
+                           
                         
                         # Restore the employee
                         employee.restore()
@@ -5341,7 +5338,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             employee_ids = request.data.get('employee_ids', [])
             reason = request.data.get('reason', 'Bulk restructuring')
             
-            logger.info(f"Bulk soft delete request: employee_ids={employee_ids}, reason={reason}")
+            
             
             if not employee_ids:
                 return Response(
@@ -5430,7 +5427,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             successful_count = len([r for r in results if r['status'] == 'success'])
             failed_count = len([r for r in results if r['status'] == 'failed'])
             
-            logger.info(f"Bulk soft delete completed: {successful_count} successful, {failed_count} failed")
+        
             
             return Response({
                 'success': True,
@@ -7284,10 +7281,7 @@ class ProfileImageViewSet(viewsets.ViewSet):
                     status=status.HTTP_404_NOT_FOUND
                 )
             
-            # DEBUG: Check what we have
-            logger.info(f"Getting image for employee: {employee.employee_id}")
-            logger.info(f"Profile image field: {employee.profile_image}")
-            logger.info(f"Profile image name: {employee.profile_image.name if employee.profile_image else 'None'}")
+           
             
             profile_image_url = None
             has_image = False

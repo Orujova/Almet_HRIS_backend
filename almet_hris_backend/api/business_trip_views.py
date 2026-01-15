@@ -1611,7 +1611,7 @@ def delete_trip_attachment(request, attachment_id):
         attachment.is_deleted = True
         attachment.save()
         
-        logger.info(f"🗑️ File deleted: {attachment.original_filename} by {request.user.username}")
+      
         
         return Response({
             'message': 'File deleted successfully',
@@ -1698,7 +1698,7 @@ def bulk_upload_trip_attachments(request, request_id):
                     'error': str(e)
                 })
         
-        logger.info(f"✅ Bulk upload: {len(uploaded_attachments)} files to {request_id}")
+        
         
         return Response({
             'message': f'{len(uploaded_attachments)} files uploaded successfully',

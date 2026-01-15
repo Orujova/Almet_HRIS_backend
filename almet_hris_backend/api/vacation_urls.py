@@ -33,8 +33,7 @@ urlpatterns = [
     path('hr-representatives/set-default/', views.set_default_hr_representative, name='vacation-set-default-hr'),
     path('hr-representatives/update-default/', views.update_default_hr_representative, name='vacation-update-default-hr'),
     
-    # ============= MY PERMISSIONS =============
-    path('my-permissions/', views.my_vacation_permissions, name='vacation-my-permissions'),
+  
     
     # ============= REQUEST MANAGEMENT =============
     # Request Immediately (with file upload support)

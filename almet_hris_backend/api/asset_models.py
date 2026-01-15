@@ -158,7 +158,7 @@ class Asset(models.Model):
             try:
                 old_asset = Asset.objects.get(pk=self.pk)
                 if old_asset.status != self.status:
-                    logger.info(f"Asset {self.asset_name} status changed from {old_asset.status} to {self.status}")
+                    
                     
                     # Handle archive status
                     if self.status == 'ARCHIVED' and old_asset.status != 'ARCHIVED':

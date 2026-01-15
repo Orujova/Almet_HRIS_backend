@@ -103,7 +103,7 @@ class HandoverEmailService:
             )
             
             if result['success']:
-                logger.info(f"✅ Handover email sent: {notification_type} to {recipients}")
+      
                 
                 # Update notification logs
                 for email in recipients:
@@ -268,7 +268,7 @@ class HandoverEmailService:
                 }}
                 .button {{
                   
-                    color: #ffffff !important;
+                    color: #00000;
                     padding: 14px 34px;
                     text-decoration: none;
                     font-size: 14px;
@@ -368,11 +368,7 @@ class HandoverEmailService:
     def notify_to_signature_needed(self, handover):
         """Notify TO employee signature is needed"""
         
-        # Debug log
-        logger.info(f"🔍 notify_to_signature_needed called")
-        logger.info(f"   Handover: {handover.request_id}")
-        logger.info(f"   TO: {handover.taking_over_employee.full_name}")
-        logger.info(f"   TO Email: {handover.taking_over_employee.email}")
+       
         
         if not handover.taking_over_employee.email:
             logger.error(f"❌ TO employee has no email address!")
@@ -388,7 +384,7 @@ class HandoverEmailService:
             }
         )
         
-        logger.info(f"   Email send result: {result}")
+       
         return result
     
     def notify_lm_approval_needed(self, handover):

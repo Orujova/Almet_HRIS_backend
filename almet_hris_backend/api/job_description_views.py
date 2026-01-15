@@ -722,7 +722,7 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
             user = request.user
             access = get_job_description_access(user)
             
-            logger.info(f"Getting pending approvals for user: {user.username}")
+        
             
             employee = access['employee']
             

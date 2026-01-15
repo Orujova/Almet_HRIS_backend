@@ -81,8 +81,7 @@ class TimeOffBalance(models.Model):
         - used_hours_this_month 0-a çevrilir
         """
         if not self.is_initialized:
-            # Balance hələ initialize edilməyib, reset etmə
-            logger.info(f"⏭️ Skipping reset for {self.employee.full_name} - not initialized")
+          
             return False
         
         today = timezone.now().date()

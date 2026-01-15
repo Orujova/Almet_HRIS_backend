@@ -364,7 +364,7 @@ class TimeOffBalanceViewSet(viewsets.ReadOnlyModelViewSet):
                         'error': str(e)
                     })
             
-            logger.info(f"✅ Bulk upload completed: {success_count} success, {failed_count} failed")
+      
             
             return Response({
                 'success': True,

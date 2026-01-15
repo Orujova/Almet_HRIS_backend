@@ -43,11 +43,11 @@ class ProcedureCompanyViewSet(viewsets.ModelViewSet):
     
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
-        logger.info(f"Procedure company created: {serializer.instance.name} by {self.request.user.username}")
+      
     
     def perform_update(self, serializer):
         serializer.save()
-        logger.info(f"Procedure company updated: {serializer.instance.name} by {self.request.user.username}")
+  
     
     def perform_destroy(self, instance):
         company_name = instance.name
@@ -59,7 +59,7 @@ class ProcedureCompanyViewSet(viewsets.ModelViewSet):
             )
         
         instance.delete()
-        logger.info(f"Procedure company deleted: {company_name} by {self.request.user.username}")
+        
 
 
 # ==================== COMBINED COMPANIES VIEW ====================
