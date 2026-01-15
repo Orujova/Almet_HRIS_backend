@@ -434,10 +434,13 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
                     'employee_id': employee.employee_id,
                     'full_name': employee.full_name,
                     'email': employee.email,
+                    'company_name': employee.business_function.name if employee.business_function else None,
+                    'company_code': employee.business_function.code if employee.business_function else None,
+                    
                     'department': employee.department.name if employee.department else None,
                     'position_group': employee.position_group.get_name_display() if employee.position_group else None,
-                    'grading_level': employee.grading_level,
                     'line_manager_name': employee.line_manager.full_name if employee.line_manager else None,
+                    'line_manager_hc': employee.line_manager.employee_id if employee.line_manager else None,
                 },
                 'has_performance': has_performance,
                 'performance': {
