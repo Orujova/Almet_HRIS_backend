@@ -33,22 +33,22 @@ class BusinessFunctionSerializer(serializers.ModelSerializer):
     class Meta:
         model = BusinessFunction
         fields = ['id', 'name', 'code',  'is_active', 'employee_count', 'created_at']
-    def to_representation(self, instance):
-        """Format text fields to title case"""
-        data = super().to_representation(instance)
+    # def to_representation(self, instance):
+    #     """Format text fields to title case"""
+    #     data = super().to_representation(instance)
         
-        # ✅ Title case tətbiq et - ad və soyad
-        text_fields = [
-            'name',  
+    #     # ✅ Title case tətbiq et - ad və soyad
+    #     text_fields = [
+    #         'name',  
             
-        ]
+    #     ]
         
-        for field in text_fields:
-            if field in data and data[field]:
-                # Strip whitespace və title case
-                data[field] = str(data[field]).strip().title()
+    #     for field in text_fields:
+    #         if field in data and data[field]:
+    #             # Strip whitespace və title case
+    #             data[field] = str(data[field]).strip().title()
         
-        return data
+    #     return data
     
     def get_employee_count(self, obj):
         return obj.employees.filter(status__affects_headcount=True).count()
