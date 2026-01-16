@@ -138,9 +138,7 @@ class ResignationRequestViewSet(viewsets.ModelViewSet):
                 
                 {f'<p><strong>Employee Comments:</strong><br>{resignation.employee_comments}</p>' if resignation.employee_comments else ''}
                 
-                <p>Please review and approve/reject this resignation in the HRIS system.</p>
-                
-                <p>Best regards,<br>HR Department</p>
+    
             </body>
             </html>
             """
@@ -391,12 +389,12 @@ class ExitInterviewViewSet(viewsets.ModelViewSet):
                 recipients.append(employee.line_manager.email)
             
             # 2. IT Team
-            recipients.append("it-team@almettrading.com")
+            # recipients.append("it-team@almettrading.com")
             
-            # 3. Gunay (HR)
-            recipients.append("g.mammadova@almettrading.com")
-            # 3. HR
-            recipients.append("hr@almettrading.com")
+            # # 3. Gunay (HR)
+            # recipients.append("g.mammadova@almettrading.com")
+            # # 3. HR
+            # recipients.append("hr@almettrading.com")
             
             
             
