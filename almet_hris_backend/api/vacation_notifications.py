@@ -115,14 +115,12 @@ class VacationNotificationManager:
                         {f'<div class="info-row"><span class="label">Comment:</span> {vacation_request.comment}</div>' if vacation_request.comment else ''}
                         
                         <center>
-                            <a href="https://myalmet.com/vacation" class="button">
+                            <a href="https://myalmet.com/requests/vacation/" class="button">
                                 Review Request
                             </a>
                         </center>
                     </div>
-                    <div class="footer">
-                        <p>This is an automated notification from Almet HRIS System</p>
-                    </div>
+                   
                 </div>
             </body>
             </html>
@@ -196,7 +194,7 @@ class VacationNotificationManager:
                     <div class="content">
                         <p>Dear {uk_approver.full_name},</p>
                         <p class="approved">✓ Line Manager has approved this UK vacation request (5+ days).</p>
-                        <p><span class="uk-badge">UK EMPLOYEE</span> This request now requires your additional approval as Vice Chairman.</p>
+                      
                         
                         <div class="info-row">
                             <span class="label">Request ID:</span> {vacation_request.request_id}
@@ -222,18 +220,14 @@ class VacationNotificationManager:
                         {f'<div class="info-row"><span class="label">Line Manager Comment:</span> {vacation_request.line_manager_comment}</div>' if vacation_request.line_manager_comment else ''}
                         
                         <center>
-                            <a href="https://myalmet.com/vacation" class="button">
+                            <a href="https://myalmet.com//requests/vacation/" class="button">
                                 Review & Approve Request
                             </a>
                         </center>
                         
-                        <p style="margin-top: 20px; font-size: 14px; color: #666;">
-                            This request requires your approval as UK employees with 5+ day vacation requests need Vice Chairman authorization.
-                        </p>
+                     
                     </div>
-                    <div class="footer">
-                        <p>This is an automated notification from Almet HRIS System</p>
-                    </div>
+                   
                 </div>
             </body>
             </html>

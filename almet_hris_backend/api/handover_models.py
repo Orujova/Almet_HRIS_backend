@@ -74,7 +74,7 @@ class HandoverRequest(SoftDeleteModel):
     # Handover details
     handover_type = models.ForeignKey(HandoverType, on_delete=models.PROTECT)
     start_date = models.DateField()
-    end_date = models.DateField()
+    end_date = models.DateField(null=True, blank=True) 
     
     # ★ 5 ADDITIONAL INFORMATION FIELDS ★
     contacts = models.TextField(
@@ -189,6 +189,7 @@ class HandoverRequest(SoftDeleteModel):
         """Validation"""
         errors = {}
         
+        # ✅ Yalnız end_date varsa check et
         if self.start_date and self.end_date and self.start_date >= self.end_date:
             errors['end_date'] = "End date must be after start date"
         
