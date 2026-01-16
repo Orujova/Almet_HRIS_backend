@@ -779,10 +779,12 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
     
     # ============ MID-YEAR REVIEW SECTION ============
     
+    # ✅ FIX: api/performance_views.py - MID-YEAR və END-YEAR submission metodları
+
     @action(detail=True, methods=['post'])
     def submit_mid_year_employee(self, request, pk=None):
         """
-        ✅ Allow adding multiple comments during mid-year period
+        ✅ UPDATED: Allow adding multiple comments - NO RESTRICTION
         """
         performance = self.get_object()
         
@@ -841,14 +843,14 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
         
         return Response({
             'success': True, 
-            'message': 'Comment added successfully',
-            'next_step': 'Waiting for manager to complete mid-year assessment'
+            'message': 'Comment added successfully'
         })
+    
     
     @action(detail=True, methods=['post'])
     def submit_mid_year_manager(self, request, pk=None):
         """
-        ✅ Allow adding multiple assessments during mid-year period
+        ✅ UPDATED: Allow adding multiple assessments - REMOVED employee submission check
         """
         performance = self.get_object()
         
@@ -871,11 +873,11 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
                 'current_period': performance.performance_year.get_current_period()
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        if not performance.mid_year_employee_submitted:
-            return Response({
-                'error': 'Employee must submit self-review first',
-                'message': 'Waiting for employee to submit mid-year self-review'
-            }, status=status.HTTP_400_BAD_REQUEST)
+        # ❌ REMOVED: Employee must submit check
+        # if not performance.mid_year_employee_submitted:
+        #     return Response({
+        #         'error': 'Employee must submit self-review first'
+        #     }, status=status.HTTP_400_BAD_REQUEST)
         
         comment = request.data.get('comment', '')
         if not comment.strip():
@@ -918,16 +920,14 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
         
         return Response({
             'success': True, 
-            'message': 'Assessment added successfully',
-            'next_step': 'Wait for end-year review period'
+            'message': 'Assessment added successfully'
         })
     
-    # ============ END-YEAR REVIEW SECTION ============
     
     @action(detail=True, methods=['post'])
     def submit_end_year_employee(self, request, pk=None):
         """
-        ✅ Allow multiple end-year employee comments
+        ✅ UPDATED: Allow multiple end-year employee comments
         """
         performance = self.get_object()
         comment = request.data.get('comment', '')
@@ -973,10 +973,11 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
             'message': 'End-year comment added successfully'
         })
     
+    
     @action(detail=True, methods=['post'])
     def submit_end_year_manager(self, request, pk=None):
         """
-        ✅ Manager adds end-year assessment comment
+        ✅ UPDATED: Manager can add end-year assessment - REMOVED employee submission check
         """
         performance = self.get_object()
         
@@ -999,11 +1000,11 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
                 'current_period': performance.performance_year.get_current_period()
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        if not performance.end_year_employee_submitted:
-            return Response({
-                'error': 'Employee must submit end-year self-review first',
-                'message': 'Waiting for employee to submit end-year self-review'
-            }, status=status.HTTP_400_BAD_REQUEST)
+        # ❌ REMOVED: Employee must submit check
+        # if not performance.end_year_employee_submitted:
+        #     return Response({
+        #         'error': 'Employee must submit end-year self-review first'
+        #     }, status=status.HTTP_400_BAD_REQUEST)
         
         comment = request.data.get('comment', '')
         if not comment.strip():
@@ -1031,7 +1032,6 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
             'success': True, 
             'message': 'End-year assessment added successfully'
         })
-    
     @action(detail=True, methods=['post'])
     def complete_end_year(self, request, pk=None):
         """

@@ -389,12 +389,12 @@ class ExitInterviewViewSet(viewsets.ModelViewSet):
                 recipients.append(employee.line_manager.email)
             
             # 2. IT Team
-            # recipients.append("it-team@almettrading.com")
+            recipients.append("it-team@almettrading.com")
             
             # # 3. Gunay (HR)
-            # recipients.append("g.mammadova@almettrading.com")
+            recipients.append("g.mammadova@almettrading.com")
             # # 3. HR
-            # recipients.append("hr@almettrading.com")
+            recipients.append("hr@almettrading.com")
             
             
             
