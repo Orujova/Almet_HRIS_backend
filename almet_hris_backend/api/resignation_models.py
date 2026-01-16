@@ -237,11 +237,7 @@ class ResignationRequest(SoftDeleteModel):
                 
                 {f'<p><strong>Manager Comments:</strong><br>{self.manager_comments}</p>' if self.manager_comments else ''}
                 
-                <p>Please review and approve this resignation request in the HRIS system.</p>
-                
-                <p style="margin-top: 20px; color: #666; font-size: 12px;">
-                    This is an automated notification from HRIS.
-                </p>
+               
             </body>
             </html>
             """
@@ -303,7 +299,7 @@ class ResignationRequest(SoftDeleteModel):
                 
                 <p>HR will review your resignation and notify you of the final decision.</p>
                 
-                <p>Best regards,<br>HR Department</p>
+           
             </body>
             </html>
             """
@@ -322,7 +318,7 @@ class ResignationRequest(SoftDeleteModel):
                 
                 <p>Please contact your manager for more information.</p>
                 
-                <p>Best regards,<br>HR Department</p>
+              
             </body>
             </html>
             """
@@ -349,7 +345,7 @@ class ResignationRequest(SoftDeleteModel):
                 
                 <p>We wish you all the best in your future endeavors.</p>
                 
-                <p>Best regards,<br>HR Department</p>
+                
             </body>
             </html>
             """
@@ -368,7 +364,7 @@ class ResignationRequest(SoftDeleteModel):
                 
                 <p>Please contact HR for more information.</p>
                 
-                <p>Best regards,<br>HR Department</p>
+               
             </body>
             </html>
             """

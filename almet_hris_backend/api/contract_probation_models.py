@@ -372,7 +372,7 @@ class ContractRenewalRequest(SoftDeleteModel):
                 
                 <p>Congratulations!</p>
                 
-                <p>Best regards,<br>HR Department</p>
+             
             </body>
             </html>
             """
@@ -391,7 +391,7 @@ class ContractRenewalRequest(SoftDeleteModel):
                 
                 <p>Thank you for your service.</p>
                 
-                <p>Best regards,<br>HR Department</p>
+          
             </body>
             </html>
             """
@@ -415,7 +415,7 @@ class ContractRenewalRequest(SoftDeleteModel):
                 
                 <p>Congratulations and thank you for your continued service!</p>
                 
-                <p>Best regards,<br>HR Department</p>
+               
             </body>
             </html>
             """

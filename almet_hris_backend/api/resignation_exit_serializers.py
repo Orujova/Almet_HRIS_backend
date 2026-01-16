@@ -121,7 +121,6 @@ class ResignationRequestDetailSerializer(serializers.ModelSerializer):
     def get_notice_period(self, obj):
         return obj.get_notice_period_days()
 
-
 class ResignationRequestCreateSerializer(serializers.ModelSerializer):
     """Create serializer for resignation requests"""
     
@@ -135,10 +134,10 @@ class ResignationRequestCreateSerializer(serializers.ModelSerializer):
     def validate(self, data):
         from datetime import date
         
-        # Validate last_working_day is in future
-        if data['last_working_day'] <= date.today():
+        # ✅ FIX: Allow today as last_working_day (only reject past dates)
+        if data['last_working_day'] < date.today():
             raise serializers.ValidationError({
-                'last_working_day': 'Last working day must be in the future'
+                'last_working_day': 'Last working day cannot be in the past'
             })
         
         return data
@@ -163,7 +162,6 @@ class ResignationRequestCreateSerializer(serializers.ModelSerializer):
         )
         
         return resignation
-
 
 class ResignationApprovalSerializer(serializers.Serializer):
     """Serializer for manager/HR approval"""

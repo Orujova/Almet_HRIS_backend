@@ -107,11 +107,7 @@ def _send_contract_expiry_notification(employee, renewal_request):
             
             <p>Please submit your decision as soon as possible.</p>
             
-            <p>Best regards,<br>HR Department</p>
-            
-            <p style="margin-top: 20px; color: #666; font-size: 12px;">
-                This is an automated notification from HRIS.
-            </p>
+          
         </body>
         </html>
         """
@@ -270,9 +266,7 @@ def _send_probation_review_notification(employee, review):
                 <li><strong>Manager:</strong> Complete manager evaluation questionnaire</li>
             </ul>
             
-            <p>Please complete the review forms through the HRIS system before the due date.</p>
-            
-            <p>Best regards,<br>HR Department</p>
+           
         </body>
         </html>
         """
@@ -347,7 +341,7 @@ def _send_resignation_reminder(resignation):
             
             <p>Please review and approve/reject this resignation as soon as possible.</p>
             
-            <p>Best regards,<br>HR Department</p>
+
         </body>
         </html>
         """
@@ -424,7 +418,7 @@ def _send_exit_interview_reminder(interview, days_remaining):
             
             <p>Please complete the exit interview through the HRIS system.</p>
             
-            <p>Best regards,<br>HR Department</p>
+        
         </body>
         </html>
         """
