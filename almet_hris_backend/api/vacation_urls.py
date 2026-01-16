@@ -54,7 +54,7 @@ urlpatterns = [
     path('schedules/<int:pk>/edit/', views.edit_schedule, name='vacation-edit-schedule'),
     path('schedules/<int:pk>/delete/', views.delete_schedule, name='vacation-delete-schedule'),
     path('vacation-schedules/<int:pk>/detail/', views.get_vacation_schedule_detail, name='vacation-schedule-detail'),
-    
+    path('schedules/bulk-create/', views.bulk_create_schedules, name='bulk-create-schedules'),
     # ============= APPROVAL =============
     path('approval/pending/', views.approval_pending_requests, name='vacation-approval-pending'),
     path('approval/history/', views.approval_history, name='vacation-approval-history'),

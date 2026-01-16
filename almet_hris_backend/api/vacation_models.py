@@ -543,25 +543,7 @@ class VacationRequest(SoftDeleteModel):
         
         self.save()
     
-    def approve_by_line_manager(self, user, comment=''):
-        """✅ ENHANCED: Line Manager təsdiq edir"""
-        self.line_manager_approved_at = timezone.now()
-        self.line_manager_approved_by = user
-        self.line_manager_comment = comment
-        
-        # ✅ Next step
-        if self.requires_uk_additional_approval():
-            self.status = 'PENDING_UK_ADDITIONAL'
-        elif self.hr_representative:
-            self.status = 'PENDING_HR'
-        else:
-            self.status = 'APPROVED'
-        
-        self.save()
-        
-        if self.status == 'APPROVED':
-            self._update_balance()
-    
+
     def reject_by_line_manager(self, user, reason):
         """Line Manager reject edir"""
         self.status = 'REJECTED_LINE_MANAGER'
@@ -570,23 +552,7 @@ class VacationRequest(SoftDeleteModel):
         self.rejection_reason = reason
         self.save()
     
-    def approve_by_uk_additional(self, user, comment=''):
-        """✅ NEW: UK Additional Approver təsdiq edir"""
-        self.uk_additional_approved_at = timezone.now()
-        self.uk_additional_approved_by = user
-        self.uk_additional_comment = comment
-        
-        # HR-a göndər
-        if self.hr_representative:
-            self.status = 'PENDING_HR'
-        else:
-            self.status = 'APPROVED'
-        
-        self.save()
-        
-        if self.status == 'APPROVED':
-            self._update_balance()
-    
+
     def reject_by_uk_additional(self, user, reason):
         """✅ NEW: UK Additional Approver reject edir"""
         self.status = 'REJECTED_UK_ADDITIONAL'
@@ -595,16 +561,7 @@ class VacationRequest(SoftDeleteModel):
         self.rejection_reason = reason
         self.save()
     
-    def approve_by_hr(self, user, comment=''):
-        """HR təsdiq edir"""
-        self.hr_approved_at = timezone.now()
-        self.hr_approved_by = user
-        self.hr_comment = comment
-        self.status = 'APPROVED'
-        self.save()
-        
-        self._update_balance()
-    
+
     def reject_by_hr(self, user, reason):
         """HR reject edir"""
         self.status = 'REJECTED_HR'
@@ -612,16 +569,108 @@ class VacationRequest(SoftDeleteModel):
         self.rejected_by = user
         self.rejection_reason = reason
         self.save()
+
+
+    def approve_by_line_manager(self, user, comment=''):
+        """✅ ENHANCED: Line Manager təsdiq edir"""
+        self.line_manager_approved_at = timezone.now()
+        self.line_manager_approved_by = user
+        self.line_manager_comment = comment
+        
+        # ✅ Determine next step
+        if self.requires_uk_additional_approval():
+            next_status = 'PENDING_UK_ADDITIONAL'
+        elif self.hr_representative:
+            next_status = 'PENDING_HR'
+        else:
+            next_status = 'APPROVED'
+        
+        self.status = next_status
+        self.save()
+        
+        # Only update balance if fully approved
+        if self.status == 'APPROVED':
+            self._update_balance()
+    
+    
+    def approve_by_uk_additional(self, user, comment=''):
+        """✅ FIXED: UK Additional Approver təsdiq edir"""
+        from django.utils import timezone
+        
+        # Set approval data
+        self.uk_additional_approved_at = timezone.now()
+        self.uk_additional_approved_by = user
+        self.uk_additional_comment = comment
+        
+        # ✅ CRITICAL FIX: Force refresh hr_representative from DB
+        self.refresh_from_db()
+        
+        # Determine next status
+        if self.hr_representative and self.hr_representative.id:
+            next_status = 'PENDING_HR'
+        else:
+            next_status = 'APPROVED'
+        
+        self.status = next_status
+        
+        # ✅ Save with update_fields to force status change
+        self.save(update_fields=[
+            'uk_additional_approved_at',
+            'uk_additional_approved_by',
+            'uk_additional_comment',
+            'status',
+            'updated_at'
+        ])
+        
+        # Only update balance if fully approved
+        if self.status == 'APPROVED':
+            self._update_balance()
+    
+    
+    def approve_by_hr(self, user, comment=''):
+        """✅ HR təsdiq edir - FINAL APPROVAL"""
+        self.hr_approved_at = timezone.now()
+        self.hr_approved_by = user
+        self.hr_comment = comment
+        self.status = 'APPROVED'
+        
+        # Save first
+        self.save(update_fields=[
+            'hr_approved_at',
+            'hr_approved_by',
+            'hr_comment',
+            'status',
+            'updated_at'
+        ])
+        
+        # Then update balance
+        self._update_balance()
+    
     
     def _update_balance(self):
-        """Approved olduqda balansı yenilə"""
-        balance, created = EmployeeVacationBalance.objects.get_or_create(
-            employee=self.employee,
-            year=self.start_date.year,
-        )
-        balance.used_days += self.number_of_days
-        balance.save()
-    
+        """✅ Approved olduqda balansı yenilə"""
+        try:
+            balance, created = EmployeeVacationBalance.objects.get_or_create(
+                employee=self.employee,
+                year=self.start_date.year,
+                defaults={
+                    'start_balance': 0,
+                    'yearly_balance': 28
+                }
+            )
+            
+            # ✅ Add used_days
+            balance.used_days = float(balance.used_days) + float(self.number_of_days)
+            balance.save()
+            
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(f"✅ Balance updated: {self.employee.full_name} - Used: {balance.used_days}")
+            
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"❌ Balance update failed: {e}")
     def check_date_conflicts(self):
         """Eyni employee üçün kəsişən tarixlərdə request/schedule olub-olmadığını yoxla"""
         conflicting_requests = VacationRequest.objects.filter(

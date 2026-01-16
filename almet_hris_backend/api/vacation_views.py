@@ -1887,16 +1887,28 @@ def edit_schedule(request, pk):
                 'error': 'Bu schedule-i daha edit edə bilməzsiniz'
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        # Update fields
+        # ✅ Parse dates properly
+        if 'start_date' in request.data:
+            start_date_str = request.data['start_date']
+            if isinstance(start_date_str, str):
+                schedule.start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
+            else:
+                schedule.start_date = start_date_str
+        
+        if 'end_date' in request.data:
+            end_date_str = request.data['end_date']
+            if isinstance(end_date_str, str):
+                schedule.end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
+            else:
+                schedule.end_date = end_date_str
+        
         if 'vacation_type_id' in request.data:
             schedule.vacation_type_id = request.data['vacation_type_id']
-        if 'start_date' in request.data:
-            schedule.start_date = request.data['start_date']
-        if 'end_date' in request.data:
-            schedule.end_date = request.data['end_date']
+        
         if 'comment' in request.data:
             schedule.comment = request.data['comment']
         
+        # Check conflicts
         has_conflict, conflicts = schedule.check_date_conflicts()
         if has_conflict:
             return Response({
@@ -1919,8 +1931,9 @@ def edit_schedule(request, pk):
         return Response({'error': 'Schedule tapılmadı'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
         logger.error(f"Error editing schedule: {e}")
+        import traceback
+        logger.error(traceback.format_exc())  # ✅ Full error log
         return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
-
 
 # ==================== DELETE SCHEDULE ====================
 @swagger_auto_schema(
@@ -2062,14 +2075,18 @@ def approval_pending_requests(request):
 @permission_classes([IsAuthenticated])
 def approve_reject_request(request, pk):
     """
-    ✅ ENHANCED: Approve/Reject vacation request
-    - Manager: Line Manager stage
-    - UK Additional Approver: UK Additional stage
-    - HR: HR stage
-    - Admin: All stages
+    ✅ ENHANCED: Approve/Reject with detailed logging
     """
     try:
-        vac_req = VacationRequest.objects.get(pk=pk, is_deleted=False)
+        vac_req = VacationRequest.objects.select_related(
+            'hr_representative',
+            'uk_additional_approver'
+        ).get(pk=pk, is_deleted=False)
+        
+        logger.info(f"🔵 APPROVAL REQUEST - ID: {vac_req.request_id}")
+        logger.info(f"   Current Status: {vac_req.status}")
+        logger.info(f"   HR Rep: {vac_req.hr_representative}")
+        logger.info(f"   UK Approver: {vac_req.uk_additional_approver}")
         
         # Check permission
         can_approve, reason = can_user_approve_request(request.user, vac_req)
@@ -2091,13 +2108,60 @@ def approve_reject_request(request, pk):
         graph_token = notification_ctx['graph_token']
         notification_sent = False
         
-        # LINE MANAGER APPROVAL/REJECTION
+        # Store old status for comparison
+        old_status = vac_req.status
+        
+        # ✅ UK ADDITIONAL APPROVER APPROVAL/REJECTION
+        if vac_req.status == 'PENDING_UK_ADDITIONAL':
+            if data['action'] == 'approve':
+                logger.info(f"⚙️ Calling approve_by_uk_additional...")
+                
+                vac_req.approve_by_uk_additional(request.user, data.get('comment', ''))
+                
+                # ✅ Refresh to get latest status
+                vac_req.refresh_from_db()
+                
+                logger.info(f"✅ UK Approval Complete")
+                logger.info(f"   Old Status: {old_status}")
+                logger.info(f"   New Status: {vac_req.status}")
+                logger.info(f"   HR Rep: {vac_req.hr_representative}")
+                
+                msg = f'Approved by UK Additional Approver - Now {vac_req.get_status_display()}'
+                
+                # ✅ Send notification based on NEW status
+                if graph_token:
+                    try:
+                        if vac_req.status == 'PENDING_HR':
+                            logger.info(f"📧 Sending HR notification...")
+                            notification_sent = notification_manager.notify_uk_additional_approved(
+                                vac_req, graph_token
+                            )
+                        elif vac_req.status == 'APPROVED':
+                            logger.info(f"📧 Sending final approval notification...")
+                            notification_sent = notification_manager.notify_hr_approved(
+                                vac_req, graph_token
+                            )
+                    except Exception as e:
+                        logger.error(f"❌ Notification error: {e}")
+            else:
+                vac_req.reject_by_uk_additional(request.user, data.get('reason', ''))
+                msg = 'Rejected by UK Additional Approver'
+                
+                if graph_token:
+                    try:
+                        notification_sent = notification_manager.notify_request_rejected(
+                            vac_req, graph_token
+                        )
+                    except Exception as e:
+                        logger.error(f"Notification error: {e}")
+        
+        # ✅ LINE MANAGER APPROVAL/REJECTION
         if vac_req.status == 'PENDING_LINE_MANAGER':
             if data['action'] == 'approve':
                 vac_req.approve_by_line_manager(request.user, data.get('comment', ''))
                 msg = 'Approved by Line Manager'
                 
-                # ✅ Send appropriate notification
+                # ✅ Send appropriate notification based on NEXT status
                 if graph_token:
                     try:
                         if vac_req.status == 'PENDING_UK_ADDITIONAL':
@@ -2126,38 +2190,8 @@ def approve_reject_request(request, pk):
                     except Exception as e:
                         logger.error(f"Notification error: {e}")
         
-        # ✅ UK ADDITIONAL APPROVER APPROVAL/REJECTION
-        elif vac_req.status == 'PENDING_UK_ADDITIONAL':
-            if data['action'] == 'approve':
-                vac_req.approve_by_uk_additional(request.user, data.get('comment', ''))
-                msg = 'Approved by UK Additional Approver'
-                
-                # Send notification
-                if graph_token:
-                    try:
-                        if vac_req.status == 'PENDING_HR':
-                            notification_sent = notification_manager.notify_uk_additional_approved(
-                                vac_req, graph_token
-                            )
-                        elif vac_req.status == 'APPROVED':
-                            notification_sent = notification_manager.notify_hr_approved(
-                                vac_req, graph_token
-                            )
-                    except Exception as e:
-                        logger.error(f"Notification error: {e}")
-            else:
-                vac_req.reject_by_uk_additional(request.user, data.get('reason', ''))
-                msg = 'Rejected by UK Additional Approver'
-                
-                if graph_token:
-                    try:
-                        notification_sent = notification_manager.notify_request_rejected(
-                            vac_req, graph_token
-                        )
-                    except Exception as e:
-                        logger.error(f"Notification error: {e}")
         
-        # HR APPROVAL/REJECTION
+        # ✅ HR APPROVAL/REJECTION
         elif vac_req.status == 'PENDING_HR':
             if data['action'] == 'approve':
                 vac_req.approve_by_hr(request.user, data.get('comment', ''))
@@ -2190,6 +2224,8 @@ def approve_reject_request(request, pk):
             'message': msg,
             'notification_sent': notification_sent,
             'notification_available': notification_ctx['can_send_emails'],
+            'current_status': vac_req.status,  # ✅ Debug info
+            'next_step': vac_req.get_status_display(),  # ✅ Debug info
             'request': VacationRequestDetailSerializer(vac_req).data
         })
     
@@ -2199,6 +2235,214 @@ def approve_reject_request(request, pk):
         logger.error(f"Error in approve/reject: {e}")
         return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
+@swagger_auto_schema(
+    method='post',
+    operation_description="✅ Create multiple schedules at once (Planning feature)",
+    operation_summary="Bulk Create Schedules",
+    tags=['Vacation'],
+    request_body=openapi.Schema(
+        type=openapi.TYPE_OBJECT,
+        required=['schedules'],
+        properties={
+            'schedules': openapi.Schema(
+                type=openapi.TYPE_ARRAY,
+                items=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    required=['vacation_type_id', 'start_date', 'end_date'],
+                    properties={
+                        'vacation_type_id': openapi.Schema(type=openapi.TYPE_INTEGER),
+                        'start_date': openapi.Schema(type=openapi.TYPE_STRING, format='date'),
+                        'end_date': openapi.Schema(type=openapi.TYPE_STRING, format='date'),
+                        'comment': openapi.Schema(type=openapi.TYPE_STRING),
+                    }
+                )
+            ),
+            'employee_id': openapi.Schema(type=openapi.TYPE_INTEGER, description='For manager creating for employee')
+        }
+    ),
+    responses={201: openapi.Response(description='Schedules created')}
+)
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def bulk_create_schedules(request):
+    """✅ Multiple schedule yaratmaq - Planning feature"""
+    try:
+        access = get_vacation_access(request.user)
+        
+        if not access['employee']:
+            return Response({
+                'error': 'Employee profile not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        schedules_data = request.data.get('schedules', [])
+        employee_id = request.data.get('employee_id')
+        
+        if not schedules_data:
+            return Response({
+                'error': 'No schedules provided'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Determine target employee
+        if employee_id:
+            # Manager/Admin creating for employee
+            if not (access['is_manager'] or access['is_admin']):
+                return Response({
+                    'error': 'Only managers and admins can create schedules for others'
+                }, status=status.HTTP_403_FORBIDDEN)
+            
+            employee = Employee.objects.get(id=employee_id, is_deleted=False)
+            
+            # Check access
+            if not access['can_view_all']:
+                if access['accessible_employee_ids'] is None:
+                    pass  # Admin
+                elif employee.id not in access['accessible_employee_ids']:
+                    return Response({
+                        'error': 'This employee is not in your team'
+                    }, status=status.HTTP_403_FORBIDDEN)
+        else:
+            employee = access['employee']
+        
+        year = date.today().year
+        settings = VacationSetting.get_active()
+        
+        # Get current balance
+        balance, created = EmployeeVacationBalance.objects.get_or_create(
+            employee=employee,
+            year=year,
+            defaults={
+                'start_balance': 0,
+                'yearly_balance': 28,
+                'updated_by': request.user
+            }
+        )
+        
+        created_schedules = []
+        errors = []
+        total_days = 0
+        
+        with transaction.atomic():
+            for idx, schedule_data in enumerate(schedules_data):
+                try:
+                    # Validate required fields
+                    if not all(k in schedule_data for k in ['vacation_type_id', 'start_date', 'end_date']):
+                        errors.append({
+                            'index': idx,
+                            'error': 'Missing required fields'
+                        })
+                        continue
+                    
+                    # Parse dates
+                    start_dt = datetime.strptime(schedule_data['start_date'], '%Y-%m-%d').date()
+                    end_dt = datetime.strptime(schedule_data['end_date'], '%Y-%m-%d').date()
+                    
+                    if start_dt >= end_dt:
+                        errors.append({
+                            'index': idx,
+                            'error': 'End date must be after start date'
+                        })
+                        continue
+                    
+                    # Check vacation type
+                    vacation_type = VacationType.objects.get(
+                        id=schedule_data['vacation_type_id'],
+                        is_active=True,
+                        is_deleted=False
+                    )
+                    
+                    # Calculate days
+                    if settings:
+                        days = settings.calculate_working_days(start_dt, end_dt)
+                    else:
+                        days = (end_dt - start_dt).days + 1
+                    
+                    total_days += days
+                    
+                    # Create temp schedule to check conflicts
+                    temp_schedule = VacationSchedule(
+                        employee=employee,
+                        start_date=start_dt,
+                        end_date=end_dt
+                    )
+                    
+                    has_conflict, conflicts = temp_schedule.check_date_conflicts()
+                    if has_conflict:
+                        errors.append({
+                            'index': idx,
+                            'error': 'Date conflict',
+                            'dates': f"{start_dt} - {end_dt}",
+                            'conflicts': conflicts
+                        })
+                        continue
+                    
+                    # Create schedule
+                    schedule = VacationSchedule.objects.create(
+                        employee=employee,
+                        vacation_type=vacation_type,
+                        start_date=start_dt,
+                        end_date=end_dt,
+                        comment=schedule_data.get('comment', ''),
+                        created_by=request.user
+                    )
+                    
+                    created_schedules.append(schedule)
+                    
+                except VacationType.DoesNotExist:
+                    errors.append({
+                        'index': idx,
+                        'error': 'Vacation type not found'
+                    })
+                except ValueError as e:
+                    errors.append({
+                        'index': idx,
+                        'error': f'Invalid date format: {str(e)}'
+                    })
+                except Exception as e:
+                    errors.append({
+                        'index': idx,
+                        'error': str(e)
+                    })
+            
+            # Balance check
+            if settings and not settings.allow_negative_balance:
+                total_planned = balance.scheduled_days + total_days
+                if total_planned > balance.total_balance:
+                    return Response({
+                        'error': f'Insufficient balance. Total planned ({total_planned}) exceeds balance ({balance.total_balance}).',
+                        'available_balance': float(balance.remaining_balance),
+                        'requested_days': total_days,
+                        'current_scheduled': float(balance.scheduled_days)
+                    }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Refresh balance
+        balance.refresh_from_db()
+        
+        return Response({
+            'message': f'{len(created_schedules)} schedules created successfully',
+            'created_count': len(created_schedules),
+            'error_count': len(errors),
+            'total_days_planned': total_days,
+            'schedules': VacationScheduleSerializer(created_schedules, many=True).data,
+            'errors': errors if errors else None,
+            'balance': {
+                'total_balance': float(balance.total_balance),
+                'yearly_balance': float(balance.yearly_balance),
+                'used_days': float(balance.used_days),
+                'remaining_balance': float(balance.remaining_balance),
+                'scheduled_days': float(balance.scheduled_days),
+                'should_be_planned': float(balance.should_be_planned)
+            }
+        }, status=status.HTTP_201_CREATED)
+        
+    except Employee.DoesNotExist:
+        return Response({
+            'error': 'Employee not found'
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Bulk schedule creation error: {e}")
+        return Response({
+            'error': str(e)
+        }, status=status.HTTP_400_BAD_REQUEST)
 
 # ==================== APPROVAL HISTORY ====================
 @swagger_auto_schema(
