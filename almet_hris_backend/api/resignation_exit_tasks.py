@@ -117,7 +117,7 @@ def _send_contract_expiry_notification(employee, renewal_request):
         """
         
         system_email_service.send_email_as_system(
-            from_email="shadmin@almettrading.com",
+            from_email="myalmet@almettrading.com",
             to_email=employee.line_manager.email,
             subject=subject,
             body_html=body
@@ -125,7 +125,7 @@ def _send_contract_expiry_notification(employee, renewal_request):
         
         # Also send system notification
         system_email_service.send_email_as_system(
-            from_email="shadmin@almettrading.com",
+            from_email="myalmet@almettrading.com",
             to_email=employee.line_manager.email,
             subject=f"🔔 Contract Renewal: {employee.full_name}",
             body_html=f"Contract expires on {employee.contract_end_date}. Please submit your decision."
@@ -278,7 +278,7 @@ def _send_probation_review_notification(employee, review):
         """
         
         system_email_service.send_email_as_system(
-            from_email="shadmin@almettrading.com",
+            from_email="myalmet@almettrading.com",
             to_email=recipients,
             subject=subject,
             body_html=body
@@ -353,7 +353,7 @@ def _send_resignation_reminder(resignation):
         """
         
         system_email_service.send_email_as_system(
-            from_email="shadmin@almettrading.com",
+            from_email="myalmet@almettrading.com",
             to_email=resignation.employee.line_manager.email,
             subject=subject,
             body_html=body
@@ -430,7 +430,7 @@ def _send_exit_interview_reminder(interview, days_remaining):
         """
         
         system_email_service.send_email_as_system(
-            from_email="shadmin@almettrading.com",
+            from_email="myalmet@almettrading.com",
             to_email=interview.employee.email,
             subject=subject,
             body_html=body

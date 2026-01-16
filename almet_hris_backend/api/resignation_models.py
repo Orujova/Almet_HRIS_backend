@@ -247,7 +247,7 @@ class ResignationRequest(SoftDeleteModel):
             """
             
             system_email_service.send_email_as_system(
-                from_email="shadmin@almettrading.com",
+                from_email="myalmet@almettrading.com",
                 to_email=hr_email,
                 subject=subject,
                 body_html=body
@@ -275,7 +275,7 @@ class ResignationRequest(SoftDeleteModel):
             body = self._get_employee_notification_body(notification_type)
             
             system_email_service.send_email_as_system(
-                from_email="shadmin@almettrading.com",
+                from_email="myalmet@almettrading.com",
                 to_email=self.employee.email,
                 subject=subject,
                 body_html=body

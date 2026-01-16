@@ -28,7 +28,8 @@ from .vacation_permissions import (
     can_user_modify_schedule,
     can_user_register_schedule,
     can_user_approve_request,
-    check_vacation_access
+    check_vacation_access,
+    is_uk_additional_approver
 )
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
@@ -135,17 +136,27 @@ def vacation_dashboard(request):
 
 
 # ==================== PRODUCTION CALENDAR SETTINGS ====================
+# api/vacation_views.py - FIXED get_calendar_events
+
 @swagger_auto_schema(
     method='get',
-    operation_description="Calendar view - holidays və vacation events",
+    operation_description="Calendar view - holidays və vacation events with automatic calendar selection",
     operation_summary="Get Calendar Events",
     tags=['Vacation'],
+    manual_parameters=[
+        openapi.Parameter('month', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, description='Month (1-12)'),
+        openapi.Parameter('year', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, description='Year (e.g., 2025)'),
+        openapi.Parameter('country', openapi.IN_QUERY, type=openapi.TYPE_STRING, description='Override calendar: "az" or "uk" (auto-detected from user business function)'),
+        openapi.Parameter('employee_id', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, description='Filter by employee ID'),
+        openapi.Parameter('department_id', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, description='Filter by department ID'),
+        openapi.Parameter('business_function_id', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, description='Filter by business function ID'),
+    ],
     responses={200: openapi.Response(description='Calendar events')}
 )
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_calendar_events(request):
-    """✅ Calendar view - filtered by access level"""
+    """✅ ENHANCED: Calendar view - automatic calendar selection based on user business function"""
     try:
         access = get_vacation_access(request.user)
         
@@ -155,6 +166,17 @@ def get_calendar_events(request):
         employee_id = request.GET.get('employee_id')
         department_id = request.GET.get('department_id')
         business_function_id = request.GET.get('business_function_id')
+        country_override = request.GET.get('country')  # ✅ Optional override
+        
+        # ✅ AUTO-DETECT calendar based on user's business function
+        default_country = 'az'  # Default
+        if access['employee'] and access['employee'].business_function:
+            bf_code = getattr(access['employee'].business_function, 'code', '')
+            if bf_code and bf_code.upper() == 'UK':
+                default_country = 'uk'
+        
+        # Use override if provided, otherwise use auto-detected
+        country = (country_override or default_country).lower()
         
         # Default to current month/year
         if not month or not year:
@@ -176,21 +198,45 @@ def get_calendar_events(request):
         settings = VacationSetting.get_active()
         holidays = []
         
-        if settings and settings.non_working_days:
-            for holiday in settings.non_working_days:
+        if settings:
+            # ✅ Use appropriate calendar
+            if country == 'uk':
+                holiday_calendar = settings.non_working_days_uk
+            else:
+                holiday_calendar = settings.non_working_days_az
+            
+            for holiday in holiday_calendar:
                 if isinstance(holiday, dict):
-                    holiday_date = datetime.strptime(holiday['date'], '%Y-%m-%d').date()
-                    if start_date <= holiday_date <= end_date:
-                        holidays.append({
-                            'date': holiday['date'],
-                            'name': holiday.get('name', 'Holiday'),
-                            'type': 'holiday'
-                        })
+                    try:
+                        holiday_date = datetime.strptime(holiday['date'], '%Y-%m-%d').date()
+                        if start_date <= holiday_date <= end_date:
+                            holidays.append({
+                                'date': holiday['date'],
+                                'name': holiday.get('name', 'Holiday'),
+                                'type': 'holiday',
+                                'country': country.upper()
+                            })
+                    except (ValueError, KeyError) as e:
+                        logger.warning(f"Invalid holiday date format: {holiday}")
+                        continue
+                elif isinstance(holiday, str):
+                    try:
+                        holiday_date = datetime.strptime(holiday, '%Y-%m-%d').date()
+                        if start_date <= holiday_date <= end_date:
+                            holidays.append({
+                                'date': holiday,
+                                'name': 'Holiday',
+                                'type': 'holiday',
+                                'country': country.upper()
+                            })
+                    except ValueError as e:
+                        logger.warning(f"Invalid holiday date string: {holiday}")
+                        continue
         
         # ✅ Get vacation requests - filtered by access
         requests_qs = VacationRequest.objects.filter(
             is_deleted=False,
-            status__in=['PENDING_LINE_MANAGER', 'PENDING_HR', 'APPROVED']
+            status__in=['PENDING_LINE_MANAGER', 'PENDING_UK_ADDITIONAL', 'PENDING_HR', 'APPROVED']
         ).filter(
             Q(start_date__lte=end_date) & Q(end_date__gte=start_date)
         ).select_related('employee', 'employee__department', 'employee__business_function', 'vacation_type')
@@ -227,6 +273,16 @@ def get_calendar_events(request):
         employee_ids_on_vacation = set()
         
         for req in requests_qs:
+            # Get business function code
+            bf_code = None
+            if req.employee.business_function:
+                bf_code = getattr(req.employee.business_function, 'code', '')
+            
+            # Half day display
+            period_display = f"{req.start_date.strftime('%Y-%m-%d')} to {req.end_date.strftime('%Y-%m-%d')}"
+            if req.is_half_day:
+                period_display = f"{req.start_date.strftime('%Y-%m-%d')} (Half Day: {req.half_day_start_time.strftime('%H:%M')} - {req.half_day_end_time.strftime('%H:%M')})"
+            
             vacations.append({
                 'id': req.id,
                 'type': 'request',
@@ -236,18 +292,28 @@ def get_calendar_events(request):
                 'employee_code': getattr(req.employee, 'employee_id', ''),
                 'department': req.employee.department.name if req.employee.department else '',
                 'business_function': req.employee.business_function.name if req.employee.business_function else '',
+                'business_function_code': bf_code,
                 'vacation_type': req.vacation_type.name,
                 'vacation_type_id': req.vacation_type.id,
                 'start_date': req.start_date.strftime('%Y-%m-%d'),
                 'end_date': req.end_date.strftime('%Y-%m-%d'),
+                'period_display': period_display,
                 'status': req.get_status_display(),
                 'status_code': req.status,
                 'days': float(req.number_of_days),
-                'comment': req.comment
+                'comment': req.comment,
+                'is_half_day': req.is_half_day,
+                'half_day_start_time': req.half_day_start_time.strftime('%H:%M') if req.half_day_start_time else None,
+                'half_day_end_time': req.half_day_end_time.strftime('%H:%M') if req.half_day_end_time else None,
             })
             employee_ids_on_vacation.add(req.employee.id)
         
         for sch in schedules_qs:
+            # Get business function code
+            bf_code = None
+            if sch.employee.business_function:
+                bf_code = getattr(sch.employee.business_function, 'code', '')
+            
             vacations.append({
                 'id': sch.id,
                 'type': 'schedule',
@@ -257,14 +323,17 @@ def get_calendar_events(request):
                 'employee_code': getattr(sch.employee, 'employee_id', ''),
                 'department': sch.employee.department.name if sch.employee.department else '',
                 'business_function': sch.employee.business_function.name if sch.employee.business_function else '',
+                'business_function_code': bf_code,
                 'vacation_type': sch.vacation_type.name,
                 'vacation_type_id': sch.vacation_type.id,
                 'start_date': sch.start_date.strftime('%Y-%m-%d'),
                 'end_date': sch.end_date.strftime('%Y-%m-%d'),
+                'period_display': f"{sch.start_date.strftime('%Y-%m-%d')} to {sch.end_date.strftime('%Y-%m-%d')}",
                 'status': sch.get_status_display(),
                 'status_code': sch.status,
                 'days': float(sch.number_of_days),
-                'comment': sch.comment
+                'comment': sch.comment,
+                'is_half_day': False,
             })
             employee_ids_on_vacation.add(sch.employee.id)
         
@@ -275,6 +344,9 @@ def get_calendar_events(request):
             'employees_on_vacation': len(employee_ids_on_vacation),
             'month': month,
             'year': year,
+            'country': country.upper(),
+            'calendar_auto_detected': country_override is None,
+            'user_business_function': access['employee'].business_function.name if access['employee'] and access['employee'].business_function else None,
             'access_level': access['access_level']
         }
         
@@ -290,27 +362,47 @@ def get_calendar_events(request):
             'error': str(e)
         }, status=status.HTTP_400_BAD_REQUEST)
 
-
 # ==================== SETTINGS - ADMIN ONLY ====================
 @swagger_auto_schema(
+    method='get',
+    operation_description="✅ Get production calendars (AZ & UK)",
+    operation_summary="Get Production Calendars",
+    tags=['Vacation - Settings'],
+    responses={200: openapi.Response(description='Production calendars')}
+)
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_production_calendar(request):
+    """✅ Production Calendar - AZ və UK"""
+    try:
+        settings = VacationSetting.get_active()
+        
+        return Response({
+            'azerbaijan': settings.non_working_days_az if settings else [],
+            'uk': settings.non_working_days_uk if settings else []
+        })
+        
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+@swagger_auto_schema(
     method='put',
-    operation_description="Production Calendar - qeyri-iş günlərini yenilə (ADMIN ONLY)",
-    operation_summary="Update Non-Working Days",
+    operation_description="✅ Update production calendars (ADMIN ONLY)",
+    operation_summary="Update Production Calendars",
     tags=['Vacation - Settings'],
     request_body=ProductionCalendarSerializer,
-    responses={200: openapi.Response(description='Production calendar yeniləndi')}
+    responses={200: openapi.Response(description='Calendars updated')}
 )
 @api_view(['PUT'])
 @permission_classes([IsAuthenticated])
-@check_vacation_access('all')  # ✅ Admin only
+@check_vacation_access('all')  # Admin only
 def update_production_calendar(request):
-    """✅ Production Calendar - Admin only"""
+    """✅ Production Calendars - Admin only"""
     try:
         serializer = ProductionCalendarSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-        
-        non_working_days = serializer.validated_data['non_working_days']
         
         settings = VacationSetting.get_active()
         if not settings:
@@ -319,20 +411,25 @@ def update_production_calendar(request):
                 created_by=request.user
             )
         
-        settings.non_working_days = non_working_days
+        if 'non_working_days_az' in serializer.validated_data:
+            settings.non_working_days_az = serializer.validated_data['non_working_days_az']
+        
+        if 'non_working_days_uk' in serializer.validated_data:
+            settings.non_working_days_uk = serializer.validated_data['non_working_days_uk']
+        
         settings.updated_by = request.user
         settings.save()
         
         return Response({
-            'message': 'Production calendar uğurla yeniləndi',
-            'non_working_days': settings.non_working_days,
+            'message': 'Production calendars updated successfully',
+            'azerbaijan': settings.non_working_days_az,
+            'uk': settings.non_working_days_uk,
             'updated_at': settings.updated_at,
             'updated_by': request.user.get_full_name() or request.user.username
         })
         
     except Exception as e:
         return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
-
 
 @swagger_auto_schema(
     method='post',
@@ -373,27 +470,99 @@ def set_production_calendar(request):
     except Exception as e:
         return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
-
+# ==================== UK ADDITIONAL APPROVER SETTINGS ====================
 @swagger_auto_schema(
     method='get',
-    operation_description="Production Calendar məlumatlarını əldə et",
-    operation_summary="Get Production Calendar",
+    operation_description="✅ Get UK Additional Approver",
+    operation_summary="Get UK Additional Approver",
     tags=['Vacation - Settings'],
-    responses={200: openapi.Response(description='Production calendar məlumatları')}
+    responses={200: openapi.Response(description='UK Additional Approver')}
 )
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
-def get_production_calendar(request):
-    """✅ Production Calendar - Hamı görə bilər"""
+def get_uk_additional_approver(request):
+    """✅ Get UK Additional Approver"""
     try:
         settings = VacationSetting.get_active()
         
+        if not settings or not settings.uk_additional_approver:
+            return Response({
+                'uk_additional_approver': None
+            })
+        
+        approver = settings.uk_additional_approver
+        
         return Response({
-            'non_working_days': settings.non_working_days if settings else []
+            'uk_additional_approver': {
+                'id': approver.id,
+                'name': approver.full_name,
+                'employee_id': getattr(approver, 'employee_id', ''),
+                'position_group': approver.position_group.name if approver.position_group else '',
+                'business_function': approver.business_function.name if approver.business_function else '',
+                'email': approver.user.email if approver.user else ''
+            }
         })
         
     except Exception as e:
         return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+@swagger_auto_schema(
+    method='put',
+    operation_description="✅ Set UK Additional Approver (ADMIN ONLY)",
+    operation_summary="Set UK Additional Approver",
+    tags=['Vacation - Settings'],
+    request_body=UKAdditionalApproverSerializer,
+    responses={200: openapi.Response(description='UK Additional Approver set')}
+)
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+@check_vacation_access('all')  # Admin only
+def set_uk_additional_approver(request):
+    """✅ Set UK Additional Approver - Admin only"""
+    try:
+        serializer = UKAdditionalApproverSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        approver_id = serializer.validated_data['uk_additional_approver_id']
+        approver = Employee.objects.get(id=approver_id, is_deleted=False)
+        
+        settings = VacationSetting.get_active()
+        if not settings:
+            settings = VacationSetting.objects.create(
+                is_active=True,
+                created_by=request.user
+            )
+        
+        previous_approver = settings.uk_additional_approver
+        settings.uk_additional_approver = approver
+        settings.updated_by = request.user
+        settings.save()
+        
+        return Response({
+            'message': 'UK Additional Approver set successfully',
+            'previous_approver': {
+                'id': previous_approver.id,
+                'name': previous_approver.full_name
+            } if previous_approver else None,
+            'current_approver': {
+                'id': approver.id,
+                'name': approver.full_name,
+                'position_group': approver.position_group.name if approver.position_group else '',
+                'business_function': approver.business_function.name if approver.business_function else ''
+            },
+            'updated_at': settings.updated_at
+        })
+        
+    except Employee.DoesNotExist:
+        return Response({
+            'error': 'Approver not found'
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
 
 
 # ==================== GENERAL VACATION SETTINGS - ADMIN ONLY ====================
@@ -1155,8 +1324,8 @@ def reset_balances(request):
 # ==================== REQUEST IMMEDIATE ====================
 @swagger_auto_schema(
     method='post',
-    operation_description="Create vacation request immediately with optional file attachments",
-    operation_summary="Create Immediate Request with Files",
+    operation_description="✅ Create vacation request with half-day support",
+    operation_summary="Create Immediate Request",
     tags=['Vacation'],
     responses={201: openapi.Response(description='Request created')}
 )
@@ -1165,10 +1334,9 @@ def reset_balances(request):
 @parser_classes([MultiPartParser, FormParser])
 def create_immediate_request(request):
     """
-    ✅ Create vacation request - Employee/Manager/Admin can create
-    - Employee: For self
-    - Manager: For self + team
-    - Admin: For anyone
+    ✅ ENHANCED: Create vacation request
+    - Half day support for UK employees
+    - UK additional approval for 5+ days
     """
     import json
     
@@ -1191,6 +1359,11 @@ def create_immediate_request(request):
                     'error': 'Invalid employee_manual format. Must be valid JSON object.'
                 }, status=status.HTTP_400_BAD_REQUEST)
         
+        # Convert string booleans
+        if 'is_half_day' in data:
+            if isinstance(data['is_half_day'], str):
+                data['is_half_day'] = data['is_half_day'].lower() == 'true'
+        
         uploaded_files = request.FILES.getlist('files')
         
         serializer = VacationRequestCreateSerializer(data=data)
@@ -1201,7 +1374,7 @@ def create_immediate_request(request):
         
         requester_emp = access['employee']
         
-        # ✅ Determine target employee based on access level
+        # Determine target employee
         if validated_data['requester_type'] == 'for_me':
             employee = requester_emp
         else:
@@ -1209,8 +1382,8 @@ def create_immediate_request(request):
                 try:
                     employee = Employee.objects.get(id=validated_data['employee_id'], is_deleted=False)
                     
-                    # ✅ Check if requester can create for this employee
-                    if not access['can_view_all']:  # Not admin
+                    # Check access
+                    if not access['can_view_all']:
                         if access['accessible_employee_ids'] is None:
                             pass  # Admin
                         elif employee.id not in access['accessible_employee_ids']:
@@ -1223,7 +1396,7 @@ def create_immediate_request(request):
                         'error': 'Employee not found'
                     }, status=status.HTTP_404_NOT_FOUND)
             else:
-                # Manual employee - only manager/admin can create
+                # Manual employee
                 if not (access['is_manager'] or access['is_admin']):
                     return Response({
                         'error': 'Only managers and admins can create manual employees'
@@ -1241,6 +1414,24 @@ def create_immediate_request(request):
                     line_manager=requester_emp,
                     created_by=request.user
                 )
+        
+        # ✅ Validate vacation type for UK-only types
+        vacation_type = VacationType.objects.get(
+            id=validated_data['vacation_type_id'],
+            is_active=True,
+            is_deleted=False
+        )
+        
+        # Check if employee can use this type
+        is_uk = False
+        if employee.business_function:
+            code = getattr(employee.business_function, 'code', '')
+            is_uk = code.upper() == 'UK'
+        
+        if vacation_type.is_uk_only and not is_uk:
+            return Response({
+                'error': 'This vacation type is only available for UK employees'
+            }, status=status.HTTP_400_BAD_REQUEST)
         
         # Check conflicts
         temp_request = VacationRequest(
@@ -1271,22 +1462,31 @@ def create_immediate_request(request):
             }
         )
         
+        # ✅ Calculate working days with business function code
         working_days = 0
-        if settings:
+        bf_code = None
+        if employee.business_function:
+            bf_code = getattr(employee.business_function, 'code', None)
+        
+        if validated_data.get('is_half_day'):
+            working_days = 0.5
+        elif settings:
             working_days = settings.calculate_working_days(
                 validated_data['start_date'], 
-                validated_data['end_date']
+                validated_data['end_date'],
+                bf_code
             )
         
         if settings and not settings.allow_negative_balance:
             if working_days > balance.remaining_balance:
                 return Response({
-                    'error': f'Insufficient balance. You have {balance.remaining_balance} days remaining. Negative balance not allowed.',
+                    'error': f'Insufficient balance. You have {balance.remaining_balance} days remaining.',
                     'available_balance': float(balance.remaining_balance),
                     'requested_days': working_days
                 }, status=status.HTTP_400_BAD_REQUEST)
         
         with transaction.atomic():
+            # Create request
             vac_req = VacationRequest.objects.create(
                 employee=employee,
                 requester=request.user,
@@ -1295,7 +1495,10 @@ def create_immediate_request(request):
                 start_date=validated_data['start_date'],
                 end_date=validated_data['end_date'],
                 comment=validated_data.get('comment', ''),
-                hr_representative_id=validated_data.get('hr_representative_id')
+                hr_representative_id=validated_data.get('hr_representative_id'),
+                is_half_day=validated_data.get('is_half_day', False),
+                half_day_start_time=validated_data.get('half_day_start_time'),
+                half_day_end_time=validated_data.get('half_day_end_time')
             )
             
             # Upload files
@@ -1330,13 +1533,23 @@ def create_immediate_request(request):
                         'error': str(e)
                     })
             
+            # Submit request
             vac_req.submit_request(request.user)
             
-            # Send notification
+            # ✅ Send appropriate notification based on status
             graph_token = get_graph_access_token(request.user)
             notification_sent = False
+            
             if graph_token:
-                notification_sent = notification_manager.notify_request_created(vac_req, graph_token)
+                if vac_req.status == 'PENDING_LINE_MANAGER':
+                    notification_sent = notification_manager.notify_request_created(vac_req, graph_token)
+                elif vac_req.status == 'PENDING_UK_ADDITIONAL':
+                    notification_sent = notification_manager.notify_uk_additional_approval_needed(
+                        vac_req, 
+                        graph_token
+                    )
+                elif vac_req.status == 'PENDING_HR':
+                    notification_sent = notification_manager.notify_hr_approval_needed(vac_req, graph_token)
             
             balance.refresh_from_db()
             
@@ -1755,7 +1968,7 @@ def delete_schedule(request, pk):
 # ==================== APPROVAL PENDING ====================
 @swagger_auto_schema(
     method='get',
-    operation_description="Approval - Pending requestlər",
+    operation_description="✅ Approval - Pending requests (UK additional included)",
     operation_summary="Pending Requests",
     tags=['Vacation'],
     responses={200: openapi.Response(description='Pending requests')}
@@ -1764,10 +1977,11 @@ def delete_schedule(request, pk):
 @permission_classes([IsAuthenticated])
 def approval_pending_requests(request):
     """
-    ✅ Approval - Pending requestlər
-    - Manager: Only requests from THEIR team (Line Manager stage)
-    - HR: Requests in HR stage
-    - Admin: Both stages
+    ✅ ENHANCED: Approval - Pending requests
+    - Manager: Line Manager stage
+    - UK Additional Approver: UK Additional stage
+    - HR: HR stage
+    - Admin: All stages
     """
     try:
         access = get_vacation_access(request.user)
@@ -1786,23 +2000,36 @@ def approval_pending_requests(request):
                 is_deleted=False
             ).order_by('-created_at')
             
+            uk_requests = VacationRequest.objects.filter(
+                status='PENDING_UK_ADDITIONAL',
+                is_deleted=False
+            ).order_by('-created_at')
+            
             hr_requests = VacationRequest.objects.filter(
                 status='PENDING_HR',
                 is_deleted=False
             ).order_by('-created_at')
         else:
-            # ✅ Manager sees only THEIR team's requests (Line Manager stage)
+            # Manager sees only THEIR team's requests
             lm_requests = VacationRequest.objects.filter(
                 line_manager=emp,
                 status='PENDING_LINE_MANAGER',
                 is_deleted=False
             ).order_by('-created_at')
             
-            # ✅ Only if accessible employees (manager/hr)
             if access['accessible_employee_ids']:
                 lm_requests = lm_requests.filter(
                     employee_id__in=access['accessible_employee_ids']
                 )
+            
+            # ✅ UK Additional Approver sees UK requests
+            uk_requests = VacationRequest.objects.none()
+            if is_uk_additional_approver(request.user):
+                uk_requests = VacationRequest.objects.filter(
+                    uk_additional_approver=emp,
+                    status='PENDING_UK_ADDITIONAL',
+                    is_deleted=False
+                ).order_by('-created_at')
             
             # HR representative sees HR stage requests
             hr_requests = VacationRequest.objects.filter(
@@ -1813,12 +2040,163 @@ def approval_pending_requests(request):
         
         return Response({
             'line_manager_requests': VacationRequestListSerializer(lm_requests, many=True).data,
+            'uk_additional_requests': VacationRequestListSerializer(uk_requests, many=True).data,
             'hr_requests': VacationRequestListSerializer(hr_requests, many=True).data,
-            'total_pending': lm_requests.count() + hr_requests.count(),
-            'access_level': access['access_level']
+            'total_pending': lm_requests.count() + uk_requests.count() + hr_requests.count(),
+            'access_level': access['access_level'],
+            'is_uk_additional_approver': is_uk_additional_approver(request.user)
         })
     except Exception as e:
         logger.error(f"Error in approval_pending_requests: {e}")
+        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+@swagger_auto_schema(
+    method='post',
+    operation_description="✅ Approve/Reject vacation request (UK stage included)",
+    tags=['Vacation'],
+    request_body=VacationApprovalSerializer,
+    responses={200: openapi.Response(description='Action completed')}
+)
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def approve_reject_request(request, pk):
+    """
+    ✅ ENHANCED: Approve/Reject vacation request
+    - Manager: Line Manager stage
+    - UK Additional Approver: UK Additional stage
+    - HR: HR stage
+    - Admin: All stages
+    """
+    try:
+        vac_req = VacationRequest.objects.get(pk=pk, is_deleted=False)
+        
+        # Check permission
+        can_approve, reason = can_user_approve_request(request.user, vac_req)
+        
+        if not can_approve:
+            return Response({
+                'error': 'Permission denied',
+                'detail': reason
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        serializer = VacationApprovalSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        data = serializer.validated_data
+        
+        # Get notification context
+        notification_ctx = get_notification_context(request)
+        graph_token = notification_ctx['graph_token']
+        notification_sent = False
+        
+        # LINE MANAGER APPROVAL/REJECTION
+        if vac_req.status == 'PENDING_LINE_MANAGER':
+            if data['action'] == 'approve':
+                vac_req.approve_by_line_manager(request.user, data.get('comment', ''))
+                msg = 'Approved by Line Manager'
+                
+                # ✅ Send appropriate notification
+                if graph_token:
+                    try:
+                        if vac_req.status == 'PENDING_UK_ADDITIONAL':
+                            notification_sent = notification_manager.notify_uk_additional_approval_needed(
+                                vac_req, graph_token
+                            )
+                        elif vac_req.status == 'PENDING_HR':
+                            notification_sent = notification_manager.notify_line_manager_approved(
+                                vac_req, graph_token
+                            )
+                        elif vac_req.status == 'APPROVED':
+                            notification_sent = notification_manager.notify_hr_approved(
+                                vac_req, graph_token
+                            )
+                    except Exception as e:
+                        logger.error(f"Notification error: {e}")
+            else:
+                vac_req.reject_by_line_manager(request.user, data.get('reason', ''))
+                msg = 'Rejected by Line Manager'
+                
+                if graph_token:
+                    try:
+                        notification_sent = notification_manager.notify_request_rejected(
+                            vac_req, graph_token
+                        )
+                    except Exception as e:
+                        logger.error(f"Notification error: {e}")
+        
+        # ✅ UK ADDITIONAL APPROVER APPROVAL/REJECTION
+        elif vac_req.status == 'PENDING_UK_ADDITIONAL':
+            if data['action'] == 'approve':
+                vac_req.approve_by_uk_additional(request.user, data.get('comment', ''))
+                msg = 'Approved by UK Additional Approver'
+                
+                # Send notification
+                if graph_token:
+                    try:
+                        if vac_req.status == 'PENDING_HR':
+                            notification_sent = notification_manager.notify_uk_additional_approved(
+                                vac_req, graph_token
+                            )
+                        elif vac_req.status == 'APPROVED':
+                            notification_sent = notification_manager.notify_hr_approved(
+                                vac_req, graph_token
+                            )
+                    except Exception as e:
+                        logger.error(f"Notification error: {e}")
+            else:
+                vac_req.reject_by_uk_additional(request.user, data.get('reason', ''))
+                msg = 'Rejected by UK Additional Approver'
+                
+                if graph_token:
+                    try:
+                        notification_sent = notification_manager.notify_request_rejected(
+                            vac_req, graph_token
+                        )
+                    except Exception as e:
+                        logger.error(f"Notification error: {e}")
+        
+        # HR APPROVAL/REJECTION
+        elif vac_req.status == 'PENDING_HR':
+            if data['action'] == 'approve':
+                vac_req.approve_by_hr(request.user, data.get('comment', ''))
+                msg = 'Approved by HR - Request is now APPROVED'
+                
+                if graph_token:
+                    try:
+                        notification_sent = notification_manager.notify_hr_approved(
+                            vac_req, graph_token
+                        )
+                    except Exception as e:
+                        logger.error(f"Notification error: {e}")
+            else:
+                vac_req.reject_by_hr(request.user, data.get('reason', ''))
+                msg = 'Rejected by HR'
+                
+                if graph_token:
+                    try:
+                        notification_sent = notification_manager.notify_request_rejected(
+                            vac_req, graph_token
+                        )
+                    except Exception as e:
+                        logger.error(f"Notification error: {e}")
+        else:
+            return Response({
+                'error': 'Request is not pending approval'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        return Response({
+            'message': msg,
+            'notification_sent': notification_sent,
+            'notification_available': notification_ctx['can_send_emails'],
+            'request': VacationRequestDetailSerializer(vac_req).data
+        })
+    
+    except VacationRequest.DoesNotExist:
+        return Response({'error': 'Request not found'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Error in approve/reject: {e}")
         return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 
@@ -1907,120 +2285,6 @@ def approval_history(request):
         }, status=status.HTTP_400_BAD_REQUEST)
 
 
-# ==================== APPROVE/REJECT REQUEST ====================
-@swagger_auto_schema(
-    method='post',
-    operation_description="Approve/Reject vacation request with email notifications",
-    tags=['Vacation'],
-    request_body=VacationApprovalSerializer,
-    responses={200: openapi.Response(description='Action completed')}
-)
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
-def approve_reject_request(request, pk):
-    """
-    ✅ Approve/Reject vacation request
-    - Manager: Can approve/reject requests from THEIR team (Line Manager stage)
-    - HR: Can approve/reject requests in HR stage
-    - Admin: Can approve/reject at both stages
-    """
-    try:
-        vac_req = VacationRequest.objects.get(pk=pk, is_deleted=False)
-        
-        # ✅ Check if user can approve this request
-        can_approve, reason = can_user_approve_request(request.user, vac_req)
-        
-        if not can_approve:
-            return Response({
-                'error': 'Permission denied',
-                'detail': reason
-            }, status=status.HTTP_403_FORBIDDEN)
-        
-        serializer = VacationApprovalSerializer(data=request.data)
-        if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-        
-        data = serializer.validated_data
-        
-        # Get notification context
-        notification_ctx = get_notification_context(request)
-        graph_token = notification_ctx['graph_token']
-        notification_sent = False
-        
-        # LINE MANAGER APPROVAL/REJECTION
-        if vac_req.status == 'PENDING_LINE_MANAGER':
-            if data['action'] == 'approve':
-                vac_req.approve_by_line_manager(request.user, data.get('comment', ''))
-                msg = 'Approved by Line Manager'
-                
-                # Send notification to HR
-                if graph_token:
-                    try:
-                        notification_sent = notification_manager.notify_line_manager_approved(
-                            vacation_request=vac_req,
-                            access_token=graph_token
-                        )
-                    except Exception as e:
-                        logger.error(f"❌ Notification error: {e}")
-            else:
-                vac_req.reject_by_line_manager(request.user, data.get('reason', ''))
-                msg = 'Rejected by Line Manager'
-                
-                # Send rejection notification to Employee
-                if graph_token:
-                    try:
-                        notification_sent = notification_manager.notify_request_rejected(
-                            vacation_request=vac_req,
-                            access_token=graph_token
-                        )
-                    except Exception as e:
-                        logger.error(f"❌ Notification error: {e}")
-        
-        # HR APPROVAL/REJECTION
-        elif vac_req.status == 'PENDING_HR':
-            if data['action'] == 'approve':
-                vac_req.approve_by_hr(request.user, data.get('comment', ''))
-                msg = 'Approved by HR - Request is now APPROVED'
-                
-                # Send final approval notification to Employee
-                if graph_token:
-                    try:
-                        notification_sent = notification_manager.notify_hr_approved(
-                            vacation_request=vac_req,
-                            access_token=graph_token
-                        )
-                    except Exception as e:
-                        logger.error(f"❌ Notification error: {e}")
-            else:
-                vac_req.reject_by_hr(request.user, data.get('reason', ''))
-                msg = 'Rejected by HR'
-                
-                # Send rejection notification to Employee
-                if graph_token:
-                    try:
-                        notification_sent = notification_manager.notify_request_rejected(
-                            vacation_request=vac_req,
-                            access_token=graph_token
-                        )
-                    except Exception as e:
-                        logger.error(f"❌ Notification error: {e}")
-        else:
-            return Response({
-                'error': 'Request is not pending approval'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        return Response({
-            'message': msg,
-            'notification_sent': notification_sent,
-            'notification_available': notification_ctx['can_send_emails'],
-            'request': VacationRequestDetailSerializer(vac_req).data
-        })
-    
-    except VacationRequest.DoesNotExist:
-        return Response({'error': 'Request not found'}, status=status.HTTP_404_NOT_FOUND)
-    except Exception as e:
-        logger.error(f"Error in approve/reject: {e}")
-        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 
 # ==================== MY ALL REQUESTS & SCHEDULES ====================
@@ -3057,6 +3321,48 @@ class VacationTypeViewSet(viewsets.ModelViewSet):
             }, status=status.HTTP_403_FORBIDDEN)
         return super().destroy(request, *args, **kwargs)
 
+@swagger_auto_schema(
+    method='get',
+    operation_description="✅ Get vacation types filtered by business function",
+    operation_summary="Get Vacation Types (Filtered)",
+    tags=['Vacation'],
+    responses={200: openapi.Response(description='Vacation types')}
+)
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_vacation_types_filtered(request):
+    """
+    ✅ Vacation types - UK employee-lar üçün Half Day görünür
+    """
+    try:
+        access = get_vacation_access(request.user)
+        
+        # Base queryset
+        types_qs = VacationType.objects.filter(is_active=True, is_deleted=False)
+        
+        # Check if UK employee
+        is_uk = False
+        if access['employee'] and access['employee'].business_function:
+            code = getattr(access['employee'].business_function, 'code', '')
+            is_uk = code.upper() == 'UK'
+        
+        # Filter UK-only types
+        if not is_uk:
+            types_qs = types_qs.exclude(is_uk_only=True)
+        
+        serializer = VacationTypeSerializer(types_qs, many=True)
+        
+        return Response({
+            'types': serializer.data,
+            'is_uk_employee': is_uk,
+            'total_count': types_qs.count()
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting vacation types: {e}")
+        return Response({
+            'error': str(e)
+        }, status=status.HTTP_400_BAD_REQUEST)
 
 # ==================== FILE UPLOAD ENDPOINTS ====================
 @swagger_auto_schema(
@@ -3401,20 +3707,23 @@ def get_vacation_schedule_detail(request, pk):
 # ==================== UTILITIES ====================
 @swagger_auto_schema(
     method='post',
-    operation_description="İki tarix arasında iş günlərinin sayını hesabla",
-    operation_summary="İş Günlərini Hesabla",
+    operation_description="✅ Calculate working days with business function support",
+    operation_summary="Calculate Working Days",
     tags=['Vacation'],
-    responses={200: openapi.Response(description='Hesablama nəticəsi')}
+    responses={200: openapi.Response(description='Calculation result')}
 )
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def calculate_working_days(request):
-    """✅ İş günlərini hesabla - hamı istifadə edə bilər"""
+    """✅ İş günlərini hesabla - business function dəstəyi"""
     start = request.data.get('start_date')
     end = request.data.get('end_date')
+    business_function_code = request.data.get('business_function_code')  # ✅ NEW
     
     if not start or not end:
-        return Response({'error': 'start_date və end_date mütləqdir'}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({
+            'error': 'start_date və end_date mütləqdir'
+        }, status=status.HTTP_400_BAD_REQUEST)
     
     settings = VacationSetting.get_active()
     if settings:
@@ -3423,18 +3732,27 @@ def calculate_working_days(request):
             end_dt = datetime.strptime(end, '%Y-%m-%d').date()
             
             if start_dt > end_dt:
-                return Response({'error': 'start_date end_date-dən kiçik olmalıdır'}, status=status.HTTP_400_BAD_REQUEST)
+                return Response({
+                    'error': 'start_date end_date-dən kiçik olmalıdır'
+                }, status=status.HTTP_400_BAD_REQUEST)
             
-            days = settings.calculate_working_days(start_dt, end_dt)
-            return_date = settings.calculate_return_date(end_dt)
+            # ✅ Calculate with business function
+            days = settings.calculate_working_days(start_dt, end_dt, business_function_code)
+            return_date = settings.calculate_return_date(end_dt, business_function_code)
             
             return Response({
                 'working_days': days,
                 'return_date': return_date.strftime('%Y-%m-%d'),
-                'total_calendar_days': (end_dt - start_dt).days + 1
+                'total_calendar_days': (end_dt - start_dt).days + 1,
+                'business_function_code': business_function_code,
+                'calculation_method': 'UK (excludes weekends & holidays)' if business_function_code and business_function_code.upper() == 'UK' else 'Azerbaijan (excludes holidays only)'
             })
             
         except ValueError:
-            return Response({'error': 'Tarix formatı səhvdir. YYYY-MM-DD istifadə edin'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({
+                'error': 'Tarix formatı səhvdir. YYYY-MM-DD istifadə edin'
+            }, status=status.HTTP_400_BAD_REQUEST)
     
-    return Response({'error': 'Settings tapılmadı'}, status=status.HTTP_404_NOT_FOUND)
+    return Response({
+        'error': 'Settings tapılmadı'
+    }, status=status.HTTP_404_NOT_FOUND)

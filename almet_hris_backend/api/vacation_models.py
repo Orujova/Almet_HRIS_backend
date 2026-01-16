@@ -9,12 +9,16 @@ from .models import Employee, SoftDeleteModel
 import uuid
 
 class VacationSetting(SoftDeleteModel):
-    """Vacation sistem parametrləri"""
+    """Vacation sistem parametrləri - DUAL CALENDAR SUPPORT"""
     
-    # Production Calendar - qeyri-iş günlərinin siyahısı
-    non_working_days = models.JSONField(
+    # ✅ DUAL PRODUCTION CALENDAR
+    non_working_days_az = models.JSONField(
         default=list, 
-        help_text="Qeyri-iş günləri JSON formatında: [{'date': '2025-01-01', 'name': 'New Year'}, ...]"
+        help_text="Azerbaijan qeyri-iş günləri JSON formatında"
+    )
+    non_working_days_uk = models.JSONField(
+        default=list,
+        help_text="UK qeyri-iş günləri JSON formatında"
     )
     
     # Default HR
@@ -25,6 +29,16 @@ class VacationSetting(SoftDeleteModel):
         blank=True, 
         related_name='hr_settings',
         help_text="Default HR nümayəndəsi"
+    )
+    
+    # ✅ UK SPECIFIC: Additional approver for 5+ day requests
+    uk_additional_approver = models.ForeignKey(
+        Employee,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='uk_additional_approvals',
+        help_text="UK: 5+ günlük requestlər üçün əlavə approver (Position Group: Vice Chairman)"
     )
     
     # Settings
@@ -81,48 +95,94 @@ class VacationSetting(SoftDeleteModel):
         self.clean()
         super().save(*args, **kwargs)
     
-    def is_working_day(self, check_date):
-        """Verilən tarixi iş günü olub-olmadığını yoxlayır
-        
-        ✅ Həftəsonu günləri (Saturday, Sunday) də iş günü sayılır
-        ❌ Yalnız non_working_days siyahısındakı günlər istisna edilir
+    def is_working_day(self, check_date, business_function_code=None):
         """
-        # Non-working days yoxla
-        date_str = check_date.strftime('%Y-%m-%d')
-        for holiday in self.non_working_days:
-            if isinstance(holiday, dict) and holiday.get('date') == date_str:
-                return False
-            elif isinstance(holiday, str) and holiday == date_str:
-                return False
+        ✅ ENHANCED: Verilən tarixi iş günü olub-olmadığını yoxlayır
         
-        return True  # Həftəsonu da daxil olmaqla bütün günlər iş günüdür
+        Azerbaijan: Həftəsonu günləri də iş günü sayılır, yalnız non_working_days istisna
+        UK: Həftəsonu (Saturday, Sunday) VƏ holidays istisna edilir
+        
+        Args:
+            check_date: yoxlanılacaq tarix
+            business_function_code: 'UK' və ya digər
+        """
+        date_str = check_date.strftime('%Y-%m-%d')
+        
+        # ✅ UK LOGIC
+        if business_function_code and business_function_code.upper() == 'UK':
+            # Check weekends
+            if check_date.weekday() in [5, 6]:  # Saturday=5, Sunday=6
+                return False
+            
+            # Check UK holidays
+            for holiday in self.non_working_days_uk:
+                if isinstance(holiday, dict) and holiday.get('date') == date_str:
+                    return False
+                elif isinstance(holiday, str) and holiday == date_str:
+                    return False
+            
+            return True
+        
+        # ✅ AZERBAIJAN LOGIC (default)
+        else:
+            # Check AZ holidays only (weekends are working days)
+            for holiday in self.non_working_days_az:
+                if isinstance(holiday, dict) and holiday.get('date') == date_str:
+                    return False
+                elif isinstance(holiday, str) and holiday == date_str:
+                    return False
+            
+            return True
     
-    def calculate_working_days(self, start, end):
-        """İki tarix arasındakı iş günlərinin sayını hesablayır"""
+    def calculate_working_days(self, start, end, business_function_code=None):
+        """
+        ✅ ENHANCED: İki tarix arasındakı iş günlərinin sayını hesablayır
+        
+        Args:
+            start: başlanğıc tarix
+            end: bitmə tarixi
+            business_function_code: 'UK' və ya digər
+        """
         if start > end:
             return 0
             
         days = 0
         current = start
         while current <= end:
-            if self.is_working_day(current):
+            if self.is_working_day(current, business_function_code):
                 days += 1
             current += timedelta(days=1)
         return days
     
-    def calculate_return_date(self, end_date):
-        """Məzuniyyət bitdikdən sonra ilk iş gününü hesablayır"""
+    def calculate_return_date(self, end_date, business_function_code=None):
+        """
+        ✅ ENHANCED: Məzuniyyət bitdikdən sonra ilk iş gününü hesablayır
+        
+        Args:
+            end_date: məzuniyyət bitmə tarixi
+            business_function_code: 'UK' və ya digər
+        """
         ret = end_date + timedelta(days=1)
-        while not self.is_working_day(ret):
+        while not self.is_working_day(ret, business_function_code):
             ret += timedelta(days=1)
         return ret
 
 
 class VacationType(SoftDeleteModel):
-    """Məzuniyyət növləri - Annual, Sick, Personal"""
+    """✅ ENHANCED: Məzuniyyət növləri - UK-specific types dəstəyi"""
     
     name = models.CharField(max_length=100, unique=True, help_text="Məzuniyyət növü adı")
     description = models.TextField(blank=True, help_text="Təsvir")
+    
+    # ✅ UK SPECIFIC
+    is_uk_only = models.BooleanField(
+        default=False,
+        help_text="Yalnız UK business function üçün görünən tip (məs: Half Day)"
+    )
+    requires_time_selection = models.BooleanField(
+        default=False,
+        help_text="Saat seçimi tələb edir (Half Day üçün)"
+    )
     
     # System fields
     is_active = models.BooleanField(default=True)
@@ -139,6 +199,7 @@ class VacationType(SoftDeleteModel):
     
     def __str__(self):
         return self.name
+
 
 
 class EmployeeVacationBalance(SoftDeleteModel):
@@ -220,7 +281,7 @@ class EmployeeVacationBalance(SoftDeleteModel):
 
 
 class VacationRequest(SoftDeleteModel):
-    """Vacation Request - Immediate approval tələb edənlər"""
+    """✅ ENHANCED: Vacation Request - UK approval chain support"""
     
     REQUEST_TYPE_CHOICES = [
         ('IMMEDIATE', 'Immediate'),
@@ -231,9 +292,11 @@ class VacationRequest(SoftDeleteModel):
         ('DRAFT', 'Draft'),
         ('IN_PROGRESS', 'In Progress'),
         ('PENDING_LINE_MANAGER', 'Pending Line Manager'),
+        ('PENDING_UK_ADDITIONAL', 'Pending UK Additional Approver'),  # ✅ NEW
         ('PENDING_HR', 'Pending HR'),
         ('APPROVED', 'Approved'),
         ('REJECTED_LINE_MANAGER', 'Rejected by Line Manager'),
+        ('REJECTED_UK_ADDITIONAL', 'Rejected by UK Additional Approver'),  # ✅ NEW
         ('REJECTED_HR', 'Rejected by HR'),
     ]
     
@@ -263,6 +326,11 @@ class VacationRequest(SoftDeleteModel):
     number_of_days = models.DecimalField(max_digits=5, decimal_places=1, editable=False, default=0)
     comment = models.TextField(blank=True, help_text="İşçinin şərhi")
     
+    # ✅ HALF DAY SUPPORT
+    is_half_day = models.BooleanField(default=False, help_text="Half day request-dirsə True")
+    half_day_start_time = models.TimeField(null=True, blank=True, help_text="Half day başlama saatı")
+    half_day_end_time = models.TimeField(null=True, blank=True, help_text="Half day bitmə saatı")
+    
     # Approvers
     line_manager = models.ForeignKey(
         Employee, 
@@ -271,6 +339,17 @@ class VacationRequest(SoftDeleteModel):
         blank=True, 
         related_name='requests_to_approve'
     )
+    
+    # ✅ UK ADDITIONAL APPROVER
+    uk_additional_approver = models.ForeignKey(
+        Employee,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='uk_additional_requests',
+        help_text="UK: 5+ günlük requestlər üçün əlavə approver"
+    )
+    
     hr_representative = models.ForeignKey(
         Employee, 
         on_delete=models.SET_NULL, 
@@ -292,6 +371,17 @@ class VacationRequest(SoftDeleteModel):
         related_name='lm_approvals'
     )
     line_manager_comment = models.TextField(blank=True)
+    
+    # ✅ UK ADDITIONAL APPROVER
+    uk_additional_approved_at = models.DateTimeField(null=True, blank=True)
+    uk_additional_approved_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='uk_additional_approvals'
+    )
+    uk_additional_comment = models.TextField(blank=True)
     
     # HR Approval
     hr_approved_at = models.DateTimeField(null=True, blank=True)
@@ -328,22 +418,221 @@ class VacationRequest(SoftDeleteModel):
     def __str__(self):
         return f"{self.request_id} - {self.employee.full_name} - {self.vacation_type.name}"
     
+    def get_business_function_code(self):
+        """Employee-in business function kodunu qaytarır"""
+        if self.employee.business_function:
+            return getattr(self.employee.business_function, 'code', None)
+        return None
+    
+    def is_uk_employee(self):
+        """✅ UK employee-dirsə True"""
+        code = self.get_business_function_code()
+        return code and code.upper() == 'UK'
+    
+    def requires_uk_additional_approval(self):
+        """✅ UK əlavə approval tələb edirmi?"""
+        if not self.is_uk_employee():
+            return False
+        
+        # 5+ günlük requestlər üçün
+        if self.number_of_days >= 5:
+            return True
+        
+        return False
+    
+    def clean(self):
+        """Validation"""
+        # Half day validation
+        if self.is_half_day:
+            if not self.half_day_start_time or not self.half_day_end_time:
+                raise ValidationError("Half day üçün start və end time mütləqdir")
+            
+            if self.half_day_start_time >= self.half_day_end_time:
+                raise ValidationError("Start time end time-dan kiçik olmalıdır")
+            
+            # Half day - start və end date eyni olmalıdır
+            if self.start_date != self.end_date:
+                raise ValidationError("Half day üçün start və end date eyni olmalıdır")
+        
+        else:
+            # Normal vacation - end date > start date
+            if self.start_date and self.end_date and self.start_date >= self.end_date:
+                raise ValidationError("End date start date-dən böyük olmalıdır")
+        
+        # Kəsişmə yoxla
+        has_conflict, conflicts = self.check_date_conflicts()
+        if has_conflict:
+            conflict_details = ", ".join([
+                f"{c['id']} ({c['start_date']} - {c['end_date']})" 
+                for c in conflicts
+            ])
+            raise ValidationError(
+                f"Bu tarixlərdə artıq vacation var: {conflict_details}"
+            )
+    
+    def save(self, *args, **kwargs):
+        # Generate request ID
+        if not self.request_id:
+            year = timezone.now().year
+            last = VacationRequest.objects.filter(
+                request_id__startswith=f'VR{year}'
+            ).order_by('-request_id').first()
+            num = int(last.request_id[6:]) + 1 if last else 1
+            self.request_id = f'VR{year}{num:04d}'
+        
+        # Calculate working days and return date
+        settings = VacationSetting.get_active()
+        if settings and self.start_date and self.end_date:
+            bf_code = self.get_business_function_code()
+            
+            if self.is_half_day:
+                # Half day = 0.5 gün
+                self.number_of_days = 0.5
+                self.return_date = self.end_date + timedelta(days=1)
+            else:
+                # Normal calculation
+                self.number_of_days = settings.calculate_working_days(
+                    self.start_date, 
+                    self.end_date,
+                    bf_code
+                )
+                self.return_date = settings.calculate_return_date(self.end_date, bf_code)
+        
+        # Auto-assign approvers
+        if not self.line_manager and self.employee.line_manager:
+            requester_emp = getattr(self.requester, 'employee', None)
+            if not (requester_emp and self.employee.line_manager == requester_emp):
+                self.line_manager = self.employee.line_manager
+        
+        # ✅ UK ADDITIONAL APPROVER
+        if self.requires_uk_additional_approval():
+            if settings and settings.uk_additional_approver:
+                # Yalnız əgər approver employee-in özü deyilsə
+                if self.employee != settings.uk_additional_approver:
+                    self.uk_additional_approver = settings.uk_additional_approver
+        
+        if not self.hr_representative and settings:
+            self.hr_representative = settings.default_hr_representative
+        
+        self.clean()
+        super().save(*args, **kwargs)
+    
+    def submit_request(self, user):
+        """✅ ENHANCED: Submit for approval - UK chain dəstəyi"""
+        requester_emp = getattr(user, 'employee', None)
+        is_manager_request = requester_emp and self.employee.line_manager == requester_emp
+        
+        if is_manager_request:
+            # Manager öz işçisi üçün request edir
+            if self.requires_uk_additional_approval():
+                self.status = 'PENDING_UK_ADDITIONAL'
+            elif self.hr_representative:
+                self.status = 'PENDING_HR'
+            else:
+                self.status = 'APPROVED'
+        else:
+            # Normal işçi request edir - Line Manager-ə göndər
+            if self.line_manager:
+                self.status = 'PENDING_LINE_MANAGER'
+            elif self.requires_uk_additional_approval():
+                self.status = 'PENDING_UK_ADDITIONAL'
+            elif self.hr_representative:
+                self.status = 'PENDING_HR'
+            else:
+                self.status = 'APPROVED'
+        
+        self.save()
+    
+    def approve_by_line_manager(self, user, comment=''):
+        """✅ ENHANCED: Line Manager təsdiq edir"""
+        self.line_manager_approved_at = timezone.now()
+        self.line_manager_approved_by = user
+        self.line_manager_comment = comment
+        
+        # ✅ Next step
+        if self.requires_uk_additional_approval():
+            self.status = 'PENDING_UK_ADDITIONAL'
+        elif self.hr_representative:
+            self.status = 'PENDING_HR'
+        else:
+            self.status = 'APPROVED'
+        
+        self.save()
+        
+        if self.status == 'APPROVED':
+            self._update_balance()
+    
+    def reject_by_line_manager(self, user, reason):
+        """Line Manager reject edir"""
+        self.status = 'REJECTED_LINE_MANAGER'
+        self.rejected_at = timezone.now()
+        self.rejected_by = user
+        self.rejection_reason = reason
+        self.save()
+    
+    def approve_by_uk_additional(self, user, comment=''):
+        """✅ NEW: UK Additional Approver təsdiq edir"""
+        self.uk_additional_approved_at = timezone.now()
+        self.uk_additional_approved_by = user
+        self.uk_additional_comment = comment
+        
+        # HR-a göndər
+        if self.hr_representative:
+            self.status = 'PENDING_HR'
+        else:
+            self.status = 'APPROVED'
+        
+        self.save()
+        
+        if self.status == 'APPROVED':
+            self._update_balance()
+    
+    def reject_by_uk_additional(self, user, reason):
+        """✅ NEW: UK Additional Approver reject edir"""
+        self.status = 'REJECTED_UK_ADDITIONAL'
+        self.rejected_at = timezone.now()
+        self.rejected_by = user
+        self.rejection_reason = reason
+        self.save()
+    
+    def approve_by_hr(self, user, comment=''):
+        """HR təsdiq edir"""
+        self.hr_approved_at = timezone.now()
+        self.hr_approved_by = user
+        self.hr_comment = comment
+        self.status = 'APPROVED'
+        self.save()
+        
+        self._update_balance()
+    
+    def reject_by_hr(self, user, reason):
+        """HR reject edir"""
+        self.status = 'REJECTED_HR'
+        self.rejected_at = timezone.now()
+        self.rejected_by = user
+        self.rejection_reason = reason
+        self.save()
+    
+    def _update_balance(self):
+        """Approved olduqda balansı yenilə"""
+        balance, created = EmployeeVacationBalance.objects.get_or_create(
+            employee=self.employee,
+            year=self.start_date.year,
+        )
+        balance.used_days += self.number_of_days
+        balance.save()
+    
     def check_date_conflicts(self):
-        """
-        Eyni employee üçün kəsişən tarixlərdə request/schedule olub-olmadığını yoxla
-        Returns: (has_conflict, conflicting_records)
-        """
-        # Mövcud approved/pending requestlər
+        """Eyni employee üçün kəsişən tarixlərdə request/schedule olub-olmadığını yoxla"""
         conflicting_requests = VacationRequest.objects.filter(
             employee=self.employee,
             is_deleted=False,
-            status__in=['PENDING_LINE_MANAGER', 'PENDING_HR', 'APPROVED']
+            status__in=['PENDING_LINE_MANAGER', 'PENDING_UK_ADDITIONAL', 'PENDING_HR', 'APPROVED']
         ).filter(
             start_date__lte=self.end_date,
             end_date__gte=self.start_date
         ).exclude(pk=self.pk)
         
-        # Scheduled schedules
         conflicting_schedules = VacationSchedule.objects.filter(
             employee=self.employee,
             is_deleted=False,
@@ -376,114 +665,6 @@ class VacationRequest(SoftDeleteModel):
             })
         
         return len(conflicts) > 0, conflicts
-    
-    def clean(self):
-        """Validation"""
-        if self.start_date and self.end_date and self.start_date >= self.end_date:
-            raise ValidationError("End date start date-dən böyük olmalıdır")
-        
-        # ✅ Kəsişmə yoxla
-        has_conflict, conflicts = self.check_date_conflicts()
-        if has_conflict:
-            conflict_details = ", ".join([
-                f"{c['id']} ({c['start_date']} - {c['end_date']})" 
-                for c in conflicts
-            ])
-            raise ValidationError(
-                f"Bu tarixlərdə artıq vacation var: {conflict_details}"
-            )
-    
-    def save(self, *args, **kwargs):
-        # Generate request ID
-        if not self.request_id:
-            year = timezone.now().year
-            last = VacationRequest.objects.filter(
-                request_id__startswith=f'VR{year}'
-            ).order_by('-request_id').first()
-            num = int(last.request_id[6:]) + 1 if last else 1
-            self.request_id = f'VR{year}{num:04d}'
-        
-        # Calculate working days and return date
-        settings = VacationSetting.get_active()
-        if settings and self.start_date and self.end_date:
-            self.number_of_days = settings.calculate_working_days(self.start_date, self.end_date)
-            self.return_date = settings.calculate_return_date(self.end_date)
-        
-        # Auto-assign approvers
-        if not self.line_manager and self.employee.line_manager:
-            # Əgər manager öz işçisi üçün yaradırsa - line manager atla
-            requester_emp = getattr(self.requester, 'employee', None)
-            if not (requester_emp and self.employee.line_manager == requester_emp):
-                self.line_manager = self.employee.line_manager
-        
-        if not self.hr_representative and settings:
-            self.hr_representative = settings.default_hr_representative
-        
-        self.clean()
-        super().save(*args, **kwargs)
-    
-    def submit_request(self, user):
-        """Submit for approval"""
-        requester_emp = getattr(user, 'employee', None)
-        is_manager_request = requester_emp and self.employee.line_manager == requester_emp
-        
-        if is_manager_request:
-            # Manager öz işçisi üçün request edir - HR-a göndər
-            self.status = 'PENDING_HR' if self.hr_representative else 'APPROVED'
-        else:
-            # Normal işçi request edir - Line Manager-ə göndər
-            self.status = 'PENDING_LINE_MANAGER' if self.line_manager else ('PENDING_HR' if self.hr_representative else 'APPROVED')
-        
-        self.save()
-    
-    def approve_by_line_manager(self, user, comment=''):
-        """Line Manager təsdiq edir"""
-        self.line_manager_approved_at = timezone.now()
-        self.line_manager_approved_by = user
-        self.line_manager_comment = comment
-        self.status = 'PENDING_HR' if self.hr_representative else 'APPROVED'
-        self.save()
-        
-        # Əgər tam təsdiq olubsa balansı yenilə
-        if self.status == 'APPROVED':
-            self._update_balance()
-    
-    def reject_by_line_manager(self, user, reason):
-        """Line Manager reject edir"""
-        self.status = 'REJECTED_LINE_MANAGER'
-        self.rejected_at = timezone.now()
-        self.rejected_by = user
-        self.rejection_reason = reason
-        self.save()
-    
-    def approve_by_hr(self, user, comment=''):
-        """HR təsdiq edir"""
-        self.hr_approved_at = timezone.now()
-        self.hr_approved_by = user
-        self.hr_comment = comment
-        self.status = 'APPROVED'
-        self.save()
-        
-        # Balansı yenilə
-        self._update_balance()
-    
-    def reject_by_hr(self, user, reason):
-        """HR reject edir"""
-        self.status = 'REJECTED_HR'
-        self.rejected_at = timezone.now()
-        self.rejected_by = user
-        self.rejection_reason = reason
-        self.save()
-    
-    def _update_balance(self):
-        """Approved olduqda balansı yenilə"""
-        balance, created = EmployeeVacationBalance.objects.get_or_create(
-            employee=self.employee,
-            year=self.start_date.year,
-          
-        )
-        balance.used_days += self.number_of_days
-        balance.save()
 
 
 class VacationSchedule(SoftDeleteModel):

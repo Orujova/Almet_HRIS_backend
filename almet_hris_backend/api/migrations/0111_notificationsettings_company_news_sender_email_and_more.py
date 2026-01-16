@@ -13,7 +13,7 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='notificationsettings',
             name='company_news_sender_email',
-            field=models.EmailField(default='shadmin@almettrading.com', help_text='Email address for sending company news (must be valid Outlook/Exchange mailbox)', max_length=254),
+            field=models.EmailField(default='myalmet@almettrading.com', help_text='Email address for sending company news (must be valid Outlook/Exchange mailbox)', max_length=254),
         ),
         migrations.AddField(
             model_name='notificationsettings',

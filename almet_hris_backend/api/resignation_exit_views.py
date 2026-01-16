@@ -9,6 +9,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django.db.models import Q
 from django.utils import timezone
+from datetime import date, timedelta
 import logging
 
 from api.models import Employee
@@ -145,7 +146,7 @@ class ResignationRequestViewSet(viewsets.ModelViewSet):
             """
             
             system_email_service.send_email_as_system(
-                from_email="shadmin@almettrading.com",
+                from_email="myalmet@almettrading.com",
                 to_email=resignation.employee.line_manager.email,
                 subject=subject,
                 body_html=body
@@ -294,9 +295,44 @@ class ExitInterviewQuestionViewSet(viewsets.ModelViewSet):
 
 
 class ExitInterviewViewSet(viewsets.ModelViewSet):
-    """ViewSet for exit interviews"""
+    """
+    ViewSet for exit interviews
+    
+    Permissions:
+    - Employee: Can view and complete own exit interviews
+    - Admin: Can create and view all exit interviews
+    """
     
     permission_classes = [IsAuthenticated]
+    
+    def get_queryset(self):
+        user = self.request.user
+        
+        try:
+            employee = Employee.objects.get(user=user, is_deleted=False)
+            
+            # Admin sees all
+            if is_admin_user(user):
+                return ExitInterview.objects.filter(
+                    is_deleted=False
+                ).select_related(
+                    'employee',
+                    'employee__department',
+                    'employee__line_manager'
+                ).prefetch_related('responses').order_by('-created_at')
+            
+            # Employee sees only own
+            return ExitInterview.objects.filter(
+                employee=employee,
+                is_deleted=False
+            ).select_related(
+                'employee',
+                'employee__department',
+                'employee__line_manager'
+            ).prefetch_related('responses').order_by('-created_at')
+            
+        except Employee.DoesNotExist:
+            return ExitInterview.objects.none()
     
     def get_serializer_class(self):
         if self.action == 'create':
@@ -314,21 +350,240 @@ class ExitInterviewViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_403_FORBIDDEN
             )
         
-        # ✅ Use parent create and ensure we return the created object
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         self.perform_create(serializer)
         
-        # ✅ Return full detail serializer with ID
+        # Get created instance
         instance = serializer.instance
-        output_serializer = ExitInterviewDetailSerializer(instance)
         
+        # ✅ Send notifications to manager, IT team, and Gunay
+        self._send_exit_interview_notifications(instance)
+        
+        # Return full detail
+        output_serializer = ExitInterviewDetailSerializer(instance)
         headers = self.get_success_headers(output_serializer.data)
+        
         return Response(
             output_serializer.data,
             status=status.HTTP_201_CREATED,
             headers=headers
         )
+    
+    def _send_exit_interview_notifications(self, exit_interview):
+        """
+        Send notifications when exit interview is created
+        - To employee's line manager
+        - To IT team
+        - To Gunay (HR)
+        """
+        from api.system_email_service import system_email_service
+        
+        try:
+            employee = exit_interview.employee
+            days_remaining = (exit_interview.last_working_day - date.today()).days
+            
+            # Prepare recipients
+            recipients = []
+            
+            # 1. Line Manager
+            if employee.line_manager and employee.line_manager.email:
+                recipients.append(employee.line_manager.email)
+            
+            # 2. IT Team
+            # recipients.append("it-team@almettrading.com")
+            
+            # 3. Gunay (HR)
+            # recipients.append("g.mammadova@almettrading.com")
+            # 3. HR
+            recipients.append("hr@almettrading.com")
+            
+            
+            
+            subject = f"⚠️ Employee Exit Notice - {employee.full_name}"
+            
+            body = f"""
+<html>
+<body style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;">
+    <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+        
+        <h2 style="color: #1e40af; border-bottom: 3px solid #1e40af; padding-bottom: 10px;">
+            Employee Exit Notice
+        </h2>
+        
+        <p style="font-size: 16px; margin: 20px 0;">
+            Dear Team,
+        </p>
+        
+        <p style="font-size: 15px; margin: 20px 0;">
+            Kindly be informed that <strong>{employee.full_name}</strong>'s last working day is 
+            <strong style="color: #EF4444;">{exit_interview.last_working_day.strftime('%B %d, %Y')}</strong>.
+        </p>
+        
+        <div style="background-color: #F3F4F6; padding: 20px; border-radius: 8px; margin: 25px 0; border-left: 4px solid #1e40af;">
+            <h3 style="margin-top: 0; color: #1e40af; font-size: 16px;">Employee Details</h3>
+            <table style="width: 100%; border-collapse: collapse;">
+                <tr>
+                    <td style="padding: 8px 0; color: #666;"><strong>Employee ID:</strong></td>
+                    <td style="padding: 8px 0;">{employee.employee_id}</td>
+                </tr>
+                <tr>
+                    <td style="padding: 8px 0; color: #666;"><strong>Position:</strong></td>
+                    <td style="padding: 8px 0;">{employee.job_title}</td>
+                </tr>
+                <tr>
+                    <td style="padding: 8px 0; color: #666;"><strong>Department:</strong></td>
+                    <td style="padding: 8px 0;">{employee.department.name}</td>
+                </tr>
+                <tr>
+                    <td style="padding: 8px 0; color: #666;"><strong>Days Remaining:</strong></td>
+                    <td style="padding: 8px 0;"><strong style="color: #EF4444;">{days_remaining} days</strong></td>
+                </tr>
+            </table>
+        </div>
+        
+       
+        
+    </div>
+</body>
+</html>
+"""
+            
+            # Send to all recipients
+            system_email_service.send_email_as_system(
+                from_email="myalmet@almettrading.com",
+                to_email=recipients,
+                subject=subject,
+                body_html=body
+            )
+            
+            logger.info(f"✅ Exit interview notifications sent for employee: {employee.employee_id}")
+            
+        except Exception as e:
+            logger.error(f"❌ Error sending exit interview notifications: {e}")
+    
+    @action(detail=True, methods=['post'])
+    def submit_responses(self, request, pk=None):
+        """
+        Employee submits exit interview responses
+        POST /api/exit-interviews/{id}/submit_responses/
+        
+        Body:
+        {
+            "responses": [
+                {
+                    "question": 1,
+                    "rating_value": 4,
+                    "text_value": "Great team environment",
+                    "choice_value": "Career Growth"
+                }
+            ]
+        }
+        """
+        exit_interview = self.get_object()
+        serializer = ExitInterviewResponseCreateSerializer(data=request.data)
+        
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            # Check permission - only employee can submit
+            employee = Employee.objects.get(user=request.user, is_deleted=False)
+            if exit_interview.employee != employee and not is_admin_user(request.user):
+                return Response(
+                    {'detail': 'You can only submit your own exit interview'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            
+            # Check if already completed
+            if exit_interview.status == 'COMPLETED':
+                return Response(
+                    {'detail': 'Exit interview already completed'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Start interview if not started
+            if exit_interview.status == 'PENDING':
+                exit_interview.start_interview()
+            
+            # Save responses
+            responses_data = serializer.validated_data['responses']
+            created_count = 0
+            updated_count = 0
+            
+            for response_data in responses_data:
+                question_id = response_data['question']
+                
+                # Validate question exists and is active
+                try:
+                    question = ExitInterviewQuestion.objects.get(
+                        id=question_id,
+                        is_active=True,
+                        is_deleted=False
+                    )
+                except ExitInterviewQuestion.DoesNotExist:
+                    continue
+                
+                # Create or update response
+                response, created = ExitInterviewResponse.objects.update_or_create(
+                    exit_interview=exit_interview,
+                    question=question,
+                    defaults={
+                        'rating_value': response_data.get('rating_value'),
+                        'text_value': response_data.get('text_value', ''),
+                        'choice_value': response_data.get('choice_value', '')
+                    }
+                )
+                
+                if created:
+                    created_count += 1
+                else:
+                    updated_count += 1
+            
+            # Complete interview
+            exit_interview.complete_interview()
+            
+            # Generate summary
+            ExitInterviewSummary.generate_summary(exit_interview)
+            
+            logger.info(
+                f"Exit interview completed: {exit_interview.employee.employee_id} "
+                f"(Created: {created_count}, Updated: {updated_count})"
+            )
+            
+            return Response({
+                'message': 'Exit interview submitted successfully',
+                'created_responses': created_count,
+                'updated_responses': updated_count,
+                'exit_interview': ExitInterviewDetailSerializer(exit_interview).data
+            })
+            
+        except Employee.DoesNotExist:
+            return Response(
+                {'detail': 'Employee not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            logger.error(f"Error submitting exit interview: {e}")
+            return Response(
+                {'detail': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+    
+    @action(detail=True, methods=['get'])
+    def questions(self, request, pk=None):
+        """
+        Get all active exit interview questions
+        GET /api/exit-interviews/{id}/questions/
+        """
+        questions = ExitInterviewQuestion.objects.filter(
+            is_active=True,
+            is_deleted=False
+        ).order_by('section', 'order')
+        
+        serializer = ExitInterviewQuestionSerializer(questions, many=True)
+        return Response(serializer.data)
+
 
 # =====================================
 # CONTRACT RENEWAL VIEWSETS

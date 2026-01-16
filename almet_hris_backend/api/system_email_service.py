@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 class SystemEmailService:
     """
     🔒 Application Permissions ilə email göndərmək
-    shadmin@almettrading.com-dan user token olmadan göndərir
+    myalmet@almettrading.com-dan user token olmadan göndərir
     """
     
     def __init__(self):

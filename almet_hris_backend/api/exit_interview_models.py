@@ -209,7 +209,7 @@ class ExitInterview(SoftDeleteModel):
             """
             
             system_email_service.send_email_as_system(
-                from_email="shadmin@almettrading.com",
+                from_email="myalmet@almettrading.com",
                 to_email=hr_email,
                 subject=subject,
                 body_html=body

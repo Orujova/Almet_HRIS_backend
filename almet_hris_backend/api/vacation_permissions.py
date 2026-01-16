@@ -1,4 +1,4 @@
-# api/vacation_permissions.py - UPDATED
+# api/vacation_permissions.py - ENHANCED VERSION
 
 from functools import wraps
 from rest_framework.response import Response
@@ -22,6 +22,7 @@ def is_admin_user(user):
         return has_admin_role
     except Employee.DoesNotExist:
         return False
+
 
 def get_vacation_access(user):
     """
@@ -80,15 +81,33 @@ def get_vacation_access(user):
             'access_level': 'Manager - Team Access'
         }
     else:
-        # ✅ Regular employee - CAN VIEW their own data
+        # Regular employee - CAN VIEW their own data
         return {
             'can_view_all': False,
             'is_manager': False,
             'is_admin': False,
             'employee': employee,
-            'accessible_employee_ids': [employee.id],  # Only self
+            'accessible_employee_ids': [employee.id],
             'access_level': 'Employee - Own Access'
         }
+
+
+def is_uk_additional_approver(user):
+    """✅ NEW: Check if user is UK Additional Approver"""
+    try:
+        from .models import Employee
+        from .vacation_models import VacationSetting
+        
+        settings = VacationSetting.get_active()
+        if not settings or not settings.uk_additional_approver:
+            return False
+        
+        employee = Employee.objects.get(user=user, is_deleted=False)
+        return employee == settings.uk_additional_approver
+        
+    except Employee.DoesNotExist:
+        return False
+
 
 def filter_vacation_queryset(user, queryset, model_type='request'):
     """
@@ -110,6 +129,7 @@ def filter_vacation_queryset(user, queryset, model_type='request'):
     # No access
     return queryset.none()
 
+
 def can_user_modify_vacation_request(user, vacation_request):
     """
     ✅ Check if user can edit/delete a vacation request
@@ -119,6 +139,7 @@ def can_user_modify_vacation_request(user, vacation_request):
         return True, "Admin - Full Access"
     
     return False, "Only Admin can modify vacation requests"
+
 
 def can_user_modify_schedule(user, vacation_schedule):
     """
@@ -133,6 +154,7 @@ def can_user_modify_schedule(user, vacation_schedule):
     
     return False, "Only Admin can delete schedules"
 
+
 def can_user_register_schedule(user):
     """
     ✅ Check if user can register schedules
@@ -143,12 +165,14 @@ def can_user_register_schedule(user):
     
     return False, "Only Admin can register schedules"
 
+
 def can_user_approve_request(user, vacation_request):
     """
-    ✅ Check if user can approve/reject a vacation request
+    ✅ ENHANCED: Check if user can approve/reject a vacation request
     - Manager: Only requests from their DIRECT REPORTS (Line Manager stage)
+    - UK Additional Approver: UK requests with 5+ days
     - HR: Requests in HR stage
-    - Admin: Both stages
+    - Admin: All stages
     """
     access = get_vacation_access(user)
     
@@ -164,6 +188,12 @@ def can_user_approve_request(user, vacation_request):
                 return True, "Line Manager - Team Request"
         return False, "Not your team member's request"
     
+    # ✅ UK ADDITIONAL APPROVER STAGE
+    if vacation_request.status == 'PENDING_UK_ADDITIONAL':
+        if is_uk_additional_approver(user):
+            return True, "UK Additional Approver"
+        return False, "Not assigned as UK Additional Approver"
+    
     # HR approval stage
     if vacation_request.status == 'PENDING_HR':
         # Check if user is HR representative
@@ -174,7 +204,7 @@ def can_user_approve_request(user, vacation_request):
     return False, "Request not in pending approval status"
 
 
-# ✅ Decorator: Check vacation access
+# Decorator: Check vacation access
 def check_vacation_access(required_level='own'):
     """
     Decorator to check vacation access level
@@ -205,9 +235,3 @@ def check_vacation_access(required_level='own'):
         
         return wrapper
     return decorator
-
-
-    """Legacy function - kept for compatibility"""
-    if is_admin_user(user):
-        return ['all']
-    return []
