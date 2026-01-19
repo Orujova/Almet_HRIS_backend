@@ -870,6 +870,7 @@ def get_hr_representatives(request):
 
 
 # ==================== BALANCE MANAGEMENT ====================
+# ==================== BALANCE BULK UPLOAD - FIXED ====================
 @swagger_auto_schema(
     method='post',
     operation_description="Excel faylı ilə vacation balanslarını toplu yüklə (ADMIN ONLY)",
@@ -882,7 +883,7 @@ def get_hr_representatives(request):
 @permission_classes([IsAuthenticated])
 @check_vacation_access('all')  # ✅ Admin only
 def bulk_upload_balances(request):
-    """✅ Excel ilə balance upload et - Admin only"""
+    """✅ Excel ilə balance upload et - Admin only - FIXED"""
     if 'file' not in request.FILES:
         return Response({'error': 'File yoxdur'}, status=status.HTTP_400_BAD_REQUEST)
     
@@ -890,10 +891,18 @@ def bulk_upload_balances(request):
     year = int(request.data.get('year', date.today().year))
     
     try:
-        df = pd.read_excel(file, header=4, skiprows=[5], nrows=100)
+        # ✅ READ EXCEL: Start from row 7 (header on row 5, description on row 6)
+        df = pd.read_excel(file, header=4, skiprows=[5])
         
-        # Strip whitespace and normalize column names
+        # ✅ Clean dataframe: remove completely empty rows
+        df = df.dropna(how='all')
+        
+        # ✅ Strip whitespace and normalize column names
         df.columns = df.columns.str.strip().str.lower().str.replace(' ', '_')
+        
+        # ✅ Debug: Show what columns we found
+        logger.info(f"📋 Found columns: {list(df.columns)}")
+        logger.info(f"📊 Total rows to process: {len(df)}")
         
         # Required columns check
         required_cols = ['employee_id', 'start_balance', 'yearly_balance']
@@ -927,17 +936,49 @@ def bulk_upload_balances(request):
                     is_deleted=False
                 )
                 
-                start_bal = float(row['start_balance']) if pd.notna(row['start_balance']) else 0
-                yearly_bal = float(row['yearly_balance']) if pd.notna(row['yearly_balance']) else 0
+                # ✅ ENHANCED: Clean parsing with rounding to prevent float precision errors
+                start_bal_raw = row.get('start_balance')
+                yearly_bal_raw = row.get('yearly_balance')
                 
-                EmployeeVacationBalance.objects.update_or_create(
+                # Parse start_balance
+                if pd.isna(start_bal_raw) or str(start_bal_raw).strip() == '':
+                    start_bal = 0
+                else:
+                    try:
+                        # ✅ Round to 1 decimal to prevent float precision errors
+                        start_bal = round(float(str(start_bal_raw).strip()), 1)
+                    except (ValueError, TypeError):
+                        start_bal = 0
+                
+                # Parse yearly_balance
+                if pd.isna(yearly_bal_raw) or str(yearly_bal_raw).strip() == '':
+                    yearly_bal = 0
+                else:
+                    try:
+                        # ✅ Round to 1 decimal to prevent float precision errors
+                        yearly_bal = round(float(str(yearly_bal_raw).strip()), 1)
+                    except (ValueError, TypeError):
+                        yearly_bal = 0
+                
+                # ✅ LOG: Debug what we're actually saving
+                logger.info(f"📊 Processing {emp_id}: start={start_bal}, yearly={yearly_bal}, total={start_bal + yearly_bal}")
+                
+                # ✅ CRITICAL FIX: Delete existing balance and create fresh
+                # This prevents accumulation of old data
+                EmployeeVacationBalance.objects.filter(
+                    employee=emp,
+                    year=year
+                ).delete()
+                
+                # Create fresh balance
+                EmployeeVacationBalance.objects.create(
                     employee=emp,
                     year=year,
-                    defaults={
-                        'start_balance': start_bal,
-                        'yearly_balance': yearly_bal,
-                        'updated_by': request.user
-                    }
+                    start_balance=start_bal,
+                    yearly_balance=yearly_bal,
+                    used_days=0,
+                    scheduled_days=0,
+                    updated_by=request.user
                 )
                 
                 results['successful'] += 1
@@ -955,12 +996,18 @@ def bulk_upload_balances(request):
         if results['successful'] == 0 and results['failed'] == 0:
             return Response({
                 'error': 'Faylda heç bir məlumat tapılmadı',
-                'hint': 'Please add employee data starting from row 7'
+                'hint': 'Please add employee data starting from row 7',
+                'rows_found': len(df),
+                'columns_found': list(df.columns)
             }, status=status.HTTP_400_BAD_REQUEST)
         
+        # ✅ Return detailed results with sample data
         return Response({
-            'message': f"{results['successful']} uğurlu, {results['failed']} səhv",
-            'results': results
+            'message': f"{results['successful']} uğurlu, {results['failed']} səhv, {results['skipped']} skipped",
+            'results': results,
+            'year': year,
+            'total_rows_processed': len(df),
+            'columns_used': required_cols
         })
     
     except Exception as e:
@@ -970,6 +1017,7 @@ def bulk_upload_balances(request):
         }, status=status.HTTP_400_BAD_REQUEST)
 
 
+# ==================== EXCEL TEMPLATE DOWNLOAD - FIXED ====================
 @swagger_auto_schema(
     method='get',
     operation_description="Excel template endir",
@@ -980,7 +1028,7 @@ def bulk_upload_balances(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def download_balance_template(request):
-    """✅ Excel template - Hamı endir bilər"""
+    """✅ Excel template - Hamı endir bilər - FIXED"""
     wb = Workbook()
     ws = wb.active
     ws.title = "Balance Template"
@@ -1028,15 +1076,22 @@ def download_balance_template(request):
         desc_cell.alignment = Alignment(horizontal='center', wrap_text=True)
         desc_cell.border = border
 
-    # Auto-adjust column widths
+    # ✅ Auto-adjust column widths and set number format
+    from openpyxl.styles import numbers
     for col in range(1, len(headers) + 1):
-        ws.column_dimensions[get_column_letter(col)].width = 25
+        col_letter = get_column_letter(col)
+        ws.column_dimensions[col_letter].width = 25
+        
+        # ✅ Set number format for balance columns (B and C)
+        if col in [2, 3]:  # start_balance and yearly_balance columns
+            for row in range(7, 1000):  # Future rows
+                cell = ws[f'{col_letter}{row}']
+                cell.number_format = '0.0'  # ✅ Force 1 decimal format
 
     response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
     response['Content-Disposition'] = 'attachment; filename=vacation_balance_template.xlsx'
     wb.save(response)
     return response
-
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
