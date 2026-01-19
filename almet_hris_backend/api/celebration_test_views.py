@@ -56,8 +56,6 @@ def test_birthday_notification(request):
                 'error': 'Employee has no birth date'
             }, status=status.HTTP_400_BAD_REQUEST)
         
-    
-        
         success = celebration_notification_service.send_birthday_notification(employee)
         
         if success:
@@ -123,8 +121,6 @@ def test_anniversary_notification(request):
                 'error': 'Employee has no start date'
             }, status=status.HTTP_400_BAD_REQUEST)
         
-       
-        
         success = celebration_notification_service.send_work_anniversary_notification(employee, years)
         
         if success:
@@ -153,22 +149,15 @@ def test_anniversary_notification(request):
 
 @swagger_auto_schema(
     method='post',
-    operation_description="🧪 TEST: Send position change notification",
-    operation_summary="Test Position Change Notification",
+    operation_description="🧪 TEST: Send promotion notification",
+    operation_summary="Test Promotion Notification",
     tags=['Celebrations - Test'],
     request_body=openapi.Schema(
         type=openapi.TYPE_OBJECT,
-        required=['employee_id', 'old_position', 'new_position'],
+        required=['employee_id', 'new_job_title'],
         properties={
             'employee_id': openapi.Schema(type=openapi.TYPE_INTEGER, description='Employee ID'),
-            'old_position': openapi.Schema(type=openapi.TYPE_STRING, description='Old position'),
-            'new_position': openapi.Schema(type=openapi.TYPE_STRING, description='New position'),
-            'change_type': openapi.Schema(
-                type=openapi.TYPE_STRING, 
-                enum=['promotion', 'transfer'],
-                default='promotion',
-                description='Type of change'
-            )
+            'new_job_title': openapi.Schema(type=openapi.TYPE_STRING, description='New job title')
         }
     ),
     responses={200: openapi.Response(description='Success')}
@@ -176,16 +165,14 @@ def test_anniversary_notification(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def test_position_change_notification(request):
-    """Test position change notification"""
+    """Test promotion notification"""
     try:
         employee_id = request.data.get('employee_id')
-        old_position = request.data.get('old_position')
-        new_position = request.data.get('new_position')
-        change_type = request.data.get('change_type', 'promotion')
+        new_job_title = request.data.get('new_job_title')
         
-        if not all([employee_id, old_position, new_position]):
+        if not employee_id or not new_job_title:
             return Response({
-                'error': 'employee_id, old_position, and new_position are required'
+                'error': 'employee_id and new_job_title are required'
             }, status=status.HTTP_400_BAD_REQUEST)
         
         try:
@@ -195,25 +182,19 @@ def test_position_change_notification(request):
                 'error': 'Employee not found'
             }, status=status.HTTP_404_NOT_FOUND)
         
-        
-        
-        success = celebration_notification_service.send_position_change_notification(
+        success = celebration_notification_service.send_promotion_notification(
             employee=employee,
-            old_position=old_position,
-            new_position=new_position,
-            change_type=change_type
+            new_job_title=new_job_title
         )
         
         if success:
             return Response({
                 'success': True,
-                'message': f'Position change notification sent for {employee.first_name} {employee.last_name}',
+                'message': f'Promotion notification sent for {employee.first_name} {employee.last_name}',
                 'employee': {
                     'id': employee.id,
                     'name': f'{employee.first_name} {employee.last_name}',
-                    'old_position': old_position,
-                    'new_position': new_position,
-                    'change_type': change_type
+                    'new_job_title': new_job_title
                 }
             })
         else:
@@ -223,7 +204,7 @@ def test_position_change_notification(request):
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
     except Exception as e:
-        logger.error(f"Error in test position change notification: {e}")
+        logger.error(f"Error in test promotion notification: {e}")
         return Response({
             'error': str(e)
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -241,8 +222,6 @@ def test_position_change_notification(request):
 def test_daily_celebration_check(request):
     """Manually trigger daily celebration check"""
     try:
-       
-        
         results = celebration_notification_service.check_and_send_daily_celebrations()
         
         return Response({
@@ -289,8 +268,6 @@ def test_welcome_email(request):
             return Response({
                 'error': 'Employee not found'
             }, status=status.HTTP_404_NOT_FOUND)
-        
-        
         
         success = celebration_notification_service.send_welcome_email(employee)
         

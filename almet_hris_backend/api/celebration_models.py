@@ -10,15 +10,20 @@ class Celebration(models.Model):
     CELEBRATION_TYPES = [
         ('company_event', 'Company Event'),
         ('achievement', 'Achievement'),
+        ('promotion', 'Promotion'),  # ✅ Added promotion type
         ('other', 'Other'),
     ]
     
     type = models.CharField(max_length=50, choices=CELEBRATION_TYPES)
     title = models.CharField(max_length=200)
-
     date = models.DateField()
     message = models.TextField()
     wishes_count = models.IntegerField(default=0)
+    
+    # ✅ Added for promotion tracking
+    employee = models.ForeignKey(Employee, on_delete=models.CASCADE, related_name='celebrations', null=True, blank=True)
+    new_job_title = models.CharField(max_length=200, null=True, blank=True)  # For promotions
+    
     created_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name='celebrations_created')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -47,7 +52,7 @@ class CelebrationWish(models.Model):
     """Model for storing wishes/greetings for celebrations"""
     celebration = models.ForeignKey(Celebration, on_delete=models.CASCADE, related_name='wishes', null=True, blank=True)
     employee = models.ForeignKey(Employee, on_delete=models.CASCADE, related_name='celebration_wishes', null=True, blank=True)
-    celebration_type = models.CharField(max_length=50)  # birthday or work_anniversary for auto celebrations
+    celebration_type = models.CharField(max_length=50)  # birthday, work_anniversary, or promotion for auto celebrations
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='wishes_sent')
     message = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)

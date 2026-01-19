@@ -25,7 +25,7 @@ class CelebrationViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'])
     def get_auto_wishes(self, request):
         """
-        Get wishes for auto celebration (birthday or work anniversary)
+        Get wishes for auto celebration (birthday, work anniversary, or promotion)
         """
         employee_id = request.query_params.get('employee_id')
         celebration_type = request.query_params.get('celebration_type')
@@ -49,21 +49,23 @@ class CelebrationViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'])
     def all_celebrations(self, request):
         """
-        Get all celebrations including auto-generated birthdays and work anniversaries
+        Get all celebrations including auto-generated birthdays, work anniversaries, and promotions
         """
         today = date.today()
         
-        # Get auto celebrations
+        # Get auto celebrations (birthdays & anniversaries)
         auto_celebrations = self.get_auto_celebrations(today)
         
+        # ✅ Get promotions from last 30 days
+        promotion_celebrations = self.get_promotion_celebrations()
+        
         # Get manual celebrations
-        manual_celebrations = Celebration.objects.all()
+        manual_celebrations = Celebration.objects.exclude(type='promotion')
         manual_data = []
         
         for celebration in manual_celebrations:
             wishes_count = CelebrationWish.objects.filter(celebration=celebration).count()
             
-            # ✅ Image data düzgün format
             images_data = CelebrationImageSerializer(
                 celebration.images.all(), 
                 many=True, 
@@ -75,16 +77,16 @@ class CelebrationViewSet(viewsets.ModelViewSet):
                 'type': celebration.type,
                 'title': celebration.title,
                 'date': celebration.date.isoformat(),
-                'images': images_data,  # ✅ Artıq {id, image_url} formatında
+                'images': images_data,
                 'message': celebration.message,
                 'wishes': wishes_count,
                 'is_auto': False
             })
         
-        # Combine both
-        all_celebrations = auto_celebrations + manual_data
+        # Combine all celebrations
+        all_celebrations = auto_celebrations + promotion_celebrations + manual_data
         
-        # Sort by date
+        # Sort by date (newest first)
         all_celebrations.sort(key=lambda x: x['date'], reverse=True)
         
         return Response(all_celebrations)
@@ -111,7 +113,6 @@ class CelebrationViewSet(viewsets.ModelViewSet):
                         employee=emp,
                         celebration_type='birthday'
                     ).count()
-                    # Convert position_group to string
                     position = str(emp.position_group) if emp.position_group else 'Employee'
                     auto_celebrations.append({
                         'id': f'birthday-{emp.id}',
@@ -161,6 +162,43 @@ class CelebrationViewSet(viewsets.ModelViewSet):
         
         return auto_celebrations
     
+    def get_promotion_celebrations(self):
+        """
+        ✅ Get promotion celebrations from last 30 days
+        """
+        thirty_days_ago = date.today() - timedelta(days=30)
+        promotion_celebrations = []
+        
+        promotions = Celebration.objects.filter(
+            type='promotion',
+            date__gte=thirty_days_ago
+        ).select_related('employee')
+        
+        for promo in promotions:
+            if promo.employee:
+                wishes_count = CelebrationWish.objects.filter(
+                    employee=promo.employee,
+                    celebration_type='promotion'
+                ).count()
+                
+                position = str(promo.employee.position_group) if promo.employee.position_group else 'Employee'
+                
+                promotion_celebrations.append({
+                    'id': f'promotion-{promo.id}',
+                    'type': 'promotion',
+                    'employee_name': f'{promo.employee.first_name} {promo.employee.last_name}',
+                    'employee_id': promo.employee.id,
+                    'position': position,
+                    'new_job_title': promo.new_job_title,
+                    'date': promo.date.isoformat(),
+                    'images': ['https://cdn-icons-png.flaticon.com/512/3176/3176366.png'],
+                    'message': promo.message,
+                    'wishes': wishes_count,
+                    'is_auto': True
+                })
+        
+        return promotion_celebrations
+    
     @action(detail=True, methods=['post'])
     def add_wish(self, request, pk=None):
         """
@@ -172,7 +210,7 @@ class CelebrationViewSet(viewsets.ModelViewSet):
         if not message:
             return Response({'error': 'Message is required'}, status=status.HTTP_400_BAD_REQUEST)
         
-        # ✅ Manual celebrations üçün həmin gün olmalıdır
+        # Manual celebrations can only be celebrated on the day
         celebration_date = celebration.date
         today = date.today()
         
@@ -198,11 +236,11 @@ class CelebrationViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['post'])
     def add_auto_wish(self, request):
         """
-        Add a wish to an auto celebration (birthday or work anniversary)
-        ✅ Auto celebrations üçün HEMIN GÜN OLMALIDIR - yoxlanış backendə aparılır
+        Add a wish to an auto celebration (birthday, work anniversary, or promotion)
+        ✅ Auto celebrations can be celebrated anytime
         """
         employee_id = request.data.get('employee_id')
-        celebration_type = request.data.get('celebration_type')  # 'birthday' or 'work_anniversary'
+        celebration_type = request.data.get('celebration_type')  # 'birthday', 'work_anniversary', or 'promotion'
         message = request.data.get('message', '')
         
         if not employee_id or not celebration_type or not message:
@@ -213,9 +251,6 @@ class CelebrationViewSet(viewsets.ModelViewSet):
             employee = Employee.objects.get(id=employee_id)
         except Employee.DoesNotExist:
             return Response({'error': 'Employee not found'}, status=status.HTTP_404_NOT_FOUND)
-        
-        # ✅ Tarix yoxlamasını SİLİRİK - İstənilən vaxt celebrate etmək olsun
-        # Auto celebrations (birthday və work anniversary) üçün tarix məhdudiyyəti yoxdur
         
         wish = CelebrationWish.objects.create(
             employee=employee,
@@ -254,23 +289,26 @@ class CelebrationViewSet(viewsets.ModelViewSet):
         
         # Get auto celebrations count
         auto_celebrations = self.get_auto_celebrations(today)
+        promotion_celebrations = self.get_promotion_celebrations()
         
         # Get manual celebrations count
-        manual_count = Celebration.objects.count()
+        manual_count = Celebration.objects.exclude(type='promotion').count()
         
         # Total celebrations
-        total_count = len(auto_celebrations) + manual_count
+        total_count = len(auto_celebrations) + len(promotion_celebrations) + manual_count
         
         # This month count
         this_month_auto = len([c for c in auto_celebrations if date.fromisoformat(c['date']).month == current_month])
-        this_month_manual = Celebration.objects.filter(date__month=current_month).count()
-        this_month_count = this_month_auto + this_month_manual
+        this_month_promo = len([c for c in promotion_celebrations if date.fromisoformat(c['date']).month == current_month])
+        this_month_manual = Celebration.objects.exclude(type='promotion').filter(date__month=current_month).count()
+        this_month_count = this_month_auto + this_month_promo + this_month_manual
         
         # Upcoming (next 7 days)
         seven_days_later = today + timedelta(days=7)
         upcoming_auto = len([c for c in auto_celebrations if today <= date.fromisoformat(c['date']) <= seven_days_later])
-        upcoming_manual = Celebration.objects.filter(date__gte=today, date__lte=seven_days_later).count()
-        upcoming_count = upcoming_auto + upcoming_manual
+        upcoming_promo = len([c for c in promotion_celebrations if today <= date.fromisoformat(c['date']) <= seven_days_later])
+        upcoming_manual = Celebration.objects.exclude(type='promotion').filter(date__gte=today, date__lte=seven_days_later).count()
+        upcoming_count = upcoming_auto + upcoming_promo + upcoming_manual
         
         # Total wishes
         total_wishes = CelebrationWish.objects.count()

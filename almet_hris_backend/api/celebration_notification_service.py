@@ -27,6 +27,7 @@ class CelebrationNotificationService:
             'alltrade@almettrading.com',        # LLC
             'allholding@almettrading.com',  
             #  'n.orujova@almettrading.com',  # Test
+            # 'n.garibova@almettrading.com',
         
         ]
     
@@ -224,7 +225,7 @@ class CelebrationNotificationService:
                 logger.info(f"✅ Anniversary celebration recorded but email skipped for {employee.first_name}")
                 return True
             
-            subject = f"🏆 {years} Year{'s' if years != 1 else ''} with Almet – {employee.first_name}!"
+            subject = f"🏆 {years} Year{'s' if years != 1 else ''} with Almet — {employee.first_name}!"
             
             body_html = f"""
 <!doctype html>
@@ -274,7 +275,7 @@ class CelebrationNotificationService:
 </tr>
 </table>
 
-<p>We sincerely appreciate <strong>{employee.first_name} {employee.last_name}</strong>’s hard work and loyalty, and we thank them for being a valued member of our team. Please join us in congratulating them on this milestone and wishing them continued success in the years ahead.</p>
+<p>We sincerely appreciate <strong>{employee.first_name} {employee.last_name}</strong>'s hard work and loyalty, and we thank them for being a valued member of our team. Please join us in congratulating them on this milestone and wishing them continued success in the years ahead.</p>
 
 </td>
 </tr>
@@ -317,121 +318,133 @@ class CelebrationNotificationService:
             logger.error(f"Error sending anniversary notification: {e}")
             return False
 
-    def send_position_change_notification(self, employee, old_position, new_position, change_type="promotion"):
+    def send_promotion_notification(self, employee, new_job_title):
         """
-        📈 Promotion / Role Change email
+        📈 Promotion / Job Title Change email
         ⚠️ Skips email for excluded business functions (e.g., ASPM)
+        Shows only NEW job title (no old title)
         """
         try:
             # ✅ CHECK: Should we send email for this employee?
             if not self.should_send_email(employee):
-                logger.info(f"✅ Position change recorded but email skipped for {employee.first_name}")
+                logger.info(f"✅ Promotion recorded but email skipped for {employee.first_name}")
                 return True
             
-            if change_type == "promotion":
-                subject = f"🎉 Congratulations {employee.first_name} on Your Promotion!"
-                accent = "#0B6B4D"
-                title = "Promotion Announcement"
-                intro = "We are delighted to announce"
-            else:
-                subject = f"📄 {employee.first_name} – New Role Announcement"
-                accent = "#1D4ED8"
-                title = "Role Change Announcement"
-                intro = "We are pleased to announce"
+            subject = f"🎉 Congratulations {employee.first_name} {employee.last_name} on Your Promotion!"
+            
+            # Get department name
+            department = str(employee.department) if employee.department else ""
             
             body_html = f"""
 <!doctype html>
 <html>
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{title}</title>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Promotion Announcement</title>
 </head>
 
 <body style="margin:0; padding:0; background:#EEF2F7;">
-<table width="100%" cellspacing="0" cellpadding="0" style="background:#EEF2F7; padding:26px 0;">
-<tr>
-<td align="center">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#EEF2F7; padding:26px 0;">
+    <tr>
+      <td align="center">
 
-<table width="800" cellspacing="0" cellpadding="0">
+        <table role="presentation" width="800" cellspacing="0" cellpadding="0" style="width:800px; max-width:800px;">
 
-<tr>
-<td style="background:#FFFFFF; border-radius:18px; overflow:hidden;
-           box-shadow:0 10px 26px rgba(16,24,40,0.10);">
+          <!-- Card -->
+          <tr>
+            <td style="background:#FFFFFF; border-radius:18px; overflow:hidden; box-shadow:0 10px 26px rgba(16,24,40,0.10);">
 
-<!-- Accent -->
-<table width="100%" cellspacing="0" cellpadding="0">
-<tr><td style="background:{accent}; height:8px;"></td></tr>
-</table>
+              <!-- Accent bar -->
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                <tr>
+                  <td style="background:linear-gradient(135deg, #0B6B4D 0%, #10B981 100%); height:8px; line-height:8px; font-size:0;">&nbsp;</td>
+                </tr>
+              </table>
 
-<!-- Header -->
-<table width="100%" cellspacing="0" cellpadding="0" style="padding:22px 26px 10px 26px;">
-<tr>
-<td style="font-family:Segoe UI, Arial;">
+              <!-- Header -->
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="padding:22px 26px 10px 26px;">
+                <tr>
+                  <td style="font-family:Segoe UI, Arial, sans-serif;">
+                    
+                    <div style="font-size:26px; font-weight:800; color:#101828; margin-top:6px; letter-spacing:-0.2px;">
+                      🎉 Promotion Announcement
+                    </div>
+                    <div style="font-size:14px; color:#475467; margin-top:8px; line-height:1.6;">
+                      Celebrating excellence and growth
+                    </div>
+                  </td>
+                </tr>
+              </table>
 
-<div style="font-size:26px; font-weight:800; color:#101828; margin-top:6px;">
- {title}
-</div>
-</td>
-</tr>
-</table>
+              <!-- Content -->
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="padding:0 26px 22px 26px;">
+                <tr>
+                  <td style="font-family:Segoe UI, Arial, sans-serif; color:#101828;">
 
-<!-- Content -->
-<table width="100%" cellspacing="0" cellpadding="0" style="padding:0 26px 22px 26px;">
-<tr>
-<td style="font-family:Segoe UI, Arial; color:#101828;">
+                    <div style="font-size:16px;margin-bottom:8px; line-height:1.7; margin-top:8px;">
+                      Dear Team,<br><br>
+                      We are delighted to announce that <b>{employee.first_name} {employee.last_name}</b> has been promoted to a new position within our organization. 
+                    </div>
 
-<div style="font-size:16px; margin-bottom:8px; line-height:1.7;">
-Dear Team,<br><br>
-{intro} that <b>{employee.first_name} {employee.last_name}</b>
-has moved into a new role.
-</div>
+                    <!-- New Position Highlight -->
+                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0"
+                           style="margin:18px 0; background:linear-gradient(135deg, #F0FDF4 0%, #ECFDF5 100%); border-radius:14px; border:2px solid #10B981;">
+                      <tr>
+                        <td style="padding:12px; text-align:center;">
+                          <div style="font-size:13px; font-weight:700; color:#059669;  letter-spacing:0.5px; margin-bottom:8px;">
+                            New Position
+                          </div>
+                          <div style="font-size:22px; font-weight:800; color:#065F46; margin-bottom:4px;">
+                            {new_job_title}
+                          </div>
+                     
+                        </td>
+                      </tr>
+                    </table>
 
-<!-- Position flow -->
-<table width="100%" cellspacing="0" cellpadding="0"
-       style="margin:18px 0; background:#F6F8FF; border-radius:14px;">
-<tr>
-<td style="padding:16px; text-align:center;">
-<span style="display:inline-block; padding:10px 14px; border-radius:10px;
-             background:#FFFFFF; font-weight:700;">
-{old_position}
-</span>
-<span style="margin:0 12px; font-weight:800;">→</span>
-<span style="display:inline-block; padding:10px 14px; border-radius:10px;
-             background:#FFFFFF; font-weight:800;">
-{new_position}
-</span>
-</td>
-</tr>
-</table>
+                    <!-- Achievement message -->
+                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0"
+                           style="margin:16px 0; margin-top:16px; background:#F6F8FF; border-radius:14px;">
+                      <tr>
+                        <td style="padding:16px;">
+                          <div style="font-size:14px; font-weight:800; color:#30539b; margin-bottom:6px;">
+                            🏆 Well-deserved recognition
+                          </div>
+                          <div style="font-size:15px; line-height:1.7; color:#101828;">
+                            {employee.first_name} has consistently demonstrated exceptional performance, leadership,
+                            and dedication to our organization. This promotion reflects their hard work and the
+                            valuable contributions they've made to our team.
+                          </div>
+                        </td>
+                      </tr>
+                    </table>
 
-<div style="font-size:15px; margin-top:8px; line-height:1.7;">
-{employee.first_name} has consistently demonstrated professionalism,
-dedication, and strong performance. We are confident this change
-will bring new opportunities for growth and success.
-</div>
 
-</td>
-</tr>
-</table>
+              
 
-<!-- Footer -->
-<table width="100%" cellspacing="0" cellpadding="0" style="border-top:1px solid #EEF2F6;">
-<tr>
-<td style="padding:14px 26px; font-size:12px; color:#667085; font-family:Segoe UI, Arial;">
-This is an automated celebration notification from Almet Holding.<br>
-© {date.today().year} Almet Holding. All rights reserved.
-</td>
-</tr>
-</table>
+                  </td>
+                </tr>
+              </table>
 
-</td>
-</tr>
-</table>
+              <!-- Footer -->
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#FBFCFE; border-top:1px solid #EEF2F6;">
+                <tr>
+                  <td style="padding:14px 26px; font-family:Segoe UI, Arial, sans-serif; color:#667085; font-size:12px; line-height:1.6;">
+                    This is an automated celebration notification from Almet Holding.<br>
+                    © {date.today().year} Almet Holding. All rights reserved.
+                  </td>
+                </tr>
+              </table>
 
-</td>
-</tr>
-</table>
+            </td>
+          </tr>
+
+        </table>
+
+      </td>
+    </tr>
+  </table>
 </body>
 </html>
 """
@@ -444,14 +457,14 @@ This is an automated celebration notification from Almet Holding.<br>
             )
             
             if result.get("success"):
-                logger.info(f"✅ Position change email sent to {len(self.all_staff_emails)} distribution lists")
+                logger.info(f"✅ Promotion email sent to {len(self.all_staff_emails)} distribution lists")
                 return True
             else:
-                logger.error(f"❌ Failed to send position change email: {result.get('message')}")
+                logger.error(f"❌ Failed to send promotion email: {result.get('message')}")
                 return False
         
         except Exception as e:
-            logger.error(f"Error sending position change notification: {e}")
+            logger.error(f"Error sending promotion notification: {e}")
             return False
     
     def send_welcome_email(self, employee):
@@ -545,7 +558,7 @@ This is an automated celebration notification from Almet Holding.<br>
                       </tr>
                     </table>
 
-                    <div style="font-size:15px; margin-top:8px; line-height:1.7; color:#101828;">
+                    <div style="font-size:15px; line-height:1.7; color:#101828; margin-top:12px;">
                       {employee.first_name} is joining us as <b>{position}</b>
                       {f"in the <b>{department}</b> department" if department != "N/A" else ""}.
                       We're confident {employee.first_name} will be a valuable addition to our team.
