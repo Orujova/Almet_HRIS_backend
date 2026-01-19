@@ -98,25 +98,37 @@ class UKAdditionalApproverSerializer(serializers.Serializer):
         try:
             employee = Employee.objects.get(id=value, is_deleted=False)
             
-            # Position group yoxla
+            # ✅ FIXED: More flexible position group check
             if employee.position_group:
-                if 'vice chairman' not in employee.position_group.name.lower():
+                position_name = employee.position_group.name.lower().strip()
+                
+                # Check if contains any of these variations
+                valid_positions = [
+                    'vice chairman',
+                    'vice-chairman', 
+                    'vicechairman',
+                    'vice chair',
+                    'deputy chairman'
+                ]
+                
+                is_valid_position = any(pos in position_name for pos in valid_positions)
+                
+                if not is_valid_position:
                     raise serializers.ValidationError(
-                        "Seçilən işçi Vice Chairman position group-da deyil"
+                        f"Seçilən işçi Vice Chairman position group-da deyil. "
+                        f"Cari position: {employee.position_group.name}"
                     )
+            else:
+                raise serializers.ValidationError(
+                    "Seçilən işçinin position group məlumatı yoxdur"
+                )
             
-            # Business function UK olmalıdır
-            if employee.business_function:
-                code = getattr(employee.business_function, 'code', '')
-                if code.upper() != 'UK':
-                    raise serializers.ValidationError(
-                        "UK Additional Approver UK business function-da olmalıdır"
-                    )
+            # ✅ REMOVED: Business function UK check - not required
+            # UK approver can be from any business function
             
             return value
         except Employee.DoesNotExist:
             raise serializers.ValidationError("Approver tapılmadı")
-
 
 class HRRepresentativeSerializer(serializers.Serializer):
     """HR Representative serializer"""

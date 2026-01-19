@@ -208,6 +208,8 @@ class PositionGroup(SoftDeleteModel):
         ('Chairman', 'Chairman'),
         ('DIRECTOR', 'Director'),
         ('MANAGER', 'Manager'),
+        ('C-SUITE EXECUTIVE', 'C-Suite Executive'),
+        
         ('HEAD OF DEPARTMENT', 'Head of Department'),
         ('SENIOR SPECIALIST', 'Senior Specialist'),
         ('SPECIALIST', 'Specialist'),
@@ -225,6 +227,7 @@ class PositionGroup(SoftDeleteModel):
         'SPECIALIST': 'SP',
         'JUNIOR SPECIALIST': 'JS',
         'BLUE COLLAR': 'BC',
+        'C-SUITE EXECUTIVE': 'C-SE',
     }
     
     name = models.CharField(max_length=50, choices=POSITION_LEVELS, unique=True)
