@@ -73,6 +73,24 @@ class BehavioralCompetencyGroupWithCompetenciesSerializer(serializers.ModelSeria
         return [{'id': c.id, 'name': c.name} for c in competencies]
 
 
+class ObjectiveCommentSerializer(serializers.ModelSerializer):
+    created_by_name = serializers.SerializerMethodField()
+    created_by_username = serializers.CharField(source='created_by.username', read_only=True)
+    
+    class Meta:
+        model = ObjectiveComment
+        fields = '__all__'
+        read_only_fields = ['created_by', 'created_at', 'updated_at']
+    
+    def get_created_by_name(self, obj):
+        """Get full name or username"""
+        if obj.created_by:
+            full_name = obj.created_by.get_full_name()
+            return full_name if full_name.strip() else obj.created_by.username
+        return 'Unknown'
+
+
+# ✅ UPDATE: EmployeeObjectiveSerializer - comments əlavə et
 class EmployeeObjectiveSerializer(serializers.ModelSerializer):
     linked_department_objective_title = serializers.CharField(
         source='linked_department_objective.title', 
@@ -84,7 +102,10 @@ class EmployeeObjectiveSerializer(serializers.ModelSerializer):
     end_year_rating_name = serializers.CharField(source='end_year_rating.name', read_only=True, allow_null=True)
     end_year_rating_value = serializers.IntegerField(source='end_year_rating.value', read_only=True, allow_null=True)
     
-    # ✅ Allow writing end_year_rating
+    # ✅ NEW: Comments
+    comments = ObjectiveCommentSerializer(many=True, read_only=True)
+    comments_count = serializers.SerializerMethodField()
+    
     end_year_rating = serializers.PrimaryKeyRelatedField(
         queryset=EvaluationScale.objects.all(),
         required=False,
@@ -94,6 +115,10 @@ class EmployeeObjectiveSerializer(serializers.ModelSerializer):
     class Meta:
         model = EmployeeObjective
         fields = '__all__'
+    
+    def get_comments_count(self, obj):
+        """Get total comments count"""
+        return obj.comments.count()
 
 
 

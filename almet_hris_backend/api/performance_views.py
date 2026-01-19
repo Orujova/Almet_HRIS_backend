@@ -1300,6 +1300,122 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
                 'final_rating': performance.final_rating
             }
         })
+  
+    
+    @action(detail=True, methods=['post'])
+    def add_objective_comment(self, request, pk=None):
+        """
+        ✅ Add comment to specific objective
+        Anyone who can view the performance can comment
+        """
+        performance = self.get_object()
+        
+        # Check view access
+        can_view, reason = can_user_view_performance(request.user, performance)
+        if not can_view:
+            return Response({
+                'error': 'İzazə yoxdur',
+                'detail': reason
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        objective_id = request.data.get('objective_id')
+        comment_text = request.data.get('comment')
+        
+        if not objective_id:
+            return Response({
+                'error': 'objective_id required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        if not comment_text or not comment_text.strip():
+            return Response({
+                'error': 'Comment text required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            objective = performance.objectives.get(id=objective_id)
+        except EmployeeObjective.DoesNotExist:
+            return Response({
+                'error': 'Objective not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        # Create comment
+        from .performance_models import ObjectiveComment
+        
+        comment = ObjectiveComment.objects.create(
+            objective=objective,
+            content=comment_text.strip(),
+            created_by=request.user
+        )
+        
+        # Log activity
+        PerformanceActivityLog.objects.create(
+            performance=performance,
+            action='OBJECTIVE_COMMENT_ADDED',
+            description=f'Comment added to objective: {objective.title[:50]}',
+            performed_by=request.user,
+            metadata={
+                'objective_id': str(objective_id),
+                'comment_id': str(comment.id)
+            }
+        )
+        
+        from .performance_serializers import ObjectiveCommentSerializer
+        serializer = ObjectiveCommentSerializer(comment)
+        
+        return Response({
+            'success': True,
+            'message': 'Comment added successfully',
+            'comment': serializer.data
+        })
+    
+    
+    @action(detail=True, methods=['delete'])
+    def delete_objective_comment(self, request, pk=None):
+        """
+        ✅ Delete own comment from objective
+        Users can only delete their own comments
+        """
+        performance = self.get_object()
+        
+        comment_id = request.data.get('comment_id')
+        
+        if not comment_id:
+            return Response({
+                'error': 'comment_id required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        from .performance_models import ObjectiveComment
+        
+        try:
+            comment = ObjectiveComment.objects.get(
+                id=comment_id,
+                objective__performance=performance
+            )
+        except ObjectiveComment.DoesNotExist:
+            return Response({
+                'error': 'Comment not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        # Check ownership or admin
+        if comment.created_by != request.user and not is_admin_user(request.user):
+            return Response({
+                'error': 'You can only delete your own comments'
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        objective_title = comment.objective.title
+        comment.delete()
+        
+        PerformanceActivityLog.objects.create(
+            performance=performance,
+            action='OBJECTIVE_COMMENT_DELETED',
+            description=f'Comment deleted from objective: {objective_title[:50]}',
+            performed_by=request.user
+        )
+        
+        return Response({
+            'success': True,
+            'message': 'Comment deleted successfully'
+        })
     
     @action(detail=True, methods=['post'])
     def approve_final_employee(self, request, pk=None):

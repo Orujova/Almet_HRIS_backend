@@ -500,7 +500,25 @@ class EmployeeObjective(models.Model):
     def __str__(self):
         return f"{self.performance.employee.full_name} - {self.title}"
 
-
+class ObjectiveComment(models.Model):
+    """Comments for individual objectives"""
+    objective = models.ForeignKey(
+        EmployeeObjective,
+        on_delete=models.CASCADE,
+        related_name='comments'
+    )
+    
+    content = models.TextField()
+    created_by = models.ForeignKey(User, on_delete=models.CASCADE)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        db_table = 'objective_comments'
+        ordering = ['-created_at']
+    
+    def __str__(self):
+        return f"Comment on {self.objective.title[:30]} by {self.created_by.username}"
 class EmployeeCompetencyRating(models.Model):
     """
     Employee Competency Ratings - SUPPORTS BOTH BEHAVIORAL AND LEADERSHIP
