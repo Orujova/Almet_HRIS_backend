@@ -973,7 +973,200 @@ class EmployeePerformanceViewSet(viewsets.ModelViewSet):
             'message': 'End-year comment added successfully'
         })
     
+    # ==================== END-YEAR OBJECTIVES RATING ====================
+
+    # ==================== END-YEAR OBJECTIVES RATING ====================
+
+    @action(detail=True, methods=['post'])
+    def save_end_year_objectives_draft(self, request, pk=None):
+        """
+        ✅ Save end-year objective ratings as draft
+        Manager can save ratings without submitting
+        """
+        performance = self.get_object()
+        
+        # Check if manager or admin
+        is_line_manager = False
+        try:
+            manager_employee = Employee.objects.get(user=request.user, is_deleted=False)
+            is_line_manager = (performance.employee.line_manager == manager_employee)
+        except Employee.DoesNotExist:
+            pass
+        
+        if not is_admin_user(request.user):
+            if not is_line_manager:
+                return Response({
+                    'error': 'Only the line manager can rate objectives'
+                }, status=status.HTTP_403_FORBIDDEN)
+        
+        # Check if end-year period is active
+        if not performance.performance_year.is_end_year_active():
+            return Response({
+                'error': 'End-year review period is not active',
+                'current_period': performance.performance_year.get_current_period()
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        objectives_data = request.data.get('objectives', [])
+        
+        if not objectives_data:
+            return Response({
+                'error': 'No objectives data provided'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        with transaction.atomic():
+            updated_count = 0
+            
+            for obj_data in objectives_data:
+                obj_id = obj_data.get('id')
+                end_year_rating_id = obj_data.get('end_year_rating')
+                
+                if obj_id:
+                    objective = EmployeeObjective.objects.filter(
+                        id=obj_id,
+                        performance=performance,
+                        is_cancelled=False
+                    ).first()
+                    
+                    if objective:
+                        # Update end-year rating
+                        if end_year_rating_id:
+                            objective.end_year_rating_id = end_year_rating_id
+                            
+                            # Calculate score based on rating
+                            if objective.end_year_rating:
+                                # Score = (weight / 100) * rating_value
+                                objective.calculated_score = (objective.weight / 100) * objective.end_year_rating.value
+                            
+                            objective.save()
+                            updated_count += 1
+            
+            # Mark as draft saved
+            performance.objectives_draft_saved_date = timezone.now()
+            performance.save()
+            
+            # Recalculate scores
+            performance.calculate_scores()
+            
+            PerformanceActivityLog.objects.create(
+                performance=performance,
+                action='END_YEAR_OBJECTIVES_DRAFT_SAVED',
+                description=f'Manager saved end-year objective ratings draft ({updated_count} objectives)',
+                performed_by=request.user
+            )
+        
+        return Response({
+            'success': True,
+            'message': f'End-year objective ratings draft saved ({updated_count} objectives)',
+            'updated_count': updated_count,
+            'total_objectives_score': str(performance.total_objectives_score),
+            'objectives_percentage': str(performance.objectives_percentage)
+        })
     
+    
+    @action(detail=True, methods=['post'])
+    def submit_end_year_objectives(self, request, pk=None):
+        """
+        ✅ Submit end-year objective ratings
+        Manager submits final ratings for all objectives
+        """
+        performance = self.get_object()
+        
+        # Check if manager or admin
+        is_line_manager = False
+        try:
+            manager_employee = Employee.objects.get(user=request.user, is_deleted=False)
+            is_line_manager = (performance.employee.line_manager == manager_employee)
+        except Employee.DoesNotExist:
+            pass
+        
+        if not is_admin_user(request.user):
+            if not is_line_manager:
+                return Response({
+                    'error': 'Only the line manager can submit objective ratings'
+                }, status=status.HTTP_403_FORBIDDEN)
+        
+        # Check if end-year period is active
+        if not performance.performance_year.is_end_year_active():
+            return Response({
+                'error': 'End-year review period is not active',
+                'current_period': performance.performance_year.get_current_period()
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        objectives_data = request.data.get('objectives', [])
+        
+        if not objectives_data:
+            return Response({
+                'error': 'No objectives data provided'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        with transaction.atomic():
+            # Update all objective ratings
+            updated_count = 0
+            
+            for obj_data in objectives_data:
+                obj_id = obj_data.get('id')
+                end_year_rating_id = obj_data.get('end_year_rating')
+                
+                if obj_id:
+                    objective = EmployeeObjective.objects.filter(
+                        id=obj_id,
+                        performance=performance,
+                        is_cancelled=False
+                    ).first()
+                    
+                    if objective:
+                        if end_year_rating_id:
+                            objective.end_year_rating_id = end_year_rating_id
+                            
+                            # Calculate score
+                            if objective.end_year_rating:
+                                objective.calculated_score = (objective.weight / 100) * objective.end_year_rating.value
+                            
+                            objective.save()
+                            updated_count += 1
+            
+            # Validate that ALL objectives have ratings
+            objectives_without_rating = performance.objectives.filter(
+                is_cancelled=False,
+                end_year_rating__isnull=True
+            )
+            
+            if objectives_without_rating.exists():
+                missing_count = objectives_without_rating.count()
+                missing_titles = [obj.title[:50] for obj in objectives_without_rating[:3]]
+                
+                return Response({
+                    'error': f'{missing_count} objectives missing end-year ratings',
+                    'missing_objectives': missing_titles,
+                    'message': 'Please rate all objectives before submitting'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Mark as submitted
+            performance.objectives_draft_saved_date = timezone.now()
+            performance.save()
+            
+            # Recalculate scores
+            performance.calculate_scores()
+            
+            PerformanceActivityLog.objects.create(
+                performance=performance,
+                action='END_YEAR_OBJECTIVES_SUBMITTED',
+                description=f'Manager submitted end-year objective ratings ({updated_count} objectives)',
+                performed_by=request.user,
+                metadata={
+                    'total_objectives_score': str(performance.total_objectives_score),
+                    'objectives_percentage': str(performance.objectives_percentage)
+                }
+            )
+        
+        return Response({
+            'success': True,
+            'message': f'End-year objective ratings submitted successfully ({updated_count} objectives)',
+            'updated_count': updated_count,
+            'total_objectives_score': str(performance.total_objectives_score),
+            'objectives_percentage': str(performance.objectives_percentage),
+            'overall_weighted_percentage': str(performance.overall_weighted_percentage)
+        })
     @action(detail=True, methods=['post'])
     def submit_end_year_manager(self, request, pk=None):
         """

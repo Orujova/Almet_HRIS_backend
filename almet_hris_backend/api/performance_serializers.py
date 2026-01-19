@@ -84,7 +84,7 @@ class EmployeeObjectiveSerializer(serializers.ModelSerializer):
     end_year_rating_name = serializers.CharField(source='end_year_rating.name', read_only=True, allow_null=True)
     end_year_rating_value = serializers.IntegerField(source='end_year_rating.value', read_only=True, allow_null=True)
     
-    # ✅ ADD THIS - Allow writing end_year_rating
+    # ✅ Allow writing end_year_rating
     end_year_rating = serializers.PrimaryKeyRelatedField(
         queryset=EvaluationScale.objects.all(),
         required=False,

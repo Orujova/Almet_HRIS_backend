@@ -185,45 +185,32 @@ class EvaluationScale(models.Model):
     @classmethod
     def get_rating_by_percentage(cls, percentage):
         """
-        ✅ FIXED: Find the correct rating scale for given percentage
-        Handles edge cases and percentages above 100%
+        ✅ IMPROVED: Find the correct rating scale for given percentage
         """
         try:
-            # Convert to float to handle Decimal types
             percentage = float(percentage)
             
-            # ✅ FIX: Handle percentages above 100% - assign highest grade
-            if percentage > 100:
-                # Get the scale with highest range_max
-                highest_scale = cls.objects.filter(is_active=True).order_by('-range_max').first()
-                if highest_scale:
-                    return highest_scale
-            
-            # Normal lookup: find scale where percentage falls within range
+            # ✅ Normal lookup with explicit ordering
             rating = cls.objects.filter(
                 range_min__lte=percentage,
                 range_max__gte=percentage,
                 is_active=True
-            ).first()
+            ).order_by('range_min').first()
             
-            # ✅ Fallback: If no exact match, find closest scale
-            if not rating:
-                # Try to find the closest scale
-                all_scales = cls.objects.filter(is_active=True).order_by('-range_min')
-                
-                for scale in all_scales:
-                    if percentage >= scale.range_min:
-                        return scale
-                
-                # If still not found, return lowest scale
-                return all_scales.last()
+            if rating:
+                return rating
             
-            return rating
+            # ✅ Fallback for edge cases
+            # If percentage is below all ranges
+            if percentage < 1:
+                return cls.objects.filter(is_active=True).order_by('range_min').first()
+            
+            # If percentage is above all ranges (>500%)
+            return cls.objects.filter(is_active=True).order_by('-range_max').first()
             
         except Exception as e:
             logger.error(f"❌ Error getting rating for {percentage}%: {e}")
             return None
-
 
 class EvaluationTargetConfig(models.Model):
     """Evaluation Target Configuration - REMOVED competency_score_target"""
