@@ -9,7 +9,6 @@ from django.db import transaction
 from django.db.models import Q, Count, Sum
 from datetime import date, datetime, timedelta
 import openpyxl
-from .vacation_models import *
 from .vacation_serializers import *
 from .models import Employee
 import pandas as pd
@@ -19,7 +18,6 @@ from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 from openpyxl.styles import Font, PatternFill, Border, Side, Alignment
 from openpyxl.utils import get_column_letter
-from .role_models import EmployeeRole
 from .vacation_permissions import (
     is_admin_user,
     get_vacation_access,
@@ -35,8 +33,15 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
-from django.db.models import Q, Sum, Count
-from .vacation_models import EmployeeVacationBalance,VacationSetting
+from django.db.models import Q
+from .vacation_models import (
+    VacationSetting,
+    VacationType,
+    VacationRequest,
+    VacationSchedule,
+    EmployeeVacationBalance,
+    VacationAttachment
+)
 from .vacation_serializers import EmployeeVacationBalanceSerializer
 
 import logging
@@ -2697,8 +2702,7 @@ def bulk_create_schedules(request):
             if is_manager_creating:
                 # Manager/Admin created → notify HR (only once for bulk)
                 logger.info(f"📧 Sending bulk approval notification to HR for {len(created_schedules)} schedules")
-                # Get default HR
-                from .vacation_models import VacationSetting
+           
                 settings_obj = VacationSetting.get_active()
                 
                 if settings_obj and settings_obj.default_hr_representative:
