@@ -861,15 +861,34 @@ class VacationSchedule(SoftDeleteModel):
         # Calculate working days and return date
         settings = VacationSetting.get_active()
         if settings and self.start_date and self.end_date:
-            self.number_of_days = settings.calculate_working_days(self.start_date, self.end_date)
-            self.return_date = settings.calculate_return_date(self.end_date)
+            bf_code = None
+            if self.employee.business_function:
+                bf_code = getattr(self.employee.business_function, 'code', None)
+            self.number_of_days = settings.calculate_working_days(
+                self.start_date, 
+                self.end_date,
+                bf_code
+            )
+            self.return_date = settings.calculate_return_date(self.end_date, bf_code)
         
+        # ✅ Track status changes
         is_new = not self.pk
+        old_status = None
+        if not is_new:
+            try:
+                old_status = VacationSchedule.objects.get(pk=self.pk).status
+            except VacationSchedule.DoesNotExist:
+                pass
+        
         self.clean()
         super().save(*args, **kwargs)
         
-        # ✅ FIX: Yeni schedule yaradıldıqda scheduled_days artır
+        # ✅ ENHANCED: Update scheduled_days when status changes to SCHEDULED
         if is_new and self.status == 'SCHEDULED':
+            # New schedule created as SCHEDULED
+            self._update_scheduled_balance(add=True)
+        elif not is_new and old_status == 'PENDING_MANAGER' and self.status == 'SCHEDULED':
+            # ✅ FIX: Status changed from PENDING → SCHEDULED (manager approved)
             self._update_scheduled_balance(add=True)
     
     def register_as_taken(self, user):
