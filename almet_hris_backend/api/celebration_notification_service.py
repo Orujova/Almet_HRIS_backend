@@ -263,7 +263,7 @@ class CelebrationNotificationService:
 
 <p>We are pleased to celebrate <strong>{employee.first_name} {employee.last_name}</strong> and mark <strong>{years} years</strong> of dedication, commitment, and contribution to our organization.</p>
 
-<p>Over the years, <strong>{employee.first_name} {employee.last_name}</strong> has consistently demonstrated professionalism, reliability, and a strong sense of ownership in their work. Their efforts and positive attitude have made a meaningful impact on both our team and the broader organization.</p>
+
 
 <!-- Highlighted thank you box -->
 <table width="100%" cellspacing="0" cellpadding="0" style="margin:20px 0; background:#f0f4ff; border-left:6px solid #3b82f6; border-radius:8px;">

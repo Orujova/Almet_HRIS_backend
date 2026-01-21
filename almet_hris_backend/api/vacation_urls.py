@@ -59,7 +59,8 @@ urlpatterns = [
     path('approval/pending/', views.approval_pending_requests, name='vacation-approval-pending'),
     path('approval/history/', views.approval_history, name='vacation-approval-history'),
     path('requests/<int:pk>/approve-reject/', views.approve_reject_request, name='vacation-approve-reject-request'),
-    
+    # Schedule approval
+path('schedules/<int:pk>/approve/', views.approve_schedule, name='vacation-approve-schedule'),
     # ============= MY RECORDS =============
     path('my-all/', views.my_all_requests_schedules, name='vacation-my-all-requests-schedules'),
     path('my-all/export/', views.export_my_vacations, name='vacation-export-my-vacations'),

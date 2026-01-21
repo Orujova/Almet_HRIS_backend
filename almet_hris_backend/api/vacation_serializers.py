@@ -418,8 +418,11 @@ class EmployeeVacationBalanceSerializer(serializers.ModelSerializer):
         read_only=True
     )
     business_function_code = serializers.SerializerMethodField()
+   
+    
     total_balance = serializers.ReadOnlyField()
     remaining_balance = serializers.ReadOnlyField()
+    available_for_planning = serializers.ReadOnlyField()  # ✅ NEW
     should_be_planned = serializers.ReadOnlyField()
     
     class Meta:
@@ -428,8 +431,11 @@ class EmployeeVacationBalanceSerializer(serializers.ModelSerializer):
             'id', 'employee', 'employee_name', 'employee_id', 
             'department_name', 'business_function_name', 'business_function_code',
             'year', 'start_balance', 'yearly_balance', 
-            'used_days', 'scheduled_days', 'total_balance', 
-            'remaining_balance', 'should_be_planned', 'updated_at'
+            'used_days', 'scheduled_days', 
+            'total_balance', 'remaining_balance', 
+            'available_for_planning',  # ✅ NEW
+            'should_be_planned', 
+            'updated_at'
         ]
     
     def get_business_function_code(self, obj):

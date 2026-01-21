@@ -119,13 +119,14 @@ def vacation_dashboard(request):
         balance.refresh_from_db()
         
         return Response({
-            'balance': {
-                'total_balance': float(balance.total_balance),
-                'yearly_balance': float(balance.yearly_balance),
-                'used_days': float(balance.used_days),
-                'remaining_balance': float(balance.remaining_balance),
-                'scheduled_days': float(balance.scheduled_days),
-                'should_be_planned': float(balance.should_be_planned)
+           'balance': {
+                'total_balance': float(balance.total_balance),           # 33.0
+                'yearly_balance': float(balance.yearly_balance),         # 28.0
+                'used_days': float(balance.used_days),                   # 7.0
+                'scheduled_days': float(balance.scheduled_days),         # 10.0
+                'remaining_balance': float(balance.remaining_balance),   # ✅ 26.0 (33-7)
+                'available_for_planning': float(balance.available_for_planning), # ✅ NEW: 16.0 (26-10)
+                'should_be_planned': float(balance.should_be_planned)    # 11.0
             }
         })
     except Exception as e:
@@ -1548,7 +1549,7 @@ def create_immediate_request(request):
             )
         
         if settings and not settings.allow_negative_balance:
-            if working_days > balance.remaining_balance:
+            if working_days > balance.remaining_balance:  # ✅ scheduled nəzərə alınmır
                 return Response({
                     'error': f'Insufficient balance. You have {balance.remaining_balance} days remaining.',
                     'available_balance': float(balance.remaining_balance),
@@ -1657,20 +1658,176 @@ def create_immediate_request(request):
         return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def edit_schedule(request, pk):
+    """✅ ENHANCED: Edit schedule + HR notification"""
+    try:
+        schedule = VacationSchedule.objects.get(pk=pk, is_deleted=False)
+        access = get_vacation_access(request.user)
+        
+        if not access['employee']:
+            return Response({
+                'error': 'Employee profili tapılmadı'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        # Only owner can edit
+        if schedule.employee != access['employee']:
+            return Response({
+                'error': 'Bu schedule-i edit etmək hüququnuz yoxdur'
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        # Edit limit check
+        if not schedule.can_edit():
+            return Response({
+                'error': 'Bu schedule-i daha edit edə bilməzsiniz'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Parse dates
+        if 'start_date' in request.data:
+            start_date_str = request.data['start_date']
+            if isinstance(start_date_str, str):
+                schedule.start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
+            else:
+                schedule.start_date = start_date_str
+        
+        if 'end_date' in request.data:
+            end_date_str = request.data['end_date']
+            if isinstance(end_date_str, str):
+                schedule.end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
+            else:
+                schedule.end_date = end_date_str
+        
+        if 'vacation_type_id' in request.data:
+            schedule.vacation_type_id = request.data['vacation_type_id']
+        
+        if 'comment' in request.data:
+            schedule.comment = request.data['comment']
+        
+        # Check conflicts
+        has_conflict, conflicts = schedule.check_date_conflicts()
+        if has_conflict:
+            return Response({
+                'error': 'Bu tarixlərdə artıq vacation mövcuddur',
+                'conflicts': conflicts,
+                'message': 'Zəhmət olmasa başqa tarix seçin'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        schedule.edit_count += 1
+        schedule.last_edited_at = timezone.now()
+        schedule.last_edited_by = request.user
+        schedule.save()
+        
+        # ✅ Send notification to HR
+        graph_token = get_graph_access_token(request.user)
+        notification_sent = False
+        if graph_token:
+            notification_sent = notification_manager.notify_schedule_edited(
+                schedule,
+                request.user,
+                graph_token
+            )
+        
+        return Response({
+            'message': 'Schedule yeniləndi',
+            'notification_sent': notification_sent,
+            'schedule': VacationScheduleSerializer(schedule).data
+        })
+        
+    except VacationSchedule.DoesNotExist:
+        return Response({'error': 'Schedule tapılmadı'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Error editing schedule: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+@swagger_auto_schema(
+    method='post',
+    operation_description="✅ Manager approve schedule",
+    operation_summary="Approve Schedule",
+    tags=['Vacation'],
+    request_body=openapi.Schema(
+        type=openapi.TYPE_OBJECT,
+        properties={
+            'action': openapi.Schema(type=openapi.TYPE_STRING, enum=['approve', 'reject']),
+            'comment': openapi.Schema(type=openapi.TYPE_STRING)
+        }
+    ),
+    responses={200: openapi.Response(description='Schedule approved')}
+)
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def approve_schedule(request, pk):
+    """✅ Manager approve/reject schedule"""
+    try:
+        schedule = VacationSchedule.objects.get(pk=pk, is_deleted=False)
+        access = get_vacation_access(request.user)
+        
+        if not access['employee']:
+            return Response({
+                'error': 'Employee profili tapılmadı'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        # Check permission - only line manager can approve
+        if schedule.line_manager != access['employee']:
+            return Response({
+                'error': 'Yalnız line manager təsdiq edə bilər'
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        action = request.data.get('action')
+        comment = request.data.get('comment', '')
+        
+        if action == 'approve':
+            schedule.approve_by_manager(request.user, comment)
+            
+            # Send notification to HR
+            graph_token = get_graph_access_token(request.user)
+            notification_sent = False
+            if graph_token:
+                notification_sent = notification_manager.notify_schedule_approved_by_manager(
+                    schedule,
+                    graph_token
+                )
+            
+            return Response({
+                'message': 'Schedule təsdiq edildi',
+                'notification_sent': notification_sent,
+                'schedule': VacationScheduleSerializer(schedule).data
+            })
+        
+        else:
+            # Reject - soft delete
+            schedule.is_deleted = True
+            schedule.deleted_by = request.user
+            schedule.deleted_at = timezone.now()
+            schedule.save()
+            
+            return Response({
+                'message': 'Schedule rədd edildi'
+            })
+        
+    except VacationSchedule.DoesNotExist:
+        return Response({'error': 'Schedule tapılmadı'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Error approving schedule: {e}")
+        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+    
+    
 # ==================== CREATE SCHEDULE ====================
 @swagger_auto_schema(
     method='post',
-    operation_description="Vacation Schedule yaratmaq (təsdiq tələb etmir)",
-    operation_summary="Create Schedule",
+    operation_description="✅ ENHANCED: Vacation Schedule - Manager approve with notification",
+    operation_summary="Create Schedule with Approval",
     tags=['Vacation'],
     request_body=VacationScheduleCreateSerializer,
-    responses={201: openapi.Response(description='Schedule yaradıldı')}
+    responses={201: openapi.Response(description='Schedule created')}
 )
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def create_schedule(request):
     """
-    ✅ Schedule yarat - Employee/Manager/Admin can create
+    ✅ ENHANCED: Schedule yarat - Manager approve + HR notification
     """
     try:
         access = get_vacation_access(request.user)
@@ -1688,22 +1845,23 @@ def create_schedule(request):
         requester_emp = access['employee']
         year = date.today().year
         
+        # Determine target employee
         if data['requester_type'] == 'for_me':
             employee = requester_emp
         else:
             if data.get('employee_id'):
                 employee = Employee.objects.get(id=data['employee_id'])
                 
-                # ✅ Check access
+                # Check access
                 if not access['can_view_all']:
                     if access['accessible_employee_ids'] is None:
-                        pass  # Admin
+                        pass
                     elif employee.id not in access['accessible_employee_ids']:
                         return Response({
                             'error': 'Bu işçi sizin tabeliyinizdə deyil'
                         }, status=status.HTTP_403_FORBIDDEN)
             else:
-                # Manual employee - only manager/admin
+                # Manual employee
                 if not (access['is_manager'] or access['is_admin']):
                     return Response({
                         'error': 'Only managers and admins can create manual employees'
@@ -1722,6 +1880,7 @@ def create_schedule(request):
                     created_by=request.user
                 )
         
+        # Check conflicts
         temp_schedule = VacationSchedule(
             employee=employee,
             start_date=data['start_date'],
@@ -1749,35 +1908,83 @@ def create_schedule(request):
         settings = VacationSetting.get_active()
         working_days = 0
         if settings:
+            bf_code = None
+            if employee.business_function:
+                bf_code = getattr(employee.business_function, 'code', None)
             working_days = settings.calculate_working_days(
                 data['start_date'], 
-                data['end_date']
+                data['end_date'],
+                bf_code
             )
         
+        # ✅ Planning limit check
         if settings and not settings.allow_negative_balance:
-            total_planned = balance.scheduled_days + working_days
-            if total_planned > balance.total_balance:
+            available = balance.available_for_planning
+            
+            if working_days > available:
                 return Response({
-                    'error': f'Qeyri-kafi balans. Toplam planlaşdırılmış ({total_planned}) günlər balansı ({balance.total_balance}) keçir.',
-                    'available_balance': float(balance.remaining_balance),
-                    'requested_days': working_days,
-                    'current_scheduled': float(balance.scheduled_days)
+                    'error': f'Planlaşdırma limiti aşıldı',
+                    'details': {
+                        'remaining_balance': float(balance.remaining_balance),
+                        'already_scheduled': float(balance.scheduled_days),
+                        'available_for_planning': float(available),
+                        'requested_days': working_days,
+                        'message': f'Maksimum {available} gün planlaşdıra bilərsiniz'
+                    }
                 }, status=status.HTTP_400_BAD_REQUEST)
         
         with transaction.atomic():
+            # Create schedule
             schedule = VacationSchedule.objects.create(
                 employee=employee,
                 vacation_type_id=data['vacation_type_id'],
                 start_date=data['start_date'],
                 end_date=data['end_date'],
                 comment=data.get('comment', ''),
-                created_by=request.user
+                created_by=request.user,
+                status='PENDING_MANAGER'  # ✅ NEW: Pending approval
             )
+            
+            # ✅ Determine if needs approval
+            is_manager_creating = (
+                access['is_manager'] and 
+                employee.id in access.get('accessible_employee_ids', [])
+            )
+            
+            # ✅ If manager creates for their employee -> auto-approve
+            if is_manager_creating or access['is_admin']:
+                schedule.approve_by_manager(request.user)
+                schedule.status = 'SCHEDULED'
+                schedule.save()
+                
+                # ✅ Send notification to HR
+                graph_token = get_graph_access_token(request.user)
+                notification_sent = False
+                if graph_token:
+                    notification_sent = notification_manager.notify_schedule_approved_by_manager(
+                        schedule, 
+                        graph_token
+                    )
+            
+            # Employee creates for self -> needs manager approval
+            else:
+                schedule.line_manager = employee.line_manager
+                schedule.save()
+                
+                # ✅ Send notification to manager
+                graph_token = get_graph_access_token(request.user)
+                notification_sent = False
+                if graph_token:
+                    notification_sent = notification_manager.notify_schedule_created(
+                        schedule,
+                        graph_token
+                    )
             
             balance.refresh_from_db()
             
             return Response({
-                'message': 'Schedule yaradıldı',
+                'message': 'Schedule yaradıldı' + (' və təsdiq gözləyir' if schedule.status == 'PENDING_MANAGER' else ''),
+                'notification_sent': notification_sent,
                 'schedule': VacationScheduleSerializer(schedule).data,
                 'balance': {
                     'total_balance': float(balance.total_balance),
@@ -1785,6 +1992,7 @@ def create_schedule(request):
                     'used_days': float(balance.used_days),
                     'remaining_balance': float(balance.remaining_balance),
                     'scheduled_days': float(balance.scheduled_days),
+                    'available_for_planning': float(balance.available_for_planning),
                     'should_be_planned': float(balance.should_be_planned)
                 }
             }, status=status.HTTP_201_CREATED)
@@ -1798,7 +2006,6 @@ def create_schedule(request):
         return Response({
             'error': str(e)
         }, status=status.HTTP_400_BAD_REQUEST)
-
 
 # ==================== MY SCHEDULE TABS ====================
 @swagger_auto_schema(
@@ -1919,91 +2126,6 @@ def register_schedule(request, pk):
         return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 
-# ==================== EDIT SCHEDULE ====================
-@swagger_auto_schema(
-    method='put',
-    operation_description="Schedule-i edit et (Employee can edit own, within limits)",
-    operation_summary="Edit Schedule",
-    tags=['Vacation'],
-    request_body=VacationScheduleEditSerializer,
-    responses={200: openapi.Response(description='Schedule yeniləndi')}
-)
-@api_view(['PUT'])
-@permission_classes([IsAuthenticated])
-def edit_schedule(request, pk):
-    """
-    ✅ Schedule-i edit et
-    - Employee: Can edit own schedules (within edit limit)
-    - Manager/Admin: Cannot edit (schedules are self-managed)
-    """
-    try:
-        schedule = VacationSchedule.objects.get(pk=pk, is_deleted=False)
-        access = get_vacation_access(request.user)
-        
-        if not access['employee']:
-            return Response({
-                'error': 'Employee profili tapılmadı'
-            }, status=status.HTTP_404_NOT_FOUND)
-        
-        # ✅ Only schedule owner can edit
-        if schedule.employee != access['employee']:
-            return Response({
-                'error': 'Bu schedule-i edit etmək hüququnuz yoxdur'
-            }, status=status.HTTP_403_FORBIDDEN)
-        
-        # Edit limiti yoxla
-        if not schedule.can_edit():
-            return Response({
-                'error': 'Bu schedule-i daha edit edə bilməzsiniz'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        # ✅ Parse dates properly
-        if 'start_date' in request.data:
-            start_date_str = request.data['start_date']
-            if isinstance(start_date_str, str):
-                schedule.start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
-            else:
-                schedule.start_date = start_date_str
-        
-        if 'end_date' in request.data:
-            end_date_str = request.data['end_date']
-            if isinstance(end_date_str, str):
-                schedule.end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
-            else:
-                schedule.end_date = end_date_str
-        
-        if 'vacation_type_id' in request.data:
-            schedule.vacation_type_id = request.data['vacation_type_id']
-        
-        if 'comment' in request.data:
-            schedule.comment = request.data['comment']
-        
-        # Check conflicts
-        has_conflict, conflicts = schedule.check_date_conflicts()
-        if has_conflict:
-            return Response({
-                'error': 'Bu tarixlərdə artıq vacation mövcuddur',
-                'conflicts': conflicts,
-                'message': 'Zəhmət olmasa başqa tarix seçin'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        schedule.edit_count += 1
-        schedule.last_edited_at = timezone.now()
-        schedule.last_edited_by = request.user
-        schedule.save()
-        
-        return Response({
-            'message': 'Schedule yeniləndi',
-            'schedule': VacationScheduleSerializer(schedule).data
-        })
-        
-    except VacationSchedule.DoesNotExist:
-        return Response({'error': 'Schedule tapılmadı'}, status=status.HTTP_404_NOT_FOUND)
-    except Exception as e:
-        logger.error(f"Error editing schedule: {e}")
-        import traceback
-        logger.error(traceback.format_exc())  # ✅ Full error log
-        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 # ==================== DELETE SCHEDULE ====================
 @swagger_auto_schema(
@@ -2444,6 +2566,23 @@ def bulk_create_schedules(request):
                             'conflicts': conflicts
                         })
                         continue
+                    available = balance.available_for_planning
+                    if settings and not settings.allow_negative_balance:
+                        # Artıq yaradılmış schedulelər də nəzərə alınır
+                        current_scheduled = float(balance.scheduled_days) + sum([
+                            float(s.number_of_days) for s in created_schedules
+                        ])
+                        still_available = float(balance.remaining_balance) - current_scheduled
+                        
+                        if days > still_available:
+                            errors.append({
+                                'index': idx,
+                                'error': 'Planlaşdırma limiti aşıldı',
+                                'dates': f"{start_dt} - {end_dt}",
+                                'days': days,
+                                'available': still_available
+                            })
+                            continue
                     
                     # Create schedule
                     schedule = VacationSchedule.objects.create(

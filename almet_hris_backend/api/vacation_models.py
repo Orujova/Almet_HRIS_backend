@@ -255,25 +255,28 @@ class EmployeeVacationBalance(SoftDeleteModel):
     
     @property
     def total_balance(self):
-        """✅ FIX: Ümumi balans"""
+        """Ümumi balans"""
         return float(self.start_balance) + float(self.yearly_balance)
     
     @property
     def remaining_balance(self):
-        """✅ FIX: Qalan balans"""
+        """✅ FIXED: Qalan balans - yalnız used_days çıxılır"""
         total = self.total_balance
         used = float(self.used_days)
-        scheduled = float(self.scheduled_days)
-        return total - used - scheduled
+        return total - used  # scheduled_days artıq çıxılmır
+    
+    @property
+    def available_for_planning(self):
+        """✅ NEW: Planlaşdırma üçün mövcud balans"""
+        return self.remaining_balance - float(self.scheduled_days)
     
     @property
     def should_be_planned(self):
-        """Planlaşdırılmalı olan günlər"""
-        # yearly_balance-dən artıq istifadə edilmiş və planlaşdırılmış günləri çıxarırıq
+        """✅ FIXED: İllik balansdan planlaşdırılmalı (start_balance nəzərə alınmır)"""
+        # Yalnız yearly_balance əsasında
         planned_and_used = float(self.scheduled_days) + float(self.used_days)
         remaining_from_yearly = max(0, float(self.yearly_balance) - planned_and_used)
         return remaining_from_yearly
-    
     def clean(self):
         """Validation"""
         if self.year < 2020 or self.year > 2030:
@@ -717,9 +720,10 @@ class VacationRequest(SoftDeleteModel):
 
 
 class VacationSchedule(SoftDeleteModel):
-    """Vacation Schedule - Planlaşdırma (təsdiq tələb etmir)"""
+    """✅ ENHANCED: Vacation Schedule with approval workflow"""
     
     STATUS_CHOICES = [
+        ('PENDING_MANAGER', 'Pending Manager Approval'),  # ✅ NEW
         ('SCHEDULED', 'Scheduled'),
         ('REGISTERED', 'Registered'),
     ]
@@ -737,8 +741,27 @@ class VacationSchedule(SoftDeleteModel):
     return_date = models.DateField(editable=False, null=True, blank=True)
     number_of_days = models.DecimalField(max_digits=5, decimal_places=1, default=0)
     
+    # ✅ NEW: Approval fields
+    line_manager = models.ForeignKey(
+        Employee,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='schedules_to_approve',
+        help_text="Line Manager for approval"
+    )
+    manager_approved_at = models.DateTimeField(null=True, blank=True)
+    manager_approved_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='schedule_approvals'
+    )
+    manager_comment = models.TextField(blank=True)
+    
     # Status
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='SCHEDULED')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING_MANAGER')
     
     # Edit tracking
     edit_count = models.PositiveIntegerField(default=0)
@@ -758,11 +781,13 @@ class VacationSchedule(SoftDeleteModel):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
-    class Meta:
-        verbose_name = "Vacation Schedule"
-        verbose_name_plural = "Vacation Schedules"
-        db_table = 'vacation_schedules'
-        ordering = ['-start_date']
+    def approve_by_manager(self, user, comment=''):
+        """✅ NEW: Manager təsdiq edir"""
+        self.manager_approved_at = timezone.now()
+        self.manager_approved_by = user
+        self.manager_comment = comment
+        self.status = 'SCHEDULED'
+        self.save()
     
     def __str__(self):
         return f"{self.employee.full_name} - {self.vacation_type.name} - {self.start_date} to {self.end_date}"

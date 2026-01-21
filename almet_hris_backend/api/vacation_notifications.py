@@ -42,6 +42,272 @@ class VacationNotificationManager:
         prefix = self.settings.vacation_subject_prefix
         return f"{prefix} Request #{request_id}"
     
+    def notify_schedule_created(self, vacation_schedule, access_token=None):
+        """✅ NEW: Notify Manager when employee creates schedule"""
+        try:
+            line_manager = vacation_schedule.line_manager
+            if not line_manager or not line_manager.user or not line_manager.user.email:
+                logger.warning(f"No line manager email for schedule {vacation_schedule.id}")
+                return False
+            
+            subject = f"[VACATION SCHEDULE] SCH{vacation_schedule.id} - Pending Your Approval"
+            
+            body_html = f"""
+            <html>
+            <head>
+                <style>
+                    body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+                    .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+                    .header {{ background-color: #366092; color: white; padding: 20px; text-align: center; }}
+                    .content {{ background-color: #f9f9f9; padding: 20px; border: 1px solid #ddd; }}
+                    .info-row {{ margin: 10px 0; }}
+                    .label {{ font-weight: bold; color: #366092; }}
+                    .button {{ 
+                        display: inline-block; 
+                        padding: 12px 24px; 
+                        background-color: #366092; 
+                        color: white; 
+                        text-decoration: none; 
+                        border-radius: 5px; 
+                        margin: 20px 0;
+                    }}
+                    .footer {{ margin-top: 20px; font-size: 12px; color: #777; text-align: center; }}
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="header">
+                        <h2>📅 New Vacation Schedule</h2>
+                    </div>
+                    <div class="content">
+                        <p>Dear {line_manager.full_name},</p>
+                        <p>A vacation schedule has been created and requires your approval.</p>
+                        
+                        <div class="info-row">
+                            <span class="label">Schedule ID:</span> SCH{vacation_schedule.id}
+                        </div>
+                        <div class="info-row">
+                            <span class="label">Employee:</span> {vacation_schedule.employee.full_name}
+                        </div>
+                        <div class="info-row">
+                            <span class="label">Vacation Type:</span> {vacation_schedule.vacation_type.name}
+                        </div>
+                        <div class="info-row">
+                            <span class="label">Period:</span> {vacation_schedule.start_date.strftime('%Y-%m-%d')} to {vacation_schedule.end_date.strftime('%Y-%m-%d')}
+                        </div>
+                        <div class="info-row">
+                            <span class="label">Duration:</span> {vacation_schedule.number_of_days} days
+                        </div>
+                        {f'<div class="info-row"><span class="label">Comment:</span> {vacation_schedule.comment}</div>' if vacation_schedule.comment else ''}
+                        
+                        <center>
+                            <a href="https://myalmet.com/vacation/schedules" class="button">
+                                Review Schedule
+                            </a>
+                        </center>
+                    </div>
+                    <div class="footer">
+                        <p>This is an automated notification from Almet HRIS System</p>
+                    </div>
+                </div>
+            </body>
+            </html>
+            """
+            
+            return self.service.send_email(
+                recipient_email=line_manager.user.email,
+                subject=subject,
+                body_html=body_html,
+                access_token=access_token,
+                related_model='VacationSchedule',
+                related_object_id=vacation_schedule.id,
+                sent_by=vacation_schedule.created_by
+            )
+            
+        except Exception as e:
+            logger.error(f"Error sending schedule created notification: {e}")
+            return False
+    
+    
+    def notify_schedule_approved_by_manager(self, vacation_schedule, access_token=None):
+        """✅ NEW: Notify HR when manager approves schedule"""
+        try:
+            # Get default HR
+            from .vacation_models import VacationSetting
+            settings = VacationSetting.get_active()
+            
+            if not settings or not settings.default_hr_representative:
+                logger.warning("No default HR representative configured")
+                return False
+            
+            hr = settings.default_hr_representative
+            if not hr.user or not hr.user.email:
+                logger.warning("HR representative has no email")
+                return False
+            
+            subject = f"[VACATION SCHEDULE] SCH{vacation_schedule.id} - Manager Approved"
+            
+            body_html = f"""
+            <html>
+            <head>
+                <style>
+                    body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+                    .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+                    .header {{ background-color: #28a745; color: white; padding: 20px; text-align: center; }}
+                    .content {{ background-color: #f9f9f9; padding: 20px; border: 1px solid #ddd; }}
+                    .info-row {{ margin: 10px 0; }}
+                    .label {{ font-weight: bold; color: #366092; }}
+                    .approved {{ color: #28a745; font-weight: bold; }}
+                    .footer {{ margin-top: 20px; font-size: 12px; color: #777; text-align: center; }}
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="header">
+                        <h2>✅ Vacation Schedule Approved</h2>
+                    </div>
+                    <div class="content">
+                        <p>Dear {hr.full_name},</p>
+                        <p class="approved">✓ Manager has approved a vacation schedule.</p>
+                        
+                        <div class="info-row">
+                            <span class="label">Schedule ID:</span> SCH{vacation_schedule.id}
+                        </div>
+                        <div class="info-row">
+                            <span class="label">Employee:</span> {vacation_schedule.employee.full_name}
+                        </div>
+                        <div class="info-row">
+                            <span class="label">Department:</span> {vacation_schedule.employee.department.name if vacation_schedule.employee.department else 'N/A'}
+                        </div>
+                        <div class="info-row">
+                            <span class="label">Vacation Type:</span> {vacation_schedule.vacation_type.name}
+                        </div>
+                        <div class="info-row">
+                            <span class="label">Period:</span> {vacation_schedule.start_date.strftime('%Y-%m-%d')} to {vacation_schedule.end_date.strftime('%Y-%m-%d')}
+                        </div>
+                        <div class="info-row">
+                            <span class="label">Duration:</span> {vacation_schedule.number_of_days} days
+                        </div>
+                        <div class="info-row">
+                            <span class="label">Approved by:</span> {vacation_schedule.manager_approved_by.get_full_name() if vacation_schedule.manager_approved_by else 'N/A'}
+                        </div>
+                        {f'<div class="info-row"><span class="label">Manager Comment:</span> {vacation_schedule.manager_comment}</div>' if vacation_schedule.manager_comment else ''}
+                        
+                        <p style="margin-top: 20px; font-size: 14px; color: #666;">
+                            This schedule is now active and scheduled days have been updated in the employee's balance.
+                        </p>
+                    </div>
+                    <div class="footer">
+                        <p>This is an automated notification from Almet HRIS System</p>
+                    </div>
+                </div>
+            </body>
+            </html>
+            """
+            
+            return self.service.send_email(
+                recipient_email=hr.user.email,
+                subject=subject,
+                body_html=body_html,
+                access_token=access_token,
+                related_model='VacationSchedule',
+                related_object_id=vacation_schedule.id,
+                sent_by=vacation_schedule.manager_approved_by
+            )
+            
+        except Exception as e:
+            logger.error(f"Error sending schedule approved notification: {e}")
+            return False
+    
+    
+    def notify_schedule_edited(self, vacation_schedule, editor, access_token=None):
+        """✅ NEW: Notify HR when schedule is edited"""
+        try:
+            from .vacation_models import VacationSetting
+            settings = VacationSetting.get_active()
+            
+            if not settings or not settings.default_hr_representative:
+                logger.warning("No default HR representative configured")
+                return False
+            
+            hr = settings.default_hr_representative
+            if not hr.user or not hr.user.email:
+                logger.warning("HR representative has no email")
+                return False
+            
+            subject = f"[VACATION SCHEDULE] SCH{vacation_schedule.id} - Edited"
+            
+            body_html = f"""
+            <html>
+            <head>
+                <style>
+                    body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+                    .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+                    .header {{ background-color: #FFA500; color: white; padding: 20px; text-align: center; }}
+                    .content {{ background-color: #f9f9f9; padding: 20px; border: 1px solid #ddd; }}
+                    .info-row {{ margin: 10px 0; }}
+                    .label {{ font-weight: bold; color: #366092; }}
+                    .warning {{ color: #FFA500; font-weight: bold; }}
+                    .footer {{ margin-top: 20px; font-size: 12px; color: #777; text-align: center; }}
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="header">
+                        <h2>✏️ Vacation Schedule Edited</h2>
+                    </div>
+                    <div class="content">
+                        <p>Dear {hr.full_name},</p>
+                        <p class="warning">⚠️ An approved vacation schedule has been modified.</p>
+                        
+                        <div class="info-row">
+                            <span class="label">Schedule ID:</span> SCH{vacation_schedule.id}
+                        </div>
+                        <div class="info-row">
+                            <span class="label">Employee:</span> {vacation_schedule.employee.full_name}
+                        </div>
+                        <div class="info-row">
+                            <span class="label">Vacation Type:</span> {vacation_schedule.vacation_type.name}
+                        </div>
+                        <div class="info-row">
+                            <span class="label">New Period:</span> {vacation_schedule.start_date.strftime('%Y-%m-%d')} to {vacation_schedule.end_date.strftime('%Y-%m-%d')}
+                        </div>
+                        <div class="info-row">
+                            <span class="label">Duration:</span> {vacation_schedule.number_of_days} days
+                        </div>
+                        <div class="info-row">
+                            <span class="label">Edited by:</span> {editor.get_full_name()}
+                        </div>
+                        <div class="info-row">
+                            <span class="label">Edit Count:</span> {vacation_schedule.edit_count}
+                        </div>
+                        
+                        <p style="margin-top: 20px; font-size: 14px; color: #666;">
+                            Please review the changes for accuracy.
+                        </p>
+                    </div>
+                    <div class="footer">
+                        <p>This is an automated notification from Almet HRIS System</p>
+                    </div>
+                </div>
+            </body>
+            </html>
+            """
+            
+            return self.service.send_email(
+                recipient_email=hr.user.email,
+                subject=subject,
+                body_html=body_html,
+                access_token=access_token,
+                related_model='VacationSchedule',
+                related_object_id=vacation_schedule.id,
+                sent_by=editor
+            )
+            
+        except Exception as e:
+            logger.error(f"Error sending schedule edited notification: {e}")
+            return False
+    
     def notify_request_created(self, vacation_request, access_token=None):
         """Notify Line Manager when request created"""
         try:
