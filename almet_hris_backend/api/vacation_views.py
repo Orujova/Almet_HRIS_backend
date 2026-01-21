@@ -36,7 +36,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
 from django.db.models import Q, Sum, Count
-from .vacation_models import EmployeeVacationBalance
+from .vacation_models import EmployeeVacationBalance,VacationSetting
 from .vacation_serializers import EmployeeVacationBalanceSerializer
 
 import logging
