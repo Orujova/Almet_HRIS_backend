@@ -199,11 +199,8 @@ class ExitInterview(SoftDeleteModel):
                     <p><strong>Completed:</strong> {self.completed_at.strftime('%Y-%m-%d %H:%M')}</p>
                 </div>
                 
-                <p>Please review the exit interview responses in the HRIS system.</p>
-                
-                <p style="margin-top: 20px; color: #666; font-size: 12px;">
-                    This is an automated notification from HRIS.
-                </p>
+              
+             
             </body>
             </html>
             """

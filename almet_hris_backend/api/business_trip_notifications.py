@@ -125,7 +125,7 @@ class BusinessTripNotificationManager:
                         </p>
                     </div>
                     <div class="footer">
-                        <p>This is an automated notification from Almet HRIS System</p>
+                        
                         <p>Please do not reply to this email</p>
                     </div>
                 </div>
