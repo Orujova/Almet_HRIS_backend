@@ -869,8 +869,7 @@ def get_hr_representatives(request):
         return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 
-# ==================== BALANCE MANAGEMENT ====================
-# ==================== BALANCE BULK UPLOAD - FIXED ====================
+
 @swagger_auto_schema(
     method='post',
     operation_description="Excel faylı ilə vacation balanslarını toplu yüklə (ADMIN ONLY)",
@@ -915,7 +914,7 @@ def bulk_upload_balances(request):
                 'hint': 'Please use the downloaded template without modifications'
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        results = {'successful': 0, 'failed': 0, 'errors': [], 'skipped': 0}
+        results = {'successful': 0, 'failed': 0, 'errors': [], 'skipped': 0, 'replaced': 0}
         
         for idx, row in df.iterrows():
             try:
@@ -963,15 +962,21 @@ def bulk_upload_balances(request):
                 # ✅ LOG: Debug what we're actually saving
                 logger.info(f"📊 Processing {emp_id}: start={start_bal}, yearly={yearly_bal}, total={start_bal + yearly_bal}")
                 
-                # ✅ CRITICAL FIX: Delete existing balance and create fresh
-                # This prevents accumulation of old data
-                EmployeeVacationBalance.objects.filter(
+                # ✅ CRITICAL: Check if employee already has balance for this year
+                existing_balance = EmployeeVacationBalance.objects.filter(
                     employee=emp,
-                    year=year
-                ).delete()
+                    year=year,
+                    is_deleted=False
+                ).first()
                 
-                # Create fresh balance
-                EmployeeVacationBalance.objects.create(
+                if existing_balance:
+                    logger.warning(f"⚠️  {emp_id} has existing balance - DELETING OLD DATA")
+                    logger.warning(f"   Old: start={existing_balance.start_balance}, yearly={existing_balance.yearly_balance}, used={existing_balance.used_days}")
+                    existing_balance.delete()
+                    results['replaced'] += 1
+                
+                # ✅ Create fresh balance (completely new record)
+                new_balance = EmployeeVacationBalance.objects.create(
                     employee=emp,
                     year=year,
                     start_balance=start_bal,
@@ -980,6 +985,8 @@ def bulk_upload_balances(request):
                     scheduled_days=0,
                     updated_by=request.user
                 )
+                
+                logger.info(f"✅ {emp_id} new balance created: total={new_balance.total_balance}")
                 
                 results['successful'] += 1
                 
@@ -1001,9 +1008,17 @@ def bulk_upload_balances(request):
                 'columns_found': list(df.columns)
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        # ✅ Return detailed results with sample data
+        # ✅ Return detailed results with replacement info
+        message_parts = [f"{results['successful']} uğurlu"]
+        if results['replaced'] > 0:
+            message_parts.append(f"{results['replaced']} köhnə balans silindi və yeniləndi")
+        if results['failed'] > 0:
+            message_parts.append(f"{results['failed']} səhv")
+        if results['skipped'] > 0:
+            message_parts.append(f"{results['skipped']} skipped")
+        
         return Response({
-            'message': f"{results['successful']} uğurlu, {results['failed']} səhv, {results['skipped']} skipped",
+            'message': ', '.join(message_parts),
             'results': results,
             'year': year,
             'total_rows_processed': len(df),

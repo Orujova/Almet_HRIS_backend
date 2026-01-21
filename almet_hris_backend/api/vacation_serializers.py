@@ -88,7 +88,7 @@ class GeneralVacationSettingsSerializer(serializers.Serializer):
 
 
 class UKAdditionalApproverSerializer(serializers.Serializer):
-    """✅ NEW: UK Additional Approver serializer"""
+    """✅ FIXED: UK Additional Approver serializer"""
     uk_additional_approver_id = serializers.IntegerField(
         help_text="UK Additional Approver Employee ID (Position Group: Vice Chairman)"
     )
@@ -98,12 +98,13 @@ class UKAdditionalApproverSerializer(serializers.Serializer):
         try:
             employee = Employee.objects.get(id=value, is_deleted=False)
             
-            # ✅ FIXED: More flexible position group check
+            # ✅ FIXED: Check for both full name and abbreviation
             if employee.position_group:
                 position_name = employee.position_group.name.lower().strip()
                 
                 # Check if contains any of these variations
                 valid_positions = [
+                    'vc',                # ✅ Added abbreviation
                     'vice chairman',
                     'vice-chairman', 
                     'vicechairman',
@@ -111,11 +112,14 @@ class UKAdditionalApproverSerializer(serializers.Serializer):
                     'deputy chairman'
                 ]
                 
-                is_valid_position = any(pos in position_name for pos in valid_positions)
+                is_valid_position = any(
+                    pos == position_name or pos in position_name 
+                    for pos in valid_positions
+                )
                 
                 if not is_valid_position:
                     raise serializers.ValidationError(
-                        f"Seçilən işçi Vice Chairman position group-da deyil. "
+                        f"Seçilən işçi Vice Chairman (VC) position group-da deyil. "
                         f"Cari position: {employee.position_group.name}"
                     )
             else:
@@ -123,13 +127,10 @@ class UKAdditionalApproverSerializer(serializers.Serializer):
                     "Seçilən işçinin position group məlumatı yoxdur"
                 )
             
-            # ✅ REMOVED: Business function UK check - not required
-            # UK approver can be from any business function
-            
             return value
+            
         except Employee.DoesNotExist:
             raise serializers.ValidationError("Approver tapılmadı")
-
 class HRRepresentativeSerializer(serializers.Serializer):
     """HR Representative serializer"""
     default_hr_representative_id = serializers.IntegerField(
