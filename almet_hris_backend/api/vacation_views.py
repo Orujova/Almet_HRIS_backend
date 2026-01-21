@@ -1742,9 +1742,11 @@ def edit_schedule(request, pk):
         logger.error(traceback.format_exc())
         return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
+# api/vacation_views.py - approve_schedule UPDATE
+
 @swagger_auto_schema(
     method='post',
-    operation_description="✅ Manager approve schedule",
+    operation_description="✅ Manager/Admin approve schedule",
     operation_summary="Approve Schedule",
     tags=['Vacation'],
     request_body=openapi.Schema(
@@ -1759,7 +1761,7 @@ def edit_schedule(request, pk):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def approve_schedule(request, pk):
-    """✅ Manager approve/reject schedule"""
+    """✅ Manager/Admin approve/reject schedule"""
     try:
         schedule = VacationSchedule.objects.get(pk=pk, is_deleted=False)
         access = get_vacation_access(request.user)
@@ -1769,16 +1771,29 @@ def approve_schedule(request, pk):
                 'error': 'Employee profili tapılmadı'
             }, status=status.HTTP_404_NOT_FOUND)
         
-        # Check permission - only line manager can approve
-        if schedule.line_manager != access['employee']:
+        # ✅ Check permission - Manager OR Admin can approve
+        can_approve = False
+        
+        # Admin can always approve
+        if access['is_admin']:
+            can_approve = True
+            logger.info(f"✅ Admin {request.user.username} approving schedule {schedule.id}")
+        
+        # Manager can approve if they are the line manager
+        elif schedule.line_manager == access['employee']:
+            can_approve = True
+            logger.info(f"✅ Manager {request.user.username} approving schedule {schedule.id}")
+        
+        if not can_approve:
             return Response({
-                'error': 'Yalnız line manager təsdiq edə bilər'
+                'error': 'Yalnız line manager və ya admin təsdiq edə bilər'
             }, status=status.HTTP_403_FORBIDDEN)
         
         action = request.data.get('action')
         comment = request.data.get('comment', '')
         
         if action == 'approve':
+            # Approve schedule
             schedule.approve_by_manager(request.user, comment)
             
             # Send notification to HR
@@ -1793,10 +1808,11 @@ def approve_schedule(request, pk):
             return Response({
                 'message': 'Schedule təsdiq edildi',
                 'notification_sent': notification_sent,
+                'approved_by': 'Admin' if access['is_admin'] else 'Line Manager',
                 'schedule': VacationScheduleSerializer(schedule).data
             })
         
-        else:
+        elif action == 'reject':
             # Reject - soft delete
             schedule.is_deleted = True
             schedule.deleted_by = request.user
@@ -1804,17 +1820,25 @@ def approve_schedule(request, pk):
             schedule.save()
             
             return Response({
-                'message': 'Schedule rədd edildi'
+                'message': 'Schedule rədd edildi',
+                'rejected_by': 'Admin' if access['is_admin'] else 'Line Manager'
             })
+        
+        else:
+            return Response({
+                'error': 'Invalid action. Use "approve" or "reject"'
+            }, status=status.HTTP_400_BAD_REQUEST)
         
     except VacationSchedule.DoesNotExist:
         return Response({'error': 'Schedule tapılmadı'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
         logger.error(f"Error approving schedule: {e}")
-        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        import traceback
+        logger.error(traceback.format_exc())
+        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST) 
     
-    
-# ==================== CREATE SCHEDULE ====================
+
+
 @swagger_auto_schema(
     method='post',
     operation_description="✅ ENHANCED: Vacation Schedule - Manager approve with notification",
@@ -1934,28 +1958,26 @@ def create_schedule(request):
                 }, status=status.HTTP_400_BAD_REQUEST)
         
         with transaction.atomic():
-            # Create schedule
-            schedule = VacationSchedule.objects.create(
-                employee=employee,
-                vacation_type_id=data['vacation_type_id'],
-                start_date=data['start_date'],
-                end_date=data['end_date'],
-                comment=data.get('comment', ''),
-                created_by=request.user,
-                status='PENDING_MANAGER'  # ✅ NEW: Pending approval
-            )
-            
             # ✅ Determine if needs approval
             is_manager_creating = (
                 access['is_manager'] and 
                 employee.id in access.get('accessible_employee_ids', [])
             )
             
-            # ✅ If manager creates for their employee -> auto-approve
+            # Create schedule with appropriate status
             if is_manager_creating or access['is_admin']:
-                schedule.approve_by_manager(request.user)
-                schedule.status = 'SCHEDULED'
-                schedule.save()
+                # Manager/Admin creates for employee → auto-approve → SCHEDULED
+                schedule = VacationSchedule.objects.create(
+                    employee=employee,
+                    vacation_type_id=data['vacation_type_id'],
+                    start_date=data['start_date'],
+                    end_date=data['end_date'],
+                    comment=data.get('comment', ''),
+                    created_by=request.user,
+                    status='SCHEDULED',  # ✅ Direct to SCHEDULED
+                    manager_approved_by=request.user,
+                    manager_approved_at=timezone.now()
+                )
                 
                 # ✅ Send notification to HR
                 graph_token = get_graph_access_token(request.user)
@@ -1965,25 +1987,41 @@ def create_schedule(request):
                         schedule, 
                         graph_token
                     )
-            
-            # Employee creates for self -> needs manager approval
-            else:
-                schedule.line_manager = employee.line_manager
-                schedule.save()
                 
-                # ✅ Send notification to manager
+                message = 'Schedule yaradıldı və təsdiq edildi'
+            
+            else:
+                # Employee creates for self → needs manager approval → PENDING_MANAGER
+                schedule = VacationSchedule.objects.create(
+                    employee=employee,
+                    vacation_type_id=data['vacation_type_id'],
+                    start_date=data['start_date'],
+                    end_date=data['end_date'],
+                    comment=data.get('comment', ''),
+                    created_by=request.user,
+                    status='PENDING_MANAGER',  # ✅ Needs approval
+                    line_manager=employee.line_manager
+                )
+                
+                # ✅ Send notification to MANAGER
                 graph_token = get_graph_access_token(request.user)
                 notification_sent = False
                 if graph_token:
+                    logger.info(f"📧 Sending notification to manager: {employee.line_manager.full_name if employee.line_manager else 'N/A'}")
                     notification_sent = notification_manager.notify_schedule_created(
                         schedule,
                         graph_token
                     )
+                    logger.info(f"📧 Notification sent: {notification_sent}")
+                else:
+                    logger.warning(f"⚠️ No Graph token available for user {request.user.username}")
+                
+                message = 'Schedule yaradıldı və təsdiq gözləyir'
             
             balance.refresh_from_db()
             
             return Response({
-                'message': 'Schedule yaradıldı' + (' və təsdiq gözləyir' if schedule.status == 'PENDING_MANAGER' else ''),
+                'message': message,
                 'notification_sent': notification_sent,
                 'schedule': VacationScheduleSerializer(schedule).data,
                 'balance': {
@@ -2003,10 +2041,11 @@ def create_schedule(request):
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
         logger.error(f"Error creating schedule: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         return Response({
             'error': str(e)
         }, status=status.HTTP_400_BAD_REQUEST)
-
 # ==================== MY SCHEDULE TABS ====================
 @swagger_auto_schema(
     method='get',
@@ -2457,7 +2496,7 @@ def approve_reject_request(request, pk):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def bulk_create_schedules(request):
-    """✅ Multiple schedule yaratmaq - Planning feature"""
+    """✅ ENHANCED: Multiple schedule yaratmaq - Planning feature + Notifications"""
     try:
         access = get_vacation_access(request.user)
         
@@ -2513,6 +2552,12 @@ def bulk_create_schedules(request):
         errors = []
         total_days = 0
         
+        # ✅ Determine if needs approval
+        is_manager_creating = (
+            (access['is_manager'] or access['is_admin']) and 
+            employee_id is not None
+        )
+        
         with transaction.atomic():
             for idx, schedule_data in enumerate(schedules_data):
                 try:
@@ -2544,7 +2589,10 @@ def bulk_create_schedules(request):
                     
                     # Calculate days
                     if settings:
-                        days = settings.calculate_working_days(start_dt, end_dt)
+                        bf_code = None
+                        if employee.business_function:
+                            bf_code = getattr(employee.business_function, 'code', None)
+                        days = settings.calculate_working_days(start_dt, end_dt, bf_code)
                     else:
                         days = (end_dt - start_dt).days + 1
                     
@@ -2566,9 +2614,10 @@ def bulk_create_schedules(request):
                             'conflicts': conflicts
                         })
                         continue
+                    
+                    # Planning limit check
                     available = balance.available_for_planning
                     if settings and not settings.allow_negative_balance:
-                        # Artıq yaradılmış schedulelər də nəzərə alınır
                         current_scheduled = float(balance.scheduled_days) + sum([
                             float(s.number_of_days) for s in created_schedules
                         ])
@@ -2584,15 +2633,32 @@ def bulk_create_schedules(request):
                             })
                             continue
                     
-                    # Create schedule
-                    schedule = VacationSchedule.objects.create(
-                        employee=employee,
-                        vacation_type=vacation_type,
-                        start_date=start_dt,
-                        end_date=end_dt,
-                        comment=schedule_data.get('comment', ''),
-                        created_by=request.user
-                    )
+                    # ✅ Create schedule with appropriate status
+                    if is_manager_creating:
+                        # Manager/Admin creating → auto-approve
+                        schedule = VacationSchedule.objects.create(
+                            employee=employee,
+                            vacation_type=vacation_type,
+                            start_date=start_dt,
+                            end_date=end_dt,
+                            comment=schedule_data.get('comment', ''),
+                            created_by=request.user,
+                            status='SCHEDULED',  # ✅ Direct approval
+                            manager_approved_by=request.user,
+                            manager_approved_at=timezone.now()
+                        )
+                    else:
+                        # Employee creating → needs approval
+                        schedule = VacationSchedule.objects.create(
+                            employee=employee,
+                            vacation_type=vacation_type,
+                            start_date=start_dt,
+                            end_date=end_dt,
+                            comment=schedule_data.get('comment', ''),
+                            created_by=request.user,
+                            status='PENDING_MANAGER',  # ✅ Needs approval
+                            line_manager=employee.line_manager
+                        )
                     
                     created_schedules.append(schedule)
                     
@@ -2623,14 +2689,152 @@ def bulk_create_schedules(request):
                         'current_scheduled': float(balance.scheduled_days)
                     }, status=status.HTTP_400_BAD_REQUEST)
         
+        # ✅ Send notifications AFTER successful creation
+        graph_token = get_graph_access_token(request.user)
+        notification_sent = False
+        
+        if created_schedules and graph_token:
+            if is_manager_creating:
+                # Manager/Admin created → notify HR (only once for bulk)
+                logger.info(f"📧 Sending bulk approval notification to HR for {len(created_schedules)} schedules")
+                # Get default HR
+                from .vacation_models import VacationSetting
+                settings_obj = VacationSetting.get_active()
+                
+                if settings_obj and settings_obj.default_hr_representative:
+                    hr = settings_obj.default_hr_representative
+                    if hr.user and hr.user.email:
+                        try:
+                            # Send bulk notification
+                            subject = f"[VACATION SCHEDULE] {len(created_schedules)} Schedules Approved"
+                            
+                            schedules_list = '\n'.join([
+                                f"- {s.start_date.strftime('%Y-%m-%d')} to {s.end_date.strftime('%Y-%m-%d')} ({s.number_of_days} days)"
+                                for s in created_schedules
+                            ])
+                            
+                            body_html = f"""
+                            <html>
+                            <body style="font-family: Arial, sans-serif;">
+                                <div style="max-width: 600px; margin: 0 auto;">
+                                    <div style="background-color: #28a745; color: white; padding: 20px; text-align: center;">
+                                        <h2>✅ Bulk Vacation Schedules Approved</h2>
+                                    </div>
+                                    <div style="padding: 20px; background-color: #f9f9f9;">
+                                        <p>Dear {hr.full_name},</p>
+                                        <p><strong>{len(created_schedules)} vacation schedules</strong> have been approved by manager.</p>
+                                        
+                                        <div style="margin: 20px 0;">
+                                            <strong>Employee:</strong> {employee.full_name}<br>
+                                            <strong>Department:</strong> {employee.department.name if employee.department else 'N/A'}<br>
+                                            <strong>Total Days:</strong> {total_days} days
+                                        </div>
+                                        
+                                        <div style="background-color: white; padding: 15px; border: 1px solid #ddd; margin: 20px 0;">
+                                            <strong>Schedules:</strong><br>
+                                            <pre style="white-space: pre-wrap;">{schedules_list}</pre>
+                                        </div>
+                                        
+                                        <div style="margin-top: 20px; text-align: center;">
+                                            <a href="https://myalmet.com/requests/vacation/" 
+                                               style="display: inline-block; padding: 12px 24px; background-color: #28a745; color: white; text-decoration: none; border-radius: 5px;">
+                                                View Schedules
+                                            </a>
+                                        </div>
+                                    </div>
+                                </div>
+                            </body>
+                            </html>
+                            """
+                            
+                            from .notification_service import notification_service
+                            notification_sent = notification_service.send_email(
+                                recipient_email=hr.user.email,
+                                subject=subject,
+                                body_html=body_html,
+                                access_token=graph_token,
+                                related_model='VacationSchedule',
+                                related_object_id=created_schedules[0].id if created_schedules else None,
+                                sent_by=request.user
+                            )
+                            logger.info(f"📧 Bulk HR notification sent: {notification_sent}")
+                        except Exception as e:
+                            logger.error(f"Error sending bulk HR notification: {e}")
+            else:
+                # Employee created → notify MANAGER (only once for bulk)
+                if employee.line_manager and employee.line_manager.user and employee.line_manager.user.email:
+                    logger.info(f"📧 Sending bulk schedule notification to manager: {employee.line_manager.full_name}")
+                    try:
+                        schedules_list = '\n'.join([
+                            f"- {s.start_date.strftime('%Y-%m-%d')} to {s.end_date.strftime('%Y-%m-%d')} ({s.number_of_days} days)"
+                            for s in created_schedules
+                        ])
+                        
+                        subject = f"[VACATION SCHEDULE] {len(created_schedules)} Schedules Pending Your Approval"
+                        
+                        body_html = f"""
+                        <html>
+                        <body style="font-family: Arial, sans-serif;">
+                            <div style="max-width: 600px; margin: 0 auto;">
+                                <div style="background-color: #366092; color: white; padding: 20px; text-align: center;">
+                                    <h2>📅 New Vacation Schedules Pending Approval</h2>
+                                </div>
+                                <div style="padding: 20px; background-color: #f9f9f9;">
+                                    <p>Dear {employee.line_manager.full_name},</p>
+                                    <p><strong>{len(created_schedules)} vacation schedules</strong> have been created and require your approval.</p>
+                                    
+                                    <div style="margin: 20px 0;">
+                                        <strong>Employee:</strong> {employee.full_name}<br>
+                                        <strong>Department:</strong> {employee.department.name if employee.department else 'N/A'}<br>
+                                        <strong>Total Days:</strong> {total_days} days
+                                    </div>
+                                    
+                                    <div style="background-color: white; padding: 15px; border: 1px solid #ddd; margin: 20px 0;">
+                                        <strong>Schedules:</strong><br>
+                                        <pre style="white-space: pre-wrap;">{schedules_list}</pre>
+                                    </div>
+                                    
+                                    <div style="margin-top: 20px; text-align: center;">
+                                        <a href="https://myalmet.com/requests/vacation/" 
+                                           style="display: inline-block; padding: 12px 24px; background-color: #366092; color: white; text-decoration: none; border-radius: 5px;">
+                                            Review Schedules
+                                        </a>
+                                    </div>
+                                </div>
+                            </div>
+                        </body>
+                        </html>
+                        """
+                        
+                        from .notification_service import notification_service
+                        notification_sent = notification_service.send_email(
+                            recipient_email=employee.line_manager.user.email,
+                            subject=subject,
+                            body_html=body_html,
+                            access_token=graph_token,
+                            related_model='VacationSchedule',
+                            related_object_id=created_schedules[0].id if created_schedules else None,
+                            sent_by=request.user
+                        )
+                        logger.info(f"📧 Bulk manager notification sent: {notification_sent}")
+                    except Exception as e:
+                        logger.error(f"Error sending bulk manager notification: {e}")
+        
         # Refresh balance
         balance.refresh_from_db()
         
+        message_parts = [f'{len(created_schedules)} schedules created successfully']
+        if is_manager_creating:
+            message_parts.append('and approved')
+        else:
+            message_parts.append('and pending manager approval')
+        
         return Response({
-            'message': f'{len(created_schedules)} schedules created successfully',
+            'message': ' '.join(message_parts),
             'created_count': len(created_schedules),
             'error_count': len(errors),
             'total_days_planned': total_days,
+            'notification_sent': notification_sent,
             'schedules': VacationScheduleSerializer(created_schedules, many=True).data,
             'errors': errors if errors else None,
             'balance': {
@@ -2649,10 +2853,13 @@ def bulk_create_schedules(request):
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
         logger.error(f"Bulk schedule creation error: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         return Response({
             'error': str(e)
         }, status=status.HTTP_400_BAD_REQUEST)
-
+        
+        
 # ==================== APPROVAL HISTORY ====================
 @swagger_auto_schema(
     method='get',
