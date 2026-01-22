@@ -57,8 +57,8 @@ from .job_description_serializers import (
 )
 
 # Core Models
-from .models import BusinessFunction, Department, Unit, PositionGroup, JobFunction, VacantPosition, Employee
-
+from .models import VacantPosition, Employee
+from .views import ModernPagination
 
 class JobDescriptionFilter:
     """Advanced filtering for job descriptions"""
@@ -158,7 +158,7 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
     ordering_fields = ['job_title', 'created_at', 'business_function__name']
     ordering = ['-created_at']
     parser_classes = [JSONParser, MultiPartParser, FormParser]
-    
+    pagination_class = ModernPagination
     def get_queryset(self):
         """✅ Filter based on user role"""
         base_queryset = JobDescription.objects.select_related(
