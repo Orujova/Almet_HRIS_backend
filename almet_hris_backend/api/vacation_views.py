@@ -2064,9 +2064,7 @@ def create_schedule(request):
 def my_schedule_tabs(request):
     """
     ✅ Schedule tabları - filtered by access
-    - Employee: Own schedules
-    - Manager: Own + team schedules  
-    - Admin: All schedules
+    - Include PENDING_MANAGER and SCHEDULED
     """
     try:
         access = get_vacation_access(request.user)
@@ -2078,10 +2076,10 @@ def my_schedule_tabs(request):
         
         emp = access['employee']
         
-        # Upcoming schedules
+        # ✅ Upcoming schedules - Include PENDING_MANAGER + SCHEDULED
         upcoming_qs = VacationSchedule.objects.filter(
             start_date__gte=date.today(),
-            status='SCHEDULED',
+            status__in=['PENDING_MANAGER', 'SCHEDULED'],  # ✅ Include both
             is_deleted=False
         )
         
@@ -2099,7 +2097,7 @@ def my_schedule_tabs(request):
             peers_schedules_qs = VacationSchedule.objects.filter(
                 employee__in=peers,
                 start_date__gte=date.today(),
-                status='SCHEDULED',
+                status__in=['PENDING_MANAGER', 'SCHEDULED'],  # ✅ Include both
                 is_deleted=False
             )
             peers_schedules = VacationScheduleSerializer(peers_schedules_qs, many=True).data
@@ -2117,7 +2115,6 @@ def my_schedule_tabs(request):
     except Exception as e:
         logger.error(f"Error in my_schedule_tabs: {e}")
         return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
-
 
 # ==================== REGISTER SCHEDULE ====================
 @swagger_auto_schema(
