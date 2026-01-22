@@ -75,21 +75,20 @@ def get_job_description_access(user):
         }
 
 def filter_job_description_queryset(user, queryset):
-
+    """✅ Include DRAFT assignments"""
     access = get_job_description_access(user)
     
     # Admin - see all
     if access['can_view_all']:
         return queryset
     
-    # Manager or Employee - filter by accessible employee IDs
+    # Manager or Employee
     if access['accessible_employee_ids']:
         return queryset.filter(
-            assignments__employee_id__in=access['accessible_employee_ids'],
-            assignments__is_active=True
+            Q(assignments__employee_id__in=access['accessible_employee_ids']) &
+            Q(assignments__is_active=True)  # is_active=True, status istənilən
         ).distinct()
     
-    # No access (shouldn't happen, but safety check)
     return queryset.none()
 
 def can_user_view_job_description(user, job_description):
