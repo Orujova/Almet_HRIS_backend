@@ -270,13 +270,15 @@ class EmployeeVacationBalance(SoftDeleteModel):
         """✅ NEW: Planlaşdırma üçün mövcud balans"""
         return self.remaining_balance - float(self.scheduled_days)
     
+    
     @property
     def should_be_planned(self):
-        """✅ FIXED: İllik balansdan planlaşdırılmalı (start_balance nəzərə alınmır)"""
-        # Yalnız yearly_balance əsasında
+        """✅ CRITICAL: Yalnız yearly_balance əsasında planlaşdırılmalı"""
         planned_and_used = float(self.scheduled_days) + float(self.used_days)
         remaining_from_yearly = max(0, float(self.yearly_balance) - planned_and_used)
         return remaining_from_yearly
+    
+    
     def clean(self):
         """Validation"""
         if self.year < 2020 or self.year > 2030:
