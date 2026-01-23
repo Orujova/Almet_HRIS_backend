@@ -1260,50 +1260,53 @@ class AssetTransferRequestViewSet(viewsets.ModelViewSet):
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
     def _send_transfer_notification(self, transfer):
-        """Transfer təsdiq emaili"""
+        """Send transfer notification email to involved employees (EN)"""
         try:
-            from .role_models import EmployeeRole
-            
-            # Get IT/Admin emails
-            it_admin_users = EmployeeRole.objects.filter(
-                Q(role__name__icontains='IT') | Q(role__name__icontains='Admin'),
-                is_active=True
-            ).values_list('employee__user__email', flat=True)
-            
-            emails = list(filter(None, it_admin_users))
-            
+            from_employee_email = transfer.from_employee.user.email
+            to_employee_email = transfer.to_employee.user.email
+    
+            emails = list(filter(None, [from_employee_email, to_employee_email]))
+    
             if not emails:
-                logger.warning("⚠️ IT/Admin email tapılmadı")
+                logger.warning("⚠️ Transfer email recipients not found")
                 return
-            
+    
             html_body = f"""
             <html>
             <body>
-                <h2>Asset Transfer Təsdiqi Lazımdır</h2>
-                <p>Yeni asset transfer sorğusu:</p>
+                <h2>Asset Transfer Request</h2>
+                <p>An asset transfer has been initiated with the following details:</p>
+    
                 <ul>
                     <li><strong>Asset:</strong> {transfer.asset.asset_name} ({transfer.asset.serial_number})</li>
-                    <li><strong>Kimdən:</strong> {transfer.from_employee.full_name}</li>
-                    <li><strong>Kimə:</strong> {transfer.to_employee.full_name}</li>
-                    <li><strong>Səbəb:</strong> Offboarding</li>
+                    <li><strong>From:</strong> {transfer.from_employee.full_name}</li>
+                    <li><strong>To:</strong> {transfer.to_employee.full_name}</li>
+                    <li><strong>Requested by:</strong> {transfer.requested_by.get_full_name()}</li>
+                    <li><strong>Reason:</strong> Offboarding</li>
                 </ul>
-                <p>HRIS-ə daxil olub təsdiq və ya rədd edə bilərsiniz.</p>
+    
+                <p>The transfer is currently pending approval.</p>
+                <p>You will be notified once the transfer is approved or rejected.</p>
+    
+                <br>
+                <p>Best regards,<br>
+                HRIS System</p>
             </body>
             </html>
             """
-            
+    
             system_email_service.send_email_as_system(
                 from_email='myalmet@almettrading.com',
                 to_email=emails,
-                subject='Asset Transfer Təsdiqi',
+                subject='Asset Transfer Request Notification',
                 body_html=html_body
             )
-            
-            logger.info(f"✅ Transfer email göndərildi")
-            
-        except Exception as e:
-            logger.error(f"❌ Email xətası: {str(e)}")
     
+            logger.info("✅ Transfer notification email sent to employees")
+    
+        except Exception as e:
+            logger.error(f"❌ Transfer email error: {str(e)}")
+
     @swagger_auto_schema(
         method='post',
         request_body=openapi.Schema(
