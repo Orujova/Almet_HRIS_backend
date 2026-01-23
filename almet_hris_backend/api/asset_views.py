@@ -1,4 +1,4 @@
-# api/asset_views.py - SIMPLIFIED: Maintenance hissələri silinmiş
+# api/asset_views.py - COMPLETE REWRITE
 
 from rest_framework import viewsets, status, filters
 from rest_framework.decorators import action
@@ -6,1065 +6,1395 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.parsers import JSONParser, MultiPartParser, FormParser
 from django_filters.rest_framework import DjangoFilterBackend
-from django.db.models import Q, Count, Sum, Avg
+from django.db.models import Q, Sum, Count
 from django.db import transaction
 from django.utils import timezone
-from django.http import HttpResponse
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 import logging
-import uuid
-from datetime import datetime, timedelta
-from io import BytesIO
-import csv
+import pandas as pd
+import traceback
 
 logger = logging.getLogger(__name__)
 
 from .asset_models import (
-    AssetCategory, Asset, AssetAssignment, AssetActivity
+    AssetCategory, AssetBatch, Asset, AssetAssignment, 
+    AssetActivity, EmployeeOffboarding, AssetTransferRequest
 )
 from .asset_serializers import (
-    AssetCategorySerializer, AssetListSerializer, AssetDetailSerializer,
-    AssetCreateUpdateSerializer, AssetAssignmentSerializer, AssetAssignmentCreateSerializer,
-    AssetCheckInSerializer, AssetActivitySerializer, AssetExportSerializer,AssetStatusChangeSerializer
+    AssetCategorySerializer, 
+    AssetBatchListSerializer, AssetBatchDetailSerializer, AssetBatchCreateSerializer,
+    AssetListSerializer, AssetDetailSerializer, AssetCreateSerializer, AssetCreateMultipleSerializer,
+    AssetAssignmentSerializer, AssetAssignmentCreateSerializer,
+    AssetActivitySerializer,
+    AssetAcceptanceSerializer, AssetClarificationRequestSerializer,
+    AssetCancellationSerializer, AssetClarificationProvisionSerializer,
+    EmployeeOffboardingSerializer,
+    AssetTransferRequestSerializer, AssetTransferRequestCreateSerializer,
+    AssetBulkUploadSerializer
+)
+from .asset_permissions import (
+    get_asset_access_level, filter_assets_by_access, filter_batches_by_access,
+    require_asset_permission, can_user_manage_asset, get_access_summary
 )
 from .models import Employee
+from .system_email_service import system_email_service
 
 
-class AssetFilter:
-    """Advanced filtering for assets - UPDATED without removed fields"""
-    
-    def __init__(self, queryset, params):
-        self.queryset = queryset
-        if hasattr(params, 'dict'):
-            self.params = params.dict()
-        else:
-            self.params = dict(params)
-    
-    def get_list_values(self, param_name):
-        """Get list values from query params safely"""
-        value = self.params.get(param_name)
-        if not value:
-            return []
-        
-        if isinstance(value, str):
-            return [v.strip() for v in value.split(',') if v.strip()]
-        elif isinstance(value, list):
-            return value
-        else:
-            return [str(value)]
-    
-    def get_int_list_values(self, param_name):
-        """Get integer list values"""
-        string_values = self.get_list_values(param_name)
-        int_values = []
-        for val in string_values:
-            try:
-                int_values.append(int(val))
-            except (ValueError, TypeError):
-                continue
-        return int_values
-    
-    def filter(self):
-        queryset = self.queryset
-        
-   
-        
-        # Search filter - UPDATED to remove brand and model
-        search = self.params.get('search')
-        if search:
-           
-            queryset = queryset.filter(
-                Q(asset_name__icontains=search) |
-                Q(serial_number__icontains=search) |
-                Q(category__name__icontains=search) |
-                Q(assigned_to__full_name__icontains=search) |
-                Q(assigned_to__employee_id__icontains=search)
-            )
-        
-        # Status filter
-        status_values = self.get_list_values('status')
-        if status_values:
-     
-            queryset = queryset.filter(status__in=status_values)
-        
-        # Category filter
-        category_ids = self.get_int_list_values('category')
-        if category_ids:
-        
-            queryset = queryset.filter(category__id__in=category_ids)
-        
-        # Assigned to filter
-        assigned_to_ids = self.get_int_list_values('assigned_to')
-        if assigned_to_ids:
-    
-            queryset = queryset.filter(assigned_to__id__in=assigned_to_ids)
-        
-        # Department filter (through assigned employee)
-        department_ids = self.get_int_list_values('department')
-        if department_ids:
-     
-            queryset = queryset.filter(assigned_to__department__id__in=department_ids)
-        
-        # Purchase date range
-        purchase_date_from = self.params.get('purchase_date_from')
-        purchase_date_to = self.params.get('purchase_date_to')
-        if purchase_date_from:
-            try:
-                from django.utils.dateparse import parse_date
-                date_from = parse_date(purchase_date_from)
-                if date_from:
-                    queryset = queryset.filter(purchase_date__gte=date_from)
-            except:
-                pass
-        if purchase_date_to:
-            try:
-                from django.utils.dateparse import parse_date
-                date_to = parse_date(purchase_date_to)
-                if date_to:
-                    queryset = queryset.filter(purchase_date__lte=date_to)
-            except:
-                pass
-        
-        # Price range
-        price_min = self.params.get('price_min')
-        price_max = self.params.get('price_max')
-        if price_min:
-            try:
-                min_price = float(price_min)
-                queryset = queryset.filter(purchase_price__gte=min_price)
-            except:
-                pass
-        if price_max:
-            try:
-                max_price = float(price_max)
-                queryset = queryset.filter(purchase_price__lte=max_price)
-            except:
-                pass
-        
-        # Unassigned assets filter
-        unassigned_only = self.params.get('unassigned_only')
-        if unassigned_only and unassigned_only.lower() == 'true':
-       
-            queryset = queryset.filter(assigned_to__isnull=True)
-        
-        # Assigned assets filter
-        assigned_only = self.params.get('assigned_only')
-        if assigned_only and assigned_only.lower() == 'true':
-  
-            queryset = queryset.filter(assigned_to__isnull=False)
-        
-        final_count = queryset.count()
-      
-        
-        return queryset
-
+# ============================================
+# CATEGORY VIEWSET
+# ============================================
 class AssetCategoryViewSet(viewsets.ModelViewSet):
-    """ViewSet for Asset Categories"""
+    """
+    Asset Kateqoriyaları
+    - Laptop, Monitor, Phone, Keyboard və s.
+    """
     
     queryset = AssetCategory.objects.all()
     serializer_class = AssetCategorySerializer
     permission_classes = [IsAuthenticated]
-    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['is_active']
     search_fields = ['name', 'description']
+    ordering_fields = ['name', 'created_at']
     ordering = ['name']
     
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
+    
+    @action(detail=True, methods=['get'])
+    def statistics(self, request, pk=None):
+        """Kateqoriya üzrə statistika"""
+        category = self.get_object()
+        
+        total_batches = category.batches.count()
+        total_assets = Asset.objects.filter(category=category).count()
+        
+        # Status breakdown
+        status_breakdown = {}
+        for status_choice in Asset.STATUS_CHOICES:
+            status_code = status_choice[0]
+            count = Asset.objects.filter(category=category, status=status_code).count()
+            if count > 0:
+                status_breakdown[status_code] = {
+                    'label': status_choice[1],
+                    'count': count
+                }
+        
+        return Response({
+            'category': category.name,
+            'total_batches': total_batches,
+            'total_assets': total_assets,
+            'status_breakdown': status_breakdown
+        })
 
+
+# ============================================
+# BATCH VIEWSET
+# ============================================
+class AssetBatchViewSet(viewsets.ModelViewSet):
+    """
+    🎯 Asset Batch Management
+    
+    Batch = Partiya (Eyni növdən bir neçə asset)
+    
+    Əsas əməliyyatlar:
+    1. Batch yaratma (SAY BURADAN QEYD EDİLİR)
+    2. Batch-dən asset yaratma
+    3. Quantity tracking
+    """
+    
+    queryset = AssetBatch.objects.select_related('category', 'created_by').all()
+    permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_fields = ['category', 'status']
+    search_fields = ['batch_number', 'asset_name', 'supplier']
+    ordering_fields = ['created_at', 'asset_name', 'available_quantity']
+    ordering = ['-created_at']
+    
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return AssetBatchListSerializer
+        elif self.action in ['create', 'update', 'partial_update']:
+            return AssetBatchCreateSerializer
+        return AssetBatchDetailSerializer
+    
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        return filter_batches_by_access(self.request.user, queryset)
+    
+    @swagger_auto_schema(
+        request_body=AssetBatchCreateSerializer,
+        responses={
+            201: openapi.Response(
+                description="Batch yaradıldı",
+                schema=AssetBatchDetailSerializer
+            )
+        }
+    )
+    @require_asset_permission('create')
+    def create(self, request, *args, **kwargs):
+        """
+        🎯 Batch yaratma - SAY BURADAN QEYD EDİLİR
+        
+        Nümunə:
+        {
+            "asset_name": "Dell Latitude 5420",
+            "category": 1,
+            "initial_quantity": 10,  👈 BURADAN SAY
+            "unit_price": 1500.00,
+            "purchase_date": "2024-01-15",
+            "useful_life_years": 5
+        }
+        """
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        batch = serializer.save(created_by=request.user)
+        
+        logger.info(
+            f"✅ Batch yaradıldı: {batch.batch_number} - {batch.asset_name} | "
+            f"Quantity: {batch.initial_quantity} | "
+            f"Value: {batch.total_value}"
+        )
+        
+        return Response({
+            'success': True,
+            'message': f'Batch yaradıldı: {batch.batch_number}',
+            'batch': AssetBatchDetailSerializer(batch, context={'request': request}).data
+        }, status=status.HTTP_201_CREATED)
+    
+    @swagger_auto_schema(
+        method='post',
+        request_body=AssetCreateMultipleSerializer,
+        responses={
+            200: openapi.Response(
+                description="Asset-lər yaradıldı",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'success': openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                        'message': openapi.Schema(type=openapi.TYPE_STRING),
+                        'created_count': openapi.Schema(type=openapi.TYPE_INTEGER),
+                        'assets': openapi.Schema(type=openapi.TYPE_ARRAY, items=openapi.Schema(type=openapi.TYPE_OBJECT))
+                    }
+                )
+            )
+        }
+    )
+    @action(detail=True, methods=['post'], url_path='create-assets')
+    @require_asset_permission('manage')
+    def create_assets_from_batch(self, request, pk=None):
+        """
+        🎯 Batch-dən asset yaratma
+        
+        Nümunə:
+        {
+            "serial_numbers": ["SN001", "SN002", "SN003"]
+        }
+        
+        Prosess:
+        1. Batch-in available_quantity yoxlanılır
+        2. Asset-lər yaradılır
+        3. Batch-in available_quantity azalır
+        """
+        try:
+            batch = self.get_object()
+            
+            # Serialize
+            serializer = AssetCreateMultipleSerializer(
+                data={**request.data, 'batch_id': batch.id},
+                context={'request': request}
+            )
+            serializer.is_valid(raise_exception=True)
+            
+            # Create assets
+            created_assets = serializer.save()
+            
+            return Response({
+                'success': True,
+                'message': f'{len(created_assets)} asset yaradıldı',
+                'created_count': len(created_assets),
+                'batch': {
+                    'batch_number': batch.batch_number,
+                    'available_quantity': batch.available_quantity,
+                    'assigned_quantity': batch.assigned_quantity
+                },
+                'assets': AssetListSerializer(created_assets, many=True, context={'request': request}).data
+            })
+            
+        except Exception as e:
+            logger.error(f"❌ Batch-dən asset yaratma xətası: {str(e)}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    @action(detail=True, methods=['get'])
+    def assets(self, request, pk=None):
+        """Batch-dəki bütün asset-lər"""
+        batch = self.get_object()
+        assets = batch.assets.all()
+        
+        # Status breakdown
+        status_summary = {}
+        for choice in Asset.STATUS_CHOICES:
+            count = assets.filter(status=choice[0]).count()
+            if count > 0:
+                status_summary[choice[0]] = {
+                    'status': choice[1],
+                    'count': count
+                }
+        
+        return Response({
+            'batch_number': batch.batch_number,
+            'batch_name': batch.asset_name,
+            'quantity_summary': batch.get_quantity_summary(),
+            'total_assets': assets.count(),
+            'status_summary': status_summary,
+            'assets': AssetListSerializer(assets, many=True, context={'request': request}).data
+        })
+    
+    @action(detail=False, methods=['get'])
+    def statistics(self, request):
+        """Batch statistikası"""
+        queryset = self.get_queryset()
+        
+        total_batches = queryset.count()
+        active_batches = queryset.filter(status='ACTIVE').count()
+        
+        # Quantity summary
+        quantity_summary = queryset.aggregate(
+            total_initial=Sum('initial_quantity'),
+            total_available=Sum('available_quantity'),
+            total_assigned=Sum('assigned_quantity'),
+            total_out_of_stock=Sum('out_of_stock_quantity')
+        )
+        
+        # Financial summary
+        financial_summary = queryset.aggregate(
+            total_value=Sum('total_value')
+        )
+        
+        return Response({
+            'total_batches': total_batches,
+            'active_batches': active_batches,
+            'quantity_summary': {
+                'total_initial': quantity_summary['total_initial'] or 0,
+                'total_available': quantity_summary['total_available'] or 0,
+                'total_assigned': quantity_summary['total_assigned'] or 0,
+                'total_out_of_stock': quantity_summary['total_out_of_stock'] or 0
+            },
+            'total_value': float(financial_summary['total_value'] or 0)
+        })
+
+
+# ============================================
+# ASSET VIEWSET - MAIN
+# ============================================
 class AssetViewSet(viewsets.ModelViewSet):
-    """ViewSet for Asset management - UPDATED"""
+    """
+    🎯 Asset Management - Əsas sistem
+    
+    Əməliyyatlar:
+    1. Asset yaratma (batch-dən)
+    2. Asset təyin etmə (assign)
+    3. İşçi qəbul etmə (accept)
+    4. Aydınlaşdırma
+    5. Geri qaytarma
+    """
     
     queryset = Asset.objects.select_related(
-        'category', 'assigned_to', 'created_by', 'updated_by', 'archived_by'
-    ).prefetch_related(
-        'assignments__employee', 'activities'
+        'batch', 'category', 'assigned_to', 'created_by', 'updated_by'
     ).all()
     
     permission_classes = [IsAuthenticated]
     parser_classes = [JSONParser, MultiPartParser, FormParser]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    
-    # UPDATED search_fields - removed brand and model
-    search_fields = ['asset_name', 'serial_number', 'category__name']
-    
-    ordering_fields = ['asset_name', 'purchase_date', 'purchase_price', 'created_at', 'status']
+    filterset_fields = ['status', 'category', 'batch', 'assigned_to']
+    search_fields = ['asset_number', 'serial_number', 'asset_name', 'batch__batch_number']
+    ordering_fields = ['created_at', 'asset_name', 'status', 'updated_at']
     ordering = ['-created_at']
     
     def get_serializer_class(self):
         if self.action == 'list':
             return AssetListSerializer
-        elif self.action in ['create', 'update', 'partial_update']:
-            return AssetCreateUpdateSerializer
-        else:
-            return AssetDetailSerializer
+        elif self.action == 'create':
+            return AssetCreateSerializer
+        return AssetDetailSerializer
     
-    def perform_create(self, serializer):
-        """Override perform_create to set created_by"""
-        asset = serializer.save()
-        asset.created_by = self.request.user
-        asset.save()
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        return filter_assets_by_access(self.request.user, queryset)
     
-    def perform_update(self, serializer):
-        """Override perform_update to set updated_by"""
-        asset = serializer.save()
-        asset.updated_by = self.request.user
-        asset.save()
-    
-    def get_object(self):
-        """Override get_object to handle UUID properly"""
-        queryset = self.filter_queryset(self.get_queryset())
-        lookup_url_kwarg = self.lookup_url_kwarg or self.lookup_field
-        lookup_value = self.kwargs[lookup_url_kwarg]
-        
-        try:
-            if len(lookup_value) == 36 and '-' in lookup_value:
-                uuid_obj = uuid.UUID(lookup_value)
-                filter_kwargs = {'id': uuid_obj}
-            else:
-                filter_kwargs = {'id': int(lookup_value)}
-        except (ValueError, TypeError):
-            filter_kwargs = {'id': lookup_value}
-        
-        try:
-            obj = queryset.get(**filter_kwargs)
-        except Asset.DoesNotExist:
-            logger.error(f"Asset not found with lookup: {lookup_value}")
-            from rest_framework.exceptions import NotFound
-            raise NotFound('Asset not found.')
-        except Asset.MultipleObjectsReturned:
-            logger.error(f"Multiple Assets found with lookup: {lookup_value}")
-            from rest_framework.exceptions import ValidationError
-            raise ValidationError('Multiple assets found.')
-        
-        self.check_object_permissions(self.request, obj)
-        return obj
-    
-    def list(self, request, *args, **kwargs):
-        """List assets with advanced filtering"""
-        queryset = self.get_queryset()
-        
-        # Apply custom filters
-        asset_filter = AssetFilter(queryset, request.query_params)
-        queryset = asset_filter.filter()
-        
-        # Apply ordering
-        queryset = self.filter_queryset(queryset)
-        
-        page = self.paginate_queryset(queryset)
-        if page is not None:
-            serializer = self.get_serializer(page, many=True)
-            return self.get_paginated_response(serializer.data)
-        
-        serializer = self.get_serializer(queryset, many=True)
-        return Response(serializer.data)
-    
-    
-   
     @swagger_auto_schema(
-        method='post',
-        operation_description="Assign asset to employee",
-        request_body=AssetAssignmentCreateSerializer,
-        responses={200: "Asset assigned successfully"}
+        request_body=AssetCreateSerializer,
+        responses={201: AssetDetailSerializer}
     )
-    @action(detail=True, methods=['post'])
-    def assign_to_employee(self, request, pk=None):
-        """Assign asset to an employee - UPDATED for approval workflow"""
+    @require_asset_permission('create')
+    def create(self, request, *args, **kwargs):
+        """
+        🎯 Asset yaratma
+        
+        Nümunə:
+        {
+            "batch_id": 5,
+            "serial_number": "SN123456"
+        }
+        
+        ⚠️ Asset yaradanda batch-in available_quantity avtomatik azalır
+        """
         try:
-            asset = self.get_object()
+            serializer = self.get_serializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
             
-            if not asset.can_be_assigned():
-                return Response(
-                    {'error': f'Asset cannot be assigned. Current status: {asset.get_status_display()}'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
+            asset = serializer.save()
             
-            serializer = AssetAssignmentCreateSerializer(
-                data=request.data,
-                context={'request': request}
+            # Log activity
+            AssetActivity.objects.create(
+                asset=asset,
+                activity_type='CREATED',
+                description=f"Asset batch-dən yaradıldı: {asset.batch.batch_number}",
+                performed_by=request.user,
+                metadata={
+                    'batch_number': asset.batch.batch_number,
+                    'batch_id': asset.batch.id,
+                    'creation_method': 'manual'
+                }
             )
-            if not serializer.is_valid():
-                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
             
-            with transaction.atomic():
-                assignment = AssetAssignment.objects.create(
-                    **serializer.validated_data,
-                    assigned_by=request.user
-                )
-                
-                # Update asset status to ASSIGNED (pending approval)
-                asset = assignment.asset
-                asset.status = 'ASSIGNED'  # DEYİŞİKLİK: IN_USE əvəzinə ASSIGNED
-                asset.assigned_to = assignment.employee
-                asset.save()
-                
-                # Log activities
-                AssetActivity.objects.create(
-                    asset=asset,
-                    activity_type='ASSIGNED',
-                    description=f"Asset assigned to {assignment.employee.full_name} - awaiting employee confirmation",
-                    performed_by=request.user,
-                    metadata={
-                        'employee_id': assignment.employee.employee_id,
-                        'employee_name': assignment.employee.full_name,
-                        'check_out_date': assignment.check_out_date.isoformat(),
-                        'condition': assignment.condition_on_checkout,
-                        'status': 'PENDING_APPROVAL',
-                        'awaiting_confirmation': True
-                    }
-                )
+            logger.info(f"✅ Asset yaradıldı: {asset.asset_number} from {asset.batch.batch_number}")
             
             return Response({
                 'success': True,
-                'message': f'Asset assigned to {assignment.employee.full_name} - awaiting employee confirmation',
-                'asset_id': str(asset.id),
-                'assignment_id': assignment.id,
-                'employee': {
-                    'id': assignment.employee.id,
-                    'name': assignment.employee.full_name,
-                    'employee_id': assignment.employee.employee_id
-                },
-                'check_out_date': assignment.check_out_date,
-                'status': asset.get_status_display(),
-                'requires_approval': True,
-                'approval_status': 'PENDING'
-            })
+                'message': f'Asset yaradıldı: {asset.asset_number}',
+                'asset': AssetDetailSerializer(asset, context={'request': request}).data
+            }, status=status.HTTP_201_CREATED)
+            
         except Exception as e:
-            logger.error(f"Error assigning asset {pk}: {str(e)}")
+            logger.error(f"❌ Asset yaratma xətası: {str(e)}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
             return Response(
-                {'error': f'Failed to assign asset: {str(e)}'},
+                {'error': str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+    
     @swagger_auto_schema(
         method='post',
-        operation_description="Check in asset from employee",
-        request_body=AssetCheckInSerializer,
-        responses={200: "Asset checked in successfully"}
+        request_body=AssetAssignmentCreateSerializer,
+        responses={200: openapi.Response(description="Assets assigned")}
     )
-    @action(detail=True, methods=['post'])
-    def check_in_asset(self, request, pk=None):
-        """Check in asset from employee"""
-        try:
-            asset = self.get_object()
-            
-            # Validate asset can be checked in
-            if not asset.can_be_checked_in():
-                return Response(
-                    {'error': f'Asset cannot be checked in. Current status: {asset.get_status_display()}'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            
-            # Get active assignment
-            active_assignment = asset.assignments.filter(check_in_date__isnull=True).first()
-            if not active_assignment:
-                return Response(
-                    {'error': 'No active assignment found for this asset'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            
-            # Validate request data
-            serializer = AssetCheckInSerializer(data=request.data)
-            if not serializer.is_valid():
-                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-            
-            # Validate check-in date is not before check-out date
-            check_in_date = serializer.validated_data['check_in_date']
-            if check_in_date < active_assignment.check_out_date:
-                return Response(
-                    {'error': 'Check-in date cannot be before check-out date'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            
-            with transaction.atomic():
-                # Update assignment
-                active_assignment.check_in_date = check_in_date
-                active_assignment.check_in_notes = serializer.validated_data.get('check_in_notes', '')
-                active_assignment.condition_on_checkin = serializer.validated_data['condition_on_checkin']
-                active_assignment.checked_in_by = request.user
-                active_assignment.save()
-                
-                # Update asset
-                old_employee = asset.assigned_to
-                asset.assigned_to = None
-                
-                # Set status based on condition
-                condition = serializer.validated_data['condition_on_checkin']
-                if condition == 'DAMAGED':
-                    asset.status = 'IN_REPAIR'
-                else:
-                    asset.status = 'IN_STOCK'
-                
-                asset.save()
-                
-                # Log activity
-                AssetActivity.objects.create(
-                    asset=asset,
-                    activity_type='CHECKED_IN',
-                    description=f"Asset checked in from {old_employee.full_name} ({old_employee.employee_id})",
-                    performed_by=request.user,
-                    metadata={
-                        'previous_employee_id': old_employee.employee_id,
-                        'previous_employee_name': old_employee.full_name,
-                        'check_in_date': check_in_date.isoformat(),
-                        'condition_on_checkin': condition,
-                        'assignment_duration_days': active_assignment.get_duration_days(),
-                        'notes': serializer.validated_data.get('check_in_notes', '')
-                    }
-                )
-                
-                return Response({
-                    'success': True,
-                    'message': f'Asset successfully checked in from {old_employee.full_name}',
-                    'asset_id': str(asset.id),
-                    'assignment_id': active_assignment.id,
-                    'check_in_date': check_in_date,
-                    'condition': condition,
-                    'duration_days': active_assignment.get_duration_days(),
-                    'new_status': asset.get_status_display()
-                })
-                
-        except Exception as e:
-            logger.error(f"Error checking in asset {pk}: {str(e)}")
-            return Response(
-                {'error': f'Failed to check in asset: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-    
-    @swagger_auto_schema(
-    method='post',
-    operation_description="Change asset status with optional reason",
-    request_body=AssetStatusChangeSerializer,
-    responses={
-        200: openapi.Response(
-            description="Status changed successfully",
-            examples={
-                "application/json": {
-                    "success": True,
-                    "message": "Asset status changed to In Repair",
-                    "asset_id": "43f11b14-5d6e-4874-aa84-e9dea660799e",
-                    "old_status": "IN_STOCK",
-                    "new_status": "IN_REPAIR",
-                    "reason": "Laptop screen broken",
-                    "status_display": {
-                        "status": "In Repair",
-                        "color": "#ffc107"
-                    }
-                }
-            }
-        ),
-        400: "Bad Request - Invalid status or validation error",
-        404: "Asset not found",
-        500: "Internal Server Error"
-    }
-)
-    @action(detail=True, methods=['post'])
-    def change_status(self, request, pk=None):
-        """Change asset status - SIMPLIFIED and PRACTICAL"""
-        try:
-            asset = self.get_object()
-            
-            # Validate request data with simple serializer
-            serializer = AssetStatusChangeSerializer(data=request.data)
-            if not serializer.is_valid():
-                return Response(
-                    {
-                        'error': 'Invalid data provided',
-                        'details': serializer.errors
-                    },
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            
-            new_status = serializer.validated_data['status']
-            reason = serializer.validated_data.get('reason', '')
-            old_status = asset.status
-            
-            # Check if status is actually changing
-            if old_status == new_status:
-                return Response(
-                    {
-                        'error': f'Asset is already in {asset.get_status_display()} status',
-                        'current_status': new_status
-                    },
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            
-            # Business logic validation
-            validation_error = self._validate_status_change(asset, old_status, new_status)
-            if validation_error:
-                return Response(
-                    {'error': validation_error},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            
-            with transaction.atomic():
-                # Handle status-specific logic
-                if new_status == 'ARCHIVED':
-                    asset.archived_at = timezone.now()
-                    asset.archived_by = request.user
-                    asset.archive_reason = reason
-                    asset.assigned_to = None  # Clear assignment when archiving
-                    
-                elif old_status == 'ARCHIVED' and new_status != 'ARCHIVED':
-                    # Restoring from archive
-                    asset.archived_at = None
-                    asset.archived_by = None
-                    asset.archive_reason = ''
-                    
-                elif new_status == 'IN_STOCK':
-                    # Moving to stock - clear assignment
-                    asset.assigned_to = None
-                
-                # Update status
-                asset.status = new_status
-                asset.save()
-                
-                # Log activity
-                activity_type = self._get_activity_type(old_status, new_status)
-                activity_description = self._get_activity_description(asset, old_status, new_status, reason)
-                
-                AssetActivity.objects.create(
-                    asset=asset,
-                    activity_type=activity_type,
-                    description=activity_description,
-                    performed_by=request.user,
-                    metadata={
-                        'old_status': old_status,
-                        'new_status': new_status,
-                        'reason': reason,
-                        'changed_by': request.user.get_full_name() or request.user.username
-                    }
-                )
-                
-                return Response({
-                    'success': True,
-                    'message': f'Asset status changed to {asset.get_status_display()}',
-                    'asset_id': str(asset.id),
-                    'asset_name': asset.asset_name,
-                    'old_status': old_status,
-                    'new_status': new_status,
-                    'reason': reason,
-                    'status_display': asset.get_status_display_with_color(),
-                    'timestamp': timezone.now().isoformat()
-                })
-                
-        except Exception as e:
-            logger.error(f"Error changing asset status {pk}: {str(e)}")
-            return Response(
-                {'error': f'Failed to change status: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-    
-    def _validate_status_change(self, asset, old_status, new_status):
-        """Validate if status change is allowed"""
+    @action(detail=False, methods=['post'], url_path='assign-to-employee')
+    @require_asset_permission('manage')
+    def assign_to_employee(self, request):
+        """
+        🎯 Asset-ləri işçiyə təyin etmə
         
-        # If asset is currently assigned, only allow certain transitions
-        if asset.assigned_to:
-            if new_status == 'IN_STOCK':
-                return "Cannot move assigned asset to stock. Please check in the asset first."
-            elif new_status == 'ARCHIVED' and old_status == 'IN_USE':
-                # Allow archiving from IN_USE (will auto check-in)
-                pass
-        
-        # Validate specific transitions
-        invalid_transitions = {
-            'ARCHIVED': ['IN_USE'],  # Can't go directly from archived to in use
+        Nümunə:
+        {
+            "asset_ids": ["uuid1", "uuid2"],
+            "employee_id": 123,
+            "check_out_date": "2024-01-15",
+            "check_out_notes": "Yeni laptop",
+            "condition_on_checkout": "GOOD"
         }
         
-        if old_status in invalid_transitions:
-            if new_status in invalid_transitions[old_status]:
-                return f"Cannot change status from {dict(Asset.STATUS_CHOICES)[old_status]} directly to {dict(Asset.STATUS_CHOICES)[new_status]}"
+        Prosess:
+        1. Asset status: IN_STOCK → ASSIGNED
+        2. Asset assigned_to = employee
+        3. Assignment record yaradılır
+        4. Email göndərilir
         
-        return None
+        ⚠️ Batch quantity burada dəyişmir (artıq create-də azalıb)
+        """
+        try:
+            serializer = AssetAssignmentCreateSerializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            
+            employee = serializer.validated_data['employee']
+            assets = serializer.validated_data['assets']
+            check_out_date = serializer.validated_data['check_out_date']
+            check_out_notes = serializer.validated_data.get('check_out_notes', '')
+            condition = serializer.validated_data['condition_on_checkout']
+            
+            assignments_created = []
+            
+            with transaction.atomic():
+                for asset in assets:
+                    # Create assignment
+                    assignment = AssetAssignment.objects.create(
+                        asset=asset,
+                        employee=employee,
+                        check_out_date=check_out_date,
+                        check_out_notes=check_out_notes,
+                        condition_on_checkout=condition,
+                        assigned_by=request.user
+                    )
+                    
+                    # Update asset
+                    asset.status = 'ASSIGNED'
+                    asset.assigned_to = employee
+                    asset.updated_by = request.user
+                    asset.save()
+                    
+                    # Log activity
+                    AssetActivity.objects.create(
+                        asset=asset,
+                        activity_type='ASSIGNED',
+                        description=f"İşçiyə təyin edildi: {employee.full_name} - təsdiq gözlənilir",
+                        performed_by=request.user,
+                        metadata={
+                            'employee_id': employee.employee_id,
+                            'employee_name': employee.full_name,
+                            'check_out_date': check_out_date.isoformat(),
+                            'condition': condition
+                        }
+                    )
+                    
+                    assignments_created.append(assignment)
+            
+            # Send email notification
+            self._send_assignment_email(employee, assets, request.user)
+            
+            logger.info(f"✅ {len(assets)} asset təyin edildi → {employee.full_name}")
+            
+            return Response({
+                'success': True,
+                'message': f'{len(assets)} asset təyin edildi: {employee.full_name}',
+                'employee': {
+                    'id': employee.id,
+                    'name': employee.full_name,
+                    'employee_id': employee.employee_id
+                },
+                'assignments': AssetAssignmentSerializer(assignments_created, many=True, context={'request': request}).data
+            })
+            
+        except Exception as e:
+            logger.error(f"❌ Assignment xətası: {str(e)}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
     
-    def _get_activity_type(self, old_status, new_status):
-        """Get appropriate activity type for status change"""
-        if new_status == 'ARCHIVED':
-            return 'ARCHIVED'
-        elif old_status == 'ARCHIVED':
-            return 'RESTORED'
-        else:
-            return 'STATUS_CHANGED'
+    def _send_assignment_email(self, employee, assets, assigned_by):
+        """Email notification"""
+        try:
+            if not employee.user or not employee.user.email:
+                logger.warning(f"⚠️ Employee {employee.full_name} - email yoxdur")
+                return
+            
+            asset_list = '<ul>' + ''.join([
+                f'<li><strong>{asset.asset_name}</strong> - {asset.serial_number}</li>'
+                for asset in assets
+            ]) + '</ul>'
+            
+            html_body = f"""
+            <html>
+            <body style="font-family: Arial, sans-serif;">
+                <h2 style="color: #2563eb;">Asset Təyinatı</h2>
+                <p>Hörmətli {employee.full_name},</p>
+                <p>Sizə aşağıdaki asset-lər təyin edilmişdir:</p>
+                {asset_list}
+                <p><strong>Zəhmət olmasa təsdiq edin:</strong></p>
+                <ul>
+                    <li>✅ Qəbul et - Hər şey düzgündürsə</li>
+                    <li>❓ Aydınlaşdırma sorğusu - Sualınız varsa</li>
+                </ul>
+                <p>Təyin edən: <strong>{assigned_by.get_full_name() or assigned_by.username}</strong></p>
+                <p>HRIS sisteminə daxil olub təsdiq edə bilərsiniz.</p>
+                <hr>
+                <p style="color: #6b7280; font-size: 12px;">Bu avtomatik mesajdır</p>
+            </body>
+            </html>
+            """
+            
+            system_email_service.send_email_as_system(
+                from_email='myalmet@almettrading.com',
+                to_email=employee.user.email,
+                subject=f'Asset Təyinatı - {len(assets)} əşya',
+                body_html=html_body
+            )
+            
+            logger.info(f"✅ Email göndərildi → {employee.user.email}")
+            
+        except Exception as e:
+            logger.error(f"❌ Email xətası: {str(e)}")
     
-    def _get_activity_description(self, asset, old_status, new_status, reason):
-        """Generate activity description"""
-        old_display = dict(Asset.STATUS_CHOICES).get(old_status, old_status)
-        new_display = dict(Asset.STATUS_CHOICES).get(new_status, new_status)
+    @swagger_auto_schema(
+        method='post',
+        request_body=AssetAcceptanceSerializer,
+        responses={200: openapi.Response(description="Asset accepted")}
+    )
+    @action(detail=False, methods=['post'], url_path='accept-assignment')
+    def accept_assignment(self, request):
+        """
+        🎯 İşçi asset-i qəbul edir
         
-        description = f"Status changed from {old_display} to {new_display}"
-        if reason:
-            description += f". Reason: {reason}"
+        Prosess:
+        1. Asset status: ASSIGNED → IN_USE
+        2. Activity log
+        """
+        try:
+            asset_id = request.data.get('asset_id')
+            comments = request.data.get('comments', '')
+            
+            if not asset_id:
+                return Response(
+                    {'error': 'asset_id tələb olunur'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            asset = Asset.objects.get(id=asset_id)
+            
+            # Check permission
+            access = get_asset_access_level(request.user)
+            if not access['employee'] or asset.assigned_to != access['employee']:
+                return Response(
+                    {'error': 'Bu asset-i yalnız sizə təyin edilmiş olsa qəbul edə bilərsiniz'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            
+            if not asset.can_be_approved():
+                return Response(
+                    {'error': f'Asset qəbul edilə bilməz. Status: {asset.get_status_display()}'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            with transaction.atomic():
+                asset.status = 'IN_USE'
+                asset.updated_by = request.user
+                asset.save()
+                
+                AssetActivity.objects.create(
+                    asset=asset,
+                    activity_type='ACCEPTED',
+                    description=f"İşçi tərəfindən qəbul edildi: {access['employee'].full_name}",
+                    performed_by=request.user,
+                    metadata={
+                        'comments': comments,
+                        'accepted_at': timezone.now().isoformat()
+                    }
+                )
+            
+            logger.info(f"✅ Asset qəbul edildi: {asset.asset_number} by {access['employee'].full_name}")
+            
+            return Response({
+                'success': True,
+                'message': 'Asset uğurla qəbul edildi',
+                'asset_id': str(asset.id),
+                'asset_number': asset.asset_number
+            })
+            
+        except Asset.DoesNotExist:
+            return Response({'error': 'Asset tapılmadı'}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            logger.error(f"❌ Accept xətası: {str(e)}")
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+
+
+    @action(detail=False, methods=['get'], url_path='assignments')
+    def assignment_history_list(self, request):
+        """
+        🎯 Assignment History - Bütün assignment-lər
         
-        return description
+        Filters:
+        - employee_id: İşçiyə görə
+        - asset_id: Asset-ə görə
+        - date_from: Başlanğıc tarixi
+        - date_to: Bitmə tarixi
+        - is_active: Aktiv/completed
+        """
+        try:
+            # Get all assignments
+            queryset = AssetAssignment.objects.select_related(
+                'asset', 'asset__category', 'asset__batch',
+                'employee', 'assigned_by', 'checked_in_by'
+            ).all()
+            
+            # Apply filters
+            employee_id = request.query_params.get('employee_id')
+            if employee_id:
+                queryset = queryset.filter(employee_id=employee_id)
+            
+            asset_id = request.query_params.get('asset_id')
+            if asset_id:
+                queryset = queryset.filter(asset_id=asset_id)
+            
+            date_from = request.query_params.get('date_from')
+            if date_from:
+                queryset = queryset.filter(check_out_date__gte=date_from)
+            
+            date_to = request.query_params.get('date_to')
+            if date_to:
+                queryset = queryset.filter(check_out_date__lte=date_to)
+            
+            is_active = request.query_params.get('is_active')
+            if is_active == 'true':
+                queryset = queryset.filter(check_in_date__isnull=True)
+            elif is_active == 'false':
+                queryset = queryset.filter(check_in_date__isnull=False)
+            
+            # Search
+            search = request.query_params.get('search')
+            if search:
+                queryset = queryset.filter(
+                    Q(asset__asset_name__icontains=search) |
+                    Q(asset__serial_number__icontains=search) |
+                    Q(employee__full_name__icontains=search) |
+                    Q(employee__employee_id__icontains=search)
+                )
+            
+            # Ordering
+            queryset = queryset.order_by('-check_out_date')
+            
+            # Pagination
+            page_size = int(request.query_params.get('page_size', 15))
+            page = int(request.query_params.get('page', 1))
+            
+            from django.core.paginator import Paginator
+            paginator = Paginator(queryset, page_size)
+            page_obj = paginator.get_page(page)
+            
+            return Response({
+                'count': paginator.count,
+                'total_pages': paginator.num_pages,
+                'current_page': page,
+                'page_size': page_size,
+                'results': AssetAssignmentSerializer(
+                    page_obj, 
+                    many=True, 
+                    context={'request': request}
+                ).data
+            })
+            
+        except Exception as e:
+            logger.error(f"❌ Assignment history error: {str(e)}")
+            return Response(
+                {'error': str(e)}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    @action(detail=False, methods=['post'], url_path='assignments/export')
+    def export_assignments(self, request):
+        """
+        🎯 Export Assignments to Excel
+        """
+        try:
+            import openpyxl
+            from openpyxl.styles import Font, Alignment, PatternFill
+            from django.http import HttpResponse
+            
+            # Get filtered queryset (same filters as assignment_history_list)
+            queryset = AssetAssignment.objects.select_related(
+                'asset', 'employee', 'assigned_by', 'checked_in_by'
+            ).all()
+            
+            # Apply filters from request body
+            employee_id = request.data.get('employee_id')
+            if employee_id:
+                queryset = queryset.filter(employee_id=employee_id)
+            
+            date_from = request.data.get('date_from')
+            if date_from:
+                queryset = queryset.filter(check_out_date__gte=date_from)
+            
+            date_to = request.data.get('date_to')
+            if date_to:
+                queryset = queryset.filter(check_out_date__lte=date_to)
+            
+            # Create workbook
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            ws.title = "Assignments"
+            
+            # Header style
+            header_fill = PatternFill(start_color="0066CC", end_color="0066CC", fill_type="solid")
+            header_font = Font(color="FFFFFF", bold=True)
+            
+            # Headers
+            headers = [
+                'Asset Name', 'Serial Number', 'Category',
+                'Employee', 'Employee ID', 'Department',
+                'Check Out Date', 'Check In Date', 'Duration (days)',
+                'Condition Out', 'Condition In', 'Status',
+                'Assigned By', 'Checked In By'
+            ]
+            
+            for col, header in enumerate(headers, start=1):
+                cell = ws.cell(row=1, column=col, value=header)
+                cell.fill = header_fill
+                cell.font = header_font
+                cell.alignment = Alignment(horizontal='center')
+            
+            # Data
+            for row_idx, assignment in enumerate(queryset, start=2):
+                ws.cell(row=row_idx, column=1, value=assignment.asset.asset_name)
+                ws.cell(row=row_idx, column=2, value=assignment.asset.serial_number)
+                ws.cell(row=row_idx, column=3, value=assignment.asset.category.name)
+                ws.cell(row=row_idx, column=4, value=assignment.employee.full_name)
+                ws.cell(row=row_idx, column=5, value=assignment.employee.employee_id)
+                ws.cell(row=row_idx, column=6, value=assignment.employee.department or 'N/A')
+                ws.cell(row=row_idx, column=7, value=assignment.check_out_date.strftime('%Y-%m-%d'))
+                ws.cell(row=row_idx, column=8, value=assignment.check_in_date.strftime('%Y-%m-%d') if assignment.check_in_date else 'Active')
+                ws.cell(row=row_idx, column=9, value=assignment.duration_days)
+                ws.cell(row=row_idx, column=10, value=assignment.condition_on_checkout)
+                ws.cell(row=row_idx, column=11, value=assignment.condition_on_checkin or 'N/A')
+                ws.cell(row=row_idx, column=12, value='Active' if assignment.is_active else 'Completed')
+                ws.cell(row=row_idx, column=13, value=assignment.assigned_by.get_full_name())
+                ws.cell(row=row_idx, column=14, value=assignment.checked_in_by.get_full_name() if assignment.checked_in_by else 'N/A')
+            
+            # Auto-size columns
+            for column in ws.columns:
+                max_length = 0
+                column_letter = column[0].column_letter
+                for cell in column:
+                    try:
+                        if len(str(cell.value)) > max_length:
+                            max_length = len(cell.value)
+                    except:
+                        pass
+                adjusted_width = min(max_length + 2, 50)
+                ws.column_dimensions[column_letter].width = adjusted_width
+            
+            # Create response
+            response = HttpResponse(
+                content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            )
+            response['Content-Disposition'] = f'attachment; filename=assignments_{timezone.now().strftime("%Y%m%d")}.xlsx'
+            
+            wb.save(response)
+            return response
+            
+        except Exception as e:
+            logger.error(f"❌ Export assignments error: {str(e)}")
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    @action(detail=True, methods=['get'], url_path='activities')
+    def activities(self, request, pk=None):
+        """
+        🎯 Asset Activities Log
+        """
+        asset = self.get_object()
+        activities = asset.activities.select_related(
+            'performed_by'
+        ).order_by('-performed_at')
+        
+        return Response({
+            'asset': {
+                'id': str(asset.id),
+                'asset_number': asset.asset_number,
+                'asset_name': asset.asset_name
+            },
+            'activities': AssetActivitySerializer(
+                activities, 
+                many=True, 
+                context={'request': request}
+            ).data
+        })
+        
+    @swagger_auto_schema(
+        method='post',
+        request_body=AssetClarificationRequestSerializer,
+        responses={200: openapi.Response(description="Clarification requested")}
+    )
+    @action(detail=False, methods=['post'], url_path='request-clarification')
+    def request_clarification(self, request):
+        """
+        🎯 İşçi aydınlaşdırma sorğusu göndərir
+        
+        Prosess:
+        1. Asset status: ASSIGNED → NEED_CLARIFICATION
+        2. Clarification məlumatları saxlanılır
+        """
+        try:
+            asset_id = request.data.get('asset_id')
+            reason = request.data.get('clarification_reason')
+            
+            if not asset_id or not reason:
+                return Response(
+                    {'error': 'asset_id və clarification_reason tələb olunur'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            asset = Asset.objects.get(id=asset_id)
+            
+            access = get_asset_access_level(request.user)
+            if not access['employee'] or asset.assigned_to != access['employee']:
+                return Response(
+                    {'error': 'Bu asset-i yalnız sizə təyin edilmiş olsa aydınlaşdırma sorğusu göndərə bilərsiniz'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            
+            if asset.status not in ['ASSIGNED', 'NEED_CLARIFICATION']:
+                return Response(
+                    {'error': f'Aydınlaşdırma sorğusu göndərilə bilməz. Status: {asset.get_status_display()}'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            with transaction.atomic():
+                asset.status = 'NEED_CLARIFICATION'
+                asset.clarification_requested_reason = reason
+                asset.clarification_requested_at = timezone.now()
+                asset.clarification_requested_by = request.user
+                asset.clarification_response = None
+                asset.clarification_provided_at = None
+                asset.clarification_provided_by = None
+                asset.updated_by = request.user
+                asset.save()
+                
+                AssetActivity.objects.create(
+                    asset=asset,
+                    activity_type='CLARIFICATION_REQUESTED',
+                    description=f"Aydınlaşdırma sorğusu: {access['employee'].full_name}",
+                    performed_by=request.user,
+                    metadata={'reason': reason}
+                )
+            
+            logger.info(f"✅ Aydınlaşdırma sorğusu: {asset.asset_number}")
+            
+            return Response({
+                'success': True,
+                'message': 'Aydınlaşdırma sorğusu göndərildi',
+                'asset_id': str(asset.id)
+            })
+            
+        except Asset.DoesNotExist:
+            return Response({'error': 'Asset tapılmadı'}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            logger.error(f"❌ Clarification xətası: {str(e)}")
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    @swagger_auto_schema(
+        method='post',
+        request_body=AssetClarificationProvisionSerializer,
+        responses={200: openapi.Response(description="Clarification provided")}
+    )
+    @action(detail=False, methods=['post'], url_path='provide-clarification')
+    @require_asset_permission('manage')
+    def provide_clarification(self, request):
+        """
+        🎯 Admin/Manager aydınlaşdırma cavabı verir
+        
+        Prosess:
+        1. Asset status: NEED_CLARIFICATION → ASSIGNED
+        2. Cavab saxlanılır
+        """
+        try:
+            asset_id = request.data.get('asset_id')
+            response_text = request.data.get('clarification_response')
+            
+            if not asset_id or not response_text:
+                return Response(
+                    {'error': 'asset_id və clarification_response tələb olunur'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            asset = Asset.objects.get(id=asset_id)
+            
+            if asset.status != 'NEED_CLARIFICATION':
+                return Response(
+                    {'error': f'Asset aydınlaşdırma gözləmir. Status: {asset.get_status_display()}'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            with transaction.atomic():
+                asset.status = 'ASSIGNED'
+                asset.clarification_response = response_text
+                asset.clarification_provided_at = timezone.now()
+                asset.clarification_provided_by = request.user
+                asset.updated_by = request.user
+                asset.save()
+                
+                AssetActivity.objects.create(
+                    asset=asset,
+                    activity_type='CLARIFICATION_PROVIDED',
+                    description=f"Aydınlaşdırma cavabı verildi",
+                    performed_by=request.user,
+                    metadata={'response': response_text}
+                )
+            
+            logger.info(f"✅ Aydınlaşdırma cavabı: {asset.asset_number}")
+            
+            return Response({
+                'success': True,
+                'message': 'Aydınlaşdırma cavabı verildi',
+                'asset_id': str(asset.id)
+            })
+            
+        except Asset.DoesNotExist:
+            return Response({'error': 'Asset tapılmadı'}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            logger.error(f"❌ Provide clarification xətası: {str(e)}")
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
     @action(detail=True, methods=['get'])
     def assignment_history(self, request, pk=None):
-        """Get assignment history for asset - FIXED"""
-        try:
-            asset = self.get_object()
-            assignments = asset.assignments.all().order_by('-check_out_date')
-            serializer = AssetAssignmentSerializer(assignments, many=True)
-            
-            # Get current assignment data properly
-            current_assignment_data = None
-            current_assignment = asset.get_current_assignment()
-            if current_assignment:
-                current_assignment_data = {
-                    'employee': current_assignment['employee'],
-                    'assignment_details': current_assignment['assignment']
-                }
-            
-            return Response({
-                'asset_id': str(asset.id),
+        """Asset-in assignment tarixçəsi"""
+        asset = self.get_object()
+        assignments = asset.assignments.all().order_by('-check_out_date')
+        
+        return Response({
+            'asset': {
+                'id': str(asset.id),
+                'asset_number': asset.asset_number,
                 'asset_name': asset.asset_name,
-                'total_assignments': assignments.count(),
-                'current_assignment': current_assignment_data,
-                'assignment_history': serializer.data
-            })
-            
-        except Exception as e:
-            logger.error(f"Error getting assignment history for asset {pk}: {str(e)}")
-            return Response(
-                {'error': f'Failed to get assignment history: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+                'serial_number': asset.serial_number
+            },
+            'assignments': AssetAssignmentSerializer(assignments, many=True, context={'request': request}).data
+        })
     
-    @action(detail=True, methods=['get'])
-    def activities(self, request, pk=None):
-        """Get activity history for asset"""
-        try:
-            asset = self.get_object()
-            activities = asset.activities.all()[:50]  # Last 50 activities
-            serializer = AssetActivitySerializer(activities, many=True)
-            
-            return Response({
-                'asset_id': str(asset.id),
-                'asset_name': asset.asset_name,
-                'activities': serializer.data
-            })
-            
-        except Exception as e:
-            logger.error(f"Error getting activities for asset {pk}: {str(e)}")
-            return Response(
-                {'error': f'Failed to get activities: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-    
+    @action(detail=False, methods=['get'])
+    def my_assets(self, request):
+        """İstifadəçinin öz asset-ləri"""
+        access = get_asset_access_level(request.user)
+        
+        if not access['employee']:
+            return Response({'assets': [], 'message': 'Sizin işçi profiliniz yoxdur'})
+        
+        assets = Asset.objects.filter(
+            assigned_to=access['employee']
+        ).select_related('batch', 'category')
+        
+        return Response({
+            'employee': {
+                'id': access['employee'].id,
+                'name': access['employee'].full_name,
+                'employee_id': access['employee'].employee_id
+            },
+            'total_assets': assets.count(),
+            'assets': AssetListSerializer(assets, many=True, context={'request': request}).data
+        })
     
     @swagger_auto_schema(
-    method='post',
-    operation_description="Export assets to CSV or Excel format",
-    request_body=AssetExportSerializer,
-    responses={
-        200: openapi.Response(
-            description="File download (CSV or Excel)",
-            content_type="application/octet-stream"
-        ),
-        400: "Bad Request - Invalid export parameters",
-        500: "Internal Server Error"
-    },
-    manual_parameters=[
-        openapi.Parameter(
-            'export_type',
-            openapi.IN_QUERY,
-            description="Export type: 'all' for all assets, 'filtered' for current filters, 'selected' for specific IDs",
-            type=openapi.TYPE_STRING,
-            enum=['all', 'filtered', 'selected'],
-            default='all'
-        )
-    ]
-)
-    @action(detail=False, methods=['post'], url_path='export')
-    def export_assets(self, request):
-        """Export assets to CSV or Excel format - ENHANCED with better validation"""
-        try:
-            # Validate request data
-            serializer = AssetExportSerializer(data=request.data)
-            if not serializer.is_valid():
-                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-            
-            # Get base queryset
-            queryset = self.get_queryset()
-            
-            # Determine export type
-            export_type = request.query_params.get('export_type', 'all')
-            asset_ids = serializer.validated_data.get('asset_ids', [])
-            
-            # Apply filtering based on export type
-            if export_type == 'selected':
-                if not asset_ids:
-                    return Response(
-                        {'error': 'asset_ids are required when export_type=selected'},
-                        status=status.HTTP_400_BAD_REQUEST
-                    )
-                
-                # Validate asset IDs exist
-                existing_assets = queryset.filter(id__in=asset_ids)
-                existing_ids = set(str(asset.id) for asset in existing_assets)
-                provided_ids = set(str(id) for id in asset_ids)
-                
-                if len(existing_ids) != len(provided_ids):
-                    missing_ids = provided_ids - existing_ids
-                    return Response(
-                        {
-                            'error': 'Some asset IDs do not exist',
-                            'missing_ids': list(missing_ids),
-                            'valid_ids': list(existing_ids),
-                            'provided_count': len(provided_ids),
-                            'valid_count': len(existing_ids)
-                        },
-                        status=status.HTTP_400_BAD_REQUEST
-                    )
-                
-                queryset = existing_assets
-               
-                
-            elif export_type == 'filtered':
-                # Export assets with current filters applied
-                asset_filter = AssetFilter(queryset, request.query_params)
-                queryset = asset_filter.filter()
-              
-                
-            elif export_type == 'all':
-                # Export all assets (no additional filtering)
-                logger.info(f"Exporting all {queryset.count()} assets")
-                
-            else:
-                return Response(
-                    {
-                        'error': 'Invalid export_type',
-                        'valid_options': ['all', 'filtered', 'selected'],
-                        'provided': export_type
-                    },
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            
-            # Apply date range filter if provided
-            date_from = serializer.validated_data.get('date_range_from')
-            date_to = serializer.validated_data.get('date_range_to')
-            
-            if date_from:
-                queryset = queryset.filter(created_at__date__gte=date_from)
-            if date_to:
-                queryset = queryset.filter(created_at__date__lte=date_to)
-            
-            # Check if queryset is empty
-            if not queryset.exists():
-                return Response(
-                    {
-                        'error': 'No assets found to export with the given criteria',
-                        'export_type': export_type,
-                        'filters_applied': {
-                            'date_from': date_from.isoformat() if date_from else None,
-                            'date_to': date_to.isoformat() if date_to else None,
-                            'asset_ids_count': len(asset_ids) if asset_ids else 0
-                        }
-                    },
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            
-            # Add export metadata to options
-            export_options = serializer.validated_data.copy()
-            export_options.update({
-                'export_type': export_type,
-                'total_count': queryset.count(),
-                'exported_by': request.user.get_full_name() or request.user.username,
-                'export_timestamp': timezone.now()
-            })
-            
-            return self._export_file(queryset, export_options)
-                    
-        except Exception as e:
-            logger.error(f"Error exporting assets: {str(e)}")
-            return Response(
-                {
-                    'error': f'Failed to export assets: {str(e)}',
-                    'export_type': request.query_params.get('export_type', 'unknown'),
-                    'timestamp': timezone.now().isoformat()
-                },
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        method='post',
+        request_body=AssetBulkUploadSerializer,
+        manual_parameters=[
+            openapi.Parameter(
+                'file',
+                openapi.IN_FORM,
+                description='Excel/CSV file',
+                type=openapi.TYPE_FILE,
+                required=True
             )
-    
-    def _export_file(self, queryset, options):
-        """Export assets to CSV or Excel based on format choice"""
-        export_format = options.get('export_format', 'excel')
+        ],
+        consumes=['multipart/form-data']
+    )
+    @action(detail=False, methods=['post'], url_path='bulk-upload', parser_classes=[MultiPartParser, FormParser])
+    @require_asset_permission('create')
+    def bulk_upload(self, request):
+        """
+        🎯 Excel/CSV-dən bulk upload
         
-        if export_format == 'excel':
-            return self._export_excel(queryset, options)
-        else:
-            return self._export_csv(queryset, options)
-    
-    def _export_excel(self, queryset, options):
-        """Export assets to Excel with professional formatting - ENHANCED"""
-        from django.http import HttpResponse
-        from datetime import datetime
-        import io
-        import xlsxwriter
-        
-        # Create Excel file in memory
-        output = io.BytesIO()
-        workbook = xlsxwriter.Workbook(output, {'in_memory': True})
-        worksheet = workbook.add_worksheet('Assets')
-        
-        # Define formats
-        title_format = workbook.add_format({
-            'bold': True,
-            'font_size': 16,
-            'font_color': '#1F4E79',
-            'align': 'left'
-        })
-        
-        info_format = workbook.add_format({
-            'font_size': 10,
-            'font_color': '#555555',
-            'align': 'left'
-        })
-        
-        header_format = workbook.add_format({
-            'bold': True,
-            'font_size': 12,
-            'bg_color': '#4472C4',
-            'font_color': 'white',
-            'border': 1,
-            'align': 'center',
-            'valign': 'vcenter'
-        })
-        
-        cell_format = workbook.add_format({
-            'border': 1,
-            'align': 'left',
-            'valign': 'vcenter',
-            'text_wrap': True
-        })
-        
-        number_format = workbook.add_format({
-            'border': 1,
-            'align': 'right',
-            'valign': 'vcenter',
-            'num_format': '#,##0.00'
-        })
-        
-        date_format = workbook.add_format({
-            'border': 1,
-            'align': 'center',
-            'valign': 'vcenter',
-            'num_format': 'dd/mm/yyyy'
-        })
-        
-        status_formats = {
-            'IN_STOCK': workbook.add_format({
-                'border': 1, 'align': 'center', 'bg_color': '#E3F2FD', 'font_color': '#1976D2', 'bold': True
-            }),
-            'IN_USE': workbook.add_format({
-                'border': 1, 'align': 'center', 'bg_color': '#E8F5E8', 'font_color': '#388E3C', 'bold': True
-            }),
-            'IN_REPAIR': workbook.add_format({
-                'border': 1, 'align': 'center', 'bg_color': '#FFF3E0', 'font_color': '#F57C00', 'bold': True
-            }),
-            'ARCHIVED': workbook.add_format({
-                'border': 1, 'align': 'center', 'bg_color': '#FAFAFA', 'font_color': '#757575', 'bold': True
+        Excel format:
+        | asset_name | category | quantity | serial_numbers | unit_price | purchase_date | supplier |
+        """
+        try:
+            serializer = AssetBulkUploadSerializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            
+            file = serializer.validated_data['file']
+            
+            # Read file
+            if file.name.endswith('.csv'):
+                df = pd.read_csv(file)
+            else:
+                df = pd.read_excel(file)
+            
+            required_columns = ['asset_name', 'category', 'quantity', 'unit_price', 'purchase_date']
+            missing = set(required_columns) - set(df.columns)
+            
+            if missing:
+                return Response(
+                    {'error': f'Lazımi sütunlar yoxdur: {", ".join(missing)}'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            results = {'success': 0, 'failed': 0, 'errors': []}
+            
+            with transaction.atomic():
+                for index, row in df.iterrows():
+                    try:
+                        # Get or create category
+                        category, _ = AssetCategory.objects.get_or_create(
+                            name=row['category'],
+                            defaults={'created_by': request.user}
+                        )
+                        
+                        # Create batch
+                        batch = AssetBatch.objects.create(
+                            asset_name=row['asset_name'],
+                            category=category,
+                            initial_quantity=int(row['quantity']),
+                            available_quantity=int(row['quantity']),
+                            unit_price=float(row['unit_price']),
+                            purchase_date=pd.to_datetime(row['purchase_date']).date(),
+                            useful_life_years=int(row.get('useful_life_years', 5)),
+                            supplier=row.get('supplier', ''),
+                            created_by=request.user
+                        )
+                        
+                        results['success'] += 1
+                        
+                    except Exception as e:
+                        results['failed'] += 1
+                        results['errors'].append(f"Sətir {index + 2}: {str(e)}")
+            
+            logger.info(f"✅ Bulk upload: {results['success']} uğurlu, {results['failed']} uğursuz")
+            
+            return Response({
+                'success': True,
+                'imported': results['success'],
+                'failed': results['failed'],
+                'errors': results['errors'][:10]
             })
-        }
-        
-        # Add title and metadata
-        current_row = 0
-   
-       
-        # Headers
-        headers = [
-            'Asset Name', 'Category', 'Serial Number', 'Status', 
-            'Purchase Price (AZN)', 'Purchase Date', 'Useful Life (Years)',
-            'Assigned To', 'Employee ID', 'Created Date'
-        ]
-        
+            
+        except Exception as e:
+            logger.error(f"❌ Bulk upload xətası: {str(e)}")
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
+    @action(detail=False, methods=['get'])
+    def access_info(self, request):
+        """İstifadəçinin icazə məlumatları"""
+        return Response(get_access_summary(request.user))
+    
+    @action(detail=False, methods=['get'])
+    def statistics(self, request):
+        """Asset statistikası"""
+        queryset = self.get_queryset()
         
-        if options.get('include_assignments'):
-            headers.extend(['Total Assignments', 'Current Assignment Days', 'Assignment Status'])
-        
-        # Write headers
-        header_row = current_row
-        for col, header in enumerate(headers):
-            worksheet.write(header_row, col, header, header_format)
-        
-        # Set column widths
-        column_widths = [25, 18, 18, 15, 18, 15, 15, 25, 15, 15]
-       
-        if options.get('include_assignments'):
-            column_widths.extend([18, 20, 18])
-        
-        for col, width in enumerate(column_widths):
-            worksheet.set_column(col, col, width)
-        
-        # Write data
-        data_start_row = header_row + 1
-        for row_num, asset in enumerate(queryset):
-            current_row = data_start_row + row_num
-            col = 0
-            
-            # Basic asset info
-            worksheet.write(current_row, col, asset.asset_name, cell_format)
-            col += 1
-            worksheet.write(current_row, col, asset.category.name, cell_format)
-            col += 1
-            worksheet.write(current_row, col, asset.serial_number, cell_format)
-            col += 1
-            
-            # Status with color
-            status_format = status_formats.get(asset.status, cell_format)
-            worksheet.write(current_row, col, asset.get_status_display(), status_format)
-            col += 1
-            
-            # Financial info
-            worksheet.write(current_row, col, float(asset.purchase_price), number_format)
-            col += 1
-            
-            if asset.purchase_date:
-                worksheet.write_datetime(current_row, col, asset.purchase_date, date_format)
-            else:
-                worksheet.write(current_row, col, '', cell_format)
-            col += 1
-            
-            worksheet.write(current_row, col, asset.useful_life_years, cell_format)
-            col += 1
-            
-            # Assignment info
-            worksheet.write(current_row, col, asset.assigned_to.full_name if asset.assigned_to else '', cell_format)
-            col += 1
-            worksheet.write(current_row, col, asset.assigned_to.employee_id if asset.assigned_to else '', cell_format)
-            col += 1
-            
-            # Created date
-            if asset.created_at:
-                worksheet.write_datetime(current_row, col, asset.created_at.date(), date_format)
-            else:
-                worksheet.write(current_row, col, '', cell_format)
-            col += 1
-            
-            
-            # Assignment info
-            if options.get('include_assignments'):
-                total_assignments = asset.assignments.count()
-                worksheet.write(current_row, col, total_assignments, cell_format)
-                col += 1
-                
-                current_assignment = asset.get_current_assignment()
-                current_days = ''
-                assignment_status = 'Not Assigned'
-                
-                if current_assignment and current_assignment['assignment']:
-                    active_assignment = asset.assignments.filter(check_in_date__isnull=True).first()
-                    if active_assignment:
-                        current_days = active_assignment.get_duration_days()
-                        assignment_status = 'Currently Assigned'
-                elif total_assignments > 0:
-                    assignment_status = 'Previously Assigned'
-                
-                worksheet.write(current_row, col, current_days, cell_format)
-                col += 1
-                worksheet.write(current_row, col, assignment_status, cell_format)
-        
-        # Add comprehensive summary section
-        summary_start_row = data_start_row + queryset.count() + 2
-        worksheet.write(summary_start_row, 0, 'DETAILED SUMMARY', title_format)
-        summary_start_row += 1
-        
-        # Basic statistics
-        worksheet.write(summary_start_row, 0, f'Total Assets Exported: {queryset.count()}', info_format)
-        summary_start_row += 1
+        total_assets = queryset.count()
         
         # Status breakdown
-        worksheet.write(summary_start_row, 0, 'Status Breakdown:', info_format)
-        summary_start_row += 1
-        
-        total_value = 0
+        status_breakdown = {}
         for choice in Asset.STATUS_CHOICES:
             count = queryset.filter(status=choice[0]).count()
             if count > 0:
-                status_assets = queryset.filter(status=choice[0])
-                status_value = sum(float(asset.purchase_price) for asset in status_assets)
-                total_value += status_value
-                
-                worksheet.write(summary_start_row, 0, f'  • {choice[1]}: {count} assets', info_format)
-                worksheet.write(summary_start_row, 2, f'{status_value:,.2f} AZN', info_format)
-                summary_start_row += 1
+                status_breakdown[choice[0]] = {
+                    'label': choice[1],
+                    'count': count,
+                    'percentage': round((count / total_assets * 100), 1) if total_assets > 0 else 0
+                }
         
-        summary_start_row += 1
-        worksheet.write(summary_start_row, 0, f'Total Value: {total_value:,.2f} AZN', title_format)
+        # Category breakdown
+        category_breakdown = {}
+        categories = queryset.values('category__name').annotate(count=Count('id'))
+        for cat in categories:
+            if cat['category__name']:
+                category_breakdown[cat['category__name']] = cat['count']
         
-        # Add filters (autofilter)
-        worksheet.autofilter(header_row, 0, data_start_row + queryset.count() - 1, len(headers) - 1)
+        # Assignment breakdown
+        assigned_count = queryset.filter(assigned_to__isnull=False).count()
+        unassigned_count = total_assets - assigned_count
         
-        # Freeze panes
-        worksheet.freeze_panes(header_row + 1, 0)
+        return Response({
+            'total_assets': total_assets,
+            'status_breakdown': status_breakdown,
+            'category_breakdown': category_breakdown,
+            'assignment_summary': {
+                'assigned': assigned_count,
+                'unassigned': unassigned_count,
+                'assignment_rate': round((assigned_count / total_assets * 100), 1) if total_assets > 0 else 0
+            }
+        })
+
+
+# ============================================
+# OFFBOARDING VIEWSET
+# ============================================
+class EmployeeOffboardingViewSet(viewsets.ModelViewSet):
+    """
+    🎯 Employee Offboarding
+    İşdən çıxan işçinin asset-lərinin transferi
+    """
+    
+    queryset = EmployeeOffboarding.objects.select_related('employee', 'created_by', 'approved_by').all()
+    serializer_class = EmployeeOffboardingSerializer
+    permission_classes = [IsAuthenticated]
+    ordering = ['-created_at']
+    
+    def get_queryset(self):
+        access = get_asset_access_level(self.request.user)
+        queryset = super().get_queryset()
         
-        workbook.close()
-        output.seek(0)
+        if access['can_view_all_assets']:
+            return queryset
         
-        # Return Excel file
-        response = HttpResponse(
-            output.read(),
-            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        if access['accessible_employee_ids']:
+            return queryset.filter(employee_id__in=access['accessible_employee_ids'])
+        
+        return queryset.none()
+    
+    @swagger_auto_schema(
+        method='post',
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'employee_id': openapi.Schema(type=openapi.TYPE_INTEGER),
+                'last_working_day': openapi.Schema(type=openapi.TYPE_STRING, format='date'),
+                'notes': openapi.Schema(type=openapi.TYPE_STRING)
+            }
         )
-        export_type = options.get('export_type', 'all')
-        response['Content-Disposition'] = f'attachment; filename="assets_{export_type}_export_{datetime.now().strftime("%Y%m%d_%H%M")}.xlsx"'
-        
-        return response
-    def _export_csv(self, queryset, options):
-        """Export assets to CSV - UPDATED without removed fields"""
-        from django.http import HttpResponse
-        from datetime import datetime
-        import csv
-        
-        response = HttpResponse(content_type='text/csv; charset=utf-8')
-        response['Content-Disposition'] = f'attachment; filename="assets_export_{datetime.now().strftime("%Y%m%d_%H%M")}.csv"'
-        
-        writer = csv.writer(response)
-        
-        # Headers - UPDATED without brand/model
-        headers = [
-            'Asset Name', 'Category', 'Serial Number',
-            'Status', 'Purchase Price (AZN)', 'Purchase Date', 'Useful Life (Years)',
-            'Assigned To', 'Employee ID', 'Created Date'
-        ]
-        
-       
-        
-        if options.get('include_assignments'):
-            headers.extend(['Total Assignments', 'Current Assignment Days'])
-        
-        writer.writerow(headers)
-        
-        # Data rows - UPDATED without brand/model
-        for asset in queryset:
-            row = [
-                asset.asset_name,
-                asset.category.name,
-                asset.serial_number,
-                asset.get_status_display(),
-                str(asset.purchase_price),
-                asset.purchase_date.strftime('%Y-%m-%d') if asset.purchase_date else '',
-                asset.useful_life_years,
-                asset.assigned_to.full_name if asset.assigned_to else '',
-                asset.assigned_to.employee_id if asset.assigned_to else '',
-                asset.created_at.strftime('%Y-%m-%d') if asset.created_at else ''
-            ]
+    )
+    @action(detail=False, methods=['post'], url_path='initiate')
+    @require_asset_permission('manage')
+    def initiate_offboarding(self, request):
+        """Offboarding prosesini başlat"""
+        try:
+            employee_id = request.data.get('employee_id')
+            last_working_day = request.data.get('last_working_day')
             
-           
+            employee = Employee.objects.get(id=employee_id, is_deleted=False)
             
-            if options.get('include_assignments'):
-                total_assignments = asset.assignments.count()
-                current_assignment = asset.get_current_assignment()
-                current_days = ''
-                if current_assignment and current_assignment['assignment']:
+            # Count assets
+            assets = Asset.objects.filter(assigned_to=employee, status__in=['ASSIGNED', 'IN_USE'])
+            total_assets = assets.count()
+            
+            offboarding = EmployeeOffboarding.objects.create(
+                employee=employee,
+                last_working_day=last_working_day,
+                total_assets=total_assets,
+                notes=request.data.get('notes', ''),
+                created_by=request.user
+            )
+            
+            logger.info(f"✅ Offboarding başladıldı: {employee.full_name} - {total_assets} asset")
+            
+            return Response({
+                'success': True,
+                'offboarding_id': offboarding.id,
+                'employee': employee.full_name,
+                'total_assets': total_assets
+            })
+            
+        except Employee.DoesNotExist:
+            return Response({'error': 'İşçi tapılmadı'}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            logger.error(f"❌ Offboarding xətası: {str(e)}")
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    @action(detail=True, methods=['get'])
+    def assets(self, request, pk=None):
+        """Offboarding üçün asset-lər"""
+        offboarding = self.get_object()
+        assets = Asset.objects.filter(
+            assigned_to=offboarding.employee,
+            status__in=['ASSIGNED', 'IN_USE']
+        )
+        
+        return Response({
+            'employee': offboarding.employee.full_name,
+            'total_assets': assets.count(),
+            'assets': AssetListSerializer(assets, many=True, context={'request': request}).data
+        })
+
+
+# ============================================
+# TRANSFER REQUEST VIEWSET
+# ============================================
+class AssetTransferRequestViewSet(viewsets.ModelViewSet):
+    """
+    🎯 Asset Transfer Requests (Offboarding)
+    """
+    
+    queryset = AssetTransferRequest.objects.select_related(
+        'asset', 'from_employee', 'to_employee', 'requested_by', 'approved_by'
+    ).all()
+    serializer_class = AssetTransferRequestSerializer
+    permission_classes = [IsAuthenticated]
+    ordering = ['-requested_at']
+    
+    @swagger_auto_schema(
+        method='post',
+        request_body=AssetTransferRequestCreateSerializer
+    )
+    @action(detail=False, methods=['post'], url_path='create')
+    def create_transfer(self, request):
+        """Transfer sorğusu yarat"""
+        try:
+            serializer = AssetTransferRequestCreateSerializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            
+            asset = serializer.validated_data['asset']
+            from_employee = serializer.validated_data['from_employee']
+            to_employee = serializer.validated_data['to_employee']
+            
+            # Get or create offboarding
+            offboarding, _ = EmployeeOffboarding.objects.get_or_create(
+                employee=from_employee,
+                status='IN_PROGRESS',
+                defaults={
+                    'last_working_day': timezone.now().date(),
+                    'total_assets': Asset.objects.filter(assigned_to=from_employee).count(),
+                    'created_by': request.user
+                }
+            )
+            
+            transfer = AssetTransferRequest.objects.create(
+                offboarding=offboarding,
+                asset=asset,
+                from_employee=from_employee,
+                to_employee=to_employee,
+                transfer_notes=serializer.validated_data.get('transfer_notes', ''),
+                requested_by=request.user
+            )
+            
+            # Send notification
+            self._send_transfer_notification(transfer)
+            
+            logger.info(f"✅ Transfer sorğusu: {asset.asset_number} → {to_employee.full_name}")
+            
+            return Response({
+                'success': True,
+                'transfer_id': transfer.id,
+                'message': f'Transfer sorğusu yaradıldı'
+            })
+            
+        except Exception as e:
+            logger.error(f"❌ Transfer sorğusu xətası: {str(e)}")
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    def _send_transfer_notification(self, transfer):
+        """Transfer təsdiq emaili"""
+        try:
+            from .role_models import EmployeeRole
+            
+            # Get IT/Admin emails
+            it_admin_users = EmployeeRole.objects.filter(
+                Q(role__name__icontains='IT') | Q(role__name__icontains='Admin'),
+                is_active=True
+            ).values_list('employee__user__email', flat=True)
+            
+            emails = list(filter(None, it_admin_users))
+            
+            if not emails:
+                logger.warning("⚠️ IT/Admin email tapılmadı")
+                return
+            
+            html_body = f"""
+            <html>
+            <body>
+                <h2>Asset Transfer Təsdiqi Lazımdır</h2>
+                <p>Yeni asset transfer sorğusu:</p>
+                <ul>
+                    <li><strong>Asset:</strong> {transfer.asset.asset_name} ({transfer.asset.serial_number})</li>
+                    <li><strong>Kimdən:</strong> {transfer.from_employee.full_name}</li>
+                    <li><strong>Kimə:</strong> {transfer.to_employee.full_name}</li>
+                    <li><strong>Səbəb:</strong> Offboarding</li>
+                </ul>
+                <p>HRIS-ə daxil olub təsdiq və ya rədd edə bilərsiniz.</p>
+            </body>
+            </html>
+            """
+            
+            system_email_service.send_email_as_system(
+                from_email='myalmet@almettrading.com',
+                to_email=emails,
+                subject='Asset Transfer Təsdiqi',
+                body_html=html_body
+            )
+            
+            logger.info(f"✅ Transfer email göndərildi")
+            
+        except Exception as e:
+            logger.error(f"❌ Email xətası: {str(e)}")
+    
+    @swagger_auto_schema(
+        method='post',
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'approved': openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                'rejection_reason': openapi.Schema(type=openapi.TYPE_STRING)
+            }
+        )
+    )
+    @action(detail=True, methods=['post'], url_path='approve')
+    @require_asset_permission('approve')
+    def approve_transfer(self, request, pk=None):
+        """Transfer-i təsdiq və ya rədd et"""
+        try:
+            transfer = self.get_object()
+            approved = request.data.get('approved', False)
+            
+            if approved:
+                with transaction.atomic():
+                    asset = transfer.asset
+                    old_employee = transfer.from_employee
+                    new_employee = transfer.to_employee
+                    
+                    # Check in from old employee
                     active_assignment = asset.assignments.filter(check_in_date__isnull=True).first()
                     if active_assignment:
-                        current_days = str(active_assignment.get_duration_days())
+                        active_assignment.check_in_date = timezone.now().date()
+                        active_assignment.checked_in_by = request.user
+                        active_assignment.save()
+                    
+                    # Create new assignment
+                    AssetAssignment.objects.create(
+                        asset=asset,
+                        employee=new_employee,
+                        check_out_date=timezone.now().date(),
+                        assigned_by=request.user,
+                        check_out_notes=f'Transfer: {old_employee.full_name} → {new_employee.full_name}'
+                    )
+                    
+                    # Update asset
+                    asset.assigned_to = new_employee
+                    asset.status = 'ASSIGNED'
+                    asset.updated_by = request.user
+                    asset.save()
+                    
+                    # Update transfer
+                    transfer.status = 'COMPLETED'
+                    transfer.approved_by = request.user
+                    transfer.approved_at = timezone.now()
+                    transfer.completed_at = timezone.now()
+                    transfer.save()
+                    
+                    # Update offboarding
+                    transfer.offboarding.assets_transferred += 1
+                    transfer.offboarding.save()
+                    
+                    # Log activity
+                    AssetActivity.objects.create(
+                        asset=asset,
+                        activity_type='TRANSFERRED',
+                        description=f'Transfer: {old_employee.full_name} → {new_employee.full_name}',
+                        performed_by=request.user,
+                        metadata={
+                            'from_employee': old_employee.full_name,
+                            'to_employee': new_employee.full_name,
+                            'transfer_id': transfer.id
+                        }
+                    )
                 
-                row.extend([total_assignments, current_days])
+                logger.info(f"✅ Transfer təsdiqləndi: {asset.asset_number}")
+                
+                return Response({
+                    'success': True,
+                    'message': 'Transfer təsdiqləndi və tamamlandı'
+                })
+            else:
+                # Reject
+                transfer.status = 'REJECTED'
+                transfer.rejection_reason = request.data.get('rejection_reason', '')
+                transfer.approved_by = request.user
+                transfer.approved_at = timezone.now()
+                transfer.save()
+                
+                logger.info(f"✅ Transfer rədd edildi: {transfer.asset.asset_number}")
+                
+                return Response({
+                    'success': True,
+                    'message': 'Transfer rədd edildi'
+                })
             
-            writer.writerow(row)
-        
-        return response
-
-
+        except Exception as e:
+            logger.error(f"❌ Approve transfer xətası: {str(e)}")
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
