@@ -1263,9 +1263,9 @@ class AssetTransferRequestViewSet(viewsets.ModelViewSet):
         """Send transfer notification email to involved employees (EN)"""
         try:
             from_employee_email = 'n.nanda@almettrading.co.uk'
-            # to_employee_email = transfer.to_employee.user.email
+            to_employee_email = 'y.yurdum@almettrading.co.uk'
     
-            emails = list(filter(None, [from_employee_email]))
+            emails = list(filter(None, [from_employee_email, to_employee_email]))
     
             if not emails:
                 logger.warning("⚠️ Transfer email recipients not found")
