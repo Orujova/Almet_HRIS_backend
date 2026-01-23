@@ -593,7 +593,6 @@ def get_notification_context(request):
             required=False,
             description='Multiple files to upload (Max 10MB each, PDF/JPG/PNG/DOC/DOCX/XLS/XLSX)'
         ),
-      
     ],
     responses={
         201: openapi.Response(description='Request created'),
@@ -601,11 +600,17 @@ def get_notification_context(request):
     }
 )
 @api_view(['POST'])
-@has_business_trip_permission('business_trips.request.create')
 @permission_classes([IsAuthenticated])
 @parser_classes([MultiPartParser, FormParser])
 def create_trip_request(request):
-    """Create business trip request with optional file attachments"""
+    """
+    Create business trip request with smart permission checking:
+    - For 'for_me': Requires 'business_trips.request.create' permission
+    - For 'for_my_employee': 
+        * Can create if user is Line Manager of the employee (no permission needed)
+        * OR has 'business_trips.request.create_for_employee' permission
+        * OR is Admin
+    """
     import json
     
     try:
@@ -639,7 +644,88 @@ def create_trip_request(request):
                     'error': 'Invalid employee_manual format. Must be valid JSON object.'
                 }, status=status.HTTP_400_BAD_REQUEST)
         
-       
+        # Get requester employee
+        try:
+            requester_emp = Employee.objects.get(user=request.user, is_deleted=False)
+        except Employee.DoesNotExist:
+            return Response({
+                'error': 'Employee profili tapılmadı',
+                'detail': 'Business Trip sisteminə daxil olmaq üçün employee profili lazımdır'
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        # ✅ SMART PERMISSION CHECK
+        requester_type = data.get('requester_type')
+        
+        if requester_type == 'for_me':
+            # ✅ FOR_ME: Normal permission yoxlaması
+            has_perm, _ = check_business_trip_permission(
+                request.user, 
+                'business_trips.request.create'
+            )
+            if not has_perm:
+                return Response({
+                    'error': 'İcazə yoxdur',
+                    'detail': 'Özünüz üçün ərizə yaratmaq icazəniz yoxdur',
+                    'required_permission': 'business_trips.request.create'
+                }, status=status.HTTP_403_FORBIDDEN)
+        
+        elif requester_type == 'for_my_employee':
+            # ✅ FOR_MY_EMPLOYEE: 3 şərt yoxlanır
+            
+            # Check if Admin
+            if is_admin_user(request.user):
+                # Admin hər şeyə icazəlidir
+                pass
+            else:
+                # Check if user has special permission to create for employees
+                has_create_for_employee_perm, _ = check_business_trip_permission(
+                    request.user, 
+                    'business_trips.request.create_for_employee'
+                )
+                
+                # If has permission, allow
+                if has_create_for_employee_perm:
+                    pass
+                else:
+                    # If no permission, check if creating for their own team member
+                    employee_id = data.get('employee_id')
+                    
+                    if employee_id:
+                        try:
+                            target_employee = Employee.objects.get(
+                                id=employee_id, 
+                                is_deleted=False
+                            )
+                            
+                            # ✅ Check if requester is Line Manager of target employee
+                            if target_employee.line_manager != requester_emp:
+                                return Response({
+                                    'error': 'İcazə yoxdur',
+                                    'detail': 'Bu işçi sizin komandanızda deyil və icazəniz yoxdur',
+                                    'required_permission': 'business_trips.request.create_for_employee',
+                                    'alternative': 'Yalnız öz komanda üzvləriniz üçün ərizə yarada bilərsiniz'
+                                }, status=status.HTTP_403_FORBIDDEN)
+                            
+                            # ✅ Line Manager kimi icazəlidir
+                            logger.info(f"✅ {requester_emp.full_name} is Line Manager of {target_employee.full_name}")
+                        
+                        except Employee.DoesNotExist:
+                            return Response({
+                                'error': 'İşçi tapılmadı'
+                            }, status=status.HTTP_404_NOT_FOUND)
+                    
+                    else:
+                        # Manual employee yaradılır - permission lazımdır
+                        return Response({
+                            'error': 'İcazə yoxdur',
+                            'detail': 'Manual işçi üçün ərizə yaratmaq icazəniz yoxdur',
+                            'required_permission': 'business_trips.request.create_for_employee'
+                        }, status=status.HTTP_403_FORBIDDEN)
+        
+        else:
+            return Response({
+                'error': 'Invalid requester_type. Must be for_me or for_my_employee'
+            }, status=status.HTTP_400_BAD_REQUEST)
         
         # Get uploaded files
         uploaded_files = request.FILES.getlist('files')
@@ -651,19 +737,12 @@ def create_trip_request(request):
         
         validated_data = serializer.validated_data
         
-        # Get requester employee
-        requester_emp = Employee.objects.get(user=request.user, is_deleted=False)
-        
         # Determine employee
         if validated_data['requester_type'] == 'for_me':
             employee = requester_emp
         else:
             if validated_data.get('employee_id'):
                 employee = Employee.objects.get(id=validated_data['employee_id'])
-                if employee.line_manager != requester_emp:
-                    return Response({
-                        'error': 'This employee is not in your team'
-                    }, status=status.HTTP_403_FORBIDDEN)
             else:
                 manual_data = validated_data.get('employee_manual', {})
                 if not manual_data.get('name'):
@@ -731,8 +810,6 @@ def create_trip_request(request):
                         })
                         continue
                     
-               
-                    
                     # Create attachment
                     attachment = TripAttachment.objects.create(
                         trip_request=trip_req,
@@ -740,7 +817,6 @@ def create_trip_request(request):
                         original_filename=file.name,
                         file_size=file.size,
                         file_type=file.content_type,
-             
                         uploaded_by=request.user
                     )
                     uploaded_attachments.append(attachment)

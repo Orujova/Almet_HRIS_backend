@@ -127,9 +127,6 @@ router.register(r'job-description/company-benefits', CompanyBenefitViewSet, base
 router.register(r'job-description/stats', JobDescriptionStatsViewSet, basename='jobdescriptionstats')
 
 
-# ==================== ASSET MANAGEMENT ====================
-router.register(r'assets/categories', AssetCategoryViewSet, basename='assetcategory')
-router.register(r'assets/assets', AssetViewSet, basename='asset')
 
 
 # ==================== COMPETENCY ASSESSMENTS ====================
@@ -180,7 +177,8 @@ urlpatterns = [
          AssetViewSet.as_view({'post': 'export_assets'}), 
          name='asset-export'),
     
-     path('handovers/', include('api.handover_urls')),
+    path('handovers/', include('api.handover_urls')),
+    path('assets/', include('api.asset_urls')),
     path('trainings/', include('api.training_urls')),
     path('vacation/', include('api.vacation_urls')),
     path('business-trips/', include('api.business_trip_urls')),
