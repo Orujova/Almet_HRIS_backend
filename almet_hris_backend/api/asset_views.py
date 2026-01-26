@@ -1107,13 +1107,20 @@ class AssetViewSet(viewsets.ModelViewSet):
 # ============================================
 # OFFBOARDING VIEWSET
 # ============================================
+# api/asset_views.py - OFFBOARDING & TRANSFER UPDATES
+
+# ============================================
+# OFFBOARDING VIEWSET - UPDATED
+# ============================================
 class EmployeeOffboardingViewSet(viewsets.ModelViewSet):
     """
     🎯 Employee Offboarding
-    İşdən çıxan işçinin asset-lərinin transferi
+    İşdən çıxan işçinin asset-lərinin transferi və ya IT-yə qaytarılması
     """
     
-    queryset = EmployeeOffboarding.objects.select_related('employee', 'created_by', 'approved_by').all()
+    queryset = EmployeeOffboarding.objects.select_related(
+        'employee', 'created_by', 'approved_by', 'it_handover_completed_by'
+    ).all()
     serializer_class = EmployeeOffboardingSerializer
     permission_classes = [IsAuthenticated]
     ordering = ['-created_at']
@@ -1137,6 +1144,10 @@ class EmployeeOffboardingViewSet(viewsets.ModelViewSet):
             properties={
                 'employee_id': openapi.Schema(type=openapi.TYPE_INTEGER),
                 'last_working_day': openapi.Schema(type=openapi.TYPE_STRING, format='date'),
+                'offboarding_type': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    enum=['TRANSFER', 'RETURN']
+                ),
                 'notes': openapi.Schema(type=openapi.TYPE_STRING)
             }
         )
@@ -1148,35 +1159,221 @@ class EmployeeOffboardingViewSet(viewsets.ModelViewSet):
         try:
             employee_id = request.data.get('employee_id')
             last_working_day = request.data.get('last_working_day')
+            offboarding_type = request.data.get('offboarding_type', 'RETURN')
             
             employee = Employee.objects.get(id=employee_id, is_deleted=False)
             
             # Count assets
-            assets = Asset.objects.filter(assigned_to=employee, status__in=['ASSIGNED', 'IN_USE'])
+            assets = Asset.objects.filter(
+                assigned_to=employee, 
+                status__in=['ASSIGNED', 'IN_USE']
+            )
             total_assets = assets.count()
             
             offboarding = EmployeeOffboarding.objects.create(
                 employee=employee,
                 last_working_day=last_working_day,
+                offboarding_type=offboarding_type,
                 total_assets=total_assets,
                 notes=request.data.get('notes', ''),
                 created_by=request.user
             )
             
-            logger.info(f"✅ Offboarding başladıldı: {employee.full_name} - {total_assets} asset")
+            # 📧 Send email to IT based on type
+            self._send_it_offboarding_notification(offboarding, assets)
+            
+            logger.info(
+                f"✅ Offboarding started: {employee.full_name} - "
+                f"{total_assets} assets - Type: {offboarding_type}"
+            )
             
             return Response({
                 'success': True,
                 'offboarding_id': offboarding.id,
                 'employee': employee.full_name,
-                'total_assets': total_assets
+                'total_assets': total_assets,
+                'offboarding_type': offboarding_type
             })
             
         except Employee.DoesNotExist:
-            return Response({'error': 'İşçi tapılmadı'}, status=status.HTTP_404_NOT_FOUND)
+            return Response(
+                {'error': 'Employee not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
         except Exception as e:
-            logger.error(f"❌ Offboarding xətası: {str(e)}")
-            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            logger.error(f"❌ Offboarding error: {str(e)}")
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    def _send_it_offboarding_notification(self, offboarding, assets):
+        """
+        📧 Send email to IT department about offboarding
+        """
+        try:
+            # Get IT team emails
+            from .role_models import EmployeeRole
+            it_roles = EmployeeRole.objects.filter(
+                role__name__icontains='IT',
+                role__is_active=True,
+                is_active=True
+            ).select_related('employee', 'employee__user')
+            
+            it_emails = []
+            for role in it_roles:
+                if role.employee.user and role.employee.user.email:
+                    it_emails.append(role.employee.user.email)
+            
+            if not it_emails:
+                logger.warning("⚠️ No IT emails found for offboarding notification")
+                return
+            
+            # Generate asset list
+            asset_list_html = '<ul>'
+            for asset in assets:
+                asset_list_html += f'''
+                <li>
+                    <strong>{asset.asset_name}</strong><br>
+                    Serial: {asset.serial_number}<br>
+                    Asset #: {asset.asset_number}
+                </li>
+                '''
+            asset_list_html += '</ul>'
+            
+            # Generate handover link
+            handover_link = f"https://yourdomain.com/assets/offboarding/{offboarding.id}/complete"
+            
+            if offboarding.offboarding_type == 'TRANSFER':
+                # TRANSFER - Assets will be transferred
+                subject = f"Asset Transfer Required - {offboarding.employee.full_name} Offboarding"
+                html_body = f"""
+                <html>
+                <body style="font-family: Arial, sans-serif;">
+                    <h2 style="color: #2563eb;">Asset Transfer - Employee Offboarding</h2>
+                    
+                    <p><strong>Employee:</strong> {offboarding.employee.full_name} (ID: {offboarding.employee.employee_id})</p>
+                    <p><strong>Last Working Day:</strong> {offboarding.last_working_day.strftime('%B %d, %Y')}</p>
+                    <p><strong>Total Assets:</strong> {offboarding.total_assets}</p>
+                    
+                    <hr>
+                    
+                    <h3>Assets to be Transferred:</h3>
+                    {asset_list_html}
+                    
+                    <p style="background-color: #FEF3C7; padding: 15px; border-left: 4px solid #F59E0B;">
+                        <strong>⚠️ Action Required:</strong><br>
+                        These assets will be transferred to other employees. 
+                        Transfer requests will be created separately.
+                    </p>
+                    
+                    <p>Please coordinate with the employee to collect the assets before their last working day.</p>
+                    
+                    <hr>
+                    <p style="color: #6b7280; font-size: 12px;">
+                        This is an automated notification from HRIS Asset Management System
+                    </p>
+                </body>
+                </html>
+                """
+            
+            else:
+                # RETURN - Assets return to IT
+                subject = f"Asset Return Required - {offboarding.employee.full_name} Offboarding"
+                html_body = f"""
+                <html>
+                <body style="font-family: Arial, sans-serif;">
+                    <h2 style="color: #DC2626;">Asset Return - Employee Offboarding</h2>
+                    
+                    <p><strong>Employee:</strong> {offboarding.employee.full_name} (ID: {offboarding.employee.employee_id})</p>
+                    <p><strong>Last Working Day:</strong> {offboarding.last_working_day.strftime('%B %d, %Y')}</p>
+                    <p><strong>Total Assets:</strong> {offboarding.total_assets}</p>
+                    
+                    <hr>
+                    
+                    <h3>Assets to Return:</h3>
+                    {asset_list_html}
+                    
+                    <p style="background-color: #FEE2E2; padding: 15px; border-left: 4px solid #DC2626;">
+                        <strong>🚨 Action Required:</strong><br>
+                        Please collect all assets from this employee before their last working day.
+                    </p>
+                    
+                    <h3>After Collecting Assets:</h3>
+                    <ol>
+                        <li>Verify all assets are received</li>
+                        <li>Check asset conditions</li>
+                        <li>Complete handover in system:
+                            <br><br>
+                            <a href="{handover_link}" 
+                               style="background-color: #2563eb; color: white; padding: 12px 24px; 
+                                      text-decoration: none; border-radius: 6px; display: inline-block;">
+                                Complete Handover ✓
+                            </a>
+                        </li>
+                    </ol>
+                    
+                    <hr>
+                    <p style="color: #6b7280; font-size: 12px;">
+                        This is an automated notification from HRIS Asset Management System
+                    </p>
+                </body>
+                </html>
+                """
+            
+            # Send email
+            system_email_service.send_email_as_system(
+                from_email='myalmet@almettrading.com',
+                to_email=it_emails,
+                subject=subject,
+                body_html=html_body
+            )
+            
+            logger.info(f"✅ IT offboarding email sent - Type: {offboarding.offboarding_type}")
+            
+        except Exception as e:
+            logger.error(f"❌ IT offboarding email error: {str(e)}")
+    
+    @action(detail=True, methods=['post'], url_path='complete-handover')
+    @require_asset_permission('complete_handover')
+    def complete_handover(self, request, pk=None):
+        """
+        ✅ IT confirms asset handover completed
+        """
+        try:
+            offboarding = self.get_object()
+            
+            if offboarding.it_handover_completed:
+                return Response(
+                    {'error': 'Handover already completed'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            offboarding.it_handover_completed = True
+            offboarding.it_handover_completed_at = timezone.now()
+            offboarding.it_handover_completed_by = request.user
+            offboarding.status = 'COMPLETED'
+            offboarding.completed_at = timezone.now()
+            offboarding.save()
+            
+            logger.info(
+                f"✅ Handover completed: {offboarding.employee.full_name} by "
+                f"{request.user.get_full_name()}"
+            )
+            
+            return Response({
+                'success': True,
+                'message': 'Asset handover completed successfully',
+                'completed_by': request.user.get_full_name(),
+                'completed_at': offboarding.it_handover_completed_at
+            })
+            
+        except Exception as e:
+            logger.error(f"❌ Complete handover error: {str(e)}")
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
     
     @action(detail=True, methods=['get'])
     def assets(self, request, pk=None):
@@ -1189,17 +1386,21 @@ class EmployeeOffboardingViewSet(viewsets.ModelViewSet):
         
         return Response({
             'employee': offboarding.employee.full_name,
+            'offboarding_type': offboarding.offboarding_type,
             'total_assets': assets.count(),
+            'it_handover_completed': offboarding.it_handover_completed,
             'assets': AssetListSerializer(assets, many=True, context={'request': request}).data
         })
 
 
 # ============================================
-# TRANSFER REQUEST VIEWSET
+# TRANSFER REQUEST VIEWSET - UPDATED
 # ============================================
 class AssetTransferRequestViewSet(viewsets.ModelViewSet):
     """
     🎯 Asset Transfer Requests (Offboarding)
+    Only Admin/IT can create transfers
+    Employee must approve transfer
     """
     
     queryset = AssetTransferRequest.objects.select_related(
@@ -1214,8 +1415,11 @@ class AssetTransferRequestViewSet(viewsets.ModelViewSet):
         request_body=AssetTransferRequestCreateSerializer
     )
     @action(detail=False, methods=['post'], url_path='create')
+    @require_asset_permission('create_transfer')  # 🔐 Admin/IT only
     def create_transfer(self, request):
-        """Transfer sorğusu yarat"""
+        """
+        🎯 Transfer sorğusu yarat (Admin/IT only)
+        """
         try:
             serializer = AssetTransferRequestCreateSerializer(data=request.data)
             serializer.is_valid(raise_exception=True)
@@ -1227,9 +1431,10 @@ class AssetTransferRequestViewSet(viewsets.ModelViewSet):
             # Get or create offboarding
             offboarding, _ = EmployeeOffboarding.objects.get_or_create(
                 employee=from_employee,
-                status='IN_PROGRESS',
+                status__in=['PENDING', 'IN_PROGRESS'],
                 defaults={
                     'last_working_day': timezone.now().date(),
+                    'offboarding_type': 'TRANSFER',
                     'total_assets': Asset.objects.filter(assigned_to=from_employee).count(),
                     'created_by': request.user
                 }
@@ -1244,98 +1449,190 @@ class AssetTransferRequestViewSet(viewsets.ModelViewSet):
                 requested_by=request.user
             )
             
-            # Send notification
-            self._send_transfer_notification(transfer)
+            # 📧 Send notification emails
+            self._send_transfer_notifications(transfer)
             
-            logger.info(f"✅ Transfer sorğusu: {asset.asset_number} → {to_employee.full_name}")
+            logger.info(
+                f"✅ Transfer request created: {asset.asset_number} → "
+                f"{to_employee.full_name} by {request.user.get_full_name()}"
+            )
             
             return Response({
                 'success': True,
                 'transfer_id': transfer.id,
-                'message': f'Transfer sorğusu yaradıldı'
+                'message': 'Transfer request created successfully'
             })
             
         except Exception as e:
-            logger.error(f"❌ Transfer sorğusu xətası: {str(e)}")
-            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-    
-    def _send_transfer_notification(self, transfer):
-        """Send transfer notification email to involved employees (EN)"""
-        try:
-            from_employee_email = 'n.nanda@almettrading.co.uk'
-            to_employee_email = 'y.yurdum@almettrading.co.uk'
-    
-            emails = list(filter(None, [from_employee_email, to_employee_email]))
-    
-            if not emails:
-                logger.warning("⚠️ Transfer email recipients not found")
-                return
-    
-            html_body = f"""
-            <html>
-            <body>
-                <h2>Asset Transfer Request</h2>
-                <p>An asset transfer has been initiated with the following details:</p>
-    
-                <ul>
-                    <li><strong>Asset:</strong> {transfer.asset.asset_name} ({transfer.asset.serial_number})</li>
-                    <li><strong>From:</strong> {transfer.from_employee.full_name}</li>
-                    <li><strong>To:</strong> {transfer.to_employee.full_name}</li>
-                    <li><strong>Requested by:</strong> {transfer.requested_by.get_full_name()}</li>
-                    <li><strong>Reason:</strong> Offboarding</li>
-                </ul>
-    
-                <p>The transfer is currently pending approval.</p>
-                <p>You will be notified once the transfer is approved or rejected.</p>
-    
-                <br>
-                <p>Best regards,<br>
-                HRIS System</p>
-            </body>
-            </html>
-            """
-    
-            system_email_service.send_email_as_system(
-                from_email='myalmet@almettrading.com',
-                to_email=emails,
-                subject='Asset Transfer Request Notification',
-                body_html=html_body
+            logger.error(f"❌ Transfer request error: {str(e)}")
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
     
-            logger.info("✅ Transfer notification email sent to employees")
-    
+    def _send_transfer_notifications(self, transfer):
+        """
+        📧 Send transfer notifications:
+        1. To employee (must approve)
+        2. From employee (informational)
+        """
+        try:
+            to_employee_email = transfer.to_employee.user.email if transfer.to_employee.user else None
+            from_employee_email = transfer.from_employee.user.email if transfer.from_employee.user else None
+            
+            # 📧 Email to NEW employee (must approve)
+            if to_employee_email:
+                approve_link = f"https://yourdomain.com/assets/transfers/{transfer.id}/approve"
+                
+                html_body_to = f"""
+                <html>
+                <body style="font-family: Arial, sans-serif;">
+                    <h2 style="color: #2563eb;">Asset Transfer - Your Approval Required</h2>
+                    
+                    <p>Dear {transfer.to_employee.full_name},</p>
+                    
+                    <p>An asset has been assigned to you as part of an employee offboarding process:</p>
+                    
+                    <div style="background-color: #F3F4F6; padding: 20px; border-radius: 8px; margin: 20px 0;">
+                        <p><strong>Asset Details:</strong></p>
+                        <ul>
+                            <li><strong>Asset:</strong> {transfer.asset.asset_name}</li>
+                            <li><strong>Serial Number:</strong> {transfer.asset.serial_number}</li>
+                            <li><strong>Asset Number:</strong> {transfer.asset.asset_number}</li>
+                            <li><strong>Previous User:</strong> {transfer.from_employee.full_name}</li>
+                            <li><strong>Requested by:</strong> {transfer.requested_by.get_full_name()}</li>
+                        </ul>
+                    </div>
+                    
+                    <p style="background-color: #DBEAFE; padding: 15px; border-left: 4px solid #2563eb;">
+                        <strong>⚠️ Action Required:</strong><br>
+                        Please confirm that you accept this asset transfer.
+                    </p>
+                    
+                    <p style="text-align: center; margin: 30px 0;">
+                        <a href="{approve_link}" 
+                           style="background-color: #10B981; color: white; padding: 14px 28px; 
+                                  text-decoration: none; border-radius: 6px; display: inline-block; 
+                                  font-weight: bold;">
+                            Approve Transfer ✓
+                        </a>
+                    </p>
+                    
+                    {f"<p><strong>Notes:</strong> {transfer.transfer_notes}</p>" if transfer.transfer_notes else ""}
+                    
+                    <p>If you have any questions, please contact IT department.</p>
+                    
+                    <hr>
+                    <p style="color: #6b7280; font-size: 12px;">
+                        This is an automated notification from HRIS Asset Management System
+                    </p>
+                </body>
+                </html>
+                """
+                
+                system_email_service.send_email_as_system(
+                    from_email='myalmet@almettrading.com',
+                    to_email=to_employee_email,
+                    subject=f'Asset Transfer Approval Required - {transfer.asset.asset_name}',
+                    body_html=html_body_to
+                )
+                
+                logger.info(f"✅ Transfer approval email sent to {transfer.to_employee.full_name}")
+            
+            # 📧 Email to OLD employee (informational)
+            if from_employee_email:
+                html_body_from = f"""
+                <html>
+                <body style="font-family: Arial, sans-serif;">
+                    <h2 style="color: #6B7280;">Asset Transfer Notification</h2>
+                    
+                    <p>Dear {transfer.from_employee.full_name},</p>
+                    
+                    <p>As part of your offboarding process, one of your assigned assets is being transferred:</p>
+                    
+                    <div style="background-color: #F3F4F6; padding: 20px; border-radius: 8px; margin: 20px 0;">
+                        <p><strong>Asset Details:</strong></p>
+                        <ul>
+                            <li><strong>Asset:</strong> {transfer.asset.asset_name}</li>
+                            <li><strong>Serial Number:</strong> {transfer.asset.serial_number}</li>
+                            <li><strong>Asset Number:</strong> {transfer.asset.asset_number}</li>
+                            <li><strong>Transferring to:</strong> {transfer.to_employee.full_name}</li>
+                        </ul>
+                    </div>
+                    
+                    <p>IT department will contact you to coordinate the asset handover.</p>
+                    
+                    {f"<p><strong>Notes:</strong> {transfer.transfer_notes}</p>" if transfer.transfer_notes else ""}
+                    
+                    <hr>
+                    <p style="color: #6b7280; font-size: 12px;">
+                        This is an automated notification from HRIS Asset Management System
+                    </p>
+                </body>
+                </html>
+                """
+                
+                system_email_service.send_email_as_system(
+                    from_email='myalmet@almettrading.com',
+                    to_email=from_employee_email,
+                    subject=f'Asset Transfer - {transfer.asset.asset_name}',
+                    body_html=html_body_from
+                )
+                
+                logger.info(f"✅ Transfer notification email sent to {transfer.from_employee.full_name}")
+            
         except Exception as e:
-            logger.error(f"❌ Transfer email error: {str(e)}")
-
+            logger.error(f"❌ Transfer notification error: {str(e)}")
+    
     @swagger_auto_schema(
         method='post',
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
             properties={
                 'approved': openapi.Schema(type=openapi.TYPE_BOOLEAN),
-                'rejection_reason': openapi.Schema(type=openapi.TYPE_STRING)
+                'comments': openapi.Schema(type=openapi.TYPE_STRING)
             }
         )
     )
-    @action(detail=True, methods=['post'], url_path='approve')
-    @require_asset_permission('approve')
-    def approve_transfer(self, request, pk=None):
-        """Transfer-i təsdiq və ya rədd et"""
+    @action(detail=True, methods=['post'], url_path='employee-approve')
+    def employee_approve_transfer(self, request, pk=None):
+        """
+        ✅ Employee approves incoming transfer
+        """
         try:
             transfer = self.get_object()
             approved = request.data.get('approved', False)
+            comments = request.data.get('comments', '')
+            
+            # Check if user is the to_employee
+            access = get_asset_access_level(request.user)
+            if not access['employee'] or access['employee'].id != transfer.to_employee.id:
+                return Response(
+                    {'error': 'You can only approve transfers assigned to you'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            
+            if transfer.status != 'PENDING':
+                return Response(
+                    {'error': f'Transfer cannot be approved. Status: {transfer.get_status_display()}'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
             
             if approved:
+                # ✅ Approve and complete transfer
                 with transaction.atomic():
                     asset = transfer.asset
                     old_employee = transfer.from_employee
                     new_employee = transfer.to_employee
                     
                     # Check in from old employee
-                    active_assignment = asset.assignments.filter(check_in_date__isnull=True).first()
+                    active_assignment = asset.assignments.filter(
+                        check_in_date__isnull=True
+                    ).first()
                     if active_assignment:
                         active_assignment.check_in_date = timezone.now().date()
                         active_assignment.checked_in_by = request.user
+                        active_assignment.check_in_notes = f"Transfer to {new_employee.full_name}"
                         active_assignment.save()
                     
                     # Create new assignment
@@ -1343,20 +1640,20 @@ class AssetTransferRequestViewSet(viewsets.ModelViewSet):
                         asset=asset,
                         employee=new_employee,
                         check_out_date=timezone.now().date(),
-                        assigned_by=request.user,
-                        check_out_notes=f'Transfer: {old_employee.full_name} → {new_employee.full_name}'
+                        assigned_by=transfer.requested_by,
+                        check_out_notes=f'Transfer from {old_employee.full_name}'
                     )
                     
                     # Update asset
                     asset.assigned_to = new_employee
-                    asset.status = 'ASSIGNED'
+                    asset.status = 'IN_USE'  # Directly IN_USE (already approved)
                     asset.updated_by = request.user
                     asset.save()
                     
                     # Update transfer
                     transfer.status = 'COMPLETED'
-                    transfer.approved_by = request.user
-                    transfer.approved_at = timezone.now()
+                    transfer.employee_approved = True
+                    transfer.employee_approved_at = timezone.now()
                     transfer.completed_at = timezone.now()
                     transfer.save()
                     
@@ -1368,36 +1665,63 @@ class AssetTransferRequestViewSet(viewsets.ModelViewSet):
                     AssetActivity.objects.create(
                         asset=asset,
                         activity_type='TRANSFERRED',
-                        description=f'Transfer: {old_employee.full_name} → {new_employee.full_name}',
+                        description=f'Transfer completed: {old_employee.full_name} → {new_employee.full_name}',
                         performed_by=request.user,
                         metadata={
                             'from_employee': old_employee.full_name,
                             'to_employee': new_employee.full_name,
-                            'transfer_id': transfer.id
+                            'transfer_id': transfer.id,
+                            'comments': comments
                         }
                     )
                 
-                logger.info(f"✅ Transfer təsdiqləndi: {asset.asset_number}")
+                logger.info(f"✅ Transfer approved: {asset.asset_number} by {new_employee.full_name}")
                 
                 return Response({
                     'success': True,
-                    'message': 'Transfer təsdiqləndi və tamamlandı'
+                    'message': 'Transfer approved and completed successfully'
                 })
+            
             else:
-                # Reject
+                # ❌ Reject transfer
                 transfer.status = 'REJECTED'
-                transfer.rejection_reason = request.data.get('rejection_reason', '')
-                transfer.approved_by = request.user
-                transfer.approved_at = timezone.now()
+                transfer.rejection_reason = comments or 'Rejected by employee'
                 transfer.save()
                 
-                logger.info(f"✅ Transfer rədd edildi: {transfer.asset.asset_number}")
+                logger.info(f"❌ Transfer rejected: {transfer.asset.asset_number} by {transfer.to_employee.full_name}")
                 
                 return Response({
                     'success': True,
-                    'message': 'Transfer rədd edildi'
+                    'message': 'Transfer rejected'
                 })
             
         except Exception as e:
-            logger.error(f"❌ Approve transfer xətası: {str(e)}")
-            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            logger.error(f"❌ Employee approve transfer error: {str(e)}")
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    @action(detail=False, methods=['get'], url_path='my-pending')
+    def my_pending_transfers(self, request):
+        """
+        Get transfers pending my approval
+        """
+        access = get_asset_access_level(request.user)
+        
+        if not access['employee']:
+            return Response({'transfers': []})
+        
+        transfers = AssetTransferRequest.objects.filter(
+            to_employee=access['employee'],
+            status='PENDING'
+        ).select_related('asset', 'from_employee', 'requested_by')
+        
+        return Response({
+            'count': transfers.count(),
+            'transfers': AssetTransferRequestSerializer(
+                transfers, 
+                many=True, 
+                context={'request': request}
+            ).data
+        })

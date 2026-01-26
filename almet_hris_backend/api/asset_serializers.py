@@ -665,14 +665,25 @@ class EmployeeOffboardingSerializer(serializers.ModelSerializer):
     employee_detail = AssetEmployeeBasicSerializer(source='employee', read_only=True)
     created_by_detail = AssetUserBasicSerializer(source='created_by', read_only=True)
     approved_by_detail = AssetUserBasicSerializer(source='approved_by', read_only=True)
+    it_handover_completed_by_detail = AssetUserBasicSerializer(
+        source='it_handover_completed_by', 
+        read_only=True
+    )
     progress_percentage = serializers.SerializerMethodField()
+    offboarding_type_display = serializers.CharField(
+        source='get_offboarding_type_display', 
+        read_only=True
+    )
     
     class Meta:
         model = EmployeeOffboarding
         fields = [
             'id', 'employee', 'employee_detail', 'last_working_day',
+            'offboarding_type', 'offboarding_type_display',
             'total_assets', 'assets_transferred', 'assets_returned',
             'progress_percentage', 'status',
+            'it_handover_completed', 'it_handover_completed_at', 
+            'it_handover_completed_by_detail',
             'approved_by_detail', 'approved_at', 'notes',
             'created_by_detail', 'created_at', 'completed_at'
         ]
@@ -681,7 +692,13 @@ class EmployeeOffboardingSerializer(serializers.ModelSerializer):
     def get_progress_percentage(self, obj):
         if obj.total_assets == 0:
             return 100
-        completed = obj.assets_transferred + obj.assets_returned
+        
+        if obj.offboarding_type == 'TRANSFER':
+            completed = obj.assets_transferred
+        else:
+            # RETURN - use it_handover_completed
+            return 100 if obj.it_handover_completed else 0
+        
         return round((completed / obj.total_assets) * 100, 1)
 
 
@@ -692,6 +709,7 @@ class AssetTransferRequestSerializer(serializers.ModelSerializer):
     asset_detail = serializers.SerializerMethodField()
     requested_by_detail = AssetUserBasicSerializer(source='requested_by', read_only=True)
     approved_by_detail = AssetUserBasicSerializer(source='approved_by', read_only=True)
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
     
     class Meta:
         model = AssetTransferRequest
@@ -699,7 +717,9 @@ class AssetTransferRequestSerializer(serializers.ModelSerializer):
             'id', 'offboarding', 'asset', 'asset_detail',
             'from_employee', 'from_employee_detail',
             'to_employee', 'to_employee_detail',
-            'status', 'requested_by_detail', 'requested_at',
+            'status', 'status_display',
+            'employee_approved', 'employee_approved_at',
+            'requested_by_detail', 'requested_at',
             'approved_by_detail', 'approved_at',
             'rejection_reason', 'transfer_notes', 'completed_at'
         ]
@@ -707,9 +727,12 @@ class AssetTransferRequestSerializer(serializers.ModelSerializer):
     
     def get_asset_detail(self, obj):
         return {
+            'id': str(obj.asset.id),
             'asset_number': obj.asset.asset_number,
             'asset_name': obj.asset.asset_name,
-            'serial_number': obj.asset.serial_number
+            'serial_number': obj.asset.serial_number,
+            'status': obj.asset.status,
+            'status_display': obj.asset.get_status_display()
         }
 
 

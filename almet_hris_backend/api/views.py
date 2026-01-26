@@ -49,7 +49,7 @@ from .serializers import (
     BulkLineManagerAssignmentSerializer,VacancyToEmployeeConversionSerializer,EmployeeJobDescriptionSerializer,ManagerJobDescriptionSerializer
 )
 # Add these imports at the top of views.py
-from .asset_models import Asset, AssetAssignment, AssetActivity, EmployeeOffboarding, AssetTransferRequest
+from .asset_models import Asset, AssetActivity
 from .asset_serializers import (
     AssetAcceptanceSerializer, AssetClarificationRequestSerializer,
     AssetCancellationSerializer, AssetClarificationProvisionSerializer
@@ -2892,13 +2892,12 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         )
         
         return Response(status=status.HTTP_204_NO_CONTENT)
-    
-    
-    # Add to EmployeeViewSet class
+
+    # views.py - EmployeeViewSet ASSET ENDPOINTS UPDATE
 
     @swagger_auto_schema(
         method='get',
-        operation_description="Get employee's assigned assets",
+        operation_description="Get employee's assigned assets with detailed status and clarification info",
         responses={
             200: openapi.Response(
                 description="Assets retrieved successfully",
@@ -2907,9 +2906,8 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                     properties={
                         'employee': openapi.Schema(type=openapi.TYPE_OBJECT),
                         'assets': openapi.Schema(type=openapi.TYPE_ARRAY, items=openapi.Schema(type=openapi.TYPE_OBJECT)),
-                        'total_assets': openapi.Schema(type=openapi.TYPE_INTEGER),
-                        'pending_approval': openapi.Schema(type=openapi.TYPE_INTEGER),
-                        'in_use': openapi.Schema(type=openapi.TYPE_INTEGER),
+                        'summary': openapi.Schema(type=openapi.TYPE_OBJECT),
+                        'pending_actions': openapi.Schema(type=openapi.TYPE_ARRAY, items=openapi.Schema(type=openapi.TYPE_OBJECT)),
                     }
                 )
             ),
@@ -2920,7 +2918,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['get'], url_path='assets')
     def get_employee_assets(self, request, pk=None):
         """
-        ✅ Get employee's assigned assets with detailed status
+        ✅ UPDATED: Get employee's assigned assets with detailed status and clarification info
         
         Access Control:
         - Admin/IT: Can view any employee's assets
@@ -2931,6 +2929,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             employee = self.get_object()
             
             # Check access permissions
+            from .asset_permissions import get_asset_access_level
             access = get_asset_access_level(request.user)
             
             # Verify access
@@ -2944,20 +2943,22 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             
             if not can_view:
                 return Response(
-                    {'error': 'Access Denied', 'message': 'You do not have permission to view this employee\'s assets'},
+                    {
+                        'error': 'Access Denied',
+                        'message': 'You do not have permission to view this employee\'s assets'
+                    },
                     status=status.HTTP_403_FORBIDDEN
                 )
             
             # Get assets
+            from .asset_models import Asset
             assets = Asset.objects.filter(assigned_to=employee).select_related(
                 'batch', 'category', 'batch__category'
-            ).order_by('-updated_at')
+            ).prefetch_related('assignments').order_by('-updated_at')
             
             # Categorize by status
             asset_data = []
-            pending_approval = 0
-            in_use = 0
-            need_clarification = 0
+            pending_actions = []
             
             for asset in assets:
                 # Get current assignment
@@ -2968,39 +2969,84 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                     'asset_number': asset.asset_number,
                     'asset_name': asset.asset_name,
                     'serial_number': asset.serial_number,
-                    'category': asset.category.name,
-                    'batch_number': asset.batch.batch_number,
+                    'category': asset.category.name if asset.category else None,
+                    'batch_number': asset.batch.batch_number if asset.batch else None,
+                    'batch_info': {
+                        'id': asset.batch.id if asset.batch else None,
+                        'batch_number': asset.batch.batch_number if asset.batch else None,
+                        'purchase_date': asset.batch.purchase_date if asset.batch else None,
+                        'unit_price': float(asset.batch.unit_price) if asset.batch else None,
+                    } if asset.batch else None,
                     'status': asset.status,
                     'status_display': asset.get_status_display(),
-                    'status_color': self._get_asset_status_color(asset.status),
+                    
+                    # ✅ Action permissions
                     'can_accept': asset.can_be_approved(),
                     'can_request_clarification': asset.can_request_clarification(),
-                    'can_cancel': asset.status in ['ASSIGNED', 'NEED_CLARIFICATION'],
+                    'can_cancel': asset.status in ['ASSIGNED', 'NEED_CLARIFICATION'] and access['can_manage_all_assets'],
+                    
+                    # Assignment details
                     'assignment': {
                         'check_out_date': current_assignment.check_out_date.isoformat() if current_assignment else None,
                         'check_out_notes': current_assignment.check_out_notes if current_assignment else None,
                         'condition': current_assignment.condition_on_checkout if current_assignment else None,
                         'days_assigned': current_assignment.get_duration_days() if current_assignment else 0,
-                        'assigned_by': current_assignment.assigned_by.get_full_name() if current_assignment and current_assignment.assigned_by else None
+                        'assigned_by': (
+                            current_assignment.assigned_by.get_full_name() 
+                            if current_assignment and current_assignment.assigned_by else None
+                        )
                     } if current_assignment else None,
-                    'clarification': {
-                        'requested': bool(asset.clarification_requested_reason),
-                        'reason': asset.clarification_requested_reason,
-                        'response': asset.clarification_response,
-                        'requested_at': asset.clarification_requested_at.isoformat() if asset.clarification_requested_at else None,
-                        'provided_at': asset.clarification_provided_at.isoformat() if asset.clarification_provided_at else None
-                    } if asset.status == 'NEED_CLARIFICATION' else None
+                    
+                    # ✅ Clarification info
+                    'clarification': self._get_asset_clarification_detail(asset)
                 }
                 
                 asset_data.append(asset_info)
                 
-                # Count by status
+                # Build pending actions list
                 if asset.status == 'ASSIGNED':
-                    pending_approval += 1
-                elif asset.status == 'IN_USE':
-                    in_use += 1
-                elif asset.status == 'NEED_CLARIFICATION':
-                    need_clarification += 1
+                    pending_actions.append({
+                        'asset_id': str(asset.id),
+                        'asset_name': asset.asset_name,
+                        'action_type': 'ACCEPT',
+                        'description': 'Approve this asset assignment',
+                        'priority': 'high',
+                        'days_waiting': current_assignment.get_duration_days() if current_assignment else 0
+                    })
+                elif asset.status == 'NEED_CLARIFICATION' and not asset.clarification_response:
+                    pending_actions.append({
+                        'asset_id': str(asset.id),
+                        'asset_name': asset.asset_name,
+                        'action_type': 'CLARIFICATION_PENDING',
+                        'description': 'Waiting for clarification response',
+                        'priority': 'medium',
+                        'requested_reason': asset.clarification_requested_reason
+                    })
+            
+            # Summary by status
+            summary = {
+                'total_assets': assets.count(),
+                'by_status': {},
+                'by_category': {},
+                'pending_actions_count': len(pending_actions)
+            }
+            
+            # Count by status
+            for status_choice in Asset.STATUS_CHOICES:
+                status_code = status_choice[0]
+                count = assets.filter(status=status_code).count()
+                if count > 0:
+                    summary['by_status'][status_code] = {
+                        'label': status_choice[1],
+                        'count': count
+                    }
+            
+            # Count by category
+            from django.db.models import Count
+            category_counts = assets.values('category__name').annotate(count=Count('id'))
+            for cat in category_counts:
+                if cat['category__name']:
+                    summary['by_category'][cat['category__name']] = cat['count']
             
             return Response({
                 'employee': {
@@ -3011,12 +3057,8 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                     'department': employee.department.name if employee.department else None
                 },
                 'assets': asset_data,
-                'summary': {
-                    'total_assets': assets.count(),
-                    'pending_approval': pending_approval,
-                    'in_use': in_use,
-                    'need_clarification': need_clarification
-                },
+                'summary': summary,
+                'pending_actions': pending_actions,
                 'access_info': {
                     'can_accept': employee.user and employee.user.id == request.user.id,
                     'can_manage': access['can_manage_all_assets'],
@@ -3032,10 +3074,52 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
     
+    def _get_asset_clarification_detail(self, asset):
+        """Get detailed clarification information"""
+        if asset.status == 'NEED_CLARIFICATION' or (
+            hasattr(asset, 'clarification_requested_reason') and asset.clarification_requested_reason
+        ):
+            return {
+                'has_clarification': True,
+                'requested': {
+                    'reason': asset.clarification_requested_reason,
+                    'requested_at': asset.clarification_requested_at.isoformat() if asset.clarification_requested_at else None,
+                    'requested_by': (
+                        asset.clarification_requested_by.get_full_name() 
+                        if asset.clarification_requested_by else None
+                    )
+                },
+                'response': {
+                    'text': asset.clarification_response,
+                    'provided_at': asset.clarification_provided_at.isoformat() if asset.clarification_provided_at else None,
+                    'provided_by': (
+                        asset.clarification_provided_by.get_full_name() 
+                        if asset.clarification_provided_by else None
+                    )
+                } if asset.clarification_response else None,
+                'status': 'pending' if not asset.clarification_response else 'resolved',
+                'is_pending': not bool(asset.clarification_response)
+            }
+        return None
+    
     @swagger_auto_schema(
         method='post',
         operation_description="Accept assigned asset (Employee approval)",
-        request_body=AssetAcceptanceSerializer,
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['asset_id'],
+            properties={
+                'asset_id': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    format='uuid',
+                    description='Asset ID to accept'
+                ),
+                'comments': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description='Optional acceptance comments'
+                )
+            }
+        ),
         responses={
             200: openapi.Response(
                 description="Asset accepted successfully",
@@ -3044,26 +3128,18 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                     properties={
                         'success': openapi.Schema(type=openapi.TYPE_BOOLEAN),
                         'message': openapi.Schema(type=openapi.TYPE_STRING),
-                        'asset': openapi.Schema(
-                            type=openapi.TYPE_OBJECT,
-                            properties={
-                                'id': openapi.Schema(type=openapi.TYPE_STRING),
-                                'name': openapi.Schema(type=openapi.TYPE_STRING),
-                                'serial_number': openapi.Schema(type=openapi.TYPE_STRING),
-                                'status': openapi.Schema(type=openapi.TYPE_STRING),
-                                'status_display': openapi.Schema(type=openapi.TYPE_STRING)
-                            }
-                        )
+                        'asset': openapi.Schema(type=openapi.TYPE_OBJECT)
                     }
                 )
             ),
-            400: "Bad request", 
+            400: "Bad request",
+            403: "Access denied",
             404: "Asset not found"
         }
     )
     @action(detail=True, methods=['post'], url_path='accept-asset')
     def accept_assigned_asset(self, request, pk=None):
-        """Employee accepts an assigned asset"""
+        """✅ Employee accepts an assigned asset"""
         try:
             employee = self.get_object()
             
@@ -3083,6 +3159,8 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_400_BAD_REQUEST
                 )
             
+            from .asset_models import Asset, AssetActivity
+            
             try:
                 asset = Asset.objects.get(id=asset_id, assigned_to=employee)
             except Asset.DoesNotExist:
@@ -3091,8 +3169,8 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_404_NOT_FOUND
                 )
             
-            # Check if asset is in correct status for approval
-            if asset.status != 'ASSIGNED':
+            # Check if asset can be approved
+            if not asset.can_be_approved():
                 return Response(
                     {'error': f'Asset cannot be accepted. Current status: {asset.get_status_display()}'},
                     status=status.HTTP_400_BAD_REQUEST
@@ -3101,6 +3179,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             with transaction.atomic():
                 # Update asset status from ASSIGNED to IN_USE
                 asset.status = 'IN_USE'
+                asset.updated_by = request.user
                 asset.save()
                 
                 # Log asset activity
@@ -3120,6 +3199,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 )
                 
                 # Log employee activity
+                from .models import EmployeeActivity
                 EmployeeActivity.objects.create(
                     employee=employee,
                     activity_type='ASSET_ACCEPTED',
@@ -3127,6 +3207,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                     performed_by=request.user,
                     metadata={
                         'asset_id': str(asset.id),
+                        'asset_number': asset.asset_number,
                         'asset_name': asset.asset_name,
                         'serial_number': asset.serial_number,
                         'comments': comments
@@ -3140,6 +3221,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 'message': f'Asset {asset.asset_name} accepted successfully',
                 'asset': {
                     'id': str(asset.id),
+                    'asset_number': asset.asset_number,
                     'name': asset.asset_name,
                     'serial_number': asset.serial_number,
                     'status': asset.status,
@@ -3158,33 +3240,28 @@ class EmployeeViewSet(viewsets.ModelViewSet):
     @swagger_auto_schema(
         method='post',
         operation_description="Request clarification for assigned asset",
-        request_body=AssetClarificationRequestSerializer,
-        responses={
-            200: openapi.Response(
-                description="Clarification requested successfully",
-                schema=openapi.Schema(
-                    type=openapi.TYPE_OBJECT,
-                    properties={
-                        'success': openapi.Schema(type=openapi.TYPE_BOOLEAN),
-                        'message': openapi.Schema(type=openapi.TYPE_STRING),
-                        'asset': openapi.Schema(
-                            type=openapi.TYPE_OBJECT,
-                            properties={
-                                'id': openapi.Schema(type=openapi.TYPE_STRING),
-                                'name': openapi.Schema(type=openapi.TYPE_STRING),
-                                'clarification_reason': openapi.Schema(type=openapi.TYPE_STRING)
-                            }
-                        )
-                    }
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['asset_id', 'clarification_reason'],
+            properties={
+                'asset_id': openapi.Schema(type=openapi.TYPE_STRING, format='uuid'),
+                'clarification_reason': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description='Reason for requesting clarification',
+                    example='The serial number does not match the label on the device'
                 )
-            ),
-            400: "Bad request", 
+            }
+        ),
+        responses={
+            200: openapi.Response(description="Clarification requested successfully"),
+            400: "Bad request",
+            403: "Access denied",
             404: "Asset not found"
         }
     )
     @action(detail=True, methods=['post'], url_path='request-asset-clarification')
     def request_asset_clarification(self, request, pk=None):
-        """Employee requests clarification about an assigned asset"""
+        """✅ Employee requests clarification about an assigned asset"""
         try:
             employee = self.get_object()
             
@@ -3204,6 +3281,8 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_400_BAD_REQUEST
                 )
             
+            from .asset_models import Asset, AssetActivity
+            
             try:
                 asset = Asset.objects.get(id=asset_id, assigned_to=employee)
             except Asset.DoesNotExist:
@@ -3212,8 +3291,8 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_404_NOT_FOUND
                 )
             
-            # Check if asset is in correct status for clarification
-            if asset.status not in ['ASSIGNED', 'NEED_CLARIFICATION']:
+            # Check if asset can request clarification
+            if not asset.can_request_clarification():
                 return Response(
                     {'error': f'Cannot request clarification for asset with status: {asset.get_status_display()}'},
                     status=status.HTTP_400_BAD_REQUEST
@@ -3230,6 +3309,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 asset.clarification_response = None
                 asset.clarification_provided_at = None
                 asset.clarification_provided_by = None
+                asset.updated_by = request.user
                 asset.save()
                 
                 # Log asset activity
@@ -3249,6 +3329,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 )
                 
                 # Log employee activity
+                from .models import EmployeeActivity
                 EmployeeActivity.objects.create(
                     employee=employee,
                     activity_type='ASSET_CLARIFICATION_REQUESTED',
@@ -3256,6 +3337,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                     performed_by=request.user,
                     metadata={
                         'asset_id': str(asset.id),
+                        'asset_number': asset.asset_number,
                         'asset_name': asset.asset_name,
                         'serial_number': asset.serial_number,
                         'clarification_reason': clarification_reason
@@ -3269,6 +3351,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 'message': f'Clarification requested for asset {asset.asset_name}',
                 'asset': {
                     'id': str(asset.id),
+                    'asset_number': asset.asset_number,
                     'name': asset.asset_name,
                     'serial_number': asset.serial_number,
                     'status': asset.status,
@@ -3284,232 +3367,6 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 {'error': f'Failed to request clarification: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-    
-    @swagger_auto_schema(
-        method='post',
-        operation_description="Cancel asset assignment and return to stock",
-        request_body=AssetCancellationSerializer,
-        responses={
-            200: openapi.Response(
-                description="Assignment cancelled successfully",
-                schema=openapi.Schema(
-                    type=openapi.TYPE_OBJECT,
-                    properties={
-                        'success': openapi.Schema(type=openapi.TYPE_BOOLEAN),
-                        'message': openapi.Schema(type=openapi.TYPE_STRING),
-                        'asset_id': openapi.Schema(type=openapi.TYPE_STRING),
-                        'previous_employee': openapi.Schema(type=openapi.TYPE_STRING),
-                        'cancellation_reason': openapi.Schema(type=openapi.TYPE_STRING),
-                        'new_status': openapi.Schema(type=openapi.TYPE_STRING)
-                    }
-                )
-            ),
-            400: "Bad request",
-            404: "Asset not found"
-        }
-    )
-    @action(detail=True, methods=['post'], url_path='cancel-assignment')
-    def cancel_assignment(self, request, pk=None):
-        """Cancel asset assignment and return to stock - Admin/IT only"""
-        try:
-            employee = self.get_object()
-            
-            # Check permissions - only Admin/IT can cancel assignments
-            access = get_asset_access_level(request.user)
-            if not access['can_manage_all_assets']:
-                return Response(
-                    {'error': 'Only Admin or IT can cancel asset assignments'},
-                    status=status.HTTP_403_FORBIDDEN
-                )
-            
-            # Validate request data
-            serializer = AssetCancellationSerializer(data=request.data)
-            if not serializer.is_valid():
-                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-            
-            asset_id = serializer.validated_data['asset_id']
-            cancellation_reason = serializer.validated_data.get('cancellation_reason', '')
-            
-            try:
-                # Asset must be assigned to this employee
-                asset = Asset.objects.get(id=asset_id, assigned_to=employee)
-            except Asset.DoesNotExist:
-                return Response(
-                    {'error': 'Asset not found or not assigned to this employee'},
-                    status=status.HTTP_404_NOT_FOUND
-                )
-            
-            with transaction.atomic():
-                # Store assignment info before clearing
-                old_employee = asset.assigned_to
-                
-                # Cancel active assignment
-                active_assignment = asset.assignments.filter(check_in_date__isnull=True).first()
-                if active_assignment:
-                    active_assignment.check_in_date = timezone.now().date()
-                    active_assignment.check_in_notes = f"Assignment cancelled: {cancellation_reason}"
-                    active_assignment.checked_in_by = request.user
-                    active_assignment.save()
-                
-                # Return asset to stock and return quantity to batch
-                asset.status = 'IN_STOCK'
-                asset.assigned_to = None
-                asset.save()
-                
-                # Return quantity to batch
-                if asset.batch:
-                    asset.batch.return_quantity(1)
-                
-                # Log activity
-                AssetActivity.objects.create(
-                    asset=asset,
-                    activity_type='ASSIGNMENT_CANCELLED',
-                    description=f"Assignment cancelled by {request.user.get_full_name()}. Employee: {old_employee.full_name}",
-                    performed_by=request.user,
-                    metadata={
-                        'cancellation_reason': cancellation_reason,
-                        'previous_employee_id': old_employee.employee_id,
-                        'previous_employee_name': old_employee.full_name,
-                        'cancelled_by_admin': True
-                    }
-                )
-            
-            logger.info(f"✅ Assignment cancelled: {asset.asset_number} from {old_employee.full_name}")
-            
-            return Response({
-                'success': True,
-                'message': f'Assignment cancelled, asset returned to stock',
-                'asset_id': str(asset.id),
-                'previous_employee': old_employee.full_name,
-                'cancellation_reason': cancellation_reason,
-                'new_status': asset.get_status_display()
-            })
-            
-        except Exception as e:
-            logger.error(f"Error cancelling assignment for employee {pk}: {str(e)}")
-            logger.error(f"Traceback: {traceback.format_exc()}")
-            return Response(
-                {'error': f'Failed to cancel assignment: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-    
-    @swagger_auto_schema(
-        method='post',
-        operation_description="Provide clarification and return asset to ASSIGNED status",
-        request_body=AssetClarificationProvisionSerializer,
-        responses={
-            200: openapi.Response(
-                description="Clarification provided successfully",
-                schema=openapi.Schema(
-                    type=openapi.TYPE_OBJECT,
-                    properties={
-                        'success': openapi.Schema(type=openapi.TYPE_BOOLEAN),
-                        'message': openapi.Schema(type=openapi.TYPE_STRING),
-                        'asset_id': openapi.Schema(type=openapi.TYPE_STRING),
-                        'clarification_response': openapi.Schema(type=openapi.TYPE_STRING),
-                        'new_status': openapi.Schema(type=openapi.TYPE_STRING)
-                    }
-                )
-            ),
-            400: "Bad request",
-            404: "Asset not found"
-        }
-    )
-    @action(detail=True, methods=['post'], url_path='provide-clarification')
-    def provide_clarification(self, request, pk=None):
-        """Admin/Manager provides clarification and returns asset to ASSIGNED status"""
-        try:
-            employee = self.get_object()
-            
-            # Check permissions
-            access = get_asset_access_level(request.user)
-            can_provide = access['can_manage_all_assets'] or (
-                access['accessible_employee_ids'] and employee.id in access['accessible_employee_ids']
-            )
-            
-            if not can_provide:
-                return Response(
-                    {'error': 'You do not have permission to provide clarification'},
-                    status=status.HTTP_403_FORBIDDEN
-                )
-            
-            # Validate request data
-            serializer = AssetClarificationProvisionSerializer(data=request.data)
-            if not serializer.is_valid():
-                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-            
-            asset_id = serializer.validated_data['asset_id']
-            clarification_response = serializer.validated_data['clarification_response']
-            
-            try:
-                asset = Asset.objects.get(id=asset_id, assigned_to=employee)
-            except Asset.DoesNotExist:
-                return Response(
-                    {'error': 'Asset not found or not assigned to this employee'},
-                    status=status.HTTP_404_NOT_FOUND
-                )
-            
-            if asset.status != 'NEED_CLARIFICATION':
-                return Response(
-                    {'error': f'Asset is not awaiting clarification. Current status: {asset.get_status_display()}'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            
-            with transaction.atomic():
-                # Return to ASSIGNED status and save clarification info
-                asset.status = 'ASSIGNED'
-                asset.clarification_response = clarification_response
-                asset.clarification_provided_at = timezone.now()
-                asset.clarification_provided_by = request.user
-                asset.save()
-                
-                # Log activity
-                AssetActivity.objects.create(
-                    asset=asset,
-                    activity_type='CLARIFICATION_PROVIDED',
-                    description=f"Clarification provided by {request.user.get_full_name()}: {clarification_response}",
-                    performed_by=request.user,
-                    metadata={
-                        'clarification_response': clarification_response,
-                        'previous_status': 'NEED_CLARIFICATION',
-                        'new_status': 'ASSIGNED',
-                        'returned_for_approval': True,
-                        'employee_id': employee.employee_id,
-                        'employee_name': employee.full_name
-                    }
-                )
-            
-            logger.info(f"✅ Clarification provided for asset {asset.asset_number} to {employee.full_name}")
-            
-            return Response({
-                'success': True,
-                'message': 'Clarification provided, asset returned for employee approval',
-                'asset_id': str(asset.id),
-                'clarification_response': clarification_response,
-                'new_status': asset.get_status_display(),
-                'employee_name': employee.full_name
-            })
-            
-        except Exception as e:
-            logger.error(f"Error providing clarification for employee {pk}: {str(e)}")
-            logger.error(f"Traceback: {traceback.format_exc()}")
-            return Response(
-                {'error': f'Failed to provide clarification: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-    
-    def _get_asset_status_color(self, status):
-        """Get color for asset status"""
-        colors = {
-            'IN_STOCK': '#6B7280',            # Gray - available
-            'ASSIGNED': '#F59E0B',            # Orange - pending approval
-            'IN_USE': '#10B981',              # Green - approved/active
-            'NEED_CLARIFICATION': '#8B5CF6',  # Purple - needs attention
-            'IN_REPAIR': '#EF4444',           # Red - issue
-            'OUT_OF_STOCK': '#DC2626',        # Dark red - not available
-            'ARCHIVED': '#7F1D1D',            # Very dark red - archived
-        }
-        return colors.get(status, '#6B7280')
     def _generate_bulk_template(self):
         """Generate Excel template with dropdowns and validation"""
         from openpyxl import Workbook

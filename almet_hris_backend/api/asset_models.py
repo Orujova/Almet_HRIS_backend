@@ -450,8 +450,21 @@ class EmployeeOffboarding(models.Model):
         ('CANCELLED', 'Cancelled'),
     ]
     
+    OFFBOARDING_TYPE_CHOICES = [
+        ('TRANSFER', 'Transfer to Another Employee'),
+        ('RETURN', 'Return to IT (No Transfer)'),
+    ]
+    
     employee = models.ForeignKey('Employee', on_delete=models.CASCADE, related_name='offboardings')
     last_working_day = models.DateField()
+    
+    # 🆕 Offboarding type
+    offboarding_type = models.CharField(
+        max_length=20, 
+        choices=OFFBOARDING_TYPE_CHOICES, 
+        default='RETURN',
+        help_text="Transfer or Return to IT"
+    )
     
     # Asset tracking
     total_assets = models.PositiveIntegerField(default=0)
@@ -459,6 +472,17 @@ class EmployeeOffboarding(models.Model):
     assets_returned = models.PositiveIntegerField(default=0)
     
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING')
+    
+    # 🆕 IT Handover completion
+    it_handover_completed = models.BooleanField(
+        default=False,
+        help_text="IT confirmed all assets received"
+    )
+    it_handover_completed_at = models.DateTimeField(null=True, blank=True)
+    it_handover_completed_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='completed_handovers'
+    )
     
     # Approval
     approved_by = models.ForeignKey(
@@ -485,6 +509,60 @@ class EmployeeOffboarding(models.Model):
 
 
 class AssetTransferRequest(models.Model):
+    """Asset transfer - Offboarding zamanı başqasına verilir"""
+    
+    STATUS_CHOICES = [
+        ('PENDING', 'Pending Approval'),
+        ('APPROVED', 'Approved'),
+        ('REJECTED', 'Rejected'),
+        ('COMPLETED', 'Completed'),
+    ]
+    
+    offboarding = models.ForeignKey(
+        EmployeeOffboarding, on_delete=models.CASCADE, 
+        related_name='transfer_requests'
+    )
+    asset = models.ForeignKey(Asset, on_delete=models.CASCADE)
+    
+    from_employee = models.ForeignKey(
+        'Employee', on_delete=models.CASCADE, 
+        related_name='asset_transfers_from'
+    )
+    to_employee = models.ForeignKey(
+        'Employee', on_delete=models.CASCADE, 
+        related_name='asset_transfers_to'
+    )
+    
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING')
+    
+    requested_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, 
+        related_name='requested_transfers'
+    )
+    requested_at = models.DateTimeField(auto_now_add=True)
+    
+    # 🆕 Employee approval (to_employee must accept)
+    employee_approved = models.BooleanField(default=False)
+    employee_approved_at = models.DateTimeField(null=True, blank=True)
+    
+    # Admin/IT approval
+    approved_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, 
+        related_name='approved_transfers'
+    )
+    approved_at = models.DateTimeField(null=True, blank=True)
+    
+    rejection_reason = models.TextField(blank=True)
+    transfer_notes = models.TextField(blank=True)
+    
+    completed_at = models.DateTimeField(null=True, blank=True)
+    
+    class Meta:
+        db_table = 'asset_transfer_requests'
+        ordering = ['-requested_at']
+    
+    def __str__(self):
+        return f"Transfer: {self.asset.asset_name} from {self.from_employee.full_name} to {self.to_employee.full_name}"
     """Asset transfer - Offboarding zamanı başqasına verilir"""
     
     STATUS_CHOICES = [

@@ -86,16 +86,6 @@ def is_manager(user):
 def get_asset_access_level(user):
     """
     Get user's asset access level
-    
-    Returns:
-        dict: {
-            'access_level': 'ADMIN' | 'IT' | 'MANAGER' | 'EMPLOYEE',
-            'can_manage_all_assets': bool,
-            'can_approve_transfers': bool,
-            'can_view_all_assets': bool,
-            'employee': Employee object,
-            'accessible_employee_ids': list or None (None = all)
-        }
     """
     employee = get_employee_from_user(user)
     
@@ -108,8 +98,10 @@ def get_asset_access_level(user):
             'can_view_all_assets': True,
             'can_create_batches': True,
             'can_bulk_upload': True,
+            'can_create_transfers': True,  # 🆕
+            'can_complete_handover': True,  # 🆕
             'employee': employee,
-            'accessible_employee_ids': None  # None = ALL
+            'accessible_employee_ids': None
         }
     
     # IT - Full asset management
@@ -121,8 +113,10 @@ def get_asset_access_level(user):
             'can_view_all_assets': True,
             'can_create_batches': True,
             'can_bulk_upload': True,
+            'can_create_transfers': True,  # 🆕
+            'can_complete_handover': True,  # 🆕
             'employee': employee,
-            'accessible_employee_ids': None  # None = ALL
+            'accessible_employee_ids': None
         }
     
     # Manager - Team access
@@ -140,15 +134,17 @@ def get_asset_access_level(user):
         return {
             'access_level': 'MANAGER',
             'can_manage_all_assets': False,
-            'can_approve_transfers': True,  # Can approve for team
+            'can_approve_transfers': False,  # Manager artıq approve edə bilməz
             'can_view_all_assets': False,
             'can_create_batches': False,
             'can_bulk_upload': False,
+            'can_create_transfers': False,  # 🆕
+            'can_complete_handover': False,  # 🆕
             'employee': employee,
             'accessible_employee_ids': accessible_ids
         }
     
-    # Regular Employee - Own assets only
+    # Regular Employee
     return {
         'access_level': 'EMPLOYEE',
         'can_manage_all_assets': False,
@@ -156,11 +152,66 @@ def get_asset_access_level(user):
         'can_view_all_assets': False,
         'can_create_batches': False,
         'can_bulk_upload': False,
+        'can_create_transfers': False,  # 🆕
+        'can_complete_handover': False,  # 🆕
         'employee': employee,
         'accessible_employee_ids': [employee.id] if employee else []
     }
 
 
+def require_asset_permission(permission_type='view'):
+    """
+    Decorator to check asset permissions
+    """
+    def decorator(view_func):
+        @wraps(view_func)
+        def wrapped_view(view_instance, request, *args, **kwargs):
+            access = get_asset_access_level(request.user)
+            
+            if permission_type == 'view':
+                return view_func(view_instance, request, *args, **kwargs)
+            
+            elif permission_type == 'manage':
+                if not access['can_manage_all_assets']:
+                    return Response(
+                        {'error': 'You do not have permission to manage assets'},
+                        status=status.HTTP_403_FORBIDDEN
+                    )
+            
+            elif permission_type == 'create':
+                if not access['can_create_batches']:
+                    return Response(
+                        {'error': 'You do not have permission to create asset batches'},
+                        status=status.HTTP_403_FORBIDDEN
+                    )
+            
+            elif permission_type == 'approve':
+                if not access['can_approve_transfers']:
+                    return Response(
+                        {'error': 'You do not have permission to approve transfers'},
+                        status=status.HTTP_403_FORBIDDEN
+                    )
+            
+            # 🆕 Transfer creation - Admin/IT only
+            elif permission_type == 'create_transfer':
+                if not access['can_create_transfers']:
+                    return Response(
+                        {'error': 'Only Admin and IT can create transfer requests'},
+                        status=status.HTTP_403_FORBIDDEN
+                    )
+            
+            # 🆕 Handover completion - Admin/IT only
+            elif permission_type == 'complete_handover':
+                if not access['can_complete_handover']:
+                    return Response(
+                        {'error': 'Only Admin and IT can complete handover'},
+                        status=status.HTTP_403_FORBIDDEN
+                    )
+            
+            return view_func(view_instance, request, *args, **kwargs)
+        
+        return wrapped_view
+    return decorator
 def filter_assets_by_access(user, queryset):
     """
     Filter asset queryset based on user access
