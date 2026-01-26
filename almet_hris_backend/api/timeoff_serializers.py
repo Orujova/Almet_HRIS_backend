@@ -127,17 +127,8 @@ class TimeOffRequestSerializer(serializers.ModelSerializer):
                         'duration_hours': f'Insufficient balance. Available: {balance.current_balance_hours}h, Requested: {duration}h'
                     })
         
-        # Advance booking yoxla
-        settings = TimeOffSettings.get_settings()
-        if data.get('date'):
-            min_date = timezone.now() + timedelta(hours=settings.min_advance_hours)
-            request_datetime = datetime.combine(data['date'], data.get('start_time', datetime.min.time()))
-            
-            if timezone.make_aware(request_datetime) < min_date:
-                raise serializers.ValidationError({
-                    'date': f'Must request at least {settings.min_advance_hours} hours in advance'
-                })
         
+       
         return data
 
 
@@ -193,10 +184,7 @@ class TimeOffRequestCreateSerializer(serializers.ModelSerializer):
         min_date = timezone.now() + timedelta(hours=settings.min_advance_hours)
         request_datetime = datetime.combine(data['date'], data['start_time'])
         
-        if timezone.make_aware(request_datetime) < min_date:
-            raise serializers.ValidationError({
-                'date': f'Must request at least {settings.min_advance_hours} hours in advance'
-            })
+      
         
         return data
     
