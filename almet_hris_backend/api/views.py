@@ -48,12 +48,7 @@ from .serializers import (
     BulkEmployeeTagUpdateSerializer, JobTitleSerializer,
     BulkLineManagerAssignmentSerializer,VacancyToEmployeeConversionSerializer,EmployeeJobDescriptionSerializer,ManagerJobDescriptionSerializer
 )
-# Add these imports at the top of views.py
-from .asset_models import Asset, AssetActivity
-from .asset_serializers import (
-    AssetAcceptanceSerializer, AssetClarificationRequestSerializer,
-    AssetCancellationSerializer, AssetClarificationProvisionSerializer
-)
+
 from .asset_permissions import get_asset_access_level
 from .auth import MicrosoftTokenValidator
 from drf_yasg.inspectors import SwaggerAutoSchema
@@ -2917,14 +2912,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
     )
     @action(detail=True, methods=['get'], url_path='assets')
     def get_employee_assets(self, request, pk=None):
-        """
-        ✅ UPDATED: Get employee's assigned assets with detailed status and clarification info
         
-        Access Control:
-        - Admin/IT: Can view any employee's assets
-        - Manager: Can view team members' assets
-        - Employee: Can view own assets only
-        """
         try:
             employee = self.get_object()
             

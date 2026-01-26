@@ -45,10 +45,7 @@ from .system_email_service import system_email_service
 # CATEGORY VIEWSET
 # ============================================
 class AssetCategoryViewSet(viewsets.ModelViewSet):
-    """
-    Asset Kateqoriyaları
-    - Laptop, Monitor, Phone, Keyboard və s.
-    """
+
     
     queryset = AssetCategory.objects.all()
     serializer_class = AssetCategorySerializer
@@ -93,16 +90,7 @@ class AssetCategoryViewSet(viewsets.ModelViewSet):
 # BATCH VIEWSET
 # ============================================
 class AssetBatchViewSet(viewsets.ModelViewSet):
-    """
-    🎯 Asset Batch Management
-    
-    Batch = Partiya (Eyni növdən bir neçə asset)
-    
-    Əsas əməliyyatlar:
-    1. Batch yaratma (SAY BURADAN QEYD EDİLİR)
-    2. Batch-dən asset yaratma
-    3. Quantity tracking
-    """
+
     
     queryset = AssetBatch.objects.select_related('category', 'created_by').all()
     permission_classes = [IsAuthenticated]
@@ -294,17 +282,7 @@ class AssetBatchViewSet(viewsets.ModelViewSet):
 # ASSET VIEWSET - MAIN
 # ============================================
 class AssetViewSet(viewsets.ModelViewSet):
-    """
-    🎯 Asset Management - Əsas sistem
-    
-    Əməliyyatlar:
-    1. Asset yaratma (batch-dən)
-    2. Asset təyin etmə (assign)
-    3. İşçi qəbul etmə (accept)
-    4. Aydınlaşdırma
-    5. Geri qaytarma
-    """
-    
+
     queryset = Asset.objects.select_related(
         'batch', 'category', 'assigned_to', 'created_by', 'updated_by'
     ).all()
@@ -1103,21 +1081,8 @@ class AssetViewSet(viewsets.ModelViewSet):
             }
         })
 
-
-# ============================================
-# OFFBOARDING VIEWSET
-# ============================================
-# api/asset_views.py - OFFBOARDING & TRANSFER UPDATES
-
-# ============================================
-# OFFBOARDING VIEWSET - UPDATED
-# ============================================
 class EmployeeOffboardingViewSet(viewsets.ModelViewSet):
-    """
-    🎯 Employee Offboarding
-    İşdən çıxan işçinin asset-lərinin transferi və ya IT-yə qaytarılması
-    """
-    
+
     queryset = EmployeeOffboarding.objects.select_related(
         'employee', 'created_by', 'approved_by', 'it_handover_completed_by'
     ).all()
@@ -1397,11 +1362,7 @@ class EmployeeOffboardingViewSet(viewsets.ModelViewSet):
 # TRANSFER REQUEST VIEWSET - UPDATED
 # ============================================
 class AssetTransferRequestViewSet(viewsets.ModelViewSet):
-    """
-    🎯 Asset Transfer Requests (Offboarding)
-    Only Admin/IT can create transfers
-    Employee must approve transfer
-    """
+
     
     queryset = AssetTransferRequest.objects.select_related(
         'asset', 'from_employee', 'to_employee', 'requested_by', 'approved_by'
@@ -1604,13 +1565,7 @@ class AssetTransferRequestViewSet(viewsets.ModelViewSet):
             approved = request.data.get('approved', False)
             comments = request.data.get('comments', '')
             
-            # Check if user is the to_employee
-            access = get_asset_access_level(request.user)
-            if not access['employee'] or access['employee'].id != transfer.to_employee.id:
-                return Response(
-                    {'error': 'You can only approve transfers assigned to you'},
-                    status=status.HTTP_403_FORBIDDEN
-                )
+          
             
             if transfer.status != 'PENDING':
                 return Response(

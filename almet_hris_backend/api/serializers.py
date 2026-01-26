@@ -1205,6 +1205,9 @@ class EmployeeDetailSerializer(serializers.ModelSerializer):
     pending_performance_actions = serializers.SerializerMethodField()
     team_performance_overview = serializers.SerializerMethodField()
     
+    
+    pending_transfer_approvals = serializers.SerializerMethodField()
+    transfers_summary = serializers.SerializerMethodField()
     class Meta:
         model = Employee
         fields = '__all__'
@@ -1393,6 +1396,94 @@ class EmployeeDetailSerializer(serializers.ModelSerializer):
             logger.error(f"Error calculating actions: {e}")
             return []
     
+    def get_pending_transfer_approvals(self, obj):
+        """✅ Get pending transfers that need employee approval"""
+        try:
+            from .asset_models import AssetTransferRequest
+            
+            pending_transfers = AssetTransferRequest.objects.filter(
+                to_employee=obj,
+                status='PENDING'
+            ).select_related(
+                'asset',
+                'from_employee',
+                'requested_by',
+                'offboarding'
+            ).order_by('-requested_at')
+            
+            transfers_data = []
+            for transfer in pending_transfers:
+                transfers_data.append({
+                    'id': transfer.id,
+                    'asset': {
+                        'id': str(transfer.asset.id),
+                        'asset_number': transfer.asset.asset_number,
+                        'asset_name': transfer.asset.asset_name,
+                        'serial_number': transfer.asset.serial_number,
+                        'category': transfer.asset.category.name if transfer.asset.category else None,
+                        'status': transfer.asset.status,
+                        'status_display': transfer.asset.get_status_display()
+                    },
+                    'from_employee': {
+                        'id': transfer.from_employee.id,
+                        'employee_id': transfer.from_employee.employee_id,
+                        'name': transfer.from_employee.full_name,
+                        'job_title': transfer.from_employee.job_title
+                    },
+                    'requested_by': {
+                        'id': transfer.requested_by.id if transfer.requested_by else None,
+                        'name': transfer.requested_by.get_full_name() if transfer.requested_by else None
+                    },
+                    'transfer_notes': transfer.transfer_notes,
+                    'requested_at': transfer.requested_at,
+                    'status': transfer.status,
+                    'status_display': transfer.get_status_display(),
+                    'urgency': 'high' if (timezone.now() - transfer.requested_at).days > 3 else 'normal',
+                    'days_pending': (timezone.now() - transfer.requested_at).days
+                })
+            
+            return transfers_data
+            
+        except Exception as e:
+            logger.error(f"Error getting pending transfers for employee {obj.employee_id}: {e}")
+            return []
+    
+    def get_transfers_summary(self, obj):
+        """✅ Get transfer summary for employee"""
+        try:
+            from .asset_models import AssetTransferRequest
+            
+            # Transfers TO this employee
+            incoming_transfers = AssetTransferRequest.objects.filter(to_employee=obj)
+            
+            # Transfers FROM this employee (offboarding scenario)
+            outgoing_transfers = AssetTransferRequest.objects.filter(from_employee=obj)
+            
+            return {
+                'incoming': {
+                    'total': incoming_transfers.count(),
+                    'pending': incoming_transfers.filter(status='PENDING').count(),
+                    'approved': incoming_transfers.filter(status='APPROVED').count(),
+                    'completed': incoming_transfers.filter(status='COMPLETED').count(),
+                    'rejected': incoming_transfers.filter(status='REJECTED').count()
+                },
+                'outgoing': {
+                    'total': outgoing_transfers.count(),
+                    'pending': outgoing_transfers.filter(status='PENDING').count(),
+                    'completed': outgoing_transfers.filter(status='COMPLETED').count()
+                },
+                'has_pending_approvals': incoming_transfers.filter(status='PENDING').exists(),
+                'pending_count': incoming_transfers.filter(status='PENDING').count()
+            }
+            
+        except Exception as e:
+            logger.error(f"Error getting transfers summary for employee {obj.employee_id}: {e}")
+            return {
+                'incoming': {'total': 0, 'pending': 0, 'approved': 0, 'completed': 0, 'rejected': 0},
+                'outgoing': {'total': 0, 'pending': 0, 'completed': 0},
+                'has_pending_approvals': False,
+                'pending_count': 0
+            }
     
     def get_performance_records(self, obj):
         """Get all performance records with real-time data"""
