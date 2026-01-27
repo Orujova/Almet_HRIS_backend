@@ -30,7 +30,7 @@ from .models import (
     Employee, BusinessFunction, Department, Unit, JobFunction, 
     PositionGroup, EmployeeTag, EmployeeStatus,
     EmployeeActivity, VacantPosition, ContractTypeConfig,
-    ContractStatusManager, EmployeeArchive,
+     EmployeeArchive,EmployeeDocument,
     UserGraphToken, JobTitle
 )
 
@@ -42,7 +42,7 @@ from .serializers import (
     UserSerializer, OrgChartNodeSerializer,
     VacantPositionListSerializer, VacantPositionDetailSerializer, VacantPositionCreateSerializer,
      ProfileImageDeleteSerializer,BulkHardDeleteSerializer,
-    ProfileImageUploadSerializer, 
+    ProfileImageUploadSerializer, EmployeeDocumentSerializer,
     ContractTypeConfigSerializer, BulkContractExtensionSerializer, ContractExtensionSerializer,
     SingleEmployeeTagUpdateSerializer, SingleLineManagerAssignmentSerializer,
     BulkEmployeeTagUpdateSerializer, JobTitleSerializer,
@@ -1647,7 +1647,449 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
     
-
+    @swagger_auto_schema(
+        method='post',
+        operation_description="Upload document for specific employee by employee_id",
+        manual_parameters=[
+            openapi.Parameter(
+                'employee_id',
+                openapi.IN_FORM,
+                description='Employee ID (e.g., GEO1, HC001)',
+                type=openapi.TYPE_STRING,
+                required=True
+            ),
+            openapi.Parameter(
+                'document',
+                openapi.IN_FORM,
+                description='Document file to upload',
+                type=openapi.TYPE_FILE,
+                required=True
+            ),
+            openapi.Parameter(
+                'document_name',
+                openapi.IN_FORM,
+                description='Document name/title',
+                type=openapi.TYPE_STRING,
+                required=True
+            ),
+            openapi.Parameter(
+                'document_type',
+                openapi.IN_FORM,
+                description='Document type',
+                type=openapi.TYPE_STRING,
+                enum=['CONTRACT', 'ID', 'CERTIFICATE', 'CV', 'PERFORMANCE', 'MEDICAL', 'TRAINING', 'OTHER'],
+                required=True
+            ),
+            openapi.Parameter(
+                'description',
+                openapi.IN_FORM,
+                description='Document description (optional)',
+                type=openapi.TYPE_STRING,
+                required=False
+            ),
+            openapi.Parameter(
+                'expiry_date',
+                openapi.IN_FORM,
+                description='Document expiry date (YYYY-MM-DD) (optional)',
+                type=openapi.TYPE_STRING,
+                required=False
+            ),
+            openapi.Parameter(
+                'is_confidential',
+                openapi.IN_FORM,
+                description='Mark as confidential',
+                type=openapi.TYPE_BOOLEAN,
+                required=False
+            ),
+        ],
+        consumes=['multipart/form-data'],
+        responses={
+            201: openapi.Response(
+                description="Document uploaded successfully",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'success': openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                        'message': openapi.Schema(type=openapi.TYPE_STRING),
+                        'document': openapi.Schema(type=openapi.TYPE_OBJECT),
+                    }
+                )
+            ),
+            400: "Bad request",
+            404: "Employee not found"
+        }
+    )
+    @action(detail=False, methods=['post'], url_path='upload-document', parser_classes=[MultiPartParser, FormParser])
+    def upload_employee_document(self, request):
+        """✅ Upload document for employee by employee_id"""
+        try:
+            # Get parameters
+            employee_id = request.data.get('employee_id')
+            document_file = request.FILES.get('document')
+            document_name = request.data.get('document_name')
+            document_type = request.data.get('document_type', 'OTHER')
+            description = request.data.get('description', '')
+            expiry_date = request.data.get('expiry_date')
+            is_confidential = request.data.get('is_confidential', 'false').lower() == 'true'
+            
+            # Validation
+            if not employee_id:
+                return Response(
+                    {'error': 'employee_id is required'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            if not document_file:
+                return Response(
+                    {'error': 'document file is required'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            if not document_name:
+                return Response(
+                    {'error': 'document_name is required'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Find employee by employee_id
+            try:
+                employee = Employee.objects.get(employee_id=employee_id)
+            except Employee.DoesNotExist:
+                return Response(
+                    {'error': f'Employee with ID {employee_id} not found'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            
+            # ✅ Check access permissions
+            access = get_headcount_access(request.user)
+            
+            can_upload = False
+            if access['can_view_all']:
+                can_upload = True
+            elif employee.user and employee.user.id == request.user.id:
+                can_upload = True
+            elif access['is_manager'] and access['accessible_employee_ids'] and employee.id in access['accessible_employee_ids']:
+                can_upload = True
+            
+            if not can_upload:
+                return Response(
+                    {
+                        'error': 'Access Denied',
+                        'message': 'You do not have permission to upload documents for this employee'
+                    },
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            
+            # Parse expiry date if provided
+            expiry_date_obj = None
+            if expiry_date:
+                try:
+                    from datetime import datetime
+                    expiry_date_obj = datetime.strptime(expiry_date, '%Y-%m-%d').date()
+                except ValueError:
+                    return Response(
+                        {'error': 'Invalid expiry_date format. Use YYYY-MM-DD'},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+            
+            # Validate file size (10MB max)
+            if document_file.size > 10 * 1024 * 1024:
+                return Response(
+                    {'error': 'File size exceeds 10MB limit'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Validate document type
+            valid_types = ['CONTRACT', 'ID', 'CERTIFICATE', 'CV', 'PERFORMANCE', 'MEDICAL', 'TRAINING', 'OTHER']
+            if document_type not in valid_types:
+                return Response(
+                    {'error': f'Invalid document_type. Must be one of: {", ".join(valid_types)}'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Create document
+            document = EmployeeDocument.objects.create(
+                employee=employee,
+                name=document_name,
+                document_type=document_type,
+                document_file=document_file,
+                description=description,
+                expiry_date=expiry_date_obj,
+                is_confidential=is_confidential,
+                uploaded_by=request.user,
+                document_status='ACTIVE',
+                version=1,
+                is_current_version=True
+            )
+            
+            # Log activity
+            EmployeeActivity.objects.create(
+                employee=employee,
+                activity_type='DOCUMENT_UPLOADED',
+                description=f"Document '{document_name}' ({document_type}) uploaded",
+                performed_by=request.user,
+                metadata={
+                    'document_id': document.id,
+                    'document_name': document_name,
+                    'document_type': document_type,
+                    'file_size': document.file_size,
+                    'is_confidential': is_confidential,
+                    'uploaded_via': 'direct_api'
+                }
+            )
+            
+            logger.info(f"✅ Document uploaded for employee {employee_id} by {request.user.username}")
+            
+            # Serialize response
+            serializer = EmployeeDocumentSerializer(document, context={'request': request})
+            
+            return Response({
+                'success': True,
+                'message': f'Document uploaded successfully for employee {employee.full_name}',
+                'document': serializer.data,
+                'employee': {
+                    'id': employee.id,
+                    'employee_id': employee.employee_id,
+                    'name': employee.full_name
+                }
+            }, status=status.HTTP_201_CREATED)
+            
+        except Exception as e:
+            logger.error(f"Document upload failed: {str(e)}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return Response(
+                {'error': f'Document upload failed: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    @swagger_auto_schema(
+        method='delete',
+        operation_description="Delete employee document by document ID",
+        manual_parameters=[
+            openapi.Parameter(
+                'document_id',
+                openapi.IN_QUERY,
+                description='Document ID to delete',
+                type=openapi.TYPE_INTEGER,
+                required=True
+            ),
+        ],
+        responses={
+            200: openapi.Response(
+                description="Document deleted successfully",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'success': openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                        'message': openapi.Schema(type=openapi.TYPE_STRING),
+                    }
+                )
+            ),
+            404: "Document not found"
+        }
+    )
+    @action(detail=False, methods=['delete'], url_path='delete-document')
+    def delete_employee_document(self, request):
+        """✅ Delete employee document"""
+        try:
+            document_id = request.query_params.get('document_id')
+            
+            if not document_id:
+                return Response(
+                    {'error': 'document_id parameter is required'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Find document
+            try:
+                document = EmployeeDocument.objects.get(id=document_id, is_deleted=False)
+            except EmployeeDocument.DoesNotExist:
+                return Response(
+                    {'error': f'Document with ID {document_id} not found'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            
+            employee = document.employee
+            
+            # ✅ Check access permissions
+            access = get_headcount_access(request.user)
+            
+            can_delete = False
+            if access['can_view_all']:
+                can_delete = True
+            elif employee.user and employee.user.id == request.user.id:
+                can_delete = True
+            elif access['is_manager'] and access['accessible_employee_ids'] and employee.id in access['accessible_employee_ids']:
+                can_delete = True
+            
+            if not can_delete:
+                return Response(
+                    {
+                        'error': 'Access Denied',
+                        'message': 'You do not have permission to delete this document'
+                    },
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            
+            # Store info before deletion
+            document_info = {
+                'id': document.id,
+                'name': document.name,
+                'type': document.document_type,
+                'employee_id': employee.employee_id,
+                'employee_name': employee.full_name
+            }
+            
+            # Delete document file from storage
+            if document.document_file:
+                try:
+                    if hasattr(document.document_file, 'path'):
+                        import os
+                        file_path = document.document_file.path
+                        if os.path.exists(file_path):
+                            os.remove(file_path)
+                            logger.info(f"✅ Document file deleted: {file_path}")
+                except Exception as e:
+                    logger.warning(f"Could not delete document file: {e}")
+            
+            # Soft delete document
+            document.soft_delete(user=request.user)
+            
+            # Log activity
+            EmployeeActivity.objects.create(
+                employee=employee,
+                activity_type='UPDATED',
+                description=f"Document '{document_info['name']}' ({document_info['type']}) deleted",
+                performed_by=request.user,
+                metadata={
+                    'document_id': document_info['id'],
+                    'document_name': document_info['name'],
+                    'document_type': document_info['type'],
+                    'deletion_method': 'direct_api'
+                }
+            )
+            
+            logger.info(f"✅ Document {document_id} deleted for employee {employee.employee_id}")
+            
+            return Response({
+                'success': True,
+                'message': f"Document '{document_info['name']}' deleted successfully",
+                'deleted_document': document_info
+            })
+            
+        except Exception as e:
+            logger.error(f"Document deletion failed: {str(e)}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return Response(
+                {'error': f'Document deletion failed: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    @swagger_auto_schema(
+        method='get',
+        operation_description="Get all documents for employee by employee_id",
+        manual_parameters=[
+            openapi.Parameter(
+                'employee_id',
+                openapi.IN_QUERY,
+                description='Employee ID (e.g., GEO1, HC001)',
+                type=openapi.TYPE_STRING,
+                required=True
+            ),
+        ],
+        responses={
+            200: openapi.Response(
+                description="Documents retrieved successfully",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'success': openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                        'employee': openapi.Schema(type=openapi.TYPE_OBJECT),
+                        'documents': openapi.Schema(type=openapi.TYPE_ARRAY, items=openapi.Schema(type=openapi.TYPE_OBJECT)),
+                        'total_count': openapi.Schema(type=openapi.TYPE_INTEGER),
+                    }
+                )
+            ),
+            404: "Employee not found"
+        }
+    )
+    @action(detail=False, methods=['get'], url_path='get-documents')
+    def get_employee_documents(self, request):
+        """✅ Get all documents for employee"""
+        try:
+            employee_id = request.query_params.get('employee_id')
+            
+            if not employee_id:
+                return Response(
+                    {'error': 'employee_id parameter is required'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Find employee
+            try:
+                employee = Employee.objects.get(employee_id=employee_id)
+            except Employee.DoesNotExist:
+                return Response(
+                    {'error': f'Employee with ID {employee_id} not found'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            
+            # ✅ Check access permissions
+            access = get_headcount_access(request.user)
+            
+            can_view = False
+            if access['can_view_all']:
+                can_view = True
+            elif employee.user and employee.user.id == request.user.id:
+                can_view = True
+            elif access['is_manager'] and access['accessible_employee_ids'] and employee.id in access['accessible_employee_ids']:
+                can_view = True
+            
+            if not can_view:
+                return Response(
+                    {
+                        'error': 'Access Denied',
+                        'message': 'You do not have permission to view this employee\'s documents'
+                    },
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            
+            # Get documents
+            documents = EmployeeDocument.objects.filter(
+                employee=employee,
+                is_deleted=False
+            ).order_by('-uploaded_at')
+            
+            # Serialize
+            serializer = EmployeeDocumentSerializer(documents, many=True, context={'request': request})
+            
+            # Summary by type
+            summary_by_type = {}
+            for doc in documents:
+                doc_type = doc.get_document_type_display()
+                summary_by_type[doc_type] = summary_by_type.get(doc_type, 0) + 1
+            
+            return Response({
+                'success': True,
+                'employee': {
+                    'id': employee.id,
+                    'employee_id': employee.employee_id,
+                    'name': employee.full_name,
+                    'job_title': employee.job_title
+                },
+                'documents': serializer.data,
+                'total_count': documents.count(),
+                'summary_by_type': summary_by_type
+            })
+            
+        except Exception as e:
+            logger.error(f"Get documents failed: {str(e)}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return Response(
+                {'error': f'Failed to retrieve documents: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
     @swagger_auto_schema(
         operation_description="Get detailed information for a specific employee",
         responses={

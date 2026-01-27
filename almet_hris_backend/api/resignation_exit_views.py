@@ -694,9 +694,9 @@ class ContractRenewalRequestViewSet(viewsets.ModelViewSet):
 # PROBATION REVIEW VIEWSETS
 # =====================================
 
-class ProbationReviewQuestionViewSet(viewsets.ModelViewSet):
+# api/views/resignation_exit_views.py
 
-    
+class ProbationReviewQuestionViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     serializer_class = ProbationReviewQuestionSerializer
     
@@ -706,12 +706,67 @@ class ProbationReviewQuestionViewSet(viewsets.ModelViewSet):
             is_active=True
         ).order_by('review_type', 'order')
         
-        # Filter by review_type if provided
         review_type = self.request.query_params.get('review_type')
         if review_type:
-            queryset = queryset.filter(review_type=review_type)
+            review_types = review_type.split(',')
+            queryset = queryset.filter(review_type__in=review_types)
         
         return queryset
+    
+    # ✅ NEW: Get questions by review period and respondent
+    @action(detail=False, methods=['get'])
+    def for_review(self, request):
+        """
+        Get questions for specific review
+        GET /api/probation-review-questions/for_review/?period=30_DAY&respondent=EMPLOYEE
+        GET /api/probation-review-questions/for_review/?period=30_DAY&respondent=MANAGER
+        """
+        period = request.query_params.get('period')  # 30_DAY, 60_DAY, 90_DAY
+        respondent = request.query_params.get('respondent')  # EMPLOYEE, MANAGER
+        
+        if not period or not respondent:
+            return Response(
+                {'detail': 'Both period and respondent parameters are required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Map period to review_type
+        review_type_map = {
+            '30_DAY': {
+                'EMPLOYEE': 'EMPLOYEE_30',
+                'MANAGER': 'MANAGER_30'
+            },
+            '60_DAY': {
+                'EMPLOYEE': 'EMPLOYEE_60',
+                'MANAGER': 'MANAGER_60'
+            },
+            '90_DAY': {
+                'EMPLOYEE': 'EMPLOYEE_90',
+                'MANAGER': 'MANAGER_90'
+            }
+        }
+        
+        review_type = review_type_map.get(period, {}).get(respondent)
+        
+        if not review_type:
+            return Response(
+                {'detail': 'Invalid period or respondent'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        questions = ProbationReviewQuestion.objects.filter(
+            review_type=review_type,
+            is_active=True,
+            is_deleted=False
+        ).order_by('order')
+        
+        serializer = self.get_serializer(questions, many=True)
+        return Response({
+            'period': period,
+            'respondent': respondent,
+            'review_type': review_type,
+            'questions': serializer.data
+        })
     
     def create(self, request, *args, **kwargs):
         """Only admin can create"""
@@ -742,7 +797,6 @@ class ProbationReviewQuestionViewSet(viewsets.ModelViewSet):
         question = self.get_object()
         question.soft_delete(request.user)
         return Response(status=status.HTTP_204_NO_CONTENT)
-
 
 class ProbationReviewViewSet(viewsets.ModelViewSet):
 
