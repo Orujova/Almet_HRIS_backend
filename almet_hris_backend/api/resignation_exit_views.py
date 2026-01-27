@@ -38,14 +38,7 @@ logger = logging.getLogger(__name__)
 # =====================================
 
 class ResignationRequestViewSet(viewsets.ModelViewSet):
-    """
-    ViewSet for resignation requests
-    
-    Permissions:
-    - Employee: Can create and view own resignations
-    - Manager: Can view and approve direct reports' resignations
-    - Admin: Can view and approve all resignations
-    """
+
     
     permission_classes = [IsAuthenticated]
     
@@ -237,13 +230,7 @@ class ResignationRequestViewSet(viewsets.ModelViewSet):
 # =====================================
 
 class ExitInterviewQuestionViewSet(viewsets.ModelViewSet):
-    """
-    ViewSet for exit interview questions
-    
-    Permissions:
-    - Admin only: Can create, update, delete
-    - All authenticated users: Can view
-    """
+ 
     
     permission_classes = [IsAuthenticated]
     serializer_class = ExitInterviewQuestionSerializer
@@ -293,13 +280,7 @@ class ExitInterviewQuestionViewSet(viewsets.ModelViewSet):
 
 
 class ExitInterviewViewSet(viewsets.ModelViewSet):
-    """
-    ViewSet for exit interviews
-    
-    Permissions:
-    - Employee: Can view and complete own exit interviews
-    - Admin: Can create and view all exit interviews
-    """
+
     
     permission_classes = [IsAuthenticated]
     
@@ -388,13 +369,13 @@ class ExitInterviewViewSet(viewsets.ModelViewSet):
             if employee.line_manager and employee.line_manager.email:
                 recipients.append(employee.line_manager.email)
             
-            # 2. IT Team
-            recipients.append("it-team@almettrading.com")
+            # # 2. IT Team
+            # recipients.append("it-team@almettrading.com")
             
             # # 3. Gunay (HR)
-            recipients.append("g.mammadova@almettrading.com")
+            # recipients.append("g.mammadova@almettrading.com")
             # # 3. HR
-            recipients.append("hr@almettrading.com")
+            # recipients.append("hr@almettrading.com")
             
             
             
@@ -588,15 +569,7 @@ class ExitInterviewViewSet(viewsets.ModelViewSet):
 # =====================================
 
 class ContractRenewalRequestViewSet(viewsets.ModelViewSet):
-    """
-    ViewSet for contract renewal requests
-    
-    Permissions:
-    - Employee: Can view own contract status
-    - Manager: Can view and decide on direct reports' contracts
-    - Admin: Can view all and process renewals
-    """
-    
+
     permission_classes = [IsAuthenticated]
     
     def get_queryset(self):
@@ -722,13 +695,7 @@ class ContractRenewalRequestViewSet(viewsets.ModelViewSet):
 # =====================================
 
 class ProbationReviewQuestionViewSet(viewsets.ModelViewSet):
-    """
-    ViewSet for probation review questions
-    
-    Permissions:
-    - Admin only: Can create, update, delete
-    - All authenticated users: Can view
-    """
+
     
     permission_classes = [IsAuthenticated]
     serializer_class = ProbationReviewQuestionSerializer
@@ -778,14 +745,7 @@ class ProbationReviewQuestionViewSet(viewsets.ModelViewSet):
 
 
 class ProbationReviewViewSet(viewsets.ModelViewSet):
-    """
-    ViewSet for probation reviews
-    
-    Permissions:
-    - Employee: Can view and complete own probation reviews
-    - Manager: Can view and complete reviews for direct reports
-    - Admin: Can view all reviews
-    """
+
     
     permission_classes = [IsAuthenticated]
     

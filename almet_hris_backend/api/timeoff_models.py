@@ -150,7 +150,7 @@ class TimeOffBalance(models.Model):
             employee=employee,
             defaults={
                 'monthly_allowance_hours': Decimal('4.0'),
-                'current_balance_hours': Decimal('0.0'),
+                'current_balance_hours': Decimal('4.0'),
                 'used_hours_this_month': Decimal('0.0'),
                 'last_reset_date': timezone.now().date(),
                 'is_initialized': False

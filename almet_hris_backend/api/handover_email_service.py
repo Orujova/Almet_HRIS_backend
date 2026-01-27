@@ -27,19 +27,7 @@ class HandoverEmailService:
     
     def send_handover_notification(self, handover, recipient_email, recipient_name, 
                                    notification_type, additional_data=None):
-        """
-        Send handover notification email
-        
-        Args:
-            handover: HandoverRequest object
-            recipient_email: Recipient's email address (can be list or string)
-            recipient_name: Recipient's name
-            notification_type: Type of notification (created, signature_needed, approved, etc.)
-            additional_data: Additional context data for email template
-        
-        Returns:
-            bool: Success status
-        """
+
         settings = self.get_settings()
         
         if not settings.enable_email_notifications:

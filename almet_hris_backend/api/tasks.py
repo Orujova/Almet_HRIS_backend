@@ -3,7 +3,7 @@ from celery import shared_task
 from django.utils import timezone
 from datetime import date
 import logging
-
+from datetime import timedelta
 logger = logging.getLogger(__name__)
 
 # ==================== EMPLOYEE STATUS TASKS ====================
@@ -90,13 +90,8 @@ def update_single_employee_status(employee_id):
 def send_daily_celebration_notifications():
   
     from .celebration_notification_service import celebration_notification_service
-    
     try:
-      
-        
         results = celebration_notification_service.check_and_send_daily_celebrations()
-        
-   
         return {
             'success': True,
             'birthdays_sent': results['birthdays_sent'],
@@ -120,23 +115,13 @@ def send_daily_celebration_notifications():
 
 @shared_task(name='api.tasks.send_position_change_email')
 def send_position_change_email(employee_id, old_position, new_position, change_type='promotion'):
-    """
-    📧 Send position change notification email (async)
     
-    Args:
-        employee_id: Employee ID
-        old_position: Previous position
-        new_position: New position
-        change_type: 'promotion' or 'transfer'
-    """
     from .models import Employee
     from .celebration_notification_service import celebration_notification_service
     
     try:
         employee = Employee.objects.get(id=employee_id)
-        
-    
-        
+
         success = celebration_notification_service.send_position_change_notification(
             employee=employee,
             old_position=old_position,
@@ -226,7 +211,162 @@ def send_anniversary_notification(employee_id, years):
         logger.error(error_msg)
         return {'success': False, 'error': str(e)}
 
+@shared_task(name='api.tasks.resignation_exit_tasks.check_expiring_contracts')
+def check_expiring_contracts():
+    """
+    Check for contracts expiring in 2 weeks
+    """
+    from .models import Employee
+    from .contract_probation_models import ContractRenewalRequest
+    from .system_email_service import system_email_service
+    
+    try:
+        two_weeks_later = date.today() + timedelta(days=14)
+        
+        expiring_employees = Employee.objects.filter(
+            contract_end_date=two_weeks_later,
+            contract_duration__in=['3_MONTHS', '6_MONTHS', '1_YEAR', '2_YEARS'],
+            status__affects_headcount=True,
+            is_deleted=False
+        ).select_related('line_manager', 'business_function', 'department')
+        
+        for employee in expiring_employees:
+            existing_request = ContractRenewalRequest.objects.filter(
+                employee=employee,
+                current_contract_end_date=employee.contract_end_date,
+                is_deleted=False
+            ).exists()
+            
+            if existing_request:
+                continue
+            
+            renewal_request = ContractRenewalRequest.objects.create(
+                employee=employee,
+                current_contract_end_date=employee.contract_end_date,
+                current_contract_type=employee.contract_duration,
+                notification_sent_at=timezone.now()
+            )
+            
+            logger.info(f"✅ Contract expiry notification sent for: {employee.employee_id}")
+        
+        return f"Processed {len(expiring_employees)} expiring contracts"
+        
+    except Exception as e:
+        logger.error(f"❌ Error in check_expiring_contracts: {e}")
+        raise
 
+
+@shared_task(name='api.tasks.resignation_exit_tasks.check_probation_reviews')
+def check_probation_reviews():
+    """
+    Check probation reviews and create them
+    """
+    from .models import Employee
+    from .contract_probation_models import ProbationReview
+    from datetime import timedelta
+    
+    try:
+        three_days_later = date.today() + timedelta(days=3)
+        
+        probation_employees = Employee.objects.filter(
+            status__status_type='PROBATION',
+            start_date__isnull=False,
+            is_deleted=False
+        ).select_related('line_manager', 'business_function', 'department')
+        
+        review_count = 0
+        
+        for employee in probation_employees:
+            try:
+                review_30_date = employee.start_date + timedelta(days=30)
+                review_60_date = employee.start_date + timedelta(days=60)
+                review_90_date = employee.start_date + timedelta(days=90)
+                
+                reviews_to_create = []
+                
+                if review_30_date == three_days_later:
+                    reviews_to_create.append(('30_DAY', review_30_date))
+                
+                if review_60_date == three_days_later:
+                    reviews_to_create.append(('60_DAY', review_60_date))
+                
+                if review_90_date == three_days_later:
+                    reviews_to_create.append(('90_DAY', review_90_date))
+                
+                for review_period, due_date in reviews_to_create:
+                    existing_review = ProbationReview.objects.filter(
+                        employee=employee,
+                        review_period=review_period,
+                        is_deleted=False
+                    ).exists()
+                    
+                    if existing_review:
+                        continue
+                    
+                    review = ProbationReview.objects.create(
+                        employee=employee,
+                        review_period=review_period,
+                        due_date=due_date,
+                        notification_sent_at=timezone.now()
+                    )
+                    
+                    review_count += 1
+                    logger.info(f"✅ Probation review created: {employee.employee_id} - {review_period}")
+                    
+            except Exception as e:
+                logger.warning(f"⚠️ Error for employee {employee.employee_id}: {e}")
+                continue
+        
+        return f"Created {review_count} probation reviews"
+        
+    except Exception as e:
+        logger.error(f"❌ Error in check_probation_reviews: {e}")
+        raise
+
+
+@shared_task(name='api.tasks.resignation_exit_tasks.send_resignation_reminders')
+def send_resignation_reminders():
+    """Send resignation reminders"""
+    from .resignation_models import ResignationRequest
+    from datetime import timedelta
+    
+    try:
+        three_days_ago = timezone.now() - timedelta(days=3)
+        
+        pending_resignations = ResignationRequest.objects.filter(
+            status='PENDING_MANAGER',
+            created_at__lte=three_days_ago,
+            is_deleted=False
+        ).select_related('employee__line_manager')
+        
+        logger.info(f"📧 Sending reminders for {len(pending_resignations)} resignations")
+        
+        return f"Sent reminders for {len(pending_resignations)} resignations"
+        
+    except Exception as e:
+        logger.error(f"❌ Error in send_resignation_reminders: {e}")
+        raise
+
+
+@shared_task(name='api.tasks.resignation_exit_tasks.send_exit_interview_reminders')
+def send_exit_interview_reminders():
+    """Send exit interview reminders"""
+    from .exit_interview_models import ExitInterview
+    
+    try:
+        pending_interviews = ExitInterview.objects.filter(
+            status='PENDING',
+            last_working_day__gte=date.today(),
+            is_deleted=False
+        ).select_related('employee')
+        
+        logger.info(f"📧 Sending reminders for {len(pending_interviews)} exit interviews")
+        
+        return f"Sent reminders for {len(pending_interviews)} exit interviews"
+        
+    except Exception as e:
+        logger.error(f"❌ Error in send_exit_interview_reminders: {e}")
+        raise
 @shared_task(name='api.tasks.send_welcome_email_task')
 def send_welcome_email_task(employee_id):
     """

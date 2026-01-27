@@ -1,14 +1,5 @@
 # api/business_trip_notifications.py
-"""
-Business Trip Notification Manager
-Handles all email notifications for business trip workflow:
-- Request created → Line Manager
-- Line Manager approved → Finance
-- Finance approved → HR
-- HR approved → Employee (Final Approval)
-- Request rejected → Employee
-- Trip cancelled → All Approvers
-"""
+
 
 import logging
 from .notification_service import notification_service

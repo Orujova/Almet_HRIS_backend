@@ -19,14 +19,15 @@ class CelebrationNotificationService:
     ]
     
     def __init__(self):
-        self.system_sender = 'hr@almettrading.com'
+        # self.system_sender = 'hr@almettrading.com'
+        self.system_sender = 'n.orujova@almettrading.com'
         
         # 📧 Distribution lists for all staff
         self.all_staff_emails = [
-            'alltradeuk@almettrading.co.uk',    # UK
-            'alltrade@almettrading.com',        # LLC
-            'allholding@almettrading.com',  
-            #  'n.orujova@almettrading.com',  # Test
+            # 'alltradeuk@almettrading.co.uk',    # UK
+            # 'alltrade@almettrading.com',       
+            # 'allholding@almettrading.com',  
+             'n.orujova@almettrading.com',  # Test
             # 'n.garibova@almettrading.com',
         
         ]
@@ -58,16 +59,7 @@ class CelebrationNotificationService:
         return True
     
     def send_birthday_notification(self, employee):
-        """
-        🎂 Send birthday celebration email (NO AGE)
-        ⚠️ Skips email for excluded business functions (e.g., ASPM)
-        
-        Args:
-            employee: Employee instance
-        
-        Returns:
-            bool: Success status
-        """
+  
         try:
             if not employee.date_of_birth:
                 logger.warning(f"No birth date for {employee.first_name} {employee.last_name}")
@@ -211,10 +203,7 @@ class CelebrationNotificationService:
             return False
 
     def send_work_anniversary_notification(self, employee, years):
-        """
-        🏆 Send work anniversary celebration email
-        ⚠️ Skips email for excluded business functions (e.g., ASPM)
-        """
+       
         try:
             if not employee.start_date:
                 logger.warning(f"No start date for {employee.first_name} {employee.last_name}")
@@ -319,11 +308,7 @@ class CelebrationNotificationService:
             return False
 
     def send_promotion_notification(self, employee, new_job_title):
-        """
-        📈 Promotion / Job Title Change email
-        ⚠️ Skips email for excluded business functions (e.g., ASPM)
-        Shows only NEW job title (no old title)
-        """
+      
         try:
             # ✅ CHECK: Should we send email for this employee?
             if not self.should_send_email(employee):
@@ -468,10 +453,7 @@ class CelebrationNotificationService:
             return False
     
     def send_welcome_email(self, employee):
-        """
-        👋 Send welcome email to new employee
-        ⚠️ Skips email for excluded business functions (e.g., ASPM)
-        """
+      
         try:
             # ✅ CHECK: Should we send email for this employee?
             if not self.should_send_email(employee):

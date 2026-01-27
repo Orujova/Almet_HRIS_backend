@@ -77,7 +77,7 @@ class SystemEmailService:
             logger.error(f"❌ Error acquiring application token: {e}")
             return None
     
-    # api/system_email_service.py
+
 
     def send_email_as_system(self, from_email, to_email, subject, body_html):
         """

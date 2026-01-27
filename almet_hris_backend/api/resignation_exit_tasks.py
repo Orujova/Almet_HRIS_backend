@@ -137,12 +137,7 @@ def _send_contract_expiry_notification(employee, renewal_request):
 
 @shared_task
 def check_probation_reviews():
-    """
-    Check for probation reviews due in 3 days
-    Send notifications to employee and manager
-    Create probation review instances
-    Runs daily
-    """
+
     from api.models import Employee, ContractTypeConfig
     from api.contract_probation_models import ProbationReview
     from api.system_email_service import system_email_service
@@ -162,18 +157,11 @@ def check_probation_reviews():
         
         for employee in probation_employees:
             try:
-                # Get contract config for probation days
-                contract_config = ContractTypeConfig.objects.get(
-                    contract_type=employee.contract_duration,
-                    is_active=True
-                )
-                
-                probation_days = contract_config.probation_days
-                
+               
                 # Calculate review dates
                 review_30_date = employee.start_date + timedelta(days=30)
                 review_60_date = employee.start_date + timedelta(days=60)
-                review_90_date = employee.start_date + timedelta(days=probation_days)
+                review_90_date = employee.start_date + timedelta(days=90)
                 
                 # Check which review is due
                 reviews_to_create = []
@@ -288,10 +276,7 @@ def _send_probation_review_notification(employee, review):
 
 @shared_task
 def send_resignation_reminders():
-    """
-    Send reminders for pending resignation approvals
-    Runs daily
-    """
+
     from api.resignation_models import ResignationRequest
     from api.system_email_service import system_email_service
     
@@ -317,7 +302,7 @@ def send_resignation_reminders():
 
 
 def _send_resignation_reminder(resignation):
-    """Send resignation approval reminder to manager"""
+    
     from api.system_email_service import system_email_service
     
     try:
@@ -363,10 +348,7 @@ def _send_resignation_reminder(resignation):
 
 @shared_task
 def send_exit_interview_reminders():
-    """
-    Send reminders for pending exit interviews
-    Runs daily
-    """
+ 
     from api.exit_interview_models import ExitInterview
     from api.system_email_service import system_email_service
     
@@ -394,7 +376,7 @@ def send_exit_interview_reminders():
 
 
 def _send_exit_interview_reminder(interview, days_remaining):
-    """Send exit interview reminder to employee"""
+
     from api.system_email_service import system_email_service
     
     try:
