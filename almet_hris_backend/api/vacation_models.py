@@ -845,10 +845,11 @@ class VacationSchedule(SoftDeleteModel):
     
     def clean(self):
         """Validation"""
-        if self.start_date and self.end_date and self.start_date >= self.end_date:
-            raise ValidationError("End date start date-dən böyük olmalıdır")
+        # ✅ FIXED: Allow single day schedules (start_date == end_date)
+        if self.start_date and self.end_date and self.start_date > self.end_date:
+            raise ValidationError("End date start date-dən kiçik ola bilməz")
         
-        # ✅ Kəsişmə yoxla
+        # ✅ Conflict check
         has_conflict, conflicts = self.check_date_conflicts()
         if has_conflict:
             conflict_details = ", ".join([

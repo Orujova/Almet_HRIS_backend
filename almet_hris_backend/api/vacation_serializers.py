@@ -519,8 +519,9 @@ class VacationScheduleCreateSerializer(serializers.Serializer):
                     "For my employee seçildikdə employee_id və ya employee_manual məlumatları lazımdır"
                 )
         
-        if data['start_date'] >= data['end_date']:
-            raise serializers.ValidationError("End date start date-dən böyük olmalıdır")
+        # ✅ FIXED: Allow single day schedules
+        if data['start_date'] > data['end_date']:
+            raise serializers.ValidationError("End date start date-dən kiçik ola bilməz")
         
         try:
             VacationType.objects.get(id=data['vacation_type_id'], is_active=True, is_deleted=False)
@@ -537,8 +538,8 @@ class VacationScheduleEditSerializer(serializers.ModelSerializer):
         fields = ['vacation_type', 'start_date', 'end_date', 'comment']
     
     def validate(self, data):
+        # ✅ FIXED: Allow single day schedules
         if 'start_date' in data and 'end_date' in data:
-            if data['start_date'] >= data['end_date']:
-                raise serializers.ValidationError("End date start date-dən böyük olmalıdır")
+            if data['start_date'] > data['end_date']:
+                raise serializers.ValidationError("End date start date-dən kiçik ola bilməz")
         return data
-

@@ -259,14 +259,17 @@ def check_expiring_contracts():
 @shared_task(name='api.tasks.resignation_exit_tasks.check_probation_reviews')
 def check_probation_reviews():
     """
-    Check probation reviews and create them
+    Check probation reviews - creates review 3 days BEFORE milestone
+    - Day 27 → Creates 30-day review (due on day 30)
+    - Day 57 → Creates 60-day review (due on day 60)  
+    - Day 87 → Creates 90-day review (due on day 90)
     """
     from .models import Employee
     from .contract_probation_models import ProbationReview
     from datetime import timedelta
     
     try:
-        three_days_later = date.today() + timedelta(days=3)
+        today = date.today()
         
         probation_employees = Employee.objects.filter(
             status__status_type='PROBATION',
@@ -278,22 +281,32 @@ def check_probation_reviews():
         
         for employee in probation_employees:
             try:
-                review_30_date = employee.start_date + timedelta(days=30)
-                review_60_date = employee.start_date + timedelta(days=60)
-                review_90_date = employee.start_date + timedelta(days=90)
+                days_since_start = (today - employee.start_date).days
+                
+                logger.info(f"🔍 Checking {employee.employee_id}: {days_since_start} days since start")
                 
                 reviews_to_create = []
                 
-                if review_30_date == three_days_later:
-                    reviews_to_create.append(('30_DAY', review_30_date))
+                # ✅ 30-day review: Create on day 27 (3 days before day 30)
+                if days_since_start == 27:
+                    due_date = employee.start_date + timedelta(days=30)
+                    reviews_to_create.append(('30_DAY', due_date))
+                    logger.info(f"   📅 Day 27 reached - should create 30-day review")
                 
-                if review_60_date == three_days_later:
-                    reviews_to_create.append(('60_DAY', review_60_date))
+                # ✅ 60-day review: Create on day 57 (3 days before day 60)
+                elif days_since_start == 57:
+                    due_date = employee.start_date + timedelta(days=60)
+                    reviews_to_create.append(('60_DAY', due_date))
+                    logger.info(f"   📅 Day 57 reached - should create 60-day review")
                 
-                if review_90_date == three_days_later:
-                    reviews_to_create.append(('90_DAY', review_90_date))
+                # ✅ 90-day review: Create on day 87 (3 days before day 90)
+                elif days_since_start == 87:
+                    due_date = employee.start_date + timedelta(days=90)
+                    reviews_to_create.append(('90_DAY', due_date))
+                    logger.info(f"   📅 Day 87 reached - should create 90-day review")
                 
                 for review_period, due_date in reviews_to_create:
+                    # Check if already exists
                     existing_review = ProbationReview.objects.filter(
                         employee=employee,
                         review_period=review_period,
@@ -301,28 +314,35 @@ def check_probation_reviews():
                     ).exists()
                     
                     if existing_review:
+                        logger.info(f"   ℹ️  {review_period} already exists - skipping")
                         continue
                     
+                    # ✅ Create review
                     review = ProbationReview.objects.create(
                         employee=employee,
                         review_period=review_period,
                         due_date=due_date,
-                        notification_sent_at=timezone.now()
+                        notification_sent_at=timezone.now(),
+                        status='PENDING'
                     )
                     
                     review_count += 1
-                    logger.info(f"✅ Probation review created: {employee.employee_id} - {review_period}")
+                    logger.info(f"✅ Created: {employee.employee_id} - {review_period} (due: {due_date})")
+                    
+                    # TODO: Send notification email to employee & manager
                     
             except Exception as e:
                 logger.warning(f"⚠️ Error for employee {employee.employee_id}: {e}")
                 continue
         
+        logger.info(f"📊 Total reviews created: {review_count}")
         return f"Created {review_count} probation reviews"
         
     except Exception as e:
         logger.error(f"❌ Error in check_probation_reviews: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         raise
-
 
 @shared_task(name='api.tasks.resignation_exit_tasks.send_resignation_reminders')
 def send_resignation_reminders():
