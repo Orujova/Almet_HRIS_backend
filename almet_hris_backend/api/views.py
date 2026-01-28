@@ -4278,38 +4278,43 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         
         return data
     
+    # views.py - EmployeeViewSet içində
+
     @action(detail=False, methods=['post'])
     def export_selected(self, request):
-        """COMPLETELY FIXED: Export selected employees to Excel or CSV with proper field handling"""
+        """✅ COMPLETELY FIXED: Export selected employees to Excel or CSV with proper field handling and filtering"""
         try:
             # Extract data from request
             export_format = request.data.get('export_format', 'excel')
             employee_ids = request.data.get('employee_ids', [])
             include_fields = request.data.get('include_fields', None)
             
+            logger.info(f"📊 Export request: format={export_format}, employee_ids={employee_ids}, fields={include_fields}")
             
-            # Build queryset
+            # ✅ CRITICAL FIX: Build queryset with proper filtering
             if employee_ids:
                 # Selected employees export
                 queryset = Employee.objects.filter(id__in=employee_ids)
-                
+                logger.info(f"✅ Exporting {len(employee_ids)} selected employees")
             else:
-                # Filtered or all employees export
+                # ✅ FIX: Apply ALL filters from query parameters
                 queryset = self.get_queryset()
                 
-                # Apply filtering from query parameters
+                # ✅ CRITICAL: Apply comprehensive filtering
                 employee_filter = ComprehensiveEmployeeFilter(queryset, request.query_params)
                 queryset = employee_filter.filter()
                 
+                logger.info(f"✅ Exporting {queryset.count()} filtered employees")
             
-            # Apply sorting
+            # Apply sorting if specified
             sort_params = request.query_params.get('ordering', '').split(',')
             sort_params = [param.strip() for param in sort_params if param.strip()]
             if sort_params:
                 employee_sorter = AdvancedEmployeeSorter(queryset, sort_params)
                 queryset = employee_sorter.sort()
+                logger.info(f"📊 Applied sorting: {sort_params}")
             
-            # COMPLETELY FIXED: Enhanced field mapping for export
+            # Enhanced field mapping for export
             complete_field_mappings = {
                 # Basic Information
                 'employee_id': 'Employee ID',
@@ -4370,18 +4375,12 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 'created_at': 'Created Date',
                 'updated_at': 'Last Updated',
                 'is_deleted': 'Is Deleted',
-                
-                # Additional Fields
-                'documents_count': 'Documents Count',
-                'activities_count': 'Activities Count',
-                'profile_image_url': 'Profile Image URL'
             }
             
             # Determine fields to export
             if include_fields and isinstance(include_fields, list) and len(include_fields) > 0:
-                # Use specified fields
                 fields_to_include = include_fields
-                
+                logger.info(f"📋 Using specified fields: {len(fields_to_include)} fields")
             else:
                 # Use default essential fields
                 fields_to_include = [
@@ -4390,9 +4389,9 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                     'status_name', 'line_manager_name', 'start_date', 'contract_duration_display',
                     'phone', 'father_name', 'years_of_service'
                 ]
-               
+                logger.info(f"📋 Using default fields: {len(fields_to_include)} fields")
             
-            # Filter out invalid fields and log which ones are valid
+            # Filter out invalid fields
             valid_fields = []
             invalid_fields = []
             
@@ -4403,14 +4402,14 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                     invalid_fields.append(field)
             
             if invalid_fields:
-                logger.warning(f"⚠️ FIXED: Invalid fields ignored: {invalid_fields}")
+                logger.warning(f"⚠️ Invalid fields ignored: {invalid_fields}")
             
             if not valid_fields:
                 # Fallback to basic fields if no valid fields
                 valid_fields = ['employee_id', 'name', 'email', 'job_title', 'department_name']
-                logger.warning("⚠️ FIXED: No valid fields, using fallback basic fields")
+                logger.warning("⚠️ No valid fields, using fallback basic fields")
             
-            
+            logger.info(f"✅ Exporting {queryset.count()} employees with {len(valid_fields)} fields")
             
             # Export based on format
             if export_format == 'csv':
@@ -4419,13 +4418,12 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 return self._export_to_excel_fixed(queryset, valid_fields, complete_field_mappings)
                 
         except Exception as e:
-            logger.error(f"❌ FIXED Export failed: {str(e)}")
+            logger.error(f"❌ Export failed: {str(e)}")
             logger.error(f"Traceback: {traceback.format_exc()}")
             return Response(
                 {'error': f'Export failed: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-    
     def _export_to_excel_fixed(self, queryset, fields, field_mappings):
         """COMPLETELY FIXED: Export employees to Excel with proper field handling"""
         from openpyxl import Workbook
