@@ -1940,17 +1940,29 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 'employee_name': employee.full_name
             }
             
-            # Delete document file from storage
+         
             if document.document_file:
                 try:
-                    if hasattr(document.document_file, 'path'):
-                        import os
-                        file_path = document.document_file.path
-                        if os.path.exists(file_path):
-                            os.remove(file_path)
-                            logger.info(f"✅ Document file deleted: {file_path}")
+                  
+                    if document.document_file.name:
+                       
+                        try:
+                            document.document_file.delete(save=False)
+                        except Exception as delete_error:
+                            if hasattr(document.document_file, 'path'):
+                                import os
+                                file_path = document.document_file.path
+                                if os.path.exists(file_path):
+                                    try:
+                                        os.remove(file_path)
+                                     
+                                    except OSError as os_error:
+                                        logger.warning(f"⚠️ Could not remove file: {os_error}")
+                    else:
+                        logger.warning(f"⚠️ Document has no file attached")
                 except Exception as e:
-                    logger.warning(f"Could not delete document file: {e}")
+                    logger.warning(f"⚠️ Error during file deletion process: {e}")
+
             
             # Soft delete document
             document.soft_delete(user=request.user)
