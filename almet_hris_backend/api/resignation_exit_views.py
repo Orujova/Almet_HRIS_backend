@@ -695,24 +695,46 @@ class ContractRenewalRequestViewSet(viewsets.ModelViewSet):
 # =====================================
 
 
+# api/views/resignation_exit_views.py
+
 class ProbationReviewQuestionViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     serializer_class = ProbationReviewQuestionSerializer
     
     def get_queryset(self):
+        """
+        Get probation review questions with optional filtering
+        """
+        # ✅ FIX: Start with base queryset - include INACTIVE questions for admin
         queryset = ProbationReviewQuestion.objects.filter(
-            is_deleted=False,
-            is_active=True
+            is_deleted=False
         ).order_by('review_type', 'order')
         
-        # ✅ FIX: Filter by review_type if provided
+        # ✅ Filter by review_type if provided
         review_type = self.request.query_params.get('review_type')
         if review_type:
-            # Split comma-separated values for multiple types
-            review_types = [rt.strip() for rt in review_type.split(',')]
-            queryset = queryset.filter(review_type__in=review_types)
+            # Handle comma-separated values
+            review_types = [rt.strip() for rt in review_type.split(',') if rt.strip()]
+            if review_types:
+                queryset = queryset.filter(review_type__in=review_types)
+                logger.info(f"Filtering probation questions by review_type: {review_types}")
+        
+        # ✅ Only filter by is_active for non-admin users
+        if not is_admin_user(self.request.user):
+            queryset = queryset.filter(is_active=True)
         
         return queryset
+    
+    def list(self, request, *args, **kwargs):
+        """Override list to add logging"""
+        review_type = request.query_params.get('review_type')
+        logger.info(f"📋 Probation questions requested - review_type: {review_type}")
+        
+        queryset = self.get_queryset()
+        logger.info(f"✅ Found {queryset.count()} questions")
+        
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
     
     def create(self, request, *args, **kwargs):
         """Only admin can create"""
@@ -721,6 +743,8 @@ class ProbationReviewQuestionViewSet(viewsets.ModelViewSet):
                 {'detail': 'Only admin can create questions'},
                 status=status.HTTP_403_FORBIDDEN
             )
+        
+        logger.info(f"Creating probation question: {request.data.get('review_type')}")
         return super().create(request, *args, **kwargs)
     
     def update(self, request, *args, **kwargs):
@@ -743,6 +767,7 @@ class ProbationReviewQuestionViewSet(viewsets.ModelViewSet):
         question = self.get_object()
         question.soft_delete(request.user)
         return Response(status=status.HTTP_204_NO_CONTENT)
+
 class ProbationReviewViewSet(viewsets.ModelViewSet):
 
     
