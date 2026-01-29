@@ -2575,10 +2575,11 @@ def bulk_create_schedules(request):
                     start_dt = datetime.strptime(schedule_data['start_date'], '%Y-%m-%d').date()
                     end_dt = datetime.strptime(schedule_data['end_date'], '%Y-%m-%d').date()
                     
-                    if start_dt >= end_dt:
+                    # ✅ FIXED: Allow single day schedules
+                    if start_dt > end_dt:
                         errors.append({
                             'index': idx,
-                            'error': 'End date must be after start date'
+                            'error': 'End date cannot be before start date'
                         })
                         continue
                     
@@ -2858,8 +2859,7 @@ def bulk_create_schedules(request):
         logger.error(traceback.format_exc())
         return Response({
             'error': str(e)
-        }, status=status.HTTP_400_BAD_REQUEST)
-        
+        }, status=status.HTTP_400_BAD_REQUEST)     
         
 # ==================== APPROVAL HISTORY ====================
 @swagger_auto_schema(
