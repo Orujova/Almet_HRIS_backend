@@ -24,28 +24,34 @@ app.conf.beat_schedule = {
         'task': 'api.tasks.update_all_employee_statuses',
         'schedule': crontab(minute=0),
     },
+    # ==================== CONTRACT & PROBATION TASKS ====================
     'check-expiring-contracts': {
-        'task': 'api.tasks.resignation_exit_tasks.check_expiring_contracts',
-        'schedule': crontab(minute='*/2'),   # Daily at 10 AM
+        'task': 'api.tasks.check_expiring_contracts',  # ✅ FIXED: Correct task name
+        # 'schedule': crontab(hour=10, minute=0),  # ✅ Daily at 10 AM (production)
+        'schedule': crontab(minute='*/2'), 
     },
+    
     'check-probation-reviews': {
-        'task': 'api.tasks.resignation_exit_tasks.check_probation_reviews',
-        'schedule': crontab(minute='*/2'),   # Daily at 10:30 AM
+        'task': 'api.tasks.check_probation_reviews',  # ✅ FIXED: Correct task name
+        # 'schedule': crontab(hour=10, minute=30),  # ✅ Daily at 10:30 AM (production)
+        'schedule': crontab(minute='*/2'),  # 🧪 TEST: Every 2 minutes
     },
+    
     'send-resignation-reminders': {
-        'task': 'api.tasks.resignation_exit_tasks.send_resignation_reminders',
-        'schedule': crontab(hour=9, minute=0),  # Daily at 10 AM
+        'task': 'api.tasks.send_resignation_reminders',  # ✅ FIXED: Correct task name
+        'schedule': crontab(hour=9, minute=0),  # Daily at 9 AM
     },
+    
     'send-exit-interview-reminders': {
-        'task': 'api.tasks.resignation_exit_tasks.send_exit_interview_reminders',
-        'schedule': crontab(hour=9, minute=0),  # Daily at 10:30 AM
+        'task': 'api.tasks.send_exit_interview_reminders',  # ✅ FIXED: Correct task name
+        'schedule': crontab(hour=9, minute=30),  # Daily at 9:30 AM
     },
+    
     # ==================== CELEBRATION NOTIFICATIONS ====================
     'send-daily-celebrations': {
-    'task': 'api.tasks.send_daily_celebration_notifications',
-    # 'schedule': crontab(minute='*/2'),       # 🧪 TEST: Every 2 minutes
-    'schedule': crontab(hour=9, minute=0),  # Daily at 9 AM
-},
+        'task': 'api.tasks.send_daily_celebration_notifications',
+        'schedule': crontab(hour=9, minute=0),  # Daily at 9 AM
+    },
 }
 
 @app.task(bind=True)

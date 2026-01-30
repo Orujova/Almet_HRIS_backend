@@ -443,22 +443,7 @@ class ExitInterviewViewSet(viewsets.ModelViewSet):
     
     @action(detail=True, methods=['post'])
     def submit_responses(self, request, pk=None):
-        """
-        Employee submits exit interview responses
-        POST /api/exit-interviews/{id}/submit_responses/
-        
-        Body:
-        {
-            "responses": [
-                {
-                    "question": 1,
-                    "rating_value": 4,
-                    "text_value": "Great team environment",
-                    "choice_value": "Career Growth"
-                }
-            ]
-        }
-        """
+
         exit_interview = self.get_object()
         serializer = ExitInterviewResponseCreateSerializer(data=request.data)
         
@@ -694,9 +679,6 @@ class ContractRenewalRequestViewSet(viewsets.ModelViewSet):
 # PROBATION REVIEW VIEWSETS
 # =====================================
 
-
-# api/views/resignation_exit_views.py
-
 class ProbationReviewQuestionViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     serializer_class = ProbationReviewQuestionSerializer
@@ -835,7 +817,7 @@ class ProbationReviewViewSet(viewsets.ModelViewSet):
             
             # Check permission
             if respondent_type == 'EMPLOYEE':
-                if review.employee != employee:
+                if review.employee != employee and not is_admin_user(request.user):
                     return Response(
                         {'detail': 'You can only submit your own review'},
                         status=status.HTTP_403_FORBIDDEN

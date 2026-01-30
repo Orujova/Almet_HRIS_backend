@@ -382,7 +382,7 @@ class ContractRenewalRequestDetailSerializer(serializers.ModelSerializer):
             'notification_sent_at', 'manager_decision',
             'manager_decided_at', 'manager_decided_by',
             'manager_decided_by_name', 'new_contract_type',
-            'new_contract_duration_months', 'salary_change',
+      'salary_change',
             'new_salary', 'position_change', 'new_position',
             'manager_comments', 'hr_processed_at',
             'hr_processed_by', 'hr_processed_by_name',
@@ -408,55 +408,47 @@ class ContractRenewalDecisionSerializer(serializers.Serializer):
     # Renewal details (required if decision is RENEW)
     new_contract_type = serializers.ChoiceField(
         choices=ContractRenewalRequest.CONTRACT_TYPE_CHOICES,
-        required=False
-    )
-    new_contract_duration_months = serializers.IntegerField(
         required=False,
-        min_value=1
+        allow_blank=True  # ✅ ADD THIS
     )
-    
+
     # Optional changes
-    salary_change = serializers.BooleanField(default=False)
+    salary_change = serializers.BooleanField(default=False, required=False)  # ✅ ADD required=False
     new_salary = serializers.DecimalField(
         max_digits=10,
         decimal_places=2,
-        required=False
+        required=False,
+        allow_null=True  # ✅ ADD THIS
     )
-    position_change = serializers.BooleanField(default=False)
-    new_position = serializers.CharField(required=False, allow_blank=True)
+    position_change = serializers.BooleanField(default=False, required=False)  # ✅ ADD required=False
+    new_position = serializers.CharField(required=False, allow_blank=True, allow_null=True)  # ✅ ADD allow_null
     
     comments = serializers.CharField(required=False, allow_blank=True)
     
     def validate(self, data):
         """Validate renewal details"""
-        if data['decision'] == 'RENEW':
+        if data.get('decision') == 'RENEW':  # ✅ Use .get() instead of direct access
             # Require contract type
             if not data.get('new_contract_type'):
                 raise serializers.ValidationError({
                     'new_contract_type': 'Required when renewing contract'
                 })
             
-            # Require duration for fixed-term contracts
-            if data['new_contract_type'] != 'PERMANENT':
-                if not data.get('new_contract_duration_months'):
+            # ✅ Only validate new_salary if salary_change is explicitly True
+            if data.get('salary_change') is True:
+                if not data.get('new_salary'):
                     raise serializers.ValidationError({
-                        'new_contract_duration_months': 'Required for fixed-term contracts'
+                        'new_salary': 'Required when salary_change is True'
                     })
             
-            # Require new salary if salary_change is True
-            if data.get('salary_change') and not data.get('new_salary'):
-                raise serializers.ValidationError({
-                    'new_salary': 'Required when salary_change is True'
-                })
-            
-            # Require new position if position_change is True
-            if data.get('position_change') and not data.get('new_position'):
-                raise serializers.ValidationError({
-                    'new_position': 'Required when position_change is True'
-                })
+            # ✅ Only validate new_position if position_change is explicitly True
+            if data.get('position_change') is True:
+                if not data.get('new_position'):
+                    raise serializers.ValidationError({
+                        'new_position': 'Required when position_change is True'
+                    })
         
         return data
-
 
 # =====================================
 # PROBATION REVIEW SERIALIZERS
@@ -506,16 +498,30 @@ class ProbationReviewListSerializer(serializers.ModelSerializer):
     employee_id = serializers.CharField(source='employee.employee_id', read_only=True)
     position = serializers.CharField(source='employee.job_title', read_only=True)
     department = serializers.CharField(source='employee.department.name', read_only=True)
+    responses = ProbationReviewResponseSerializer(many=True, read_only=True)
     
+    # Separate employee and manager responses
+    employee_responses = serializers.SerializerMethodField()
+    manager_responses = serializers.SerializerMethodField()
     class Meta:
         model = ProbationReview
         fields = [
             'id', 'employee', 'employee_name', 'employee_id',
-            'position', 'department', 'review_period',
+            'position', 'department', 'review_period','responses',
+            'employee_responses', 'manager_responses',
             'due_date', 'status', 'completed_at', 'created_at'
         ]
         read_only_fields = ['id', 'created_at']
-
+    
+    def get_employee_responses(self, obj):
+        """Get employee responses only"""
+        responses = obj.responses.filter(respondent_type='EMPLOYEE')
+        return ProbationReviewResponseSerializer(responses, many=True).data
+    
+    def get_manager_responses(self, obj):
+        """Get manager responses only"""
+        responses = obj.responses.filter(respondent_type='MANAGER')
+        return ProbationReviewResponseSerializer(responses, many=True).data
 
 class ProbationReviewDetailSerializer(serializers.ModelSerializer):
     """Detail view serializer for probation reviews"""

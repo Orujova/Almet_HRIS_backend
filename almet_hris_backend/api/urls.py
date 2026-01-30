@@ -168,7 +168,7 @@ urlpatterns = [
     path('competency/stats/', CompetencyStatsView.as_view(), name='competency-stats'),
 
     path('self-assessments-stats/', AssessmentStatsView.as_view(), name='assessment-stats'),
-
+    path('documents/', include('api.document_urls')),
     path('assets/assets/<uuid:pk>/activities/', 
          AssetViewSet.as_view({'get': 'activities'}), 
          name='asset-activities'),

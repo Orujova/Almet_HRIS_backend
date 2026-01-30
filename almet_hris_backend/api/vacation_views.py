@@ -1663,10 +1663,12 @@ def create_immediate_request(request):
         return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 
+# api/vacation_views.py - edit_schedule UPDATE
+
 @api_view(['PUT'])
 @permission_classes([IsAuthenticated])
 def edit_schedule(request, pk):
-    """✅ ENHANCED: Edit schedule + HR notification"""
+    """✅ ENHANCED: Edit schedule - allow PENDING_MANAGER status"""
     try:
         schedule = VacationSchedule.objects.get(pk=pk, is_deleted=False)
         access = get_vacation_access(request.user)
@@ -1676,16 +1678,22 @@ def edit_schedule(request, pk):
                 'error': 'Employee profili tapılmadı'
             }, status=status.HTTP_404_NOT_FOUND)
         
-        # Only owner can edit
+        # ✅ Only owner can edit
         if schedule.employee != access['employee']:
             return Response({
                 'error': 'Bu schedule-i edit etmək hüququnuz yoxdur'
             }, status=status.HTTP_403_FORBIDDEN)
         
-        # Edit limit check
-        if not schedule.can_edit():
+        # ✅ ENHANCED: Allow edit for PENDING_MANAGER + SCHEDULED
+        if schedule.status not in ['PENDING_MANAGER', 'SCHEDULED']:
             return Response({
-                'error': 'Bu schedule-i daha edit edə bilməzsiniz'
+                'error': f'Bu statusda ({schedule.get_status_display()}) schedule edit edilə bilməz'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # ✅ Edit limit check (only for SCHEDULED)
+        if schedule.status == 'SCHEDULED' and not schedule.can_edit():
+            return Response({
+                'error': 'Bu schedule-i daha edit edə bilməzsiniz (limit aşıldı)'
             }, status=status.HTTP_400_BAD_REQUEST)
         
         # Parse dates
@@ -1718,24 +1726,38 @@ def edit_schedule(request, pk):
                 'message': 'Zəhmət olmasa başqa tarix seçin'
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        schedule.edit_count += 1
+        # ✅ Only increment edit_count for SCHEDULED schedules
+        if schedule.status == 'SCHEDULED':
+            schedule.edit_count += 1
+        
         schedule.last_edited_at = timezone.now()
         schedule.last_edited_by = request.user
         schedule.save()
         
-        # ✅ Send notification to HR
+        # ✅ ENHANCED: Send different notifications based on status
         graph_token = get_graph_access_token(request.user)
         notification_sent = False
+        
         if graph_token:
-            notification_sent = notification_manager.notify_schedule_edited(
-                schedule,
-                request.user,
-                graph_token
-            )
+            if schedule.status == 'PENDING_MANAGER':
+                # Notify manager about update
+                notification_sent = notification_manager.notify_schedule_updated_pending(
+                    schedule,
+                    request.user,
+                    graph_token
+                )
+            else:  # SCHEDULED
+                # Notify HR about scheduled edit
+                notification_sent = notification_manager.notify_schedule_edited(
+                    schedule,
+                    request.user,
+                    graph_token
+                )
         
         return Response({
             'message': 'Schedule yeniləndi',
             'notification_sent': notification_sent,
+            'status': schedule.status,
             'schedule': VacationScheduleSerializer(schedule).data
         })
         
@@ -1746,8 +1768,6 @@ def edit_schedule(request, pk):
         import traceback
         logger.error(traceback.format_exc())
         return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
-
-# api/vacation_views.py - approve_schedule UPDATE
 
 @swagger_auto_schema(
     method='post',

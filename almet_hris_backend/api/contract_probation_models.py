@@ -88,11 +88,7 @@ class ContractRenewalRequest(SoftDeleteModel):
         blank=True,
         help_text="New contract type if renewing"
     )
-    new_contract_duration_months = models.IntegerField(
-        null=True,
-        blank=True,
-        help_text="Duration in months for fixed-term contracts"
-    )
+   
     salary_change = models.BooleanField(
         default=False,
         help_text="Is there a salary change?"
@@ -165,7 +161,7 @@ class ContractRenewalRequest(SoftDeleteModel):
         Manager makes renewal decision
         data = {
             'new_contract_type': str,
-            'new_contract_duration_months': int (optional),
+        
             'salary_change': bool,
             'new_salary': decimal (optional),
             'position_change': bool,
@@ -183,7 +179,7 @@ class ContractRenewalRequest(SoftDeleteModel):
         
         if decision == 'RENEW':
             self.new_contract_type = data.get('new_contract_type')
-            self.new_contract_duration_months = data.get('new_contract_duration_months')
+       
             self.salary_change = data.get('salary_change', False)
             self.new_salary = data.get('new_salary')
             self.position_change = data.get('position_change', False)
@@ -219,14 +215,9 @@ class ContractRenewalRequest(SoftDeleteModel):
             from dateutil.relativedelta import relativedelta
             self.employee.contract_start_date = self.current_contract_end_date + timedelta(days=1)
             
-            # Calculate new contract end date
-            if self.new_contract_duration_months:
-                self.employee.contract_end_date = self.employee.contract_start_date + relativedelta(
-                    months=self.new_contract_duration_months
-                )
+            
         
-        # Update salary if changed
-        # (Note: You may have a separate salary field/model)
+        
         
         # Update position if changed
         if self.position_change and self.new_position:
@@ -280,14 +271,27 @@ class ContractRenewalRequest(SoftDeleteModel):
         from .system_email_service import system_email_service
         
         try:
-            hr_email = "n.orujova@almettrading.com"
+            # ✅ Get all HR unit employees
+            from .models import Employee
+            hr_employees = Employee.objects.filter(
+                unit__unit_name_en__icontains='HR',
+                is_deleted=False,
+                status__affects_headcount=True,
+                email__isnull=False
+            ).values_list('email', flat=True)
+            
+            recipients = list(hr_employees)
+            
+            if not recipients:
+                logger.warning(f"⚠️ No HR recipients found for contract renewal")
+                return
             
             subject = f"Contract Renewal - Action Required - {self.employee.full_name}"
             
             body = f"""
             <html>
             <body style="font-family: Arial, sans-serif;">
-                <h2 style="color: #10B981;">Contract Renewal - Manager Decision</h2>
+                <h2 style="color: #10B981;">✅ Contract Renewal - Manager Decision</h2>
                 
                 <p>Manager has decided to renew the contract for:</p>
                 
@@ -301,7 +305,6 @@ class ContractRenewalRequest(SoftDeleteModel):
                 <h3>Renewal Details:</h3>
                 <div style="background-color: #EFF6FF; padding: 15px; border-radius: 5px; margin: 15px 0;">
                     <p><strong>New Contract Type:</strong> {self.get_new_contract_type_display()}</p>
-                    {f'<p><strong>Duration:</strong> {self.new_contract_duration_months} months</p>' if self.new_contract_duration_months else ''}
                     {f'<p><strong>New Salary:</strong> {self.new_salary} AZN</p>' if self.salary_change else ''}
                     {f'<p><strong>New Position:</strong> {self.new_position}</p>' if self.position_change else ''}
                 </div>
@@ -315,13 +318,17 @@ class ContractRenewalRequest(SoftDeleteModel):
             
             system_email_service.send_email_as_system(
                 from_email="myalmet@almettrading.com",
-                to_email=hr_email,
+                to_email=recipients,
                 subject=subject,
                 body_html=body
             )
+            
+            logger.info(f"✅ HR notification sent to {len(recipients)} recipients")
+            
         except Exception as e:
-            logger.error(f"Error sending HR notification: {e}")
-    
+            logger.error(f"❌ Error sending HR notification: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
     def _send_employee_notification(self, notification_type):
         """Send notification to employee"""
         from .system_email_service import system_email_service
@@ -363,7 +370,7 @@ class ContractRenewalRequest(SoftDeleteModel):
                 
                 <div style="background-color: #EFF6FF; padding: 15px; border-radius: 5px; margin: 15px 0;">
                     <p><strong>New Contract Type:</strong> {self.get_new_contract_type_display()}</p>
-                    {f'<p><strong>Duration:</strong> {self.new_contract_duration_months} months</p>' if self.new_contract_duration_months else ''}
+                    
                     {f'<p><strong>New Salary:</strong> {self.new_salary} AZN</p>' if self.salary_change else ''}
                     {f'<p><strong>New Position:</strong> {self.new_position}</p>' if self.position_change else ''}
                 </div>
@@ -582,11 +589,22 @@ class ProbationReview(SoftDeleteModel):
             if self.employee.line_manager and self.employee.line_manager.email:
                 recipients.append(self.employee.line_manager.email)
             
-            # HR email
-            # recipients.append("hr@almettrading.com")
-            recipients.append("n.orujova@almettrading.com")
+            # ✅ HR emails - send to HR unit employees
+            from .models import Employee
+            hr_employees = Employee.objects.filter(
+                unit__unit_name_en__icontains='HR',  # HR unit
+                is_deleted=False,
+                status__affects_headcount=True,
+                email__isnull=False
+            ).values_list('email', flat=True)
+            
+            recipients.extend(hr_employees)
+            
+            # ✅ Remove duplicates
+            recipients = list(set(recipients))
             
             if not recipients:
+                logger.warning(f"⚠️ No recipients found for probation review completion")
                 return
             
             subject = f"Probation Review Completed - {self.employee.full_name}"
@@ -594,7 +612,7 @@ class ProbationReview(SoftDeleteModel):
             body = f"""
             <html>
             <body style="font-family: Arial, sans-serif;">
-                <h2 style="color: #10B981;">Probation Review Completed</h2>
+                <h2 style="color: #10B981;">✅ Probation Review Completed</h2>
                 
                 <p>A probation review has been completed:</p>
                 
@@ -617,10 +635,13 @@ class ProbationReview(SoftDeleteModel):
                 subject=subject,
                 body_html=body
             )
+            
+            logger.info(f"✅ Probation completion notification sent to {len(recipients)} recipients")
+            
         except Exception as e:
-            logger.error(f"Error sending completion notification: {e}")
-
-
+            logger.error(f"❌ Error sending completion notification: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
 class ProbationReviewResponse(models.Model):
     """
     Response to probation review question
