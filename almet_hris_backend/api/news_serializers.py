@@ -38,8 +38,6 @@ class NewsCategorySerializer(serializers.ModelSerializer):
         return obj.news_items.filter(is_deleted=False).count()
     
 
-
-
 # ==================== TARGET GROUP SERIALIZERS ====================
 
 class TargetGroupListSerializer(serializers.ModelSerializer):
@@ -225,7 +223,7 @@ class NewsListSerializer(serializers.ModelSerializer):
     class Meta:
         model = CompanyNews
         fields = [
-            'id', 'title', 'excerpt', 'category', 'category_display',
+            'id', 'title', 'excerpt', 'category', 'content','category_display',
             'image_url', 'tags_list', 'is_pinned', 'is_published',
             'published_at', 'view_count', 'author_name',
             'target_groups_info', 'total_recipients', 'notify_members', 
@@ -333,27 +331,7 @@ class NewsCreateUpdateSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['id']
     
-    def validate_title(self, value):
-        """Validate title length"""
-        if len(value) < 5:
-            raise serializers.ValidationError("Title must be at least 5 characters long")
-        if len(value) > 300:
-            raise serializers.ValidationError("Title cannot exceed 300 characters")
-        return value
-    
-    def validate_excerpt(self, value):
-        """Validate excerpt length"""
-        if len(value) < 10:
-            raise serializers.ValidationError("Excerpt must be at least 10 characters long")
-        if len(value) > 500:
-            raise serializers.ValidationError("Excerpt cannot exceed 500 characters")
-        return value
-    
-    def validate_content(self, value):
-        """Validate content"""
-        if len(value) < 20:
-            raise serializers.ValidationError("Content must be at least 20 characters long")
-        return value
+
     
     def validate_target_group_ids(self, value):
         """Validate target group IDs"""
@@ -367,7 +345,7 @@ class NewsCreateUpdateSerializer(serializers.ModelSerializer):
     
     def validate(self, data):
         """Cross-field validation"""
-        # If notify_members is True, must have target groups
+        # If notify_members is True, must have target group
         if data.get('notify_members', False):
             target_group_ids = data.get('target_group_ids', [])
             if not target_group_ids:

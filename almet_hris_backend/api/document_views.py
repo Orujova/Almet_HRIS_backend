@@ -111,10 +111,9 @@ class DocumentCompanyViewSet(viewsets.ModelViewSet):
         # Don't allow editing auto-created companies
         if instance.business_function:
             from rest_framework.exceptions import ValidationError
-            raise ValidationError(
-                "Cannot edit auto-created company. This is linked to BusinessFunction. "
-                "Edit the BusinessFunction instead."
-            )
+            raise ValidationError({
+                "detail": "Cannot edit auto-created company. This is linked to BusinessFunction. Edit the BusinessFunction instead."
+            })
         
         serializer.save()
         logger.info(f"Document company updated: {serializer.instance.name}")

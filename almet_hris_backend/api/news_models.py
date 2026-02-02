@@ -150,9 +150,11 @@ class CompanyNews(SoftDeleteModel):
     )
     excerpt = models.TextField(
         max_length=500,
+        blank=True,
         help_text="Brief summary (shown in list view)"
     )
     content = models.TextField(
+        blank=True,
         help_text="Full news content (supports rich text)"
     )
     
