@@ -5,9 +5,6 @@ from .handover_models import (
     TaskActivity, HandoverImportantDate, HandoverActivity,
     HandoverAttachment
 )
-from .models import Employee
-from django.contrib.auth.models import User
-
 
 class HandoverTypeSerializer(serializers.ModelSerializer):
     """Handover Type Serializer"""
@@ -225,11 +222,7 @@ class HandoverRequestCreateSerializer(serializers.ModelSerializer):
             )
         return value
     
-    def validate_end_date(self, value):
-        """Validate end_date format if provided"""
-        # If value is provided, it should be a valid date
-        # DRF will handle the format validation automatically
-        return value
+ 
     
     def validate(self, data):
         """Comprehensive validation"""
