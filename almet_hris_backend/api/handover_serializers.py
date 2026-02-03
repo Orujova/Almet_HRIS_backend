@@ -212,6 +212,9 @@ class HandoverRequestCreateSerializer(serializers.ModelSerializer):
             'contacts', 'access_info', 'documents_info', 'open_issues', 'notes',
             'tasks_data', 'dates_data'
         ]
+        extra_kwargs = {
+            'end_date': {'required': False, 'allow_null': True}
+        }
     
     def validate_start_date(self, value):
         """Validate start date"""
@@ -222,13 +225,22 @@ class HandoverRequestCreateSerializer(serializers.ModelSerializer):
             )
         return value
     
+    def validate_end_date(self, value):
+        """Validate end_date format if provided"""
+        # If value is provided, it should be a valid date
+        # DRF will handle the format validation automatically
+        return value
+    
     def validate(self, data):
         """Comprehensive validation"""
         errors = {}
         
-        # 1. Validate dates
-        if data.get('start_date') and data.get('end_date'):
-            if data['start_date'] >= data['end_date']:
+        # 1. Validate dates - ONLY if BOTH are provided
+        start_date = data.get('start_date')
+        end_date = data.get('end_date')
+        
+        if start_date and end_date:  # Both must be present
+            if start_date >= end_date:
                 errors['end_date'] = 'End date must be after start date'
         
         # 2. Validate employees
@@ -243,14 +255,6 @@ class HandoverRequestCreateSerializer(serializers.ModelSerializer):
             valid_tasks = [t for t in tasks if t.get('description', '').strip()]
             if not valid_tasks:
                 errors['tasks_data'] = 'At least one task with description is required'
-            
-            # Validate each task
-            for idx, task in enumerate(tasks):
-                if not task.get('description', '').strip():
-                    errors[f'tasks_data.{idx}.description'] = 'Task description is required'
-                
-                if task.get('description') and len(task['description']) > 1000:
-                    errors[f'tasks_data.{idx}.description'] = 'Task description too long (max 1000 chars)'
         
         # 4. Validate dates
         dates = data.get('dates_data', [])
@@ -260,17 +264,6 @@ class HandoverRequestCreateSerializer(serializers.ModelSerializer):
             valid_dates = [d for d in dates if d.get('date') and d.get('description', '').strip()]
             if not valid_dates:
                 errors['dates_data'] = 'At least one important date with description is required'
-            
-            # Validate each date
-            for idx, date_item in enumerate(dates):
-                if not date_item.get('date'):
-                    errors[f'dates_data.{idx}.date'] = 'Date is required'
-                
-                if not date_item.get('description', '').strip():
-                    errors[f'dates_data.{idx}.description'] = 'Description is required'
-                
-                if date_item.get('description') and len(date_item['description']) > 500:
-                    errors[f'dates_data.{idx}.description'] = 'Description too long (max 500 chars)'
         
         # 5. Validate text fields length
         text_fields = ['contacts', 'access_info', 'documents_info', 'open_issues', 'notes']
@@ -282,6 +275,8 @@ class HandoverRequestCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(errors)
         
         return data
+    
+   
     
     def create(self, validated_data):
         """Create handover with all nested data"""

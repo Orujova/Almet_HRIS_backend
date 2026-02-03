@@ -3403,7 +3403,7 @@ class OrgChartNodeSerializer(serializers.ModelSerializer):
     
     def get_phone(self, obj):
         """Get phone or default"""
-        return obj.phone or '+994 50 xxx xxxx'
+        return obj.phone or ''
     
     def get_direct_reports(self, obj):
         """Get number of direct reports safely"""

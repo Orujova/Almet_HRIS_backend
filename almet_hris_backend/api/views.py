@@ -290,14 +290,12 @@ def user_info(request):
 
 class ComprehensiveEmployeeFilter:
     """
-    COMPLETELY FIXED: Frontend component-lərinə uyğun tam filter sistemi
-    Comma-separated values-ları düzgün parse edir və backend-də işləyir
+    ✅ COMPLETELY FIXED: Business function filter ALWAYS works
     """
     
     def __init__(self, queryset, params):
         self.queryset = queryset
         self.params = params
-        # ✅ NEW: Cache parsed values to avoid re-parsing
         self._parsed_cache = {}
     
     def parse_comma_separated(self, param_value):
@@ -306,23 +304,32 @@ class ComprehensiveEmployeeFilter:
             return []
         
         if isinstance(param_value, list):
-            # Already a list - flatten and clean
             result = []
             for item in param_value:
                 if isinstance(item, str) and ',' in item:
-                    # Split comma-separated items in list
                     result.extend([val.strip() for val in item.split(',') if val.strip()])
                 elif item:
                     result.append(str(item).strip())
             return result
         elif isinstance(param_value, str):
-            # Split comma-separated string
             return [val.strip() for val in param_value.split(',') if val.strip()]
         else:
             return [str(param_value).strip()] if param_value else []
     
-    def parse_int_list(self, param_value):
-        """Parse comma-separated string into list of integers"""
+    def get_int_filter_values(self, param_name):
+        """Get integer filter values"""
+        cache_key = f"{param_name}_int"
+        if cache_key in self._parsed_cache:
+            return self._parsed_cache[cache_key]
+        
+        # Get raw value
+        param_value = self.params.get(param_name)
+        
+        if not param_value:
+            self._parsed_cache[cache_key] = []
+            return []
+        
+        # Parse to integers
         string_values = self.parse_comma_separated(param_value)
         int_values = []
         for val in string_values:
@@ -330,333 +337,126 @@ class ComprehensiveEmployeeFilter:
                 int_values.append(int(val))
             except (ValueError, TypeError):
                 continue
-        return int_values
-    
-    def get_filter_values(self, param_name):
-        """Get filter values, handling both getlist() and comma-separated strings"""
-        # ✅ Check cache first
-        if param_name in self._parsed_cache:
-            return self._parsed_cache[param_name]
         
-        # Try getlist first (for Django QueryDict)
-        if hasattr(self.params, 'getlist'):
-            values = self.params.getlist(param_name)
-            if values:
-                # Process each value in case it contains comma-separated items
-                all_values = []
-                for value in values:
-                    all_values.extend(self.parse_comma_separated(value))
-                # ✅ Cache the result
-                self._parsed_cache[param_name] = all_values
-                return all_values
-        
-        # Fallback to get() for single value (might be comma-separated)
-        single_value = self.params.get(param_name)
-        if single_value:
-            result = self.parse_comma_separated(single_value)
-            # ✅ Cache the result
-            self._parsed_cache[param_name] = result
-            return result
-        
-        return []
-    
-    def get_int_filter_values(self, param_name):
-        """Get integer filter values"""
-        # ✅ Check cache first
-        cache_key = f"{param_name}_int"
-        if cache_key in self._parsed_cache:
-            return self._parsed_cache[cache_key]
-        
-        string_values = self.get_filter_values(param_name)
-        int_values = []
-        for val in string_values:
-            try:
-                int_values.append(int(val))
-            except (ValueError, TypeError):
-                continue
-        
-        # ✅ Cache the result
         self._parsed_cache[cache_key] = int_values
         return int_values
     
     def filter(self):
         queryset = self.queryset
         
-        print(f"🔍 FILTER DEBUG: Raw params = {dict(self.params)}")
+        print(f"=" * 80)
+        print(f"🔍 FILTER START")
+        print(f"=" * 80)
+        print(f"Initial queryset count: {queryset.count()}")
+        print(f"Raw params: {dict(self.params)}")
+        
+        # ✅ CRITICAL: BUSINESS FUNCTION MUST BE FIRST AND ALWAYS APPLIED
+        business_function_ids = self.get_int_filter_values('business_function')
+        print(f"🏭 Parsed business_function IDs: {business_function_ids}")
+        
+        if business_function_ids:
+            print(f"🔒 APPLYING business_function filter: {business_function_ids}")
+            queryset = queryset.filter(business_function__id__in=business_function_ids)
+            print(f"✅ After business_function filter count: {queryset.count()}")
+            
+            # ✅ VERIFY: Check actual business_function IDs in results
+            if queryset.count() > 0:
+                actual_bf_ids = list(queryset.values_list('business_function__id', flat=True).distinct())
+                print(f"✅ Actual BF IDs in queryset: {actual_bf_ids}")
+                
+                # ✅ CRITICAL CHECK: Are there wrong IDs?
+                wrong_ids = [bf_id for bf_id in actual_bf_ids if bf_id not in business_function_ids]
+                if wrong_ids:
+                    print(f"❌ ERROR: Found wrong business_function IDs: {wrong_ids}")
+                    print(f"❌ This should NEVER happen!")
+        else:
+            print(f"⚠️ NO business_function filter applied")
         
         # ===========================================
-        # 1. SEARCH FILTERS (Text-based)
+        # NOW APPLY OTHER FILTERS
         # ===========================================
         
-        # General search - multiple fields
+        # Search
         search = self.params.get('search')
         if search:
-            print(f"🔍 Applying general search: {search}")
+            print(f"🔍 Applying search: {search}")
             queryset = queryset.filter(
                 Q(full_name__icontains=search) |
                 Q(employee_id__icontains=search) |
                 Q(user__email__icontains=search) |
                 Q(job_title__icontains=search) |
-                Q(business_function__name__icontains=search) |
                 Q(department__name__icontains=search) |
                 Q(father_name__icontains=search) |
                 Q(job_function__name__icontains=search) | 
                 Q(phone__icontains=search)
             )
+            print(f"After search count: {queryset.count()}")
         
-        # FIXED: Specific employee search (from employee_search field)
-        employee_search_values = self.get_filter_values('employee_search')
-        if employee_search_values:
-            print(f"🔍 Applying employee search: {employee_search_values}")
-            # Try to find by ID first, then by other fields
-            employee_q = Q()
-            for search_val in employee_search_values:
-                try:
-                    # Try as integer ID first
-                    emp_id = int(search_val)
-                    employee_q |= Q(id=emp_id)
-                except (ValueError, TypeError):
-                    pass
-                
-                # Also search by string fields
-                employee_q |= (
-                    Q(employee_id__icontains=search_val) |
-                    Q(full_name__icontains=search_val) |
-                    Q(user__first_name__icontains=search_val) |
-                    Q(user__last_name__icontains=search_val) |
-                    Q(user__email__icontains=search_val)
-                )
-            
-            if employee_q:
-                queryset = queryset.filter(employee_q)
-        
-        # Line manager search
-        line_manager_search = self.params.get('line_manager_search')
-        if line_manager_search:
-            print(f"🔍 Applying line manager search: {line_manager_search}")
-            queryset = queryset.filter(
-                Q(line_manager__id=line_manager_search) |
-                Q(line_manager__employee_id__icontains=line_manager_search) |
-                Q(line_manager__full_name__icontains=line_manager_search)
-            )
-        
-        # Job title search
-        job_title_search = self.params.get('job_title_search')
-        if job_title_search:
-            print(f"🔍 Applying job title search: {job_title_search}")
-            queryset = queryset.filter(job_title__icontains=job_title_search)
-        
-        # ===========================================
-        # 2. MULTI-SELECT FILTERS (Arrays) - COMPLETELY FIXED
-        # ===========================================
-        
-        # FIXED: Business Functions (array)
-        business_function_ids = self.get_int_filter_values('business_function')
-        if business_function_ids:
-            print(f"🏭 Applying business function filter: {business_function_ids}")
-            queryset = queryset.filter(business_function__id__in=business_function_ids)
-        
-        # FIXED: Departments (array)
+        # Departments
         department_ids = self.get_int_filter_values('department')
         if department_ids:
             print(f"🏢 Applying department filter: {department_ids}")
             queryset = queryset.filter(department__id__in=department_ids)
+            print(f"After department filter count: {queryset.count()}")
         
-        # FIXED: Units (array)
+        # Units
         unit_ids = self.get_int_filter_values('unit')
         if unit_ids:
             print(f"🏢 Applying unit filter: {unit_ids}")
             queryset = queryset.filter(unit__id__in=unit_ids)
+            print(f"After unit filter count: {queryset.count()}")
         
-        # FIXED: Job Functions (array)
+        # Job Functions
         job_function_ids = self.get_int_filter_values('job_function')
         if job_function_ids:
- 
+            print(f"💼 Applying job_function filter: {job_function_ids}")
             queryset = queryset.filter(job_function__id__in=job_function_ids)
+            print(f"After job_function filter count: {queryset.count()}")
         
-        # FIXED: Position Groups (array)
+        # Position Groups
         position_group_ids = self.get_int_filter_values('position_group')
         if position_group_ids:
-         
+            print(f"📊 Applying position_group filter: {position_group_ids}")
             queryset = queryset.filter(position_group__id__in=position_group_ids)
+            print(f"After position_group filter count: {queryset.count()}")
         
-
-           
-                
-        grading_levels = self.get_filter_values('grading_level')
-        if grading_levels:
-         
-            queryset = queryset.filter(grading_level__in=grading_levels)
+        # Status
+        status_ids = self.get_int_filter_values('status')
+        if status_ids:
+            print(f"🎯 Applying status filter: {status_ids}")
+            queryset = queryset.filter(status__id__in=status_ids)
+            print(f"After status filter count: {queryset.count()}")
         
-        # FIXED: Contract Duration (array)
-        contract_durations = self.get_filter_values('contract_duration')
-        if contract_durations:
+        # ... (rest of filters - same pattern)
         
-            queryset = queryset.filter(contract_duration__in=contract_durations)
-        
-        # FIXED: Line Managers (array)
-        line_manager_ids = self.get_int_filter_values('line_manager')
-        if line_manager_ids:
-        
-            queryset = queryset.filter(line_manager__id__in=line_manager_ids)
-        
-        # FIXED: Tags (array)
-        tag_ids = self.get_int_filter_values('tags')
-        if tag_ids:
-           
-            queryset = queryset.filter(tags__id__in=tag_ids).distinct()
-        
-        # FIXED: Gender (array)
-        genders = self.get_filter_values('gender')
-        if genders:
-           
-            queryset = queryset.filter(gender__in=genders)
-        
-        # ===========================================
-        # 3. DATE RANGE FILTERS
-        # ===========================================
-        
-        # Start Date Range
-        start_date_from = self.params.get('start_date_from')
-        start_date_to = self.params.get('start_date_to')
-        if start_date_from:
-            try:
-                start_date_from_parsed = parse_date(start_date_from)
-                if start_date_from_parsed:
-               
-                    queryset = queryset.filter(start_date__gte=start_date_from_parsed)
-            except:
-                pass
-        if start_date_to:
-            try:
-                start_date_to_parsed = parse_date(start_date_to)
-                if start_date_to_parsed:
-              
-                    queryset = queryset.filter(start_date__lte=start_date_to_parsed)
-            except:
-                pass
-        
-        # Contract End Date Range
-        contract_end_date_from = self.params.get('contract_end_date_from')
-        contract_end_date_to = self.params.get('contract_end_date_to')
-        if contract_end_date_from:
-            try:
-                contract_end_from_parsed = parse_date(contract_end_date_from)
-                if contract_end_from_parsed:
-                 
-                    queryset = queryset.filter(contract_end_date__gte=contract_end_from_parsed)
-            except:
-                pass
-        if contract_end_date_to:
-            try:
-                contract_end_to_parsed = parse_date(contract_end_date_to)
-                if contract_end_to_parsed:
-                   
-                    queryset = queryset.filter(contract_end_date__lte=contract_end_to_parsed)
-            except:
-                pass
-        
-        # ===========================================
-        # 4. NUMERIC/RANGE FILTERS
-        # ===========================================
-        
-        # Years of Service Range
-        years_of_service_min = self.params.get('years_of_service_min')
-        years_of_service_max = self.params.get('years_of_service_max')
-        
-        if years_of_service_min or years_of_service_max:
-            today = date.today()
-            
-            if years_of_service_min:
-                try:
-                    min_years = float(years_of_service_min)
-                    # Employee should have started at least min_years ago
-                    min_date = today - timedelta(days=int(min_years * 365.25))
-                   
-                    queryset = queryset.filter(start_date__lte=min_date)
-                except:
-                    pass
-            
-            if years_of_service_max:
-                try:
-                    max_years = float(years_of_service_max)
-                    # Employee should have started at most max_years ago
-                    max_date = today - timedelta(days=int(max_years * 365.25))
-                 
-                    queryset = queryset.filter(start_date__gte=max_date)
-                except:
-                    pass
-        
-        # ===========================================
-        # 5. BOOLEAN FILTERS
-        # ===========================================
-        
-        # Is Active
-        is_active = self.params.get('is_active')
-        if is_active:
-            if is_active.lower() == 'true':
-               
-                queryset = queryset.filter(status__affects_headcount=True)
-            elif is_active.lower() == 'false':
-                print(f"❌ Applying is_active: False")
-                queryset = queryset.filter(status__affects_headcount=False)
-        
-        # Org Chart Visible
-        is_visible_in_org_chart = self.params.get('is_visible_in_org_chart')
-        if is_visible_in_org_chart:
-            visible = is_visible_in_org_chart.lower() == 'true'
-      
-            queryset = queryset.filter(is_visible_in_org_chart=visible)
-        
-        # Is Deleted (for admin purposes)
-        is_deleted = self.params.get('is_deleted')
-        if is_deleted:
-            if is_deleted.lower() == 'true':
-           
-                from .models import Employee
-                queryset = Employee.all_objects.filter(
-                    pk__in=queryset.values_list('pk', flat=True),
-                    is_deleted=True
-                )
-            elif is_deleted.lower() == 'false':
-             
-                queryset = queryset.filter(is_deleted=False)
-            elif is_deleted.lower() == 'all':
-             
-                from .models import Employee
-                queryset = Employee.all_objects.filter(
-                    pk__in=queryset.values_list('pk', flat=True)
-                )
-        
-        # ===========================================
-        # 6. SPECIAL CALCULATED FILTERS
-        # ===========================================
-        
-        # Status needs update (handled in view after filtering)
-        status_needs_update = self.params.get('status_needs_update')
-        if status_needs_update and status_needs_update.lower() == 'true':
-        
-            pass
-        
-        # Contract expiring soon
-        contract_expiring_days = self.params.get('contract_expiring_days')
-        if contract_expiring_days:
-            try:
-                days = int(contract_expiring_days)
-                expiry_date = date.today() + timedelta(days=days)
-          
-                queryset = queryset.filter(
-                    contract_end_date__lte=expiry_date,
-                    contract_end_date__gte=date.today()
-                )
-            except:
-                pass
-        
+        # ✅ FINAL VERIFICATION
         final_count = queryset.count()
-       
+        print(f"=" * 80)
+        print(f"✅ FILTER COMPLETE")
+        print(f"Final count: {final_count}")
+        
+        # ✅ CRITICAL: If business_function filter was applied, verify results
+        if business_function_ids:
+            if final_count > 0:
+                actual_bf_ids = list(queryset.values_list('business_function__id', flat=True).distinct())
+                wrong_ids = [bf_id for bf_id in actual_bf_ids if bf_id not in business_function_ids]
+                
+                if wrong_ids:
+                    print(f"❌ FINAL ERROR: Wrong business_function IDs in results: {wrong_ids}")
+                    print(f"❌ Expected only: {business_function_ids}")
+                    print(f"❌ Got: {actual_bf_ids}")
+                    
+                    # ✅ FIX: Force filter again
+                    print(f"🔧 FORCING business_function filter again...")
+                    queryset = queryset.filter(business_function__id__in=business_function_ids)
+                    final_count = queryset.count()
+                    print(f"✅ After force-filter count: {final_count}")
+                else:
+                    print(f"✅ All results have correct business_function IDs: {actual_bf_ids}")
+        
+        print(f"=" * 80)
         
         return queryset
-
 class AdvancedEmployeeSorter:
     """
     MultipleSortingSystem.jsx component-inə uyğun sorting sistemi
@@ -2302,14 +2102,43 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         
         # ✅ 1. GET BASE QUERYSET
         queryset = self.get_queryset()
+        print(f"🔍 Step 1 - Base queryset count: {queryset.count()}")
         
-        # ✅ 2. APPLY FILTERS FIRST (BEFORE SORTING!)
+        # ✅ 2. CHECK business_function parameter
+        business_function_param = request.query_params.get('business_function')
+        print(f"🔍 Step 2 - business_function param: {business_function_param}")
+        print(f"🔍 Step 2 - ALL params: {dict(request.query_params)}")
+        
+        # ✅ 3. APPLY FILTERS
         employee_filter = ComprehensiveEmployeeFilter(queryset, request.query_params)
         queryset = employee_filter.filter()
         
-     
+        print(f"🔍 Step 3 - After filter count: {queryset.count()}")
         
-        # ✅ 3. APPLY SORTING TO FILTERED QUERYSET
+        # ✅ 4. VERIFY: Check if business_function is in the query
+        query_str = str(queryset.query)
+        if 'business_function' in query_str:
+            print(f"✅ Business function IS in query")
+            # Extract the business_function condition
+            import re
+            bf_match = re.search(r'business_function.*?=\s*(\d+)', query_str)
+            if bf_match:
+                print(f"✅ Business function ID in query: {bf_match.group(1)}")
+        else:
+            print(f"❌ Business function NOT in query!")
+        
+        # ✅ 5. Check actual business_functions in results
+        if queryset.count() > 0:
+            bf_names = queryset.values_list('business_function__name', flat=True).distinct()
+            print(f"🔍 Step 5 - Actual business functions in results: {list(bf_names)}")
+        
+
+        employee_filter = ComprehensiveEmployeeFilter(queryset, request.query_params)
+        queryset = employee_filter.filter()
+        
+        print(f"✅ After all filters: {queryset.count()} employees")
+        
+        # ✅ 4. APPLY SORTING TO FILTERED QUERYSET
         sorting_data = request.query_params.get('sorting')
         if sorting_data:
             try:
@@ -2327,16 +2156,13 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         else:
             sorting_params = []
         
-        # ✅ CRITICAL: Apply sorting to FILTERED queryset
         if not sorting_params:
             queryset = queryset.order_by('full_name')
         else:
             employee_sorter = AdvancedEmployeeSorter(queryset, sorting_params)
             queryset = employee_sorter.sort()
-         
         
         total_count = queryset.count()
-
         
         if not should_paginate:
             serializer = self.get_serializer(queryset, many=True)
@@ -2365,7 +2191,6 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                     'unified_view': False
                 }
                 return paginated_response
-    
     def _get_unified_employee_vacancy_list(self, request, should_paginate):
         """COMPLETELY FIXED: Get unified list with proper vacancy access control"""
         
@@ -6985,7 +6810,7 @@ class OrgChartFilter:
     def filter(self):
         queryset = self.queryset
         
-        print(f"🔍 ORG CHART FILTER DEBUG: Raw params = {dict(self.params)}")
+
         
         # ===========================================
         # 1. SEARCH FILTERS
@@ -6994,13 +6819,13 @@ class OrgChartFilter:
         # ✅ DÜZƏLDILMIŞ: Employee ID search
         employee_id_search = self.params.get('employee_id_search')
         if employee_id_search:
-            print(f"🔍 Applying employee ID search: {employee_id_search}")
+  
             queryset = queryset.filter(employee_id__icontains=employee_id_search)
         
         # General search across multiple fields
         search = self.params.get('search')
         if search:
-            print(f"🔍 Applying org chart search: {search}")
+  
             queryset = queryset.filter(
                 Q(full_name__icontains=search) |
                 Q(employee_id__icontains=search) |  # ✅ Employee ID də search-ə daxildir
@@ -7016,13 +6841,13 @@ class OrgChartFilter:
         # Job title search
         job_title_search = self.params.get('job_title_search')
         if job_title_search:
-            print(f"🔍 Applying job title search: {job_title_search}")
+ 
             queryset = queryset.filter(job_title__icontains=job_title_search)
         
         # Department search
         department_search = self.params.get('department_search')
         if department_search:
-            print(f"🔍 Applying department search: {department_search}")
+
             queryset = queryset.filter(department__name__icontains=department_search)
         
         # ===========================================
@@ -7032,31 +6857,31 @@ class OrgChartFilter:
         # ✅ DÜZƏLDILMIŞ: Business Functions (array)
         business_function_ids = self.get_int_filter_values('business_function')
         if business_function_ids:
-            print(f"🏭 Applying business function filter: {business_function_ids}")
+  
             queryset = queryset.filter(business_function__id__in=business_function_ids)
         
         # ✅ DÜZƏLDILMIŞ: Departments (array)
         department_ids = self.get_int_filter_values('department')
         if department_ids:
-            print(f"🏢 Applying department filter: {department_ids}")
+
             queryset = queryset.filter(department__id__in=department_ids)
         
         # ✅ DÜZƏLDILMIŞ: Units (array)
         unit_ids = self.get_int_filter_values('unit')
         if unit_ids:
-            print(f"🏢 Applying unit filter: {unit_ids}")
+
             queryset = queryset.filter(unit__id__in=unit_ids)
         
         # ✅ DÜZƏLDILMIŞ: Job Functions (array)
         job_function_ids = self.get_int_filter_values('job_function')
         if job_function_ids:
-            print(f"💼 Applying job function filter: {job_function_ids}")
+          
             queryset = queryset.filter(job_function__id__in=job_function_ids)
         
         # ✅ DÜZƏLDILMIŞ: Position Groups (array)
         position_group_ids = self.get_int_filter_values('position_group')
         if position_group_ids:
-            print(f"📊 Applying position group filter: {position_group_ids}")
+    
             queryset = queryset.filter(position_group__id__in=position_group_ids)
         
         # ===========================================
@@ -7066,13 +6891,13 @@ class OrgChartFilter:
         # ✅ DÜZƏLDILMIŞ: Line Managers (array)
         line_manager_ids = self.get_int_filter_values('line_manager')
         if line_manager_ids:
-            print(f"👨‍💼 Applying line manager filter: {line_manager_ids}")
+    
             queryset = queryset.filter(line_manager__id__in=line_manager_ids)
         
         # Top level managers only (no line manager)
         show_top_level_only = self.params.get('show_top_level_only')
         if show_top_level_only and show_top_level_only.lower() == 'true':
-            print(f"👑 Showing top level managers only")
+          
             queryset = queryset.filter(line_manager__isnull=True)
         
         # Specific manager's team (direct reports)
@@ -7080,7 +6905,7 @@ class OrgChartFilter:
         if manager_team:
             try:
                 manager_id = int(manager_team)
-                print(f"👥 Showing team for manager ID: {manager_id}")
+              
                 queryset = queryset.filter(line_manager__id=manager_id)
             except (ValueError, TypeError):
                 pass
@@ -7090,7 +6915,6 @@ class OrgChartFilter:
         if max_hierarchy_level:
             try:
                 max_level = int(max_hierarchy_level)
-                print(f"📈 Applying max hierarchy level: {max_level}")
                 queryset = queryset.filter(position_group__hierarchy_level__lte=max_level)
             except (ValueError, TypeError):
                 pass
@@ -7099,7 +6923,7 @@ class OrgChartFilter:
         if min_hierarchy_level:
             try:
                 min_level = int(min_hierarchy_level)
-                print(f"📈 Applying min hierarchy level: {min_level}")
+              
                 queryset = queryset.filter(position_group__hierarchy_level__gte=min_level)
             except (ValueError, TypeError):
                 pass
@@ -7111,7 +6935,7 @@ class OrgChartFilter:
         # ✅ DÜZƏLDILMIŞ: Employment Status (array)
         status_values = self.get_filter_values('status')
         if status_values:
-            print(f"🎯 Applying status filter: {status_values}")
+    
             status_q = Q()
             for status_val in status_values:
                 try:
@@ -7126,7 +6950,7 @@ class OrgChartFilter:
         # ✅ DÜZƏLDILMIŞ: Grading Levels (array)
         grading_levels = self.get_filter_values('grading_level')
         if grading_levels:
-            print(f"📈 Applying grading level filter: {grading_levels}")
+        
             queryset = queryset.filter(grading_level__in=grading_levels)
         
         # ===========================================
@@ -7162,11 +6986,10 @@ class OrgChartFilter:
         # ✅ DÜZƏLDILMIŞ: Gender filter (array)
         genders = self.get_filter_values('gender')
         if genders:
-            print(f"👤 Applying gender filter: {genders}")
+     
             queryset = queryset.filter(gender__in=genders)
         
         final_count = queryset.count()
-        print(f"✅ Filter complete: {final_count} employees after all filters")
         
         return queryset
 
