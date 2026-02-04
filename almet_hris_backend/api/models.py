@@ -964,8 +964,7 @@ class Employee(SoftDeleteModel):
     )
     contract_start_date = models.DateField(null=True, blank=True)
     contract_end_date = models.DateField(null=True, blank=True, editable=False)  # Auto-calculated
-    contract_extensions = models.IntegerField(default=0, help_text="Number of contract extensions")
-    last_extension_date = models.DateField(null=True, blank=True)
+
     
     
     # Management Hierarchy (ENHANCED)
@@ -1399,53 +1398,7 @@ class Employee(SoftDeleteModel):
             logger.error(f"Error updating status automatically for {self.employee_id}: {e}")
             return False
  
-    def extend_contract(self, extension_months, user=None):
-        """Extend employee contract"""
-        if self.contract_duration == 'PERMANENT':
-            return False, "Cannot extend permanent contract"
-        
-        if not self.contract_end_date:
-            return False, "No contract end date to extend"
-        
-        try:
-            if relativedelta:
-                new_end_date = self.contract_end_date + relativedelta(months=extension_months)
-            else:
-                # Approximate calculation
-                new_end_date = self.contract_end_date + timedelta(days=extension_months * 30)
-            
-            old_end_date = self.contract_end_date
-            self.contract_end_date = new_end_date
-            self.contract_extensions += 1
-            self.last_extension_date = timezone.now().date()
-           
-            
-            if user:
-                self.updated_by = user
-            
-            self.save()
-            
-            # Log activity
-            EmployeeActivity.objects.create(
-                employee=self,
-                activity_type='CONTRACT_UPDATED',
-                description=f"Contract extended by {extension_months} months. New end date: {new_end_date}",
-                performed_by=user,
-                metadata={
-                    'extension_months': extension_months,
-                    'old_end_date': str(old_end_date),
-                    'new_end_date': str(new_end_date),
-                    'extension_count': self.contract_extensions
-                }
-            )
-            
-            return True, f"Contract extended successfully until {new_end_date}"
-            
-        except Exception as e:
-            logger.error(f"Error extending contract for {self.employee_id}: {e}")
-            return False, f"Error extending contract: {str(e)}"
 
-    # models.py - Employee model-də add_tag metodunu yenilə
 
     def add_tag(self, tag, user=None, skip_status_change=False):
         """
@@ -1665,8 +1618,7 @@ class Employee(SoftDeleteModel):
                     'contract_duration': self.contract_duration,
                     'contract_start_date': self.contract_start_date.isoformat() if self.contract_start_date else None,
                     'contract_end_date': self.contract_end_date.isoformat() if self.contract_end_date else None,
-                    'contract_extensions': self.contract_extensions,
-                    'last_extension_date': self.last_extension_date.isoformat() if self.last_extension_date else None,
+           
                 },
                 'management': {
                     'line_manager_id': self.line_manager.employee_id if self.line_manager else None,

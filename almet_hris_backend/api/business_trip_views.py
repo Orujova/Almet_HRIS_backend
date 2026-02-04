@@ -505,7 +505,7 @@ def get_notification_context(request):
 
 
 # ==================== CREATE REQUEST ====================
-# api/business_trip_views.py - UPDATED create_trip_request function
+
 
 @swagger_auto_schema(
     method='post',
@@ -603,37 +603,35 @@ def get_notification_context(request):
 @permission_classes([IsAuthenticated])
 @parser_classes([MultiPartParser, FormParser])
 def create_trip_request(request):
-    """
-    Create business trip request with smart permission checking:
-    - For 'for_me': Requires 'business_trips.request.create' permission
-    - For 'for_my_employee': 
-        * Can create if user is Line Manager of the employee (no permission needed)
-        * OR has 'business_trips.request.create_for_employee' permission
-        * OR is Admin
-    """
+    """Create business trip request"""
     import json
     
     try:
         # Parse JSON fields from form data
         data = request.data.dict()
         
-        # Parse schedules
-        if 'schedules' in data:
+        # Parse schedules (OPTIONAL now)
+        if 'schedules' in data and data['schedules']:
             try:
                 data['schedules'] = json.loads(data['schedules'])
             except json.JSONDecodeError:
                 return Response({
                     'error': 'Invalid schedules format. Must be valid JSON array.'
                 }, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            data['schedules'] = []  
         
-        # Parse hotels
-        if 'hotels' in data:
+        # Parse hotels (OPTIONAL now)
+        if 'hotels' in data and data['hotels']:
             try:
                 data['hotels'] = json.loads(data['hotels'])
             except json.JSONDecodeError:
                 return Response({
                     'error': 'Invalid hotels format. Must be valid JSON array.'
                 }, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            data['hotels'] = []  
+        
         
         # Parse employee_manual if exists
         if 'employee_manual' in data:
@@ -653,11 +651,11 @@ def create_trip_request(request):
                 'detail': 'Business Trip sisteminə daxil olmaq üçün employee profili lazımdır'
             }, status=status.HTTP_403_FORBIDDEN)
         
-        # ✅ SMART PERMISSION CHECK
+       
         requester_type = data.get('requester_type')
         
         if requester_type == 'for_me':
-            # ✅ FOR_ME: Normal permission yoxlaması
+            
             has_perm, _ = check_business_trip_permission(
                 request.user, 
                 'business_trips.request.create'
@@ -670,7 +668,7 @@ def create_trip_request(request):
                 }, status=status.HTTP_403_FORBIDDEN)
         
         elif requester_type == 'for_my_employee':
-            # ✅ FOR_MY_EMPLOYEE: 3 şərt yoxlanır
+           
             
             # Check if Admin
             if is_admin_user(request.user):
@@ -769,12 +767,13 @@ def create_trip_request(request):
                 start_date=validated_data['start_date'],
                 end_date=validated_data['end_date'],
                 comment=validated_data.get('comment', ''),
+                initial_finance_amount=validated_data.get('initial_finance_amount'),  # ✅ NEW
                 finance_approver_id=validated_data.get('finance_approver_id'),
                 hr_representative_id=validated_data.get('hr_representative_id')
             )
             
-            # Create schedules
-            for i, schedule_data in enumerate(validated_data['schedules']):
+            # ✅ Create schedules only if provided
+            for i, schedule_data in enumerate(validated_data.get('schedules', [])):
                 TripSchedule.objects.create(
                     trip_request=trip_req,
                     date=schedule_data['date'],
@@ -784,7 +783,7 @@ def create_trip_request(request):
                     notes=schedule_data.get('notes', '')
                 )
             
-            # Create hotels
+            # ✅ Create hotels only if provided
             for hotel_data in validated_data.get('hotels', []):
                 TripHotel.objects.create(
                     trip_request=trip_req,
@@ -799,9 +798,8 @@ def create_trip_request(request):
             uploaded_attachments = []
             file_errors = []
             
-            for idx, file in enumerate(uploaded_files):
+            for file in uploaded_files:
                 try:
-                    # Validate file
                     upload_serializer = TripAttachmentUploadSerializer(data={'file': file})
                     if not upload_serializer.is_valid():
                         file_errors.append({
@@ -810,7 +808,6 @@ def create_trip_request(request):
                         })
                         continue
                     
-                    # Create attachment
                     attachment = TripAttachment.objects.create(
                         trip_request=trip_req,
                         file=file,
@@ -827,7 +824,7 @@ def create_trip_request(request):
                         'error': str(e)
                     })
             
-            # Submit request
+            # Submit request - ✅ Always starts with Line Manager
             trip_req.submit_request(request.user)
             
             # Send notification
@@ -835,12 +832,6 @@ def create_trip_request(request):
             notification_sent = False
             if graph_token:
                 notification_sent = notification_manager.notify_request_created(trip_req, graph_token)
-                if notification_sent:
-                    logger.info("✅ Notification sent to Line Manager")
-                else:
-                    logger.warning("⚠️ Failed to send notification")
-            else:
-                logger.warning("⚠️ Graph token not available - notification skipped")
             
             # Prepare response
             response_data = {
@@ -866,11 +857,148 @@ def create_trip_request(request):
             
             return Response(response_data, status=status.HTTP_201_CREATED)
     
-    except Employee.DoesNotExist:
-        return Response({'error': 'Employee not found'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
         logger.error(f"Error creating trip request: {e}")
         return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+    
+    
+# ✅ NEW: UPDATE REQUEST
+@swagger_auto_schema(
+    method='put',
+    operation_description="Update trip request (only in DRAFT/SUBMITTED status)",
+    tags=['Business Trip'],
+    request_body=BusinessTripRequestUpdateSerializer,
+    responses={200: 'Updated', 403: 'Permission denied', 404: 'Not found'}
+)
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def update_trip_request(request, pk):
+    """Update trip request"""
+    try:
+        trip_req = BusinessTripRequest.objects.get(pk=pk, is_deleted=False)
+        
+        # Permission check
+        emp = Employee.objects.get(user=request.user, is_deleted=False)
+        
+        # Only creator or admin can update
+        if trip_req.requester != request.user and not is_admin_user(request.user):
+            return Response({
+                'error': 'You can only update your own requests'
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        # Can only update DRAFT or SUBMITTED requests
+        if trip_req.status not in ['DRAFT', 'SUBMITTED', 'PENDING_LINE_MANAGER']:
+            return Response({
+                'error': 'Cannot update request in current status',
+                'current_status': trip_req.status
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        serializer = BusinessTripRequestUpdateSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        validated_data = serializer.validated_data
+        
+        with transaction.atomic():
+            # Update basic fields
+            if 'travel_type_id' in validated_data:
+                trip_req.travel_type_id = validated_data['travel_type_id']
+            if 'transport_type_id' in validated_data:
+                trip_req.transport_type_id = validated_data['transport_type_id']
+            if 'purpose_id' in validated_data:
+                trip_req.purpose_id = validated_data['purpose_id']
+            if 'start_date' in validated_data:
+                trip_req.start_date = validated_data['start_date']
+            if 'end_date' in validated_data:
+                trip_req.end_date = validated_data['end_date']
+            if 'comment' in validated_data:
+                trip_req.comment = validated_data['comment']
+            if 'initial_finance_amount' in validated_data:
+                trip_req.initial_finance_amount = validated_data['initial_finance_amount']
+            
+            trip_req.save()
+            
+            # Update schedules if provided
+            if 'schedules' in validated_data:
+                trip_req.schedules.all().delete()
+                for i, schedule_data in enumerate(validated_data['schedules']):
+                    TripSchedule.objects.create(
+                        trip_request=trip_req,
+                        date=schedule_data['date'],
+                        from_location=schedule_data['from_location'],
+                        to_location=schedule_data['to_location'],
+                        order=i + 1,
+                        notes=schedule_data.get('notes', '')
+                    )
+            
+            # Update hotels if provided
+            if 'hotels' in validated_data:
+                trip_req.hotels.all().delete()
+                for hotel_data in validated_data['hotels']:
+                    TripHotel.objects.create(
+                        trip_request=trip_req,
+                        hotel_name=hotel_data['hotel_name'],
+                        check_in_date=hotel_data['check_in_date'],
+                        check_out_date=hotel_data['check_out_date'],
+                        location=hotel_data.get('location', ''),
+                        notes=hotel_data.get('notes', '')
+                    )
+        
+        return Response({
+            'message': 'Trip request updated successfully',
+            'request': BusinessTripRequestDetailSerializer(trip_req, context={'request': request}).data
+        })
+        
+    except BusinessTripRequest.DoesNotExist:
+        return Response({'error': 'Request not found'}, status=status.HTTP_404_NOT_FOUND)
+    except Employee.DoesNotExist:
+        return Response({'error': 'Employee profile not found'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Error updating trip request: {e}")
+        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+# ✅ NEW: DELETE REQUEST
+@swagger_auto_schema(
+    method='delete',
+    operation_description="Delete trip request (only in DRAFT/SUBMITTED status)",
+    tags=['Business Trip'],
+    responses={200: 'Deleted', 403: 'Permission denied', 404: 'Not found'}
+)
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def delete_trip_request(request, pk):
+    """Delete trip request"""
+    try:
+        trip_req = BusinessTripRequest.objects.get(pk=pk, is_deleted=False)
+        
+        # Permission check
+        if trip_req.requester != request.user and not is_admin_user(request.user):
+            return Response({
+                'error': 'You can only delete your own requests'
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        # Can only delete DRAFT or SUBMITTED requests
+        if trip_req.status not in ['DRAFT', 'SUBMITTED', 'PENDING_LINE_MANAGER']:
+            return Response({
+                'error': 'Cannot delete request in current status',
+                'current_status': trip_req.status
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Soft delete
+        trip_req.is_deleted = True
+        trip_req.save()
+        
+        return Response({
+            'message': 'Trip request deleted successfully',
+            'request_id': trip_req.request_id
+        })
+        
+    except BusinessTripRequest.DoesNotExist:
+        return Response({'error': 'Request not found'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Error deleting trip request: {e}")
+        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)    
 # ==================== MY REQUESTS ====================
 
 @swagger_auto_schema(

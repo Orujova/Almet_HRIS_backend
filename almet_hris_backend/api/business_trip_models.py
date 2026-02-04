@@ -166,7 +166,13 @@ class BusinessTripRequest(SoftDeleteModel):
     number_of_days = models.DecimalField(max_digits=5, decimal_places=1, editable=False, default=0)
     
     comment = models.TextField(blank=True, help_text="Employee comment")
-    
+    initial_finance_amount = models.DecimalField(
+        max_digits=10, 
+        decimal_places=2, 
+        null=True, 
+        blank=True,
+        help_text="Initial amount suggested by employee"
+    )
     # Approvers
     line_manager = models.ForeignKey(
         Employee, 
@@ -295,15 +301,12 @@ class BusinessTripRequest(SoftDeleteModel):
         super().save(*args, **kwargs)
     
     def submit_request(self, user):
-        """Submit for approval"""
-        requester_emp = getattr(user, 'employee', None)
-        is_manager_request = requester_emp and self.employee.line_manager == requester_emp
-        
-        if is_manager_request:
-            self.status = 'PENDING_FINANCE' if self.finance_approver else ('PENDING_HR' if self.hr_representative else 'APPROVED')
-        else:
-            self.status = 'PENDING_LINE_MANAGER' if self.line_manager else ('PENDING_FINANCE' if self.finance_approver else ('PENDING_HR' if self.hr_representative else 'APPROVED'))
-        
+        """Submit for approval - always starts with Line Manager"""
+        self.status = 'PENDING_LINE_MANAGER' if self.line_manager else (
+            'PENDING_FINANCE' if self.finance_approver else (
+                'PENDING_HR' if self.hr_representative else 'APPROVED'
+            )
+        )
         self.save()
     
     def approve_by_line_manager(self, user, comment=''):

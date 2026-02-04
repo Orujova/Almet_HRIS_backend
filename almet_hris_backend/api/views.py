@@ -43,13 +43,12 @@ from .serializers import (
     VacantPositionListSerializer, VacantPositionDetailSerializer, VacantPositionCreateSerializer,
      ProfileImageDeleteSerializer,BulkHardDeleteSerializer,
     ProfileImageUploadSerializer, EmployeeDocumentSerializer,
-    ContractTypeConfigSerializer, BulkContractExtensionSerializer, ContractExtensionSerializer,
+    ContractTypeConfigSerializer, 
     SingleEmployeeTagUpdateSerializer, SingleLineManagerAssignmentSerializer,
     BulkEmployeeTagUpdateSerializer, JobTitleSerializer,
     BulkLineManagerAssignmentSerializer,VacancyToEmployeeConversionSerializer,EmployeeJobDescriptionSerializer,ManagerJobDescriptionSerializer
 )
 
-from .asset_permissions import get_asset_access_level
 from .auth import MicrosoftTokenValidator
 from drf_yasg.inspectors import SwaggerAutoSchema
 logger = logging.getLogger(__name__)
@@ -344,25 +343,21 @@ class ComprehensiveEmployeeFilter:
     def filter(self):
         queryset = self.queryset
         
-        print(f"=" * 80)
-        print(f"🔍 FILTER START")
-        print(f"=" * 80)
-        print(f"Initial queryset count: {queryset.count()}")
-        print(f"Raw params: {dict(self.params)}")
+ 
         
         # ✅ CRITICAL: BUSINESS FUNCTION MUST BE FIRST AND ALWAYS APPLIED
         business_function_ids = self.get_int_filter_values('business_function')
-        print(f"🏭 Parsed business_function IDs: {business_function_ids}")
+      
         
         if business_function_ids:
-            print(f"🔒 APPLYING business_function filter: {business_function_ids}")
+           
             queryset = queryset.filter(business_function__id__in=business_function_ids)
-            print(f"✅ After business_function filter count: {queryset.count()}")
+          
             
             # ✅ VERIFY: Check actual business_function IDs in results
             if queryset.count() > 0:
                 actual_bf_ids = list(queryset.values_list('business_function__id', flat=True).distinct())
-                print(f"✅ Actual BF IDs in queryset: {actual_bf_ids}")
+            
                 
                 # ✅ CRITICAL CHECK: Are there wrong IDs?
                 wrong_ids = [bf_id for bf_id in actual_bf_ids if bf_id not in business_function_ids]
@@ -379,7 +374,7 @@ class ComprehensiveEmployeeFilter:
         # Search
         search = self.params.get('search')
         if search:
-            print(f"🔍 Applying search: {search}")
+ 
             queryset = queryset.filter(
                 Q(full_name__icontains=search) |
                 Q(employee_id__icontains=search) |
@@ -390,50 +385,46 @@ class ComprehensiveEmployeeFilter:
                 Q(job_function__name__icontains=search) | 
                 Q(phone__icontains=search)
             )
-            print(f"After search count: {queryset.count()}")
+      
         
         # Departments
         department_ids = self.get_int_filter_values('department')
         if department_ids:
-            print(f"🏢 Applying department filter: {department_ids}")
+        
             queryset = queryset.filter(department__id__in=department_ids)
-            print(f"After department filter count: {queryset.count()}")
+         
         
         # Units
         unit_ids = self.get_int_filter_values('unit')
         if unit_ids:
-            print(f"🏢 Applying unit filter: {unit_ids}")
+       
             queryset = queryset.filter(unit__id__in=unit_ids)
-            print(f"After unit filter count: {queryset.count()}")
+        
         
         # Job Functions
         job_function_ids = self.get_int_filter_values('job_function')
         if job_function_ids:
-            print(f"💼 Applying job_function filter: {job_function_ids}")
+    
             queryset = queryset.filter(job_function__id__in=job_function_ids)
-            print(f"After job_function filter count: {queryset.count()}")
+        
         
         # Position Groups
         position_group_ids = self.get_int_filter_values('position_group')
         if position_group_ids:
-            print(f"📊 Applying position_group filter: {position_group_ids}")
+          
             queryset = queryset.filter(position_group__id__in=position_group_ids)
-            print(f"After position_group filter count: {queryset.count()}")
+           
         
         # Status
         status_ids = self.get_int_filter_values('status')
         if status_ids:
-            print(f"🎯 Applying status filter: {status_ids}")
+  
             queryset = queryset.filter(status__id__in=status_ids)
-            print(f"After status filter count: {queryset.count()}")
-        
-        # ... (rest of filters - same pattern)
-        
+       
+
         # ✅ FINAL VERIFICATION
         final_count = queryset.count()
-        print(f"=" * 80)
-        print(f"✅ FILTER COMPLETE")
-        print(f"Final count: {final_count}")
+     
         
         # ✅ CRITICAL: If business_function filter was applied, verify results
         if business_function_ids:
@@ -442,19 +433,15 @@ class ComprehensiveEmployeeFilter:
                 wrong_ids = [bf_id for bf_id in actual_bf_ids if bf_id not in business_function_ids]
                 
                 if wrong_ids:
-                    print(f"❌ FINAL ERROR: Wrong business_function IDs in results: {wrong_ids}")
-                    print(f"❌ Expected only: {business_function_ids}")
-                    print(f"❌ Got: {actual_bf_ids}")
-                    
-                    # ✅ FIX: Force filter again
-                    print(f"🔧 FORCING business_function filter again...")
+        
+
                     queryset = queryset.filter(business_function__id__in=business_function_ids)
                     final_count = queryset.count()
-                    print(f"✅ After force-filter count: {final_count}")
+          
                 else:
                     print(f"✅ All results have correct business_function IDs: {actual_bf_ids}")
         
-        print(f"=" * 80)
+
         
         return queryset
 class AdvancedEmployeeSorter:
@@ -1228,7 +1215,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
     parser_classes = [JSONParser, MultiPartParser, FormParser]
     
     def get_queryset(self):
-        """✅ UPDATED: Filter based on user access"""
+        """✅ UPDATED: Base queryset WITHOUT business_function filter"""
         from .models import Employee
         
         base_queryset = Employee.objects.select_related(
@@ -1237,9 +1224,9 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         ).prefetch_related(
             'tags', 'documents', 'activities'
         ).all().order_by('full_name')
+
         
-        # Apply access control
-        return filter_headcount_queryset(self.request.user, base_queryset)    
+        return base_queryset 
 
     def _clean_form_data(self, data):
         """Comprehensive data cleaning for form data"""
@@ -1396,7 +1383,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 'line_manager', 'tags', 'gender', 'start_date_from', 'start_date_to',
                 'contract_end_date_from', 'contract_end_date_to', 'is_active', 
                 'status_needs_update', 'job_title_search', 'contract_duration',
-                'is_visible_in_org_chart', 'contract_expiring_days',
+                'is_visible_in_org_chart', 
                 'years_of_service_min', 'years_of_service_max'
             ]
             
@@ -2098,47 +2085,12 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             )
     
     def _get_employee_only_list(self, request, should_paginate):
-        """FIXED: Employee-only list logic WITH PROPER SORTING"""
-        
-        # ✅ 1. GET BASE QUERYSET
+        """COMPLETE DEBUG VERSION"""
         queryset = self.get_queryset()
-        print(f"🔍 Step 1 - Base queryset count: {queryset.count()}")
-        
-        # ✅ 2. CHECK business_function parameter
-        business_function_param = request.query_params.get('business_function')
-        print(f"🔍 Step 2 - business_function param: {business_function_param}")
-        print(f"🔍 Step 2 - ALL params: {dict(request.query_params)}")
-        
-        # ✅ 3. APPLY FILTERS
         employee_filter = ComprehensiveEmployeeFilter(queryset, request.query_params)
         queryset = employee_filter.filter()
-        
-        print(f"🔍 Step 3 - After filter count: {queryset.count()}")
-        
-        # ✅ 4. VERIFY: Check if business_function is in the query
-        query_str = str(queryset.query)
-        if 'business_function' in query_str:
-            print(f"✅ Business function IS in query")
-            # Extract the business_function condition
-            import re
-            bf_match = re.search(r'business_function.*?=\s*(\d+)', query_str)
-            if bf_match:
-                print(f"✅ Business function ID in query: {bf_match.group(1)}")
-        else:
-            print(f"❌ Business function NOT in query!")
-        
-        # ✅ 5. Check actual business_functions in results
-        if queryset.count() > 0:
-            bf_names = queryset.values_list('business_function__name', flat=True).distinct()
-            print(f"🔍 Step 5 - Actual business functions in results: {list(bf_names)}")
-        
 
-        employee_filter = ComprehensiveEmployeeFilter(queryset, request.query_params)
-        queryset = employee_filter.filter()
-        
-        print(f"✅ After all filters: {queryset.count()} employees")
-        
-        # ✅ 4. APPLY SORTING TO FILTERED QUERYSET
+        # ✅ 4. APPLY SORTING
         sorting_data = request.query_params.get('sorting')
         if sorting_data:
             try:
@@ -2163,7 +2115,8 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             queryset = employee_sorter.sort()
         
         total_count = queryset.count()
-        
+
+    
         if not should_paginate:
             serializer = self.get_serializer(queryset, many=True)
             return Response({
@@ -2191,6 +2144,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                     'unified_view': False
                 }
                 return paginated_response
+    
     def _get_unified_employee_vacancy_list(self, request, should_paginate):
         """COMPLETELY FIXED: Get unified list with proper vacancy access control"""
         
@@ -2551,8 +2505,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             'contract_duration_display': 'Vacant Position',
             'contract_start_date': None,
             'contract_end_date': None,
-            'contract_extensions': 0,
-            'last_extension_date': None,
+           
             'line_manager_name': vacancy.reporting_to.full_name if vacancy.reporting_to else None,
             'line_manager_hc_number': vacancy.reporting_to.employee_id if vacancy.reporting_to else None,
             'line_manager_email': vacancy.reporting_to.user.email if (vacancy.reporting_to and vacancy.reporting_to.user) else None,
@@ -3167,7 +3120,6 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         
         return Response(status=status.HTTP_204_NO_CONTENT)
 
-    # views.py - EmployeeViewSet ASSET ENDPOINTS UPDATE
 
     @swagger_auto_schema(
         method='get',
@@ -4114,8 +4066,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             return {'error': f"Row {row_num}: {'; '.join(errors)}"}
         
         return data
-    
-    # views.py - EmployeeViewSet içində
+
 
     @action(detail=False, methods=['post'])
     def export_selected(self, request):
@@ -4126,13 +4077,11 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             employee_ids = request.data.get('employee_ids', [])
             include_fields = request.data.get('include_fields', None)
             
-            logger.info(f"📊 Export request: format={export_format}, employee_ids={employee_ids}, fields={include_fields}")
-            
-            # ✅ CRITICAL FIX: Build queryset with proper filtering
+         
             if employee_ids:
                 # Selected employees export
                 queryset = Employee.objects.filter(id__in=employee_ids)
-                logger.info(f"✅ Exporting {len(employee_ids)} selected employees")
+               
             else:
                 # ✅ FIX: Apply ALL filters from query parameters
                 queryset = self.get_queryset()
@@ -4141,7 +4090,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 employee_filter = ComprehensiveEmployeeFilter(queryset, request.query_params)
                 queryset = employee_filter.filter()
                 
-                logger.info(f"✅ Exporting {queryset.count()} filtered employees")
+         
             
             # Apply sorting if specified
             sort_params = request.query_params.get('ordering', '').split(',')
@@ -4149,7 +4098,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             if sort_params:
                 employee_sorter = AdvancedEmployeeSorter(queryset, sort_params)
                 queryset = employee_sorter.sort()
-                logger.info(f"📊 Applied sorting: {sort_params}")
+            
             
             # Enhanced field mapping for export
             complete_field_mappings = {
@@ -4192,8 +4141,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 'contract_duration_display': 'Contract Duration Display',
                 'contract_start_date': 'Contract Start Date',
                 'contract_end_date': 'Contract End Date',
-                'contract_extensions': 'Contract Extensions',
-                'last_extension_date': 'Last Extension Date',
+           
                 'start_date': 'Start Date',
                 'end_date': 'End Date',
                 'years_of_service': 'Years of Service',
@@ -4217,7 +4165,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             # Determine fields to export
             if include_fields and isinstance(include_fields, list) and len(include_fields) > 0:
                 fields_to_include = include_fields
-                logger.info(f"📋 Using specified fields: {len(fields_to_include)} fields")
+        
             else:
                 # Use default essential fields
                 fields_to_include = [
@@ -4226,7 +4174,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                     'status_name', 'line_manager_name', 'start_date', 'contract_duration_display',
                     'phone', 'father_name', 'years_of_service'
                 ]
-                logger.info(f"📋 Using default fields: {len(fields_to_include)} fields")
+              
             
             # Filter out invalid fields
             valid_fields = []
@@ -4246,7 +4194,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 valid_fields = ['employee_id', 'name', 'email', 'job_title', 'department_name']
                 logger.warning("⚠️ No valid fields, using fallback basic fields")
             
-            logger.info(f"✅ Exporting {queryset.count()} employees with {len(valid_fields)} fields")
+     
             
             # Export based on format
             if export_format == 'csv':
@@ -4845,7 +4793,6 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             results['failed'] = results['total_rows']
             return results
     
-    # views.py - EmployeeViewSet içində job description endpointləri
 
     @swagger_auto_schema(
         method='get',
@@ -6212,181 +6159,6 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             })
         except Employee.DoesNotExist:
             return Response({'error': 'Line manager not found'}, status=status.HTTP_404_NOT_FOUND)
-    
-    @swagger_auto_schema(
-        method='post',
-        operation_description="Update contract for single employee",
-        request_body=ContractExtensionSerializer,
-        responses={200: "Contract updated successfully", 400: "Bad request"}
-    )
-    @action(detail=False, methods=['post'], url_path='extend-contract')
-    def extend_employee_contract(self, request):
-        """Update contract for single employee with new type and start date"""
-        serializer = ContractExtensionSerializer(data=request.data)
-        if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-        
-        employee_id = serializer.validated_data['employee_id']
-        new_contract_type = serializer.validated_data['new_contract_type']
-        new_start_date = serializer.validated_data['new_start_date']
-        reason = serializer.validated_data.get('reason', '')
-        
-        try:
-            employee = Employee.objects.get(id=employee_id)
-            
-            # Store old values
-            old_contract_type = employee.contract_duration
-            old_start_date = employee.contract_start_date
-            old_end_date = employee.contract_end_date
-            
-            # Update contract
-            employee.contract_duration = new_contract_type
-            employee.contract_start_date = new_start_date
-            employee.contract_extensions += 1
-            employee.last_extension_date = timezone.now().date()
-            
-            
-            if request.user:
-                employee.updated_by = request.user
-            
-            # Save will auto-calculate new end date
-            employee.save()
-            
-            # Log detailed activity
-            EmployeeActivity.objects.create(
-                employee=employee,
-                activity_type='CONTRACT_UPDATED',
-                description=f"Contract updated: {old_contract_type} → {new_contract_type}. New start: {new_start_date}. Reason: {reason}",
-                performed_by=request.user,
-                metadata={
-                    'old_contract_type': old_contract_type,
-                    'new_contract_type': new_contract_type,
-                    'old_start_date': str(old_start_date) if old_start_date else None,
-                    'new_start_date': str(new_start_date),
-                    'old_end_date': str(old_end_date) if old_end_date else None,
-                    'new_end_date': str(employee.contract_end_date) if employee.contract_end_date else None,
-                    'reason': reason,
-                    'extension_count': employee.contract_extensions
-                }
-            )
-            
-            return Response({
-                'success': True,
-                'message': f'Contract updated successfully for {employee.full_name}',
-                'employee_id': employee.id,
-                'employee_name': employee.full_name,
-                'old_contract_type': old_contract_type,
-                'new_contract_type': new_contract_type,
-                'old_start_date': old_start_date,
-                'new_start_date': new_start_date,
-                'old_end_date': old_end_date,
-                'new_end_date': employee.contract_end_date,
-                'extensions_count': employee.contract_extensions
-            })
-                
-        except Employee.DoesNotExist:
-            return Response({'error': 'Employee not found'}, status=status.HTTP_404_NOT_FOUND)
-    
-    @swagger_auto_schema(
-        method='post',
-        operation_description="Update contracts for multiple employees",
-        request_body=BulkContractExtensionSerializer,
-        responses={200: "Contracts updated successfully", 400: "Bad request"}
-    )
-    @action(detail=False, methods=['post'], url_path='bulk-extend-contracts')
-    def bulk_extend_contracts(self, request):
-        """Update contracts for multiple employees"""
-        serializer = BulkContractExtensionSerializer(data=request.data)
-        if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-        
-        employee_ids = serializer.validated_data['employee_ids']
-        new_contract_type = serializer.validated_data['new_contract_type']
-        new_start_date = serializer.validated_data['new_start_date']
-        reason = serializer.validated_data.get('reason', '')
-        
-        try:
-            employees = Employee.objects.filter(id__in=employee_ids)
-            
-            updated_count = 0
-            failed_count = 0
-            results = []
-            
-            with transaction.atomic():
-                for employee in employees:
-                    try:
-                        old_contract_type = employee.contract_duration
-                        old_start_date = employee.contract_start_date
-                        old_end_date = employee.contract_end_date
-                        
-                        # Update contract
-                        employee.contract_duration = new_contract_type
-                        employee.contract_start_date = new_start_date
-                        employee.contract_extensions += 1
-                        employee.last_extension_date = timezone.now().date()
-                       
-                        
-                        if request.user:
-                            employee.updated_by = request.user
-                        
-                        # Save will auto-calculate new end date
-                        employee.save()
-                        
-                        # Log detailed activity
-                        EmployeeActivity.objects.create(
-                            employee=employee,
-                            activity_type='CONTRACT_UPDATED',
-                            description=f"Bulk contract update: {old_contract_type} → {new_contract_type}. New start: {new_start_date}. Reason: {reason}",
-                            performed_by=request.user,
-                            metadata={
-                                'bulk_update': True,
-                                'old_contract_type': old_contract_type,
-                                'new_contract_type': new_contract_type,
-                                'old_start_date': str(old_start_date) if old_start_date else None,
-                                'new_start_date': str(new_start_date),
-                                'old_end_date': str(old_end_date) if old_end_date else None,
-                                'new_end_date': str(employee.contract_end_date) if employee.contract_end_date else None,
-                                'reason': reason,
-                                'extension_count': employee.contract_extensions
-                            }
-                        )
-                        
-                        updated_count += 1
-                        results.append({
-                            'employee_id': employee.id,
-                            'employee_name': employee.full_name,
-                            'status': 'success',
-                            'old_contract_type': old_contract_type,
-                            'new_contract_type': new_contract_type,
-                            'old_end_date': old_end_date,
-                            'new_end_date': employee.contract_end_date,
-                            'extensions_count': employee.contract_extensions
-                        })
-                    except Exception as e:
-                        failed_count += 1
-                        results.append({
-                            'employee_id': employee.id,
-                            'employee_name': employee.full_name,
-                            'status': 'failed',
-                            'error': str(e)
-                        })
-            
-            return Response({
-                'success': True,
-                'message': f'Contract update completed: {updated_count} updated, {failed_count} failed',
-                'total_employees': len(employee_ids),
-                'updated_count': updated_count,
-                'failed_count': failed_count,
-                'new_contract_type': new_contract_type,
-                'new_start_date': new_start_date,
-                'reason': reason,
-                'results': results
-            })
-            
-        except Exception as e:
-            return Response({'error': f'Bulk contract update failed: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-    
- 
 
     @action(detail=False, methods=['get'])
     def statistics(self, request):
@@ -6477,10 +6249,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             start_date__gte=date.today() - timedelta(days=30)
         ).count()
         
-        upcoming_contract_endings = queryset.filter(
-            contract_end_date__lte=date.today() + timedelta(days=30),
-            contract_end_date__gte=date.today()
-        ).count()
+  
         
         # Status update analysis
         try:
@@ -6516,7 +6285,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             'by_position_group': position_stats,
             'by_contract_duration': contract_stats,
             'recent_hires_30_days': recent_hires,
-            'upcoming_contract_endings_30_days': upcoming_contract_endings,
+         
             'status_update_analysis': status_update_stats
         })
     @action(detail=True, methods=['get'])
@@ -7563,62 +7332,5 @@ class ProfileImageViewSet(viewsets.ViewSet):
             logger.error(f"Profile image delete failed: {str(e)}")
             return Response(
                 {'error': f'Profile image delete failed: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-  
-        """Get employee profile image URL"""
-        try:
-            employee_id = request.query_params.get('employee_id')
-            if not employee_id:
-                return Response(
-                    {'error': 'employee_id parameter is required'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            
-            try:
-                employee = Employee.objects.get(id=employee_id)
-            except Employee.DoesNotExist:
-                return Response(
-                    {'error': 'Employee not found'},
-                    status=status.HTTP_404_NOT_FOUND
-                )
-            
-           
-            
-            profile_image_url = None
-            has_image = False
-            
-            if employee.profile_image:
-                try:
-                    if hasattr(employee.profile_image, 'url') and employee.profile_image.name:
-                        profile_image_url = request.build_absolute_uri(employee.profile_image.url)
-                        has_image = True
-                        logger.info(f"Found profile image URL: {profile_image_url}")
-                    else:
-                        logger.warning(f"Profile image exists but no URL: {employee.profile_image}")
-                except Exception as e:
-                    logger.error(f"Error getting profile image URL: {e}")
-                    # Try manual construction
-                    if employee.profile_image.name:
-                        profile_image_url = request.build_absolute_uri(f"/media/{employee.profile_image.name}")
-                        has_image = True
-                        logger.info(f"Manually constructed URL: {profile_image_url}")
-            
-            return Response({
-                'employee_id': employee.id,
-                'employee_name': employee.full_name,
-                'profile_image_url': profile_image_url,
-                'has_image': has_image,
-                'debug_info': {
-                    'image_field_value': str(employee.profile_image),
-                    'image_name': employee.profile_image.name if employee.profile_image else None,
-                    'image_size': employee.profile_image.size if employee.profile_image else None
-                }
-            })
-            
-        except Exception as e:
-            logger.error(f"Get profile image failed: {str(e)}")
-            return Response(
-                {'error': f'Failed to get profile image: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )

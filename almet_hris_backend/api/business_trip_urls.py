@@ -38,7 +38,8 @@ urlpatterns = [
     path('requests/all/', views.all_trip_requests, name='trip-all-requests'),
     path('requests/export/', views.export_my_trips, name='trip-export-my'),
     path('requests/export-all/', views.export_all_trips, name='trip-export-all'),
-    
+    path('requests/<int:pk>/update/', views.update_trip_request, name='trip-update'),
+    path('requests/<int:pk>/delete/', views.delete_trip_request, name='trip-delete'),
     # Approval
     path('approval/pending/', views.pending_approvals, name='trip-pending'),
     path('approval/history/', views.approval_history, name='trip-history'),

@@ -213,6 +213,8 @@ class EmployeeManualSerializer(serializers.Serializer):
     unit = serializers.CharField(max_length=100, required=False, allow_blank=True)
     job_function = serializers.CharField(max_length=100, required=False, allow_blank=True)
 
+# api/business_trip_serializers.py
+
 class BusinessTripRequestCreateSerializer(serializers.Serializer):
     requester_type = serializers.ChoiceField(choices=['for_me', 'for_my_employee'])
     employee_id = serializers.IntegerField(required=False)
@@ -223,10 +225,21 @@ class BusinessTripRequestCreateSerializer(serializers.Serializer):
     start_date = serializers.DateField()
     end_date = serializers.DateField()
     comment = serializers.CharField(required=False, allow_blank=True)
+    
+    # ✅ NEW: Initial finance amount (optional)
+    initial_finance_amount = serializers.DecimalField(
+        max_digits=10, 
+        decimal_places=2, 
+        required=False, 
+        allow_null=True
+    )
+    
     finance_approver_id = serializers.IntegerField(required=False)
     hr_representative_id = serializers.IntegerField(required=False)
-    schedules = serializers.ListField(child=serializers.DictField(), required=True)
-    hotels = serializers.ListField(child=serializers.DictField(), required=False)
+    
+    # ✅ OPTIONAL schedules and hotels
+    schedules = serializers.ListField(child=serializers.DictField(), required=False, allow_empty=True)
+    hotels = serializers.ListField(child=serializers.DictField(), required=False, allow_empty=True)
     
     def validate(self, data):
         # Employee validation
@@ -240,9 +253,9 @@ class BusinessTripRequestCreateSerializer(serializers.Serializer):
         if data['start_date'] >= data['end_date']:
             raise serializers.ValidationError("End date must be after start date")
         
-        # Schedule validation
-        if not data.get('schedules'):
-            raise serializers.ValidationError("At least one schedule is required")
+        # ✅ Schedule artıq required deyil
+        # if not data.get('schedules'):
+        #     raise serializers.ValidationError("At least one schedule is required")
         
         # Validate types exist
         try:
@@ -254,6 +267,23 @@ class BusinessTripRequestCreateSerializer(serializers.Serializer):
         
         return data
 
+
+class BusinessTripRequestUpdateSerializer(serializers.Serializer):
+    """✅ NEW: Update serializer"""
+    travel_type_id = serializers.IntegerField(required=False)
+    transport_type_id = serializers.IntegerField(required=False)
+    purpose_id = serializers.IntegerField(required=False)
+    start_date = serializers.DateField(required=False)
+    end_date = serializers.DateField(required=False)
+    comment = serializers.CharField(required=False, allow_blank=True)
+    initial_finance_amount = serializers.DecimalField(
+        max_digits=10, 
+        decimal_places=2, 
+        required=False, 
+        allow_null=True
+    )
+    schedules = serializers.ListField(child=serializers.DictField(), required=False)
+    hotels = serializers.ListField(child=serializers.DictField(), required=False)
 class TripApprovalSerializer(serializers.Serializer):
     action = serializers.ChoiceField(choices=['approve', 'reject'])
     amount = serializers.DecimalField(max_digits=10, decimal_places=2, required=False, allow_null=True)

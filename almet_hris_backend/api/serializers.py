@@ -1077,7 +1077,7 @@ class EmployeeListSerializer(serializers.ModelSerializer):
             'position_group_name', 'position_group_level', 'department_id',
             'grading_level', 'start_date', 'end_date', 'unit_id', 'position_group_id',
             'contract_duration', 'contract_duration_display', 'contract_start_date', 
-            'contract_end_date', 'contract_extensions', 'last_extension_date', 
+            'contract_end_date',  
             'job_function_id', 'line_manager_name', 'line_manager_hc_number', 
             'status_name', 'status_color', 'tag_names', 'years_of_service', 
             'current_status_display', 'is_visible_in_org_chart',
@@ -2698,8 +2698,8 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
             'profile_image'
         ]
         read_only_fields = [
-            'contract_extensions', 
-            'last_extension_date', 
+        
+        
             'deleted_by', 
             'deleted_at', 
             'is_deleted',
@@ -2762,9 +2762,7 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
         if not validated_data.get('contract_start_date'):
             validated_data['contract_start_date'] = validated_data.get('start_date')
         
-        # Set default values for required fields
-        if 'contract_extensions' not in validated_data:
-            validated_data['contract_extensions'] = 0
+    
         if 'notes' not in validated_data:
             validated_data['notes'] = ''
         if 'grading_level' not in validated_data:
@@ -3554,78 +3552,5 @@ class EmployeeExportSerializer(serializers.Serializer):
         required=False,
         help_text="List of fields to include in export"
     )
-
-class ContractExtensionSerializer(serializers.Serializer):
-    """Contract extension for single employee - WITHOUT extension_months"""
-    employee_id = serializers.IntegerField(help_text="Employee ID")
-    new_contract_type = serializers.CharField(
-        max_length=50,
-        help_text="New contract type (required)"
-    )
-    new_start_date = serializers.DateField(
-        help_text="New contract start date (required)"
-    )
-    reason = serializers.CharField(
-        max_length=500,
-        required=False,
-        help_text="Reason for contract change"
-    )
-    
-    def validate_employee_id(self, value):
-        try:
-            Employee.objects.get(id=value)
-        except Employee.DoesNotExist:
-            raise serializers.ValidationError("Employee not found.")
-        return value
-    
-    def validate_new_contract_type(self, value):
-        try:
-            ContractTypeConfig.objects.get(contract_type=value, is_active=True)
-        except ContractTypeConfig.DoesNotExist:
-            available_choices = list(ContractTypeConfig.objects.filter(is_active=True).values_list('contract_type', flat=True))
-            raise serializers.ValidationError(
-                f"Invalid contract type '{value}'. Available choices: {', '.join(available_choices)}"
-            )
-        return value
-
-class BulkContractExtensionSerializer(serializers.Serializer):
-    """Bulk contract extension - WITHOUT extension_months"""
-    employee_ids = serializers.ListField(
-        child=serializers.IntegerField(),
-        help_text="List of employee IDs to update contracts"
-    )
-    new_contract_type = serializers.CharField(
-        max_length=50,
-        help_text="New contract type for all employees (required)"
-    )
-    new_start_date = serializers.DateField(
-        help_text="New contract start date for all employees (required)"
-    )
-    reason = serializers.CharField(
-        max_length=500,
-        required=False,
-        help_text="Reason for contract change"
-    )
-    
-    def validate_employee_ids(self, value):
-        if not value:
-            raise serializers.ValidationError("At least one employee ID is required.")
-        
-        employees = Employee.objects.filter(id__in=value)
-        if employees.count() != len(value):
-            raise serializers.ValidationError("Some employee IDs do not exist.")
-        
-        return value
-    
-    def validate_new_contract_type(self, value):
-        try:
-            ContractTypeConfig.objects.get(contract_type=value, is_active=True)
-        except ContractTypeConfig.DoesNotExist:
-            available_choices = list(ContractTypeConfig.objects.filter(is_active=True).values_list('contract_type', flat=True))
-            raise serializers.ValidationError(
-                f"Invalid contract type '{value}'. Available choices: {', '.join(available_choices)}"
-            )
-        return value
-
-                    
+              
                     

@@ -184,6 +184,8 @@ class HandoverRequestSerializer(serializers.ModelSerializer):
         ]
 
 
+# api/handover_serializers.py - HandoverRequestCreateSerializer
+
 class HandoverRequestCreateSerializer(serializers.ModelSerializer):
     """Create new handover with nested data and validation"""
     tasks_data = serializers.ListField(
@@ -196,9 +198,9 @@ class HandoverRequestCreateSerializer(serializers.ModelSerializer):
     dates_data = serializers.ListField(
         child=serializers.DictField(), 
         write_only=True,
-        required=True,
-        allow_empty=False,
-        help_text="At least one important date is required"
+        required=False,  # ⭐ OPTIONAL NOW
+        allow_empty=True,  # ⭐ CAN BE EMPTY
+        help_text="Important dates (optional)"
     )
     
     class Meta:
@@ -222,17 +224,21 @@ class HandoverRequestCreateSerializer(serializers.ModelSerializer):
             )
         return value
     
- 
+    def validate_end_date(self, value):
+        """Validate end_date format if provided"""
+        if value == '' or value is None:
+            return None
+        return value
     
     def validate(self, data):
         """Comprehensive validation"""
         errors = {}
         
-        # 1. Validate dates - ONLY if BOTH are provided
+        # 1. Validate dates
         start_date = data.get('start_date')
         end_date = data.get('end_date')
         
-        if start_date and end_date:  # Both must be present
+        if start_date and end_date:
             if start_date >= end_date:
                 errors['end_date'] = 'End date must be after start date'
         
@@ -240,7 +246,7 @@ class HandoverRequestCreateSerializer(serializers.ModelSerializer):
         if data.get('handing_over_employee') == data.get('taking_over_employee'):
             errors['taking_over_employee'] = 'Cannot be the same as handing over employee'
         
-        # 3. Validate tasks
+        # 3. Validate tasks - REQUIRED
         tasks = data.get('tasks_data', [])
         if not tasks:
             errors['tasks_data'] = 'At least one task is required'
@@ -248,15 +254,28 @@ class HandoverRequestCreateSerializer(serializers.ModelSerializer):
             valid_tasks = [t for t in tasks if t.get('description', '').strip()]
             if not valid_tasks:
                 errors['tasks_data'] = 'At least one task with description is required'
+            
+            for idx, task in enumerate(tasks):
+                if not task.get('description', '').strip():
+                    errors[f'tasks_data.{idx}.description'] = 'Task description is required'
+                
+                if task.get('description') and len(task['description']) > 1000:
+                    errors[f'tasks_data.{idx}.description'] = 'Task description too long (max 1000 chars)'
         
-        # 4. Validate dates
+        # 4. Validate dates - OPTIONAL NOW
         dates = data.get('dates_data', [])
-        if not dates:
-            errors['dates_data'] = 'At least one important date is required'
-        else:
-            valid_dates = [d for d in dates if d.get('date') and d.get('description', '').strip()]
-            if not valid_dates:
-                errors['dates_data'] = 'At least one important date with description is required'
+        # ⭐ No error if empty, just validate if provided
+        if dates:
+            for idx, date_item in enumerate(dates):
+                if date_item.get('date') or date_item.get('description'):
+                    if not date_item.get('date'):
+                        errors[f'dates_data.{idx}.date'] = 'Date is required if description provided'
+                    
+                    if not date_item.get('description', '').strip():
+                        errors[f'dates_data.{idx}.description'] = 'Description is required if date provided'
+                    
+                    if date_item.get('description') and len(date_item['description']) > 500:
+                        errors[f'dates_data.{idx}.description'] = 'Description too long (max 500 chars)'
         
         # 5. Validate text fields length
         text_fields = ['contacts', 'access_info', 'documents_info', 'open_issues', 'notes']
@@ -269,8 +288,6 @@ class HandoverRequestCreateSerializer(serializers.ModelSerializer):
         
         return data
     
-   
-    
     def create(self, validated_data):
         """Create handover with all nested data"""
         tasks_data = validated_data.pop('tasks_data', [])
@@ -278,6 +295,10 @@ class HandoverRequestCreateSerializer(serializers.ModelSerializer):
         
         user = self.context['request'].user
         validated_data['created_by'] = user
+        
+        # ⭐ Handle end_date null
+        if not validated_data.get('end_date'):
+            validated_data['end_date'] = None
         
         # Create handover
         handover = HandoverRequest.objects.create(**validated_data)
@@ -306,16 +327,17 @@ class HandoverRequestCreateSerializer(serializers.ModelSerializer):
                 comment=task.initial_comment or '-'
             )
         
-        # Create important dates
-        for date_data in dates_data:
-            if not date_data.get('date') or not date_data.get('description', '').strip():
-                continue
-            
-            HandoverImportantDate.objects.create(
-                handover=handover,
-                date=date_data['date'],
-                description=date_data['description'].strip()
-            )
+        # ⭐ Create important dates - ONLY IF PROVIDED
+        if dates_data:
+            for date_data in dates_data:
+                if not date_data.get('date') or not date_data.get('description', '').strip():
+                    continue
+                
+                HandoverImportantDate.objects.create(
+                    handover=handover,
+                    date=date_data['date'],
+                    description=date_data['description'].strip()
+                )
         
         # Log creation activity
         HandoverActivity.objects.create(
@@ -327,7 +349,6 @@ class HandoverRequestCreateSerializer(serializers.ModelSerializer):
         )
         
         return handover
-
 
 class HandoverRequestUpdateSerializer(serializers.ModelSerializer):
     """Update handover (only certain fields editable)"""
