@@ -143,18 +143,25 @@ class BusinessTripRequestListSerializer(serializers.ModelSerializer):
     status_display = serializers.CharField(source='get_status_display', read_only=True)
     attachments_count = serializers.SerializerMethodField()
     
+    # ✅ NEW: Add requester ID for permission checks
+    requester_id = serializers.IntegerField(source='requester.id', read_only=True)
+    
     class Meta:
         model = BusinessTripRequest
         fields = [
             'id', 'request_id', 'employee_name', 'employee_id', 'department_name',
             'travel_type_name', 'transport_type_name', 'purpose_name',
             'start_date', 'end_date', 'return_date', 'number_of_days',
-            'status', 'status_display', 'finance_amount', 'comment', 
-            'attachments_count', 'created_at'
+            'status', 'status_display', 
+            'finance_amount', 'initial_finance_amount',  # ✅ Both amounts
+            'comment', 
+            'attachments_count', 'created_at',
+            'requester_id'  # ✅ NEW
         ]
     
     def get_attachments_count(self, obj):
         return obj.attachments.filter(is_deleted=False).count()
+# api/business_trip_serializers.py
 
 class BusinessTripRequestDetailSerializer(serializers.ModelSerializer):
     employee_info = serializers.SerializerMethodField()
@@ -171,17 +178,25 @@ class BusinessTripRequestDetailSerializer(serializers.ModelSerializer):
     hotels = TripHotelSerializer(many=True, read_only=True)
     attachments = serializers.SerializerMethodField()
     
+    # ✅ NEW: Add requester info
+    requester_type_display = serializers.CharField(source='get_requester_type_display', read_only=True)
+    requester_id = serializers.IntegerField(source='requester.id', read_only=True)
+    
     class Meta:
         model = BusinessTripRequest
         fields = [
-            'id', 'request_id', 'employee_info', 'travel_type_detail', 'transport_type_detail',
-            'purpose_detail', 'start_date', 'end_date', 'return_date', 'number_of_days',
+            'id', 'request_id', 'employee_info', 
+            'travel_type_detail', 'transport_type_detail', 'purpose_detail', 
+            'start_date', 'end_date', 'return_date', 'number_of_days',
             'comment', 'status', 'status_display',
+            'initial_finance_amount',  # ✅ NEW
             'line_manager_name', 'line_manager_comment', 'line_manager_approved_at',
             'finance_approver_name', 'finance_amount', 'finance_comment', 'finance_approved_at',
             'hr_representative_name', 'hr_comment', 'hr_approved_at',
             'rejection_reason', 'rejected_at',
-            'schedules', 'hotels', 'attachments', 'created_at', 'updated_at'
+            'schedules', 'hotels', 'attachments', 
+            'created_at', 'updated_at',
+            'requester_type', 'requester_type_display', 'requester_id'  # ✅ NEW
         ]
     
     def get_employee_info(self, obj):
@@ -203,7 +218,6 @@ class BusinessTripRequestDetailSerializer(serializers.ModelSerializer):
             many=True, 
             context=self.context
         ).data
-
 class EmployeeManualSerializer(serializers.Serializer):
     """Manual employee data"""
     name = serializers.CharField(max_length=200)
@@ -212,8 +226,6 @@ class EmployeeManualSerializer(serializers.Serializer):
     business_function = serializers.CharField(max_length=100, required=False, allow_blank=True)
     unit = serializers.CharField(max_length=100, required=False, allow_blank=True)
     job_function = serializers.CharField(max_length=100, required=False, allow_blank=True)
-
-# api/business_trip_serializers.py
 
 class BusinessTripRequestCreateSerializer(serializers.Serializer):
     requester_type = serializers.ChoiceField(choices=['for_me', 'for_my_employee'])

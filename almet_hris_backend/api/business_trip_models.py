@@ -126,6 +126,7 @@ class TripSettings(SoftDeleteModel):
         self.clean()
         super().save(*args, **kwargs)
 
+
 class BusinessTripRequest(SoftDeleteModel):
     """Main business trip request model"""
     STATUS_CHOICES = [
@@ -147,17 +148,17 @@ class BusinessTripRequest(SoftDeleteModel):
     ]
 
     # Request identification
-    request_id = models.CharField(max_length=20, unique=True, editable=False)
+    request_id = models.CharField(max_length=20, editable=False)
     
     # Requester information
     requester_type = models.CharField(max_length=20, choices=REQUESTER_TYPE_CHOICES, default='for_me')
-    requester = models.ForeignKey(User, on_delete=models.CASCADE,null=True, related_name='created_trip_requests')
+    requester = models.ForeignKey(User, on_delete=models.CASCADE, null=True, related_name='created_trip_requests')
     employee = models.ForeignKey(Employee, on_delete=models.CASCADE, related_name='trip_requests')
     
     # Travel details
-    travel_type = models.ForeignKey(TravelType, on_delete=models.PROTECT)
-    transport_type = models.ForeignKey(TransportType, on_delete=models.PROTECT)
-    purpose = models.ForeignKey(TripPurpose, on_delete=models.PROTECT)
+    travel_type = models.ForeignKey('TravelType', on_delete=models.PROTECT)
+    transport_type = models.ForeignKey('TransportType', on_delete=models.PROTECT)
+    purpose = models.ForeignKey('TripPurpose', on_delete=models.PROTECT)
     
     # Dates
     start_date = models.DateField()
@@ -166,6 +167,8 @@ class BusinessTripRequest(SoftDeleteModel):
     number_of_days = models.DecimalField(max_digits=5, decimal_places=1, editable=False, default=0)
     
     comment = models.TextField(blank=True, help_text="Employee comment")
+    
+    # ✅ Initial finance amount (suggested by employee)
     initial_finance_amount = models.DecimalField(
         max_digits=10, 
         decimal_places=2, 
@@ -173,6 +176,7 @@ class BusinessTripRequest(SoftDeleteModel):
         blank=True,
         help_text="Initial amount suggested by employee"
     )
+    
     # Approvers
     line_manager = models.ForeignKey(
         Employee, 
@@ -263,6 +267,24 @@ class BusinessTripRequest(SoftDeleteModel):
         verbose_name_plural = "Business Trip Requests"
         db_table = 'business_trip_requests'
         ordering = ['-created_at']
+        
+        # ✅ Unique constraint - yalnız active requests
+        constraints = [
+            models.UniqueConstraint(
+                fields=['request_id'],
+                condition=models.Q(is_deleted=False),
+                name='unique_active_request_id'
+            )
+        ]
+        
+        # ✅ Indexes for better performance
+        indexes = [
+            models.Index(fields=['request_id', 'is_deleted']),
+            models.Index(fields=['status', 'is_deleted']),
+            models.Index(fields=['employee', 'is_deleted']),
+            models.Index(fields=['requester', 'is_deleted']),
+            models.Index(fields=['created_at', 'is_deleted']),
+        ]
     
     def __str__(self):
         return f"{self.request_id} - {self.employee.full_name} - {self.travel_type.name}"
@@ -273,40 +295,84 @@ class BusinessTripRequest(SoftDeleteModel):
             raise ValidationError("End date must be after start date")
     
     def save(self, *args, **kwargs):
-        # Generate request ID
+        """
+        Save method with smart ID generation
+        Uses all_objects manager to count ALL requests (including deleted)
+        to prevent ID conflicts
+        """
+        # ✅ Generate request ID - yalnız yeni request üçün
         if not self.request_id:
             year = timezone.now().year
-            last = BusinessTripRequest.objects.filter(
+            
+            # ✅ Get highest number from ALL requests this year (including deleted)
+            last = BusinessTripRequest.all_objects.filter(
                 request_id__startswith=f'BT{year}'
             ).order_by('-request_id').first()
-            num = int(last.request_id[6:]) + 1 if last else 1
+            
+            if last:
+                # Extract number and increment
+                try:
+                    last_num = int(last.request_id[6:])  # Extract "0001" from "BT20250001"
+                    num = last_num + 1
+                except (ValueError, IndexError):
+                    # Fallback if parsing fails
+                    num = 1
+            else:
+                # First request of the year
+                num = 1
+            
+            # Generate new request ID
             self.request_id = f'BT{year}{num:04d}'
         
-        # Calculate days
+        # ✅ Calculate days
         if self.start_date and self.end_date:
             self.number_of_days = (self.end_date - self.start_date).days + 1
             self.return_date = self.end_date + timedelta(days=1)
         
-        # Auto-assign approvers
+        # ✅ Auto-assign Line Manager
         if not self.line_manager and self.employee.line_manager:
+            # Check if requester is the employee's line manager
             requester_emp = getattr(self.requester, 'employee', None)
             if not (requester_emp and self.employee.line_manager == requester_emp):
+                # If requester is not the line manager, assign line manager
                 self.line_manager = self.employee.line_manager
         
-        settings = TripSettings.get_active()
-        if not self.hr_representative and settings:
-            self.hr_representative = settings.default_hr_representative
+        # ✅ Auto-assign HR Representative from settings
+        if not self.hr_representative:
+            from .business_trip_models import TripSettings
+            settings = TripSettings.get_active()
+            if settings and settings.default_hr_representative:
+                self.hr_representative = settings.default_hr_representative
         
+        # ✅ Auto-assign Finance Approver from settings
+        if not self.finance_approver:
+            from .business_trip_models import TripSettings
+            settings = TripSettings.get_active()
+            if settings and settings.default_finance_approver:
+                self.finance_approver = settings.default_finance_approver
+        
+        # Run validation
         self.clean()
+        
+        # Call parent save
         super().save(*args, **kwargs)
     
     def submit_request(self, user):
-        """Submit for approval - always starts with Line Manager"""
-        self.status = 'PENDING_LINE_MANAGER' if self.line_manager else (
-            'PENDING_FINANCE' if self.finance_approver else (
-                'PENDING_HR' if self.hr_representative else 'APPROVED'
-            )
-        )
+        """
+        Submit for approval
+        Flow: PENDING_LINE_MANAGER → PENDING_FINANCE → PENDING_HR → APPROVED
+        """
+        # Always start with Line Manager approval
+        if self.line_manager:
+            self.status = 'PENDING_LINE_MANAGER'
+        elif self.finance_approver:
+            self.status = 'PENDING_FINANCE'
+        elif self.hr_representative:
+            self.status = 'PENDING_HR'
+        else:
+            # No approvers, directly approve
+            self.status = 'APPROVED'
+        
         self.save()
     
     def approve_by_line_manager(self, user, comment=''):
@@ -314,7 +380,15 @@ class BusinessTripRequest(SoftDeleteModel):
         self.line_manager_approved_at = timezone.now()
         self.line_manager_approved_by = user
         self.line_manager_comment = comment
-        self.status = 'PENDING_FINANCE' if self.finance_approver else ('PENDING_HR' if self.hr_representative else 'APPROVED')
+        
+        # Move to next step: Finance
+        if self.finance_approver:
+            self.status = 'PENDING_FINANCE'
+        elif self.hr_representative:
+            self.status = 'PENDING_HR'
+        else:
+            self.status = 'APPROVED'
+        
         self.save()
     
     def reject_by_line_manager(self, user, reason):
@@ -331,7 +405,13 @@ class BusinessTripRequest(SoftDeleteModel):
         self.finance_approved_by = user
         self.finance_amount = amount
         self.finance_comment = comment
-        self.status = 'PENDING_HR' if self.hr_representative else 'APPROVED'
+        
+        # Move to next step: HR
+        if self.hr_representative:
+            self.status = 'PENDING_HR'
+        else:
+            self.status = 'APPROVED'
+        
         self.save()
     
     def reject_by_finance(self, user, reason):
@@ -343,7 +423,7 @@ class BusinessTripRequest(SoftDeleteModel):
         self.save()
     
     def approve_by_hr(self, user, comment=''):
-        """HR approval"""
+        """HR approval - Final step"""
         self.hr_approved_at = timezone.now()
         self.hr_approved_by = user
         self.hr_comment = comment
@@ -357,7 +437,6 @@ class BusinessTripRequest(SoftDeleteModel):
         self.rejected_by = user
         self.rejection_reason = reason
         self.save()
-
 class TripSchedule(SoftDeleteModel):
     """Trip schedule/itinerary details"""
     trip_request = models.ForeignKey(BusinessTripRequest, on_delete=models.CASCADE, related_name='schedules')
