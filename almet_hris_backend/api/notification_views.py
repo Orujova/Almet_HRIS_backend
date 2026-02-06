@@ -429,7 +429,7 @@ def delete_email_handler(request, message_id):
         )
         
         if response.status_code == 204:
-            logger.info(f"✅ Email {message_id} deleted successfully")
+    
             return Response({
                 'success': True,
                 'message': 'Email deleted successfully'

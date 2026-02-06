@@ -23,15 +23,7 @@ def is_admin_user(user):
         return False
 
 def get_assessment_access(user):
-    """
-    ✅ Get assessment access level for user
-    Returns: {
-        'can_view_all': bool,
-        'is_manager': bool,
-        'employee': Employee or None,
-        'accessible_employee_ids': list or None
-    }
-    """
+  
     from .models import Employee
     
     # Admin - Full Access
@@ -82,32 +74,26 @@ def get_assessment_access(user):
         }
 
 def filter_assessment_queryset(user, queryset):
-    """
-    ✅ Filter assessment queryset based on user access
-    - Admin: sees all
-    - Manager: sees own + direct reports
-    - Employee: sees only their own
-    """
+    """Filter assessment queryset based on user permissions and company"""
     access = get_assessment_access(user)
     
-    # Admin - see all
+    # ✅ ADMIN - can see all or filter by company if needed
     if access['can_view_all']:
+        # Admin can optionally filter by company through request params
         return queryset
     
-    # Manager or Employee - filter by accessible employee IDs
-    if access['accessible_employee_ids']:
-        return queryset.filter(
-            employee_id__in=access['accessible_employee_ids']
-        )
+    # MANAGER - sees their team
+    if access['is_manager'] and access['accessible_employee_ids']:
+        return queryset.filter(employee_id__in=access['accessible_employee_ids'])
     
-    # No access (shouldn't happen, but safety check)
+    # EMPLOYEE - sees only their own
+    if access['employee']:
+        return queryset.filter(employee=access['employee'])
+    
+    # Default: empty queryset
     return queryset.none()
-
 def can_user_view_assessment(user, assessment):
-    """
-    ✅ Check if user can view a specific assessment
-    Returns: (bool, str) - (can_view, reason)
-    """
+
     access = get_assessment_access(user)
     
     # Admin can view all
@@ -126,12 +112,7 @@ def can_user_view_assessment(user, assessment):
     return False, "No access to this assessment"
 
 def can_user_create_assessment(user, employee_id):
-    """
-    ✅ Check if user can create assessment for employee
-    - Admin: can create for anyone
-    - Manager: can create for self + direct reports
-    - Employee: can create only for self (if allowed)
-    """
+  
     access = get_assessment_access(user)
     
     # Admin can create for anyone
@@ -149,13 +130,7 @@ def can_user_create_assessment(user, employee_id):
     return False, "Cannot create assessment for this employee"
 
 def can_user_edit_assessment(user, assessment):
-    """
-    ✅ Check if user can edit assessment
-    Rules:
-    - Admin: can edit all
-    - Manager: can edit own + direct reports' assessments
-    - Employee: can edit only their own DRAFT assessments
-    """
+   
     access = get_assessment_access(user)
     
     # Admin can edit all
@@ -181,13 +156,7 @@ def can_user_edit_assessment(user, assessment):
     return False, "No edit access to this assessment"
 
 def can_user_delete_assessment(user, assessment):
-    """
-    ✅ Check if user can delete assessment
-    Rules:
-    - Admin: can delete all
-    - Manager: can delete own + direct reports' assessments
-    - Employee: cannot delete (or only DRAFT)
-    """
+ 
     access = get_assessment_access(user)
     
     # Admin can delete all

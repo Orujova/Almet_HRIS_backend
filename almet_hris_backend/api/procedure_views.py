@@ -240,7 +240,7 @@ class CompanyProcedureViewSet(viewsets.ModelViewSet):
             serializer.is_valid(raise_exception=True)
             self.perform_create(serializer)
             
-            logger.info(f"Procedure created successfully: {serializer.instance.title} (ID: {serializer.instance.id})")
+  
             
             headers = self.get_success_headers(serializer.data)
             return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
@@ -250,16 +250,16 @@ class CompanyProcedureViewSet(viewsets.ModelViewSet):
     
     def perform_create(self, serializer):
         procedure = serializer.save(created_by=self.request.user)
-        logger.info(f"Procedure created: {procedure.title} by {self.request.user.username}")
+   
     
     def perform_update(self, serializer):
         procedure = serializer.save(updated_by=self.request.user)
-        logger.info(f"Procedure updated: {procedure.title} by {self.request.user.username}")
+     
     
     def perform_destroy(self, instance):
         procedure_title = instance.title
         instance.delete()
-        logger.info(f"Procedure deleted: {procedure_title} by {self.request.user.username}")
+      
     
     @action(detail=False, methods=['get'], url_path='by-folder/(?P<folder_id>[^/.]+)')
     def by_folder(self, request, folder_id=None):

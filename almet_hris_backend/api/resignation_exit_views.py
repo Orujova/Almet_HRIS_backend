@@ -436,7 +436,7 @@ class ExitInterviewViewSet(viewsets.ModelViewSet):
                 body_html=body
             )
             
-            logger.info(f"✅ Exit interview notifications sent for employee: {employee.employee_id}")
+           
             
         except Exception as e:
             logger.error(f"❌ Error sending exit interview notifications: {e}")
@@ -510,11 +510,7 @@ class ExitInterviewViewSet(viewsets.ModelViewSet):
             # Generate summary
             ExitInterviewSummary.generate_summary(exit_interview)
             
-            logger.info(
-                f"Exit interview completed: {exit_interview.employee.employee_id} "
-                f"(Created: {created_count}, Updated: {updated_count})"
-            )
-            
+           
             return Response({
                 'message': 'Exit interview submitted successfully',
                 'created_responses': created_count,
@@ -699,7 +695,7 @@ class ProbationReviewQuestionViewSet(viewsets.ModelViewSet):
             review_types = [rt.strip() for rt in review_type.split(',') if rt.strip()]
             if review_types:
                 queryset = queryset.filter(review_type__in=review_types)
-                logger.info(f"Filtering probation questions by review_type: {review_types}")
+                
         
         # ✅ Only filter by is_active for non-admin users
         if not is_admin_user(self.request.user):
@@ -710,10 +706,10 @@ class ProbationReviewQuestionViewSet(viewsets.ModelViewSet):
     def list(self, request, *args, **kwargs):
         """Override list to add logging"""
         review_type = request.query_params.get('review_type')
-        logger.info(f"📋 Probation questions requested - review_type: {review_type}")
+
         
         queryset = self.get_queryset()
-        logger.info(f"✅ Found {queryset.count()} questions")
+  
         
         serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data)
@@ -726,7 +722,7 @@ class ProbationReviewQuestionViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_403_FORBIDDEN
             )
         
-        logger.info(f"Creating probation question: {request.data.get('review_type')}")
+    
         return super().create(request, *args, **kwargs)
     
     def update(self, request, *args, **kwargs):

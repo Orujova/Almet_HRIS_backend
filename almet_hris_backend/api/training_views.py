@@ -13,13 +13,17 @@ from drf_yasg import openapi
 
 from .training_models import (
     Training, TrainingMaterial,
-    TrainingAssignment, TrainingActivity
+    TrainingAssignment, TrainingActivity,TrainingRequest, TrainingRequestParticipant
 )
 from .training_serializers import (
     TrainingListSerializer,
     TrainingDetailSerializer, TrainingMaterialSerializer,
     TrainingAssignmentSerializer, BulkTrainingAssignmentSerializer,
-    TrainingMaterialUploadSerializer
+    TrainingMaterialUploadSerializer, TrainingRequestListSerializer,
+    TrainingRequestDetailSerializer,
+    TrainingRequestCreateSerializer,
+    TrainingRequestApprovalSerializer,
+    TrainingRequestParticipantSerializer
 )
 from .models import Employee
 from .views import ModernPagination
@@ -27,7 +31,409 @@ from .views import ModernPagination
 import logging
 logger = logging.getLogger(__name__)
 
+from django.db import models
 
+
+class TrainingRequestViewSet(viewsets.ModelViewSet):
+    """Training Request ViewSet"""
+    permission_classes = [IsAuthenticated]
+    pagination_class = ModernPagination
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_fields = ['status', 'requester', 'manager']
+    search_fields = ['training_title', 'request_id', 'requester__full_name']
+    ordering_fields = ['created_at', 'preferred_dates_start', 'estimated_cost']
+    ordering = ['-created_at']
+    
+    def get_queryset(self):
+        user = self.request.user
+        
+        try:
+            from .job_description_permissions import is_admin_user
+            
+            # Admin sees ALL requests
+            if is_admin_user(user):
+                return TrainingRequest.objects.filter(
+                    is_deleted=False
+                ).select_related(
+                    'requester', 
+                    'manager',
+                    'requester__department',
+                    'requester__line_manager',
+                    'approved_by'
+                ).prefetch_related('participants__employee').order_by('-created_at')
+            
+            # Get employee
+            employee = Employee.objects.get(user=user, is_deleted=False)
+            
+            # Check if user is manager (has direct reports via line_manager)
+            is_manager = Employee.objects.filter(
+                line_manager=employee,
+                is_deleted=False
+            ).exists()
+            
+            if is_manager:
+                # Managers see: their own requests + requests to approve
+                return TrainingRequest.objects.filter(
+                    models.Q(requester=employee) |  # Own requests
+                    models.Q(manager=employee),      # Requests to approve
+                    is_deleted=False
+                ).distinct().select_related(
+                    'requester', 'manager'
+                ).prefetch_related('participants__employee').order_by('-created_at')
+            else:
+                # Regular employees see only their own requests
+                return TrainingRequest.objects.filter(
+                    requester=employee,
+                    is_deleted=False
+                ).select_related('requester', 'manager').prefetch_related('participants__employee').order_by('-created_at')
+                
+        except Employee.DoesNotExist:
+            return TrainingRequest.objects.none()
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return TrainingRequestListSerializer
+        elif self.action == 'create':
+            return TrainingRequestCreateSerializer  # 👈 CREATE ÜÇÜN AYRI SERİALİZER
+        elif self.action in ['update', 'partial_update']:
+            return TrainingRequestDetailSerializer
+        return TrainingRequestDetailSerializer
+    
+    @swagger_auto_schema(
+        request_body=TrainingRequestCreateSerializer,  # 👈 SWAGGER-də DƏ DƏYİŞDİR
+        responses={
+            201: TrainingRequestDetailSerializer,
+            400: 'Bad Request',
+            403: 'Forbidden'
+        }
+    )
+    def create(self, request, *args, **kwargs):
+        """Create new training request"""
+        try:
+            # Get requester employee
+            try:
+                requester = Employee.objects.get(user=request.user, is_deleted=False)
+            except Employee.DoesNotExist:
+                return Response(
+                    {'error': 'Employee profile not found'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            
+            # Get manager (requester's line manager)
+            manager = requester.line_manager
+            if not manager:
+                return Response(
+                    {'error': 'You do not have a line manager assigned. Please contact HR.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Validate input data with CREATE serializer
+            serializer = TrainingRequestCreateSerializer(data=request.data)
+            if not serializer.is_valid():
+                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            
+            validated_data = serializer.validated_data
+            participants_data = validated_data.pop('participants_data', [])
+            
+            # Create training request
+            training_request = TrainingRequest.objects.create(
+                requester=requester,
+                manager=manager,
+                created_by=request.user,
+                **validated_data
+            )
+            
+            # Add participants if provided
+            for employee_id in participants_data:
+                try:
+                    employee = Employee.objects.get(id=employee_id, is_deleted=False)
+                    TrainingRequestParticipant.objects.create(
+                        training_request=training_request,
+                        employee=employee,
+                        added_by=request.user
+                    )
+                except Employee.DoesNotExist:
+                    pass
+            
+            # Return created request with DETAIL serializer
+            response_serializer = TrainingRequestDetailSerializer(
+                training_request,
+                context={'request': request}
+            )
+            
+
+            
+            return Response(response_serializer.data, status=status.HTTP_201_CREATED)
+            
+        except Exception as e:
+            logger.error(f"Error creating training request: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    @swagger_auto_schema(
+        operation_description="Get my training requests",
+        responses={200: TrainingRequestListSerializer(many=True)}
+    )
+    @action(detail=False, methods=['get'])
+    def my_requests(self, request):
+        """Get current user's training requests"""
+        try:
+            employee = Employee.objects.get(user=request.user, is_deleted=False)
+            
+            requests = TrainingRequest.objects.filter(
+                requester=employee,
+                is_deleted=False
+            ).select_related('requester', 'manager')
+            
+            # Apply status filter if provided
+            status_filter = request.query_params.get('status')
+            if status_filter:
+                requests = requests.filter(status=status_filter)
+            
+            serializer = TrainingRequestListSerializer(requests, many=True)
+            
+            return Response({
+                'count': requests.count(),
+                'results': serializer.data,
+                'summary': {
+                    'pending': requests.filter(status='PENDING').count(),
+                    'approved': requests.filter(status='APPROVED').count(),
+                    'rejected': requests.filter(status='REJECTED').count(),
+                }
+            })
+            
+        except Employee.DoesNotExist:
+            return Response(
+                {'error': 'Employee profile not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            logger.error(f"Error fetching my requests: {str(e)}")
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    @swagger_auto_schema(
+    operation_description="Get requests pending my approval",
+    responses={200: TrainingRequestListSerializer(many=True)}
+)
+    @action(detail=False, methods=['get'])
+    def pending_approval(self, request):
+        """Get training requests pending manager's approval (Manager or Admin)"""
+        try:
+            from .job_description_permissions import is_admin_user
+            
+            # Admin sees ALL pending requests
+            if is_admin_user(request.user):
+                requests = TrainingRequest.objects.filter(
+                    status='PENDING',
+                    is_deleted=False
+                ).select_related('requester', 'manager').prefetch_related('participants__employee')
+                
+                serializer = TrainingRequestListSerializer(requests, many=True)
+                
+                return Response({
+                    'count': requests.count(),
+                    'results': serializer.data,
+                    'is_admin': True
+                })
+            
+            # Regular employee - check if manager
+            employee = Employee.objects.get(user=request.user, is_deleted=False)
+            
+            # Check if user is manager (has direct reports)
+            is_manager = Employee.objects.filter(
+                line_manager=employee,
+                is_deleted=False
+            ).exists()
+            
+            if not is_manager:
+                return Response(
+                    {'error': 'You are not authorized to view pending approvals'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            
+            # Manager sees only their team's pending requests
+            requests = TrainingRequest.objects.filter(
+                manager=employee,
+                status='PENDING',
+                is_deleted=False
+            ).select_related('requester', 'manager').prefetch_related('participants__employee')
+            
+            serializer = TrainingRequestListSerializer(requests, many=True)
+            
+            return Response({
+                'count': requests.count(),
+                'results': serializer.data,
+                'is_admin': False
+            })
+            
+        except Employee.DoesNotExist:
+            return Response(
+                {'error': 'Employee profile not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            logger.error(f"Error fetching pending approvals: {str(e)}")
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    @swagger_auto_schema(
+        request_body=TrainingRequestApprovalSerializer,
+        responses={
+            200: TrainingRequestDetailSerializer,
+            400: 'Bad Request',
+            403: 'Forbidden',
+            404: 'Not Found'
+        }
+    )
+    @action(detail=True, methods=['post'])
+    def approve_reject(self, request, pk=None):
+        """Approve or reject training request (Manager or Admin)"""
+        try:
+            training_request = self.get_object()
+            
+            # Get current employee
+            try:
+                employee = Employee.objects.get(user=request.user, is_deleted=False)
+            except Employee.DoesNotExist:
+                return Response(
+                    {'error': 'Employee profile not found'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            
+            # Check permission: must be manager OR admin
+            from .job_description_permissions import is_admin_user
+            
+            is_manager = training_request.manager == employee
+            is_admin = is_admin_user(request.user)
+            
+            if not (is_manager or is_admin):
+                return Response(
+                    {'error': 'You are not authorized to approve/reject this request'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            
+            # Check if already processed
+            if training_request.status != 'PENDING':
+                return Response(
+                    {'error': f'Request already {training_request.status.lower()}'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Validate and update
+            serializer = TrainingRequestApprovalSerializer(data=request.data)
+            if not serializer.is_valid():
+                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            
+            action = serializer.validated_data['status']
+            comments = serializer.validated_data.get('manager_comments', '')
+            
+            if action == 'APPROVED':
+                training_request.approve(request.user, comments)
+                message = 'Training request approved successfully'
+            else:
+                training_request.reject(request.user, comments)
+                message = 'Training request rejected'
+            
+            # Return updated request
+            response_serializer = TrainingRequestDetailSerializer(
+                training_request,
+                context={'request': request}
+            )
+            
+        
+            
+            return Response({
+                'message': message,
+                'request': response_serializer.data
+            })
+            
+        except Exception as e:
+            logger.error(f"Error approving/rejecting request: {str(e)}")
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    @swagger_auto_schema(
+        operation_description="Get training request statistics",
+        responses={200: openapi.Response(description="Statistics")}
+    )
+    @action(detail=False, methods=['get'])
+    def statistics(self, request):
+        """Get training request statistics"""
+        try:
+            from .job_description_permissions import is_admin_user
+            
+            # Admin sees all statistics
+            if is_admin_user(request.user):
+                all_requests = TrainingRequest.objects.filter(is_deleted=False)
+                
+                return Response({
+                    'total': all_requests.count(),
+                    'pending': all_requests.filter(status='PENDING').count(),
+                    'approved': all_requests.filter(status='APPROVED').count(),
+                    'rejected': all_requests.filter(status='REJECTED').count(),
+                    'pending_to_approve': all_requests.filter(status='PENDING').count(),  # All pending for admin
+                    'is_manager': True,  # Admin can approve
+                    'is_admin': True
+                })
+            
+            # Regular user/manager
+            employee = Employee.objects.get(user=request.user, is_deleted=False)
+            
+            # Check if manager (has direct reports via line_manager)
+            is_manager = Employee.objects.filter(
+                line_manager=employee,
+                is_deleted=False
+            ).exists()
+            
+            if is_manager:
+                # Manager statistics
+                all_requests = TrainingRequest.objects.filter(
+                    models.Q(manager=employee) | models.Q(requester=employee),
+                    is_deleted=False
+                )
+                pending_to_approve = TrainingRequest.objects.filter(
+                    manager=employee,
+                    status='PENDING',
+                    is_deleted=False
+                ).count()
+            else:
+                # Employee statistics
+                all_requests = TrainingRequest.objects.filter(
+                    requester=employee,
+                    is_deleted=False
+                )
+                pending_to_approve = 0
+            
+            return Response({
+                'total': all_requests.count(),
+                'pending': all_requests.filter(status='PENDING').count(),
+                'approved': all_requests.filter(status='APPROVED').count(),
+                'rejected': all_requests.filter(status='REJECTED').count(),
+                'pending_to_approve': pending_to_approve,
+                'is_manager': is_manager,
+                'is_admin': False
+            })
+            
+        except Employee.DoesNotExist:
+            return Response(
+                {'error': 'Employee profile not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            logger.error(f"Error fetching statistics: {str(e)}")
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 class TrainingViewSet(viewsets.ModelViewSet):
     """Training ViewSet with CRUD and advanced features"""
     permission_classes = [IsAuthenticated]
@@ -408,7 +814,6 @@ class TrainingViewSet(viewsets.ModelViewSet):
             
             response_serializer = TrainingMaterialSerializer(material, context={'request': request})
             
-            logger.info(f"Material uploaded for training {training.training_id}")
             
             return Response(response_serializer.data, status=status.HTTP_201_CREATED)
             

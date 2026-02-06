@@ -64,7 +64,7 @@ def check_expiring_contracts():
             if employee.line_manager and employee.line_manager.email:
                 _send_contract_expiry_notification(employee, renewal_request)
             
-            logger.info(f"Contract expiry notification sent for: {employee.employee_id}")
+
         
         return f"Processed {len(expiring_employees)} expiring contracts"
         
@@ -199,7 +199,7 @@ def check_probation_reviews():
                     _send_probation_review_notification(employee, review)
                     
                     review_count += 1
-                    logger.info(f"Probation review created for: {employee.employee_id} - {review_period}")
+                  
                     
             except ContractTypeConfig.DoesNotExist:
                 logger.warning(f"No contract config for employee {employee.employee_id}")

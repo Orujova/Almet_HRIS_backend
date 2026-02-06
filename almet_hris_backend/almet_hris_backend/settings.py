@@ -91,7 +91,6 @@ WSGI_APPLICATION = 'almet_hris_backend.wsgi.application'
 #     }
 # }
 
-
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',

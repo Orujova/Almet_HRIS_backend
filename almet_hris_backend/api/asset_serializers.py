@@ -182,7 +182,7 @@ class AssetBatchCreateSerializer(serializers.ModelSerializer):
         
         batch = AssetBatch.objects.create(**validated_data)
         
-        logger.info(f"✅ Batch yaradıldı: {batch.batch_number} - {batch.asset_name} x{batch.initial_quantity}")
+       
         
         return batch
 
@@ -394,11 +394,7 @@ class AssetCreateSerializer(serializers.Serializer):
                 created_by=self.context['request'].user
             )
             
-            logger.info(
-                f"✅ Asset yaradıldı: {asset.asset_number} | "
-                f"Batch: {batch.batch_number} | "
-                f"Available: {batch.available_quantity}/{batch.initial_quantity}"
-            )
+       
         
         return asset
 
@@ -498,11 +494,7 @@ class AssetCreateMultipleSerializer(serializers.Serializer):
                     metadata={'batch_number': batch.batch_number, 'batch_id': batch.id}
                 )
         
-        logger.info(
-            f"✅ {quantity} asset yaradıldı | "
-            f"Batch: {batch.batch_number} | "
-            f"Available: {batch.available_quantity}/{batch.initial_quantity}"
-        )
+
         
         return created_assets
 

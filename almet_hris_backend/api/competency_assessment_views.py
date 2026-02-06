@@ -1025,15 +1025,24 @@ class EmployeeCoreAssessmentViewSet(viewsets.ModelViewSet):
         return EmployeeCoreAssessmentSerializer
     
     def get_queryset(self):
-        """✅ Apply permission filtering"""
+        """✅ Apply permission filtering with company filter"""
         queryset = EmployeeCoreAssessment.objects.select_related(
-            'employee', 'position_assessment'
+            'employee', 
+            'employee__company',  # ✅ NEW: Prefetch company
+            'position_assessment'
         ).prefetch_related('competency_ratings__skill__group')
         
         # ✅ Filter based on user permissions
         queryset = filter_assessment_queryset(self.request.user, queryset)
         
-        # Additional filters (keep your existing filters)
+        # ✅ NEW: Company filter (admin only)
+        access = get_assessment_access(self.request.user)
+        if access['can_view_all']:
+            company_id = self.request.query_params.get('company')
+            if company_id:
+                queryset = queryset.filter(employee__company_id=company_id)
+        
+        # Additional filters
         employee_id = self.request.query_params.get('employee_id')
         if employee_id:
             queryset = queryset.filter(employee_id=employee_id)

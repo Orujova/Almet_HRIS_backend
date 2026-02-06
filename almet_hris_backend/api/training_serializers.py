@@ -2,11 +2,152 @@
 from rest_framework import serializers
 from .training_models import (
     Training, TrainingMaterial, 
-    TrainingAssignment, TrainingActivity
+    TrainingAssignment, TrainingRequest, TrainingRequestParticipant
 )
 from .models import Employee
 from django.utils import timezone
 
+
+class TrainingRequestParticipantSerializer(serializers.ModelSerializer):
+    employee_name = serializers.CharField(source='employee.full_name', read_only=True)
+    employee_id_display = serializers.CharField(source='employee.employee_id', read_only=True)
+    position = serializers.CharField(source='employee.position_display', read_only=True)
+    email = serializers.EmailField(source='employee.email', read_only=True)
+    
+    class Meta:
+        model = TrainingRequestParticipant
+        fields = [
+            'id', 'employee', 'employee_name', 'employee_id_display',
+            'position', 'email', 'added_at'
+        ]
+
+
+class TrainingRequestListSerializer(serializers.ModelSerializer):
+    requester_name = serializers.CharField(source='requester.full_name', read_only=True)
+    requester_id = serializers.CharField(source='requester.employee_id', read_only=True)
+    manager_name = serializers.CharField(source='manager.full_name', read_only=True)
+    participants_count = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = TrainingRequest
+        fields = [
+            'id', 'request_id', 'training_title', 'status',
+            'requester_name', 'requester_id', 'manager_name',
+            'estimated_cost', 'location', 'created_at',
+            'participants_count', 'preferred_dates_start'
+        ]
+    
+    def get_participants_count(self, obj):
+        return obj.participants.filter(is_deleted=False).count()
+
+
+class TrainingRequestDetailSerializer(serializers.ModelSerializer):
+    requester_name = serializers.CharField(source='requester.full_name', read_only=True)
+    requester_id = serializers.CharField(source='requester.employee_id', read_only=True)
+    requester_position = serializers.CharField(source='requester.position_display', read_only=True)
+    requester_department = serializers.CharField(source='requester.department.name', read_only=True)
+    requester_email = serializers.EmailField(source='requester.email', read_only=True)
+    
+    manager_name = serializers.CharField(source='manager.full_name', read_only=True)
+    manager_email = serializers.EmailField(source='manager.email', read_only=True)
+    
+    participants = TrainingRequestParticipantSerializer(many=True, read_only=True)
+    participants_data = serializers.ListField(
+        child=serializers.IntegerField(),
+        write_only=True,
+        required=False,
+        help_text="List of employee IDs to add as participants"
+    )
+    
+    class Meta:
+        model = TrainingRequest
+        fields = '__all__'
+        read_only_fields = ['request_id', 'requester', 'manager', 'created_at', 'updated_at', 'created_by']  # 👈 BURDA ƏLAVƏ ET
+    
+    def create(self, validated_data):
+        participants_data = validated_data.pop('participants_data', [])
+        request_obj = TrainingRequest.objects.create(**validated_data)
+        
+        # Add participants if provided (only for managers)
+        if participants_data:
+            for employee_id in participants_data:
+                try:
+                    employee = Employee.objects.get(id=employee_id, is_deleted=False)
+                    TrainingRequestParticipant.objects.create(
+                        training_request=request_obj,
+                        employee=employee,
+                        added_by=self.context['request'].user
+                    )
+                except Employee.DoesNotExist:
+                    pass
+        
+        return request_obj
+    
+    def update(self, instance, validated_data):
+        participants_data = validated_data.pop('participants_data', None)
+        
+        # Update training request fields
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+        
+        # Update participants if provided
+        if participants_data is not None:
+            # Remove existing participants
+            instance.participants.all().delete()
+            
+            # Add new participants
+            for employee_id in participants_data:
+                try:
+                    employee = Employee.objects.get(id=employee_id, is_deleted=False)
+                    TrainingRequestParticipant.objects.create(
+                        training_request=instance,
+                        employee=employee,
+                        added_by=self.context['request'].user
+                    )
+                except Employee.DoesNotExist:
+                    pass
+        
+        return instance
+
+
+class TrainingRequestCreateSerializer(serializers.Serializer):
+    """Serializer for creating training request - no requester/manager needed"""
+    training_title = serializers.CharField(max_length=300)
+    purpose_justification = serializers.CharField()
+    training_provider = serializers.CharField(max_length=200, required=False, allow_blank=True)
+    preferred_dates_start = serializers.DateField(required=False, allow_null=True)
+    preferred_dates_end = serializers.DateField(required=False, allow_null=True)
+    duration = serializers.CharField(max_length=100)
+    location = serializers.CharField(max_length=200)
+    estimated_cost = serializers.DecimalField(max_digits=10, decimal_places=2)
+    learning_objectives = serializers.CharField()
+    expected_benefits = serializers.CharField()
+    participants_data = serializers.ListField(
+        child=serializers.IntegerField(),
+        required=False,
+        help_text="List of employee IDs (only for managers)"
+    )
+    
+    def validate(self, data):
+        # Validate dates
+        if data.get('preferred_dates_start') and data.get('preferred_dates_end'):
+            if data['preferred_dates_start'] > data['preferred_dates_end']:
+                raise serializers.ValidationError(
+                    "Start date must be before end date"
+                )
+        return data
+
+
+class TrainingRequestApprovalSerializer(serializers.Serializer):
+    """Serializer for manager approving/rejecting request"""
+    status = serializers.ChoiceField(choices=['APPROVED', 'REJECTED'])
+    manager_comments = serializers.CharField(required=False, allow_blank=True)
+    
+    def validate_status(self, value):
+        if value not in ['APPROVED', 'REJECTED']:
+            raise serializers.ValidationError("Status must be APPROVED or REJECTED")
+        return value
 
 class TrainingMaterialSerializer(serializers.ModelSerializer):
     file_url = serializers.SerializerMethodField()

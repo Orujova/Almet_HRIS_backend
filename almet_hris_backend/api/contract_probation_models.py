@@ -198,7 +198,7 @@ class ContractRenewalRequest(SoftDeleteModel):
         else:
             self._send_employee_notification('not_renewing')
         
-        logger.info(f"Contract decision made by manager: {self.employee.employee_id} - {decision}")
+
     
     def hr_process_renewal(self, user, comments=''):
         """HR processes the contract renewal"""
@@ -235,7 +235,7 @@ class ContractRenewalRequest(SoftDeleteModel):
         # Send confirmation to employee
         self._send_employee_notification('renewal_completed')
         
-        logger.info(f"Contract renewal processed by HR: {self.employee.employee_id}")
+     
     
     def hr_handle_expiry(self, user, comments=''):
         """HR handles contract expiry (not renewing)"""
@@ -264,7 +264,7 @@ class ContractRenewalRequest(SoftDeleteModel):
         self.hr_comments = comments
         self.save()
         
-        logger.info(f"Contract expiry processed by HR: {self.employee.employee_id}")
+       
     
     def _send_hr_notification(self):
         """Send notification to HR"""
@@ -323,7 +323,7 @@ class ContractRenewalRequest(SoftDeleteModel):
                 body_html=body
             )
             
-            logger.info(f"✅ HR notification sent to {len(recipients)} recipients")
+      
             
         except Exception as e:
             logger.error(f"❌ Error sending HR notification: {e}")
@@ -636,7 +636,7 @@ class ProbationReview(SoftDeleteModel):
                 body_html=body
             )
             
-            logger.info(f"✅ Probation completion notification sent to {len(recipients)} recipients")
+
             
         except Exception as e:
             logger.error(f"❌ Error sending completion notification: {e}")

@@ -68,8 +68,7 @@ def get_graph_access_token(user):
             return token
         else:
             logger.warning(f"⚠️ No valid Graph token found for user {user.username}")
-            logger.warning("   Email notifications will be skipped")
-            logger.warning("   User needs to login again to refresh Graph token")
+  
             return None
     except Exception as e:
         logger.error(f"❌ Error getting Graph token: {e}")
@@ -473,8 +472,7 @@ def get_graph_access_token(user):
             return token
         else:
             logger.warning(f"⚠️ No valid Graph token found for user {user.username}")
-            logger.warning("   Email notifications will be skipped")
-            logger.warning("   User needs to login again to refresh Graph token")
+
             return None
     except Exception as e:
         logger.error(f"❌ Error getting Graph token: {e}")
@@ -704,8 +702,7 @@ def create_trip_request(request):
                                     'alternative': 'Yalnız öz komanda üzvləriniz üçün ərizə yarada bilərsiniz'
                                 }, status=status.HTTP_403_FORBIDDEN)
                             
-                            # ✅ Line Manager kimi icazəlidir
-                            logger.info(f"✅ {requester_emp.full_name} is Line Manager of {target_employee.full_name}")
+  
                         
                         except Employee.DoesNotExist:
                             return Response({

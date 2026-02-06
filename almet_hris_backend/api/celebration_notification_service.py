@@ -211,7 +211,7 @@ class CelebrationNotificationService:
             
             # ✅ CHECK: Should we send email for this employee?
             if not self.should_send_email(employee):
-                logger.info(f"✅ Anniversary celebration recorded but email skipped for {employee.first_name}")
+            
                 return True
             
             subject = f"🏆 {years} Year{'s' if years != 1 else ''} with Almet — {employee.first_name}!"
@@ -297,7 +297,7 @@ class CelebrationNotificationService:
             )
             
             if result.get("success"):
-                logger.info(f"✅ Anniversary email sent to {len(self.all_staff_emails)} distribution lists")
+                
                 return True
             else:
                 logger.error(f"❌ Failed to send anniversary email: {result.get('message')}")
@@ -312,7 +312,7 @@ class CelebrationNotificationService:
         try:
             # ✅ CHECK: Should we send email for this employee?
             if not self.should_send_email(employee):
-                logger.info(f"✅ Promotion recorded but email skipped for {employee.first_name}")
+        
                 return True
             
             subject = f"🎉 Congratulations {employee.first_name} {employee.last_name} on Your Promotion!"
@@ -442,7 +442,7 @@ class CelebrationNotificationService:
             )
             
             if result.get("success"):
-                logger.info(f"✅ Promotion email sent to {len(self.all_staff_emails)} distribution lists")
+               
                 return True
             else:
                 logger.error(f"❌ Failed to send promotion email: {result.get('message')}")
@@ -457,7 +457,7 @@ class CelebrationNotificationService:
         try:
             # ✅ CHECK: Should we send email for this employee?
             if not self.should_send_email(employee):
-                logger.info(f"✅ Welcome recorded but email skipped for {employee.first_name}")
+             
                 return True
             
             subject = f"🎉 Welcome to Almet Holding, {employee.first_name}!"
@@ -595,7 +595,7 @@ class CelebrationNotificationService:
             )
             
             if result.get("success"):
-                logger.info(f"✅ Welcome email sent to {len(self.all_staff_emails)} distribution lists")
+            
                 return True
             else:
                 logger.error(f"❌ Failed to send welcome email: {result.get('message')}")
@@ -628,7 +628,7 @@ class CelebrationNotificationService:
                 # Check birthdays
                 if emp.date_of_birth:
                     if emp.date_of_birth.month == today.month and emp.date_of_birth.day == today.day:
-                        logger.info(f"🎂 Processing birthday for {emp.first_name} {emp.last_name}")
+                    
                         
                         if self.should_send_email(emp):
                             if self.send_birthday_notification(emp):
@@ -641,7 +641,7 @@ class CelebrationNotificationService:
                     if emp.start_date.month == today.month and emp.start_date.day == today.day:
                         years = today.year - emp.start_date.year
                         if years > 0:  # At least 1 year
-                            logger.info(f"🏆 Processing {years}-year anniversary for {emp.first_name} {emp.last_name}")
+                    
                             
                             if self.should_send_email(emp):
                                 if self.send_work_anniversary_notification(emp, years):
@@ -649,7 +649,7 @@ class CelebrationNotificationService:
                             else:
                                 results['skipped'] += 1
             
-            logger.info(f"✅ Daily celebration check complete: {results}")
+     
             return results
             
         except Exception as e:

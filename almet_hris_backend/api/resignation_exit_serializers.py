@@ -288,10 +288,8 @@ class ExitInterviewCreateSerializer(serializers.ModelSerializer):
         validated_data['created_by'] = self.context['request'].user
         exit_interview = ExitInterview.objects.create(**validated_data)
         
-        # ✅ Log for debugging
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.info(f"✅ Created Exit Interview ID: {exit_interview.id} for employee: {exit_interview.employee.full_name}")
+       
+
         
         return exit_interview
 

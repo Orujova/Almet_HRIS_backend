@@ -66,8 +66,6 @@ class PolicyCompanyViewSet(viewsets.ModelViewSet):
             )
         
         instance.delete()
-        logger.info(f"Policy company deleted: {company_name} by {self.request.user.username}")
-
 
 # ==================== COMBINED COMPANIES VIEW ====================
 
@@ -273,8 +271,7 @@ class CompanyPolicyViewSet(viewsets.ModelViewSet):
         return CompanyPolicyDetailSerializer
     
     def create(self, request, *args, **kwargs):
-        """Create new policy with file upload"""
-        logger.info(f"Policy creation request from {request.user.username}")
+        
         
         if 'policy_file' not in request.FILES:
             return Response(
@@ -288,12 +285,12 @@ class CompanyPolicyViewSet(viewsets.ModelViewSet):
             serializer.is_valid(raise_exception=True)
             self.perform_create(serializer)
             
-            logger.info(f"Policy created successfully: {serializer.instance.title} (ID: {serializer.instance.id})")
+  
             
             headers = self.get_success_headers(serializer.data)
             return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
         except Exception as e:
-            logger.error(f"Policy creation failed: {str(e)}")
+            
             raise
     
     def update(self, request, *args, **kwargs):
@@ -301,7 +298,7 @@ class CompanyPolicyViewSet(viewsets.ModelViewSet):
         partial = kwargs.pop('partial', False)
         instance = self.get_object()
         
-        logger.info(f"Policy update request for '{instance.title}' by {request.user.username}")
+       
         
         serializer = self.get_serializer(instance, data=request.data, partial=partial)
         
@@ -310,7 +307,7 @@ class CompanyPolicyViewSet(viewsets.ModelViewSet):
             self.perform_update(serializer)
             return Response(serializer.data)
         except Exception as e:
-            logger.error(f"Policy update failed: {str(e)}")
+            
             raise
     
     def partial_update(self, request, *args, **kwargs):

@@ -49,8 +49,7 @@ def send_promotion_notification(sender, instance, created, **kwargs):
     new_title = instance.job_title
     
     if old_title and new_title and old_title != new_title:
-        logger.info(f"🔔 Job title change detected for {instance.first_name} {instance.last_name}")
-        logger.info(f"   Old: {old_title} → New: {new_title}")
+    
         
         # ✅ Create Celebration record for promotion
         from .celebration_models import Celebration
@@ -73,7 +72,7 @@ def send_promotion_notification(sender, instance, created, **kwargs):
                 new_job_title=str(new_title),
                 created_by=system_user
             )
-            logger.info(f"✅ Promotion celebration created with ID: {celebration.id}")
+       
         except Exception as e:
             logger.error(f"❌ Failed to create promotion celebration: {e}")
         
@@ -83,7 +82,7 @@ def send_promotion_notification(sender, instance, created, **kwargs):
                 employee=instance,
                 new_job_title=str(new_title)
             )
-            logger.info(f"✅ Promotion notification sent for {instance.first_name}")
+         
         except Exception as e:
             logger.error(f"❌ Failed to send promotion notification: {e}")
 
@@ -95,5 +94,9 @@ def welcome_new_employee(sender, instance, created, **kwargs):
     👋 Optional: Send welcome email to new employees
     """
     if created and not instance.is_deleted:
-        logger.info(f"👋 New employee created: {instance.first_name} {instance.last_name}")
-        # You can add welcome email logic here if needed
+        try:
+            celebration_notification_service.send_welcome_notification(
+                employee=instance
+            )
+        except Exception as e:
+            logger.error(f"❌ Failed to send welcome notification: {e}")

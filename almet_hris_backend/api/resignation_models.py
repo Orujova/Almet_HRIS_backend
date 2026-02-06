@@ -139,7 +139,7 @@ class ResignationRequest(SoftDeleteModel):
         # Send notification to employee
         self._send_employee_notification('manager_approved')
         
-        logger.info(f"Resignation approved by manager: {self.employee.employee_id}")
+     
     
     def manager_reject(self, user, comments=''):
         """Manager rejects resignation"""
@@ -155,7 +155,7 @@ class ResignationRequest(SoftDeleteModel):
         # Send notification to employee
         self._send_employee_notification('manager_rejected')
         
-        logger.info(f"Resignation rejected by manager: {self.employee.employee_id}")
+  
     
     def hr_approve(self, user, comments=''):
         """HR approves resignation"""
@@ -175,7 +175,7 @@ class ResignationRequest(SoftDeleteModel):
         # Send notification to employee
         self._send_employee_notification('hr_approved')
         
-        logger.info(f"Resignation approved by HR: {self.employee.employee_id}")
+       
     
     def hr_reject(self, user, comments=''):
         """HR rejects resignation"""
@@ -191,7 +191,7 @@ class ResignationRequest(SoftDeleteModel):
         # Send notification to employee
         self._send_employee_notification('hr_rejected')
         
-        logger.info(f"Resignation rejected by HR: {self.employee.employee_id}")
+     
     
     def _update_employee_status(self):
         """Update employee status when resignation is approved"""

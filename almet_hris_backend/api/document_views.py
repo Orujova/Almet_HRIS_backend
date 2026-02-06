@@ -95,7 +95,7 @@ class DocumentCompanyViewSet(viewsets.ModelViewSet):
                     company.code = bf.code
                     company.is_active = bf.is_active
                     company.save()
-                    logger.info(f"Updated DocumentCompany for BusinessFunction: {bf.name}")
+                    
     
     def perform_create(self, serializer):
         """
@@ -103,7 +103,7 @@ class DocumentCompanyViewSet(viewsets.ModelViewSet):
         Anyone can create manual companies like 'General', 'Templates', etc.
         """
         serializer.save(created_by=self.request.user, business_function=None)
-        logger.info(f"Manual document company created: {serializer.instance.name} by {self.request.user.username}")
+       
     
     def perform_update(self, serializer):
         instance = serializer.instance
@@ -116,7 +116,7 @@ class DocumentCompanyViewSet(viewsets.ModelViewSet):
             })
         
         serializer.save()
-        logger.info(f"Document company updated: {serializer.instance.name}")
+       
     
     def perform_destroy(self, instance):
         # Don't allow deleting auto-created companies
@@ -134,7 +134,7 @@ class DocumentCompanyViewSet(viewsets.ModelViewSet):
             )
         
         instance.delete()
-        logger.info(f"Document company deleted: {instance.name}")
+       
     
     @action(detail=True, methods=['get'])
     def folders(self, request, pk=None):
@@ -165,11 +165,11 @@ class DocumentFolderViewSet(viewsets.ModelViewSet):
     
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
-        logger.info(f"Document folder created: {serializer.instance.name} by {self.request.user.username}")
+    
     
     def perform_update(self, serializer):
         serializer.save()
-        logger.info(f"Document folder updated: {serializer.instance.name}")
+
     
     def perform_destroy(self, instance):
         if instance.documents.exists():
@@ -179,7 +179,7 @@ class DocumentFolderViewSet(viewsets.ModelViewSet):
                 "Please delete all documents first."
             )
         instance.delete()
-        logger.info(f"Document folder deleted: {instance.name}")
+   
     
     @action(detail=False, methods=['get'], url_path='by-company/(?P<company_id>[^/.]+)')
     def by_company(self, request, company_id=None):
@@ -255,13 +255,13 @@ class DocumentViewSet(viewsets.ModelViewSet):
     
     def create(self, request, *args, **kwargs):
         """Create new document with file upload"""
-        logger.info(f"Document creation request from {request.user.username}")
+   
         
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         self.perform_create(serializer)
         
-        logger.info(f"Document created: {serializer.instance.title}")
+      
         
         headers = self.get_success_headers(serializer.data)
         return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
@@ -271,7 +271,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
         partial = kwargs.pop('partial', False)
         instance = self.get_object()
         
-        logger.info(f"Document update request for '{instance.title}'")
+      
         
         serializer = self.get_serializer(instance, data=request.data, partial=partial)
         serializer.is_valid(raise_exception=True)
@@ -285,16 +285,16 @@ class DocumentViewSet(viewsets.ModelViewSet):
     
     def perform_create(self, serializer):
         document = serializer.save(created_by=self.request.user)
-        logger.info(f"Document created: {document.title}")
+ 
     
     def perform_update(self, serializer):
         document = serializer.save(updated_by=self.request.user)
-        logger.info(f"Document updated: {document.title}")
+     
     
     def perform_destroy(self, instance):
         document_title = instance.title
         instance.delete()
-        logger.info(f"Document deleted: {document_title}")
+       
     
     @action(detail=False, methods=['get'], url_path='by-folder/(?P<folder_id>[^/.]+)')
     def by_folder(self, request, folder_id=None):

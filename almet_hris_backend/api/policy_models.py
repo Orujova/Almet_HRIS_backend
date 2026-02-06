@@ -441,6 +441,6 @@ def delete_policy_file(sender, instance, **kwargs):
         try:
             if os.path.isfile(instance.policy_file.path):
                 os.remove(instance.policy_file.path)
-                logger.info(f"Deleted policy file: {instance.policy_file.path}")
+                
         except Exception as e:
             logger.error(f"Error deleting policy file: {e}")

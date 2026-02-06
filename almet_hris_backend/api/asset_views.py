@@ -342,7 +342,7 @@ class AssetViewSet(viewsets.ModelViewSet):
                 }
             )
             
-            logger.info(f"✅ Asset yaradıldı: {asset.asset_number} from {asset.batch.batch_number}")
+     
             
             return Response({
                 'success': True,
@@ -435,7 +435,7 @@ class AssetViewSet(viewsets.ModelViewSet):
             # Send email notification
             self._send_assignment_email(employee, assets, request.user)
             
-            logger.info(f"✅ {len(assets)} asset təyin edildi → {employee.full_name}")
+        
             
             return Response({
                 'success': True,
@@ -495,7 +495,7 @@ class AssetViewSet(viewsets.ModelViewSet):
                 body_html=html_body
             )
             
-            logger.info(f"✅ Email göndərildi → {employee.user.email}")
+          
             
         except Exception as e:
             logger.error(f"❌ Email xətası: {str(e)}")
@@ -556,7 +556,7 @@ class AssetViewSet(viewsets.ModelViewSet):
                     }
                 )
             
-            logger.info(f"✅ Asset qəbul edildi: {asset.asset_number} by {access['employee'].full_name}")
+     
             
             return Response({
                 'success': True,
@@ -834,7 +834,7 @@ class AssetViewSet(viewsets.ModelViewSet):
                     metadata={'reason': reason}
                 )
             
-            logger.info(f"✅ Aydınlaşdırma sorğusu: {asset.asset_number}")
+          
             
             return Response({
                 'success': True,
@@ -897,7 +897,7 @@ class AssetViewSet(viewsets.ModelViewSet):
                     metadata={'response': response_text}
                 )
             
-            logger.info(f"✅ Aydınlaşdırma cavabı: {asset.asset_number}")
+       
             
             return Response({
                 'success': True,
@@ -1023,7 +1023,7 @@ class AssetViewSet(viewsets.ModelViewSet):
                         results['failed'] += 1
                         results['errors'].append(f"Sətir {index + 2}: {str(e)}")
             
-            logger.info(f"✅ Bulk upload: {results['success']} uğurlu, {results['failed']} uğursuz")
+        
             
             return Response({
                 'success': True,
@@ -1294,7 +1294,7 @@ class EmployeeOffboardingViewSet(viewsets.ModelViewSet):
                 body_html=html_body
             )
             
-            logger.info(f"✅ IT offboarding email sent - Type: {offboarding.offboarding_type}")
+
             
         except Exception as e:
             logger.error(f"❌ IT offboarding email error: {str(e)}")
@@ -1498,7 +1498,7 @@ class AssetTransferRequestViewSet(viewsets.ModelViewSet):
                     body_html=html_body_to
                 )
                 
-                logger.info(f"✅ Transfer approval email sent to {transfer.to_employee.full_name}")
+ 
             
             # 📧 Email to OLD employee (informational)
             if from_employee_email:
@@ -1540,7 +1540,7 @@ class AssetTransferRequestViewSet(viewsets.ModelViewSet):
                     body_html=html_body_from
                 )
                 
-                logger.info(f"✅ Transfer notification email sent to {transfer.from_employee.full_name}")
+   
             
         except Exception as e:
             logger.error(f"❌ Transfer notification error: {str(e)}")
@@ -1630,7 +1630,7 @@ class AssetTransferRequestViewSet(viewsets.ModelViewSet):
                         }
                     )
                 
-                logger.info(f"✅ Transfer approved: {asset.asset_number} by {new_employee.full_name}")
+            
                 
                 return Response({
                     'success': True,

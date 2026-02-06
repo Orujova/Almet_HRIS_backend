@@ -320,6 +320,6 @@ def delete_procedure_file(sender, instance, **kwargs):
         try:
             if os.path.isfile(instance.procedure_file.path):
                 os.remove(instance.procedure_file.path)
-                logger.info(f"Deleted procedure file: {instance.procedure_file.path}")
+              
         except Exception as e:
             logger.error(f"Error deleting procedure file: {e}")

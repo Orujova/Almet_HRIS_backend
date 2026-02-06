@@ -6815,14 +6815,9 @@ class OrgChartViewSet(viewsets.ViewSet):
     )
     @action(detail=False, methods=['get'], url_path='tree')
     def get_full_tree(self, request):
-        """
-        ✅ COMPLETELY FIXED: Get complete organizational chart tree with vacancies
-        Vacancies and employees are filtered TOGETHER, not separately
-        """
+      
         try:
-            # ========================================
-            # STEP 1: GET BASE EMPLOYEE QUERYSET
-            # ========================================
+        
             employees = Employee.objects.filter(
                 status__allows_org_chart=True,
                 is_visible_in_org_chart=True,
@@ -6832,10 +6827,7 @@ class OrgChartViewSet(viewsets.ViewSet):
                 'position_group', 'status', 'line_manager'
             ).prefetch_related('tags').order_by('position_group__hierarchy_level', 'employee_id')
             
-            logger.info(f"📊 Initial employees count: {employees.count()}")
-            
-            # ========================================
-            # STEP 2: GET BASE VACANCY QUERYSET
+        
             # ========================================
             vacancies = VacantPosition.objects.filter(
                 is_visible_in_org_chart=True,
@@ -6845,119 +6837,140 @@ class OrgChartViewSet(viewsets.ViewSet):
                 'business_function', 'department', 'unit', 'job_function',
                 'position_group', 'vacancy_status', 'reporting_to'
             )
+
             
-            logger.info(f"📍 Initial vacancies count: {vacancies.count()}")
-            
-            # ========================================
-            # STEP 3: EXTRACT FILTER PARAMETERS
-            # ========================================
-            filter_params = {}
-            
-            # Business function filter (MOST IMPORTANT)
-            bf_values = request.query_params.getlist('business_function')
-            if not bf_values:
-                bf_values = [request.query_params.get('business_function')] if request.query_params.get('business_function') else []
-            
-            if bf_values:
-                bf_ids = []
-                for bf_val in bf_values:
-                    if bf_val:
-                        if ',' in str(bf_val):
-                            bf_ids.extend([int(id.strip()) for id in str(bf_val).split(',') if id.strip().isdigit()])
-                        elif str(bf_val).isdigit():
-                            bf_ids.append(int(bf_val))
+            # ✅ Helper function to extract array parameter values
+            def get_array_param(param_name):
+                """Extract array parameter handling both getlist and comma-separated"""
+                values = request.query_params.getlist(param_name)
+                if not values:
+                    single_value = request.query_params.get(param_name)
+                    if single_value:
+                        values = [single_value]
                 
-                if bf_ids:
-                    filter_params['business_function'] = bf_ids
-                    logger.info(f"🏢 Business function filter: {bf_ids}")
-            
-            # Department filter
-            dept_values = request.query_params.getlist('department')
-            if not dept_values:
-                dept_values = [request.query_params.get('department')] if request.query_params.get('department') else []
-            
-            if dept_values:
-                dept_ids = []
-                for dept_val in dept_values:
-                    if dept_val:
-                        if ',' in str(dept_val):
-                            dept_ids.extend([int(id.strip()) for id in str(dept_val).split(',') if id.strip().isdigit()])
-                        elif str(dept_val).isdigit():
-                            dept_ids.append(int(dept_val))
+                # Parse comma-separated values
+                result = []
+                for val in values:
+                    if val and ',' in str(val):
+                        result.extend([int(id.strip()) for id in str(val).split(',') if id.strip().isdigit()])
+                    elif val and str(val).isdigit():
+                        result.append(int(val))
                 
-                if dept_ids:
-                    filter_params['department'] = dept_ids
-                    logger.info(f"🏢 Department filter: {dept_ids}")
+                return result if result else None
             
-            # Unit filter
-            unit_values = request.query_params.getlist('unit')
-            if not unit_values:
-                unit_values = [request.query_params.get('unit')] if request.query_params.get('unit') else []
+            # ✅ Extract all filter parameters
+            business_function_ids = get_array_param('business_function')
+            department_ids = get_array_param('department')
+            unit_ids = get_array_param('unit')
+            job_function_ids = get_array_param('job_function')
+            position_group_ids = get_array_param('position_group')
+            line_manager_ids = get_array_param('line_manager')
             
-            if unit_values:
-                unit_ids = []
-                for unit_val in unit_values:
-                    if unit_val:
-                        if ',' in str(unit_val):
-                            unit_ids.extend([int(id.strip()) for id in str(unit_val).split(',') if id.strip().isdigit()])
-                        elif str(unit_val).isdigit():
-                            unit_ids.append(int(unit_val))
-                
-                if unit_ids:
-                    filter_params['unit'] = unit_ids
-                    logger.info(f"🏢 Unit filter: {unit_ids}")
-            
-            # ========================================
-            # STEP 4: APPLY FILTERS TO BOTH EMPLOYEES AND VACANCIES
-            # ========================================
-            
-            # Apply business function filter
-            if 'business_function' in filter_params:
-                employees = employees.filter(business_function__id__in=filter_params['business_function'])
-                vacancies = vacancies.filter(business_function__id__in=filter_params['business_function'])
-                logger.info(f"✅ After BF filter - Employees: {employees.count()}, Vacancies: {vacancies.count()}")
-            
-            # Apply department filter
-            if 'department' in filter_params:
-                employees = employees.filter(department__id__in=filter_params['department'])
-                vacancies = vacancies.filter(department__id__in=filter_params['department'])
-                logger.info(f"✅ After Dept filter - Employees: {employees.count()}, Vacancies: {vacancies.count()}")
-            
-            # Apply unit filter
-            if 'unit' in filter_params:
-                employees = employees.filter(unit__id__in=filter_params['unit'])
-                vacancies = vacancies.filter(unit__id__in=filter_params['unit'])
-                logger.info(f"✅ After Unit filter - Employees: {employees.count()}, Vacancies: {vacancies.count()}")
-            
-            # Apply search filter to both
+            # Text search filters
             search = request.query_params.get('search')
+            employee_id_search = request.query_params.get('employee_id_search')
+            job_title_search = request.query_params.get('job_title_search')
+            department_search = request.query_params.get('department_search')
+            
+            # Boolean filters
+            show_top_level_only = request.query_params.get('show_top_level_only', '').lower() == 'true'
+            managers_only = request.query_params.get('managers_only', '').lower() == 'true'
+            
+       
+            # ✅ Apply business function filter
+            if business_function_ids:
+                employees = employees.filter(business_function__id__in=business_function_ids)
+                vacancies = vacancies.filter(business_function__id__in=business_function_ids)
+
+            
+            # ✅ Apply department filter
+            if department_ids:
+                employees = employees.filter(department__id__in=department_ids)
+                vacancies = vacancies.filter(department__id__in=department_ids)
+
+            
+            # ✅ Apply unit filter
+            if unit_ids:
+                employees = employees.filter(unit__id__in=unit_ids)
+                vacancies = vacancies.filter(unit__id__in=unit_ids)
+        
+            
+            # ✅ Apply job function filter
+            if job_function_ids:
+                employees = employees.filter(job_function__id__in=job_function_ids)
+                vacancies = vacancies.filter(job_function__id__in=job_function_ids)
+          
+            
+            # ✅ Apply position group filter
+            if position_group_ids:
+                employees = employees.filter(position_group__id__in=position_group_ids)
+                vacancies = vacancies.filter(position_group__id__in=position_group_ids)
+                
+            
+            # ✅ Apply line manager filter (only for employees)
+            if line_manager_ids:
+                employees = employees.filter(line_manager__id__in=line_manager_ids)
+                # Vacancies use reporting_to field
+                vacancies = vacancies.filter(reporting_to__id__in=line_manager_ids)
+              
+            
+            # ✅ Apply search filter to both
             if search:
                 employees = employees.filter(
                     Q(full_name__icontains=search) |
                     Q(employee_id__icontains=search) |
                     Q(job_title__icontains=search) |
-                    Q(user__email__icontains=search)
+                    Q(user__email__icontains=search) |
+                    Q(department__name__icontains=search) |
+                    Q(business_function__name__icontains=search)
                 )
                 vacancies = vacancies.filter(
                     Q(job_title__icontains=search) |
-                    Q(position_id__icontains=search)
+                    Q(position_id__icontains=search) |
+                    Q(department__name__icontains=search) |
+                    Q(business_function__name__icontains=search)
                 )
-                logger.info(f"🔍 After search filter - Employees: {employees.count()}, Vacancies: {vacancies.count()}")
+           
+            
+            # ✅ Apply employee ID search
+            if employee_id_search:
+                employees = employees.filter(employee_id__icontains=employee_id_search)
+                vacancies = vacancies.filter(position_id__icontains=employee_id_search)
+            
+            # ✅ Apply job title search
+            if job_title_search:
+                employees = employees.filter(job_title__icontains=job_title_search)
+                vacancies = vacancies.filter(job_title__icontains=job_title_search)
+            
+            # ✅ Apply department search
+            if department_search:
+                employees = employees.filter(department__name__icontains=department_search)
+                vacancies = vacancies.filter(department__name__icontains=department_search)
+            
+            # ✅ Apply boolean filters (only for employees)
+            if show_top_level_only:
+                employees = employees.filter(line_manager__isnull=True)
+                vacancies = vacancies.filter(reporting_to__isnull=True)
+            
+            if managers_only:
+                employees = employees.annotate(
+                    direct_reports_count=Count(
+                        'direct_reports',
+                        filter=Q(direct_reports__status__affects_headcount=True, direct_reports__is_deleted=False)
+                    )
+                ).filter(direct_reports_count__gt=0)
+                # Vacancies cannot be managers, so exclude all
+                vacancies = vacancies.none()
             
             # ========================================
             # STEP 5: SERIALIZE EMPLOYEES
             # ========================================
             serializer = OrgChartNodeSerializer(employees, many=True, context={'request': request})
             employee_data = serializer.data
-            
-            logger.info(f"👥 Serialized employees: {len(employee_data)}")
-            
-            # ========================================
-            # STEP 6: CONVERT VACANCIES TO ORG CHART FORMAT
-            # ========================================
+     
             vacancy_data = []
             for vacancy in vacancies:
-                # ✅ CRITICAL: Validate required fields
+                # ✅ Validate required fields
                 if not vacancy.business_function or not vacancy.department or not vacancy.job_title:
                     logger.warning(f"⚠️ Vacancy {vacancy.id} missing required fields - skipping")
                     continue
@@ -7011,22 +7024,22 @@ class OrgChartViewSet(viewsets.ViewSet):
                 }
                 vacancy_data.append(vac_data)
             
-            logger.info(f"📍 Serialized vacancies: {len(vacancy_data)}")
-            
-            # ========================================
-            # STEP 7: COMBINE DATA
-            # ========================================
+       
             all_org_data = employee_data + vacancy_data
-            
-            logger.info(f"✅ FINAL COMBINED DATA: {len(all_org_data)} total positions")
-            logger.info(f"   - Employees: {len(employee_data)}")
-            logger.info(f"   - Vacancies: {len(vacancy_data)}")
-            
-            # ========================================
-            # STEP 8: STATISTICS
-            # ========================================
+
             total_employees = len(employee_data)
             total_vacancies = len(vacancy_data)
+            
+            # Build filter summary
+            filter_summary = {}
+            if business_function_ids:
+                filter_summary['business_function_ids'] = business_function_ids
+            if department_ids:
+                filter_summary['department_ids'] = department_ids
+            if unit_ids:
+                filter_summary['unit_ids'] = unit_ids
+            if search:
+                filter_summary['search'] = search
             
             return Response({
                 'org_chart': all_org_data,
@@ -7034,13 +7047,8 @@ class OrgChartViewSet(viewsets.ViewSet):
                     'total_employees': total_employees,
                     'total_vacancies': total_vacancies,
                     'total_positions': total_employees + total_vacancies,
-                    'filters_applied': len(filter_params),
-                    'filter_summary': {
-                        'business_function_ids': filter_params.get('business_function', []),
-                        'department_ids': filter_params.get('department', []),
-                        'unit_ids': filter_params.get('unit', []),
-                        'has_search': bool(search)
-                    }
+                    'filters_applied': len(filter_summary),
+                    'filter_summary': filter_summary
                 },
                 'metadata': {
                     'generated_at': timezone.now(),
@@ -7060,6 +7068,8 @@ class OrgChartViewSet(viewsets.ViewSet):
                 {'error': f'Failed to retrieve org chart tree: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+        
+    
     @swagger_auto_schema(
         operation_description="Get detailed information for a specific employee in org chart context",
         responses={

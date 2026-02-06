@@ -3143,23 +3143,6 @@ class SingleEmployeeTagUpdateSerializer(serializers.Serializer):
             raise serializers.ValidationError("Tag not found.")
         return value
 
-class EmployeeGradingUpdateSerializer(serializers.Serializer):
-    """Serializer for updating employee grading information"""
-    employee_id = serializers.IntegerField()
-    grading_level = serializers.CharField()
-    
-    def validate_grading_level(self, value):
-        """Validate grading level format"""
-        if value and '_' not in value:
-            raise serializers.ValidationError("Grading level must be in format POSITION_LEVEL (e.g., MGR_UQ)")
-        return value
-    
-    def validate_employee_id(self, value):
-        try:
-            Employee.objects.get(id=value)
-        except Employee.DoesNotExist:
-            raise serializers.ValidationError("Employee not found.")
-        return value
 
 class EmployeeGradingListSerializer(serializers.ModelSerializer):
     """Serializer for employee grading information display"""
@@ -3181,18 +3164,6 @@ class EmployeeGradingListSerializer(serializers.ModelSerializer):
             return obj.position_group.get_grading_levels()
         return []
 
-class BulkEmployeeGradingUpdateSerializer(serializers.Serializer):
-    """Serializer for bulk updating employee grades"""
-    updates = serializers.ListField(
-        child=EmployeeGradingUpdateSerializer(),
-        help_text="List of employee grading updates",
-        allow_empty=False
-    )
-    
-    def validate_updates(self, value):
-        if not value:
-            raise serializers.ValidationError("At least one update is required")
-        return value
 
 class OrgChartNodeSerializer(serializers.ModelSerializer):
     """FINAL FIXED: Enhanced serializer for organizational chart nodes"""
@@ -3507,36 +3478,6 @@ class OrgChartNodeSerializer(serializers.ModelSerializer):
         except Exception:
             return 0
     
-class ContractExpirySerializer(serializers.ModelSerializer):
-    """Serializer for contract expiry tracking"""
-    name = serializers.CharField(source='full_name', read_only=True)
-    business_function_name = serializers.CharField(source='business_function.name', read_only=True)
-    department_name = serializers.CharField(source='department.name', read_only=True)
-    position_group_name = serializers.CharField(source='position_group.get_name_display', read_only=True)
-    days_until_expiry = serializers.SerializerMethodField()
-    status_needs_update = serializers.SerializerMethodField()
-    
-    class Meta:
-        model = Employee
-        fields = [
-            'id', 'employee_id', 'name', 'job_title', 'business_function_name',
-            'department_name', 'position_group_name', 'contract_duration',
-            'contract_end_date', 'days_until_expiry', 'status_needs_update'
-        ]
-    
-    def get_days_until_expiry(self, obj):
-        if obj.contract_end_date:
-            delta = obj.contract_end_date - date.today()
-            return delta.days
-        return None
-    
-    def get_status_needs_update(self, obj):
-        try:
-            preview = obj.get_status_preview()
-            return preview['needs_update']
-        except:
-            return False
-
 class EmployeeExportSerializer(serializers.Serializer):
     employee_ids = serializers.ListField(
         child=serializers.IntegerField(), 

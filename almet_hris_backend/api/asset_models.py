@@ -31,16 +31,7 @@ class AssetCategory(models.Model):
 
 
 class AssetBatch(models.Model):
-    """
-    🎯 Asset Batch - Partiya (Eyni növdən bir neçə asset)
-    Məsələn: 10 ədəd Dell Latitude 5420 laptop
-    
-    Quantity tracking:
-    - initial_quantity: Başlanğıc miqdar (10)
-    - available_quantity: Hələ təyin edilməmiş (7)
-    - assigned_quantity: Təyin edilmiş (3)
-    - out_of_stock_quantity: Xarab/itirilmiş (0)
-    """
+
     
     batch_number = models.CharField(max_length=50, unique=True, editable=False)
     asset_name = models.CharField(max_length=200, verbose_name="Asset Adı")
@@ -140,20 +131,17 @@ class AssetBatch(models.Model):
             self.available_quantity -= quantity
             self.assigned_quantity += quantity
             self.save()
-            logger.info(f"✅ Batch {self.batch_number}: Assigned {quantity} (Available: {self.available_quantity})")
+        
             return True
         logger.warning(f"❌ Batch {self.batch_number}: Insufficient quantity")
         return False
     
     def return_quantity(self, quantity):
-        """
-        🔙 Asset geri qaytarılanda çağırılır
-        Assigned-dən available-ə keçir
-        """
+   
         self.available_quantity += quantity
         self.assigned_quantity = max(0, self.assigned_quantity - quantity)
         self.save()
-        logger.info(f"✅ Batch {self.batch_number}: Returned {quantity} (Available: {self.available_quantity})")
+
     
     def mark_out_of_stock(self, quantity):
         """
@@ -163,7 +151,7 @@ class AssetBatch(models.Model):
             self.available_quantity -= quantity
             self.out_of_stock_quantity += quantity
             self.save()
-            logger.info(f"✅ Batch {self.batch_number}: Marked {quantity} as out of stock")
+
             return True
         return False
     
